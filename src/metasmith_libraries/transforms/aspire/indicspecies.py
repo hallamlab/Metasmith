@@ -4,11 +4,15 @@
 Folded in: INDICSPECIES_PLOTS (asv_pipeline.nf:4608),
 INDICSPECIES_ALIGNED_PLOTS (asv_pipeline.nf:4792)
 
-r4 ecology lift (second pass): lifted off `aspire::run` onto the generic
-`amplicon::survey` grouping node so `spieceasi` and `graph_network` -- lifted
-in the first pass -- are actually REACHABLE from a bare `amplicon::asv_table`.
-Lifting a transform whose own inputs are still gated moves the gate, it does
-not remove it. See research/kbase/curation/r4/analyses.md.
+Groups are the label columns of the sample sheet; the analysis runs once per
+label and skips a label with fewer than two levels. The .nf ran exactly two
+groupings as fixed channels and refused to start with fewer; here there is one
+results directory for any number of labels. r4 ecology lift (second pass):
+lifted off the study root onto the generic `amplicon::survey` grouping node so
+`spieceasi` and `graph_network` -- lifted in the first pass -- are actually
+REACHABLE from a bare `amplicon::asv_table`. Lifting a transform whose own
+inputs are still gated moves the gate, it does not remove it. See
+research/kbase/curation/r4/analyses.md.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -21,20 +25,14 @@ model = Transform()
 survey  = model.AddRequirement(lib.GetType("amplicon::survey"))
 md      = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={survey})
 counts  = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
-g1sum   = model.AddProduct(lib.GetType("aspire::indicspecies_group1_summary"))
-g2sum   = model.AddProduct(lib.GetType("aspire::indicspecies_group2_summary"))
-g1res   = model.AddProduct(lib.GetType("aspire::indicspecies_group1_results"))
-g2res   = model.AddProduct(lib.GetType("aspire::indicspecies_group2_results"))
+results = model.AddProduct(lib.GetType("aspire::indicspecies_results"))
 tables  = model.AddProduct(lib.GetType("aspire::indicspecies_tables"))
 plots   = model.AddProduct(lib.GetType("aspire::indicspecies_plots"))
 aligned = model.AddProduct(lib.GetType("aspire::indicspecies_aligned_plots"))
 
 def protocol(context: ExecutionContext):
     made = {
-        g1sum: context.Output(g1sum),
-        g2sum: context.Output(g2sum),
-        g1res: context.Output(g1res),
-        g2res: context.Output(g2res),
+        results: context.Output(results),
         tables: context.Output(tables),
         plots: context.Output(plots),
         aligned: context.Output(aligned),
@@ -47,7 +45,7 @@ def protocol(context: ExecutionContext):
         success=all(v.local.exists() for v in made.values()),
     )
 
-_DIRECTORY_PRODUCTS = {tables, plots, aligned}
+_DIRECTORY_PRODUCTS = {results, tables, plots, aligned}
 
 TransformInstance(
     protocol=protocol,

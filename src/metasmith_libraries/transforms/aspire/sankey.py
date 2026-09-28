@@ -12,10 +12,9 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-fate    = model.AddRequirement(lib.GetType("aspire::read_fate"), parents={run})
-removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={run})
-meta    = model.AddRequirement(lib.GetType("aspire::sample_metadata"))
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+fate    = model.AddRequirement(lib.GetType("aspire::read_fate"), parents={study})
+removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={study})
 out     = model.AddProduct(lib.GetType("aspire::sankey_outputs"))
 
 def protocol(context: ExecutionContext):
@@ -35,7 +34,7 @@ _DIRECTORY_PRODUCTS = {out}
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

@@ -17,11 +17,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run      = model.AddRequirement(lib.GetType("aspire::run"))
-name     = model.AddRequirement(lib.GetType("sequences::sample_name"), parents={run})
-meta     = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={name})
-qc       = model.AddRequirement(lib.GetType("aspire::qc_reads"), parents={name})
-params   = model.AddRequirement(lib.GetType("aspire::params"), parents={run})
+study    = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+meta     = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={study})
+qc       = model.AddRequirement(lib.GetType("aspire::qc_reads"), parents={meta})
+params   = model.AddRequirement(lib.GetType("aspire::params"), parents={study})
 filtered = model.AddProduct(lib.GetType("aspire::filtered_fasta"))
 counts   = model.AddProduct(lib.GetType("aspire::read_counts"))
 
@@ -43,7 +42,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=name,
+    group_by=meta,
     resources=Resources(
         cpus=4,
         memory=Size.GB(4),

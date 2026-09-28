@@ -19,8 +19,8 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-trimmed = model.AddRequirement(lib.GetType("aspire::sina_trimmed_seqs"), parents={run})
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+trimmed = model.AddRequirement(lib.GetType("aspire::sina_trimmed_seqs"), parents={study})
 silva   = model.AddRequirement(lib.GetType("amplicon::silva_db"))
 tax     = model.AddProduct(lib.GetType("amplicon::asv_taxonomy"))
 upper   = model.AddProduct(lib.GetType("aspire::taxonomy_uppercase_seqs"))
@@ -45,7 +45,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=8,
         memory=Size.GB(16),

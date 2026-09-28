@@ -17,15 +17,15 @@ no site config to fill.
 
 ## Parity and presets
 
-Each sample is a `sequences::sample_name` with its `sequences::read_metadata` and its reads beneath it.
-A paired sample is given as zipped halves under a `sequences::read_pair`, and the plan
+The study is its sample sheet, `aspire::study_metadata`. Each sample is a
+`sequences::read_metadata` under it, naming the sample, with its reads beneath it. A paired sample is given as zipped halves under a `sequences::read_pair`, and the plan
 interleaves them; a single-end sample is given as `sequences::short_reads_se`.
 `--preset` picks which file under `presets/` is registered as `aspire::params`.
 
 A study has one parity, as a fabfos experiment does. In one sample view the solver
 reaches `sequences::short_reads` by the cheaper route only, so a mixed study plans
 without the interleave step and its paired samples never reach the ASV table. Split
-into per-sample views it becomes two solver cases, and the run-level fan-in then
+into per-sample views it becomes two solver cases, and the study-level fan-in then
 solves in neither.
 
 ## The switches
@@ -81,7 +81,6 @@ DEFAULT_ON = {
 ALL_TOKENS = {f"aspire::{b}_{arm}" for b in SWITCHES for arm in ("on", "off")}
 
 REFERENCES = [
-    "aspire::sample_metadata",
     "aspire::mito_reference_source",
     "aspire::contaminant_reference_source",
     "amplicon::silva_db",
@@ -96,14 +95,22 @@ EXTERNAL_GRAPH = [
 PARITIES = ("paired", "single")
 
 
-def read_metadata(parity: str) -> dict:
-    return {"parity": parity, "length_class": "short"}
+LABEL = "treatment"
+
+
+def read_metadata(sample: str, parity: str) -> dict:
+    return {"sample": sample, "parity": parity, "length_class": "short"}
+
+
+def study_sheet(samples: list[str]) -> str:
+    """A sample sheet with one label, alternating two levels so every group comparison has both."""
+    rows = [f"{s}\t{'A' if i % 2 else 'B'}" for i, s in enumerate(samples, 1)]
+    return "\n".join([f"sample\t{LABEL}", *rows]) + "\n"
 
 
 def given_types(on: dict[str, bool]) -> set[str]:
     given = {
-        "aspire::run", "aspire::params",
-        "sequences::sample_name", "sequences::read_metadata",
+        "aspire::study_metadata", "aspire::params", "sequences::read_metadata",
         # the join: a logistics interleave step or a given single-end file, either way
         "sequences::short_reads",
         *REFERENCES,
@@ -141,8 +148,8 @@ def reachable_leaves(on: dict[str, bool]) -> list[str]:
 
 
 CASES: dict[str, list[str]] = {
-    # Ryan's core set: reads to curated ASVs, the read accounting, and the three
-    # analyses he keeps on by default.
+    # Ryan's core set: reads to curated ASVs, the read accounting, and the analyses
+    # kept on by default.
     "default": [
         "amplicon::asv_table",
         "amplicon::asv_taxonomy",
@@ -151,7 +158,6 @@ CASES: dict[str, list[str]] = {
         "aspire::sankey_outputs",
         "aspire::analysis_metadata",
         "aspire::grouping_diagnostics_outputs",
-        "aspire::power_analysis_outputs",
         "aspire::collectors_outputs",
     ],
     "core": [
@@ -175,7 +181,6 @@ CASES: dict[str, list[str]] = {
         "aspire::collectors_outputs",
         "aspire::indicspecies_plots",
         "aspire::clustermap_outputs",
-        "aspire::power_analysis_outputs",
     ],
     "networks": [
         "aspire::network_outputs",
@@ -201,21 +206,20 @@ def build_inputs(location: Path, samples: int, parity: str, on: dict[str, bool],
     for ns in ("aspire.yml", "amplicon.yml", "sequences.yml"):
         inputs.AddTypeLibrary(MLIB / "data_types" / ns)
 
-    run = inputs.AddValue("run.txt", "aspire_study", "aspire::run")
+    names = [f"sample_{i}" for i in range(1, samples + 1)]
+    study = inputs.AddValue("study_metadata.tsv", study_sheet(names), "aspire::study_metadata")
     inputs.AddValue("params.yml", (PRESETS / f"{preset}.yml").read_text(),
-                    "aspire::params", parents={run})
-    for i in range(1, samples + 1):
-        name = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
-                               "sequences::sample_name", parents={run})
-        meta = inputs.AddValue(f"read_metadata_{i}.json", read_metadata(parity),
-                               "sequences::read_metadata", parents={name})
+                    "aspire::params", parents={study})
+    for sid in names:
+        meta = inputs.AddValue(f"read_metadata_{sid}.json", read_metadata(sid, parity),
+                               "sequences::read_metadata", parents={study})
         if parity == "paired":
-            pair = inputs.AddValue(f"read_pair_{i}.txt", f"sample_{i}",
-                                   "sequences::read_pair", parents={name})
+            pair = inputs.AddValue(f"read_pair_{sid}.txt", sid,
+                                   "sequences::read_pair", parents={meta})
             inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
             inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
         else:
-            inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={name})
+            inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={meta})
 
     for dtype in REFERENCES:
         if dtype == "amplicon::silva_db" and download_silva: continue
@@ -223,7 +227,7 @@ def build_inputs(location: Path, samples: int, parity: str, on: dict[str, bool],
 
     for base, enabled in on.items():
         arm = "on" if enabled else "off"
-        inputs.AddValue(f"policy_{base}.txt", arm, f"aspire::{base}_{arm}", parents={run})
+        inputs.AddValue(f"policy_{base}.txt", arm, f"aspire::{base}_{arm}", parents={study})
     if not on["spieceasi"]:
         for dtype in EXTERNAL_GRAPH:
             inputs.AddItem(DEFERRED, dtype)

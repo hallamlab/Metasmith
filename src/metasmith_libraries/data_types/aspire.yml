@@ -4,20 +4,20 @@
 # `_:` is a description AND a matched property, which is what keeps any two
 # of these from accidentally standing in for one another.
 types:
-# -- the run keystone: what every stage descends from --
-  run:
+# -- the study keystone: what every stage descends from --
+  study_metadata:
     properties:
-      _: one ASPIRE study; the grouping parent every stage descends from
-      ext: txt
+      _: the study sample sheet, one row per sample, with the sample id first and a categorical label in every other column
+      ext: tsv
       logistics: to group per-sample abundance profiles into one count table
   params:
     properties:
       _: ASPIRE read-to-ASV settings, keyed by step
       ext: yml
 # -- study-level inputs the .nf read out of its config --
-  sample_metadata:
+  sample_measurements:
     properties:
-      _: study metadata table, one row per sample
+      _: numeric per-sample measurements, one row per sample keyed by the sample sheet's id
       ext: tsv
   mito_reference_source:
     properties:
@@ -48,7 +48,7 @@ types:
     properties:
       _: per-sample read counts after merging and after quality filtering
       ext: tsv
-# -- the run-level ASV spine --
+# -- the study-level ASV spine --
   asv_filtered_counts:
     properties:
       _: ASV count matrix after prevalence and depth filtering
@@ -185,47 +185,19 @@ types:
     properties:
       _: alpha and beta diversity results and renderings
       Data: directory
-  voc_correlation_outputs:
-    properties:
-      _: ASV to volatile-compound correlation results
-      Data: directory
   measurement_association_outputs:
     properties:
       _: ASV to continuous-measurement association results
-      Data: directory
-  power_analysis_outputs:
-    properties:
-      _: group contrast statistical power analysis
-      Data: directory
-  taxonomy_group_association_outputs:
-    properties:
-      _: subject-aware taxonomy to group association results
-      Data: directory
-  paired_group_contrast_outputs:
-    properties:
-      _: paired within-subject group contrast results
       Data: directory
   clustermap_outputs:
     properties:
       _: abundance clustermap renderings
       Data: directory
 # -- indicator species analysis --
-  indicspecies_group1_summary:
+  indicspecies_results:
     properties:
-      _: indicator species summary for the primary grouping
-      ext: tsv
-  indicspecies_group2_summary:
-    properties:
-      _: indicator species summary for the secondary grouping
-      ext: tsv
-  indicspecies_group1_results:
-    properties:
-      _: full indicator species results for the primary grouping
-      ext: tsv
-  indicspecies_group2_results:
-    properties:
-      _: full indicator species results for the secondary grouping
-      ext: tsv
+      _: indicator species results and summary, one pair of tables for each label of the sample sheet
+      Data: directory
   indicspecies_tables:
     properties:
       _: every per-contrast indicator species table

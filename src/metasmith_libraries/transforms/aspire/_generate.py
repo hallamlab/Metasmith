@@ -45,7 +45,7 @@ HERE = Path(__file__).resolve().parent
 MLIB = HERE.parent.parent
 TYPES_YML = MLIB / "data_types" / "aspire.yml"
 
-FILE, DIR, VALUE = "file", "dir", "value"
+FILE, DIR = "file", "dir"
 
 
 def t(kind, desc, **props):
@@ -53,20 +53,23 @@ def t(kind, desc, **props):
 
 
 TYPE_SECTIONS: list[tuple[str, dict]] = [
-    ("the run keystone: what every stage descends from", {
-        "run": t(VALUE, "one ASPIRE study; the grouping parent every stage descends from", ext="txt",
-                 # r4: an ASPIRE run is a survey. Carrying `amplicon::survey`'s only property
-                 # makes this a property superset of it, so the six lifted ecology transforms
-                 # can require the generic grouping node and still be satisfied by a run.
+    ("the study keystone: what every stage descends from", {
+        # The sample sheet is the study. Its first column is the sample id, and every other
+        # column is a categorical label: a group is any label, and an analysis that compares
+        # groups runs once per label. Numeric measurements go in `sample_measurements`.
+        "study_metadata": t(FILE, "the study sample sheet, one row per sample, with the sample id first and a categorical label in every other column", ext="tsv",
+                 # r4: an ASPIRE study is a survey. Carrying `amplicon::survey`'s only property
+                 # makes this a property superset of it, so the lifted ecology transforms
+                 # can require the generic grouping node and still be satisfied by a study.
                  # A cross-file `extends:` would say this more plainly and is forbidden --
                  # test_type_hierarchy.py::test_no_cross_file_extends.
                  logistics="to group per-sample abundance profiles into one count table"),
         # Module 1's settings, one YAML keyed by step. research/aspire/presets/ holds the
-        # two presets: tool defaults, and the values ASPIRE's own study configs use.
+        # two presets: tool defaults, and the values ASPIRE's shipped config uses.
         "params": t(FILE, "ASPIRE read-to-ASV settings, keyed by step", ext="yml"),
     }),
     ("study-level inputs the .nf read out of its config", {
-        "sample_metadata": t(FILE, "study metadata table, one row per sample", ext="tsv"),
+        "sample_measurements": t(FILE, "numeric per-sample measurements, one row per sample keyed by the sample sheet's id", ext="tsv"),
         "mito_reference_source": t(FILE, "mitochondrial reference sequences for the mito BLAST database", ext="fasta"),
         "contaminant_reference_source": t(FILE, "contaminant/biofilm reference sequences for the contaminant BLAST database", ext="fasta"),
     }),
@@ -79,7 +82,7 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "filtered_fasta": t(FILE, "quality-filtered amplicon reads for one sample, merged when paired", ext="fasta.gz"),
         "read_counts": t(FILE, "per-sample read counts after merging and after quality filtering", ext="tsv"),
     }),
-    ("the run-level ASV spine", {
+    ("the study-level ASV spine", {
         "asv_filtered_counts": t(FILE, "ASV count matrix after prevalence and depth filtering", ext="tsv"),
         "asv_filtered_seqs": t(FILE, "ASV representative sequences surviving table filtering", ext="fasta.gz"),
     }),
@@ -132,18 +135,11 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "umap_plots": t(DIR, "UMAP clustering renderings"),
         "collectors_outputs": t(DIR, "collector's curve renderings"),
         "diversity_outputs": t(DIR, "alpha and beta diversity results and renderings"),
-        "voc_correlation_outputs": t(DIR, "ASV to volatile-compound correlation results"),
         "measurement_association_outputs": t(DIR, "ASV to continuous-measurement association results"),
-        "power_analysis_outputs": t(DIR, "group contrast statistical power analysis"),
-        "taxonomy_group_association_outputs": t(DIR, "subject-aware taxonomy to group association results"),
-        "paired_group_contrast_outputs": t(DIR, "paired within-subject group contrast results"),
         "clustermap_outputs": t(DIR, "abundance clustermap renderings"),
     }),
     ("indicator species analysis", {
-        "indicspecies_group1_summary": t(FILE, "indicator species summary for the primary grouping", ext="tsv"),
-        "indicspecies_group2_summary": t(FILE, "indicator species summary for the secondary grouping", ext="tsv"),
-        "indicspecies_group1_results": t(FILE, "full indicator species results for the primary grouping", ext="tsv"),
-        "indicspecies_group2_results": t(FILE, "full indicator species results for the secondary grouping", ext="tsv"),
+        "indicspecies_results": t(DIR, "indicator species results and summary, one pair of tables for each label of the sample sheet"),
         "indicspecies_tables": t(DIR, "every per-contrast indicator species table"),
         "indicspecies_plots": t(DIR, "indicator species renderings"),
         "indicspecies_aligned_plots": t(DIR, "indicator species renderings aligned across contrasts"),
@@ -204,18 +200,18 @@ class T:
         self.cpus, self.memory_gb, self.hours = cpus, memory_gb, hours
 
 
-RUN = ("run", "aspire::run", ())
+STUDY = ("study", "aspire::study_metadata", ())
 
-# r4, round 3's first refactor: the six community-ecology rows were gated on `run` and
+# r4, round 3's first refactor: the six community-ecology rows were gated on the study root and
 # read `aspire::analysis_counts`, so nothing outside this pipeline could reach any of
 # them -- five KBase verbs and 59 narrative copies locked in one namespace. They now hang
 # off the GENERIC grouping node instead. The gate is not deleted, it is generalised: a
-# fan-in needs a grouping parent its inputs descend from, and `aspire::run` carries
-# `amplicon::survey`'s property, so an ASPIRE run still satisfies it unchanged.
+# fan-in needs a grouping parent its inputs descend from, and `aspire::study_metadata`
+# carries `amplicon::survey`'s property, so an ASPIRE study still satisfies it unchanged.
 SURVEY = ("survey", "amplicon::survey", ())
 
 LIFT_NOTE_2 = (
-    "r4 ecology lift (second pass): lifted off `aspire::run` onto the generic `amplicon::survey` grouping node so `spieceasi` and `graph_network` -- lifted in the first pass -- are actually REACHABLE from a bare `amplicon::asv_table`. Lifting a transform whose own inputs are still gated moves the gate, it does not remove it. See research/kbase/curation/r4/analyses.md."
+    "r4 ecology lift (second pass): lifted off the study root onto the generic `amplicon::survey` grouping node so `spieceasi` and `graph_network` -- lifted in the first pass -- are actually REACHABLE from a bare `amplicon::asv_table`. Lifting a transform whose own inputs are still gated moves the gate, it does not remove it. See research/kbase/curation/r4/analyses.md."
 )
 
 
@@ -223,27 +219,30 @@ def _r(var, dtype, *parents):
     return (var, dtype, tuple(parents))
 
 
-# A sample is a `sequences::sample_name` under the run, with its read_metadata and its reads
-# both directly beneath it. Parity lives in the read_metadata JSON and is read at run time,
-# as megahit.py does. A paired sample's zipped halves reach `sequences::short_reads` through
+# A sample is a `sequences::read_metadata` under the study, with its reads beneath it. The JSON
+# carries the sample id under `sample` beside `parity` and `length_class`: without the id, two
+# samples' metadata would be the same value. Parity is read at run time, as megahit.py does. A
+# paired sample's zipped halves reach `sequences::short_reads` through
 # logistics/interleave_zipped_short_reads.py; a single-end sample is given as
-# `sequences::short_reads_se`, which is one. That is the join, and everything from
-# `fastp_qc` on is parity-blind at plan time.
+# `sequences::short_reads_se`, which is one. That is the join, and everything from `fastp_qc`
+# on is parity-blind at plan time.
 #
-# The reads are NOT under the read_metadata, as they are in fabfos. A given with four
-# ancestors (run, name, metadata, pair) loses the link to its read_pair on the solver's
-# given lineage, and the interleave step then has no candidates. Three solve.
-NAME = _r("name", "sequences::sample_name", "run")
-META = _r("meta", "sequences::read_metadata", "name")
-PARAMS = _r("params", "aspire::params", "run")
+# A paired half is three ancestors deep (study, metadata, read_pair). A fourth level loses the
+# given's link to its read_pair in the solver, and the interleave step then has no candidates.
+META = _r("meta", "sequences::read_metadata", "study")
+PARAMS = _r("params", "aspire::params", "study")
+
+# Every row that compares groups iterates over the label columns of the sample sheet.
+LABELS_NOTE = ("Groups are the label columns of the sample sheet; the analysis runs once per "
+               "label and skips a label with fewer than two levels.")
 
 
 TABLE: list[T] = [
     T("fastp_qc", "FASTP_QC", 3121,
-      [RUN, NAME, META, _r("reads", "sequences::short_reads", "name"), PARAMS],
+      [STUDY, META, _r("reads", "sequences::short_reads", "meta"), PARAMS],
       [("qc", "aspire::qc_reads"),
        ("rjson", "aspire::fastp_report_json"), ("rhtml", "aspire::fastp_report_html")],
-      "name", cpus=4, hours=2,
+      "meta", cpus=4, hours=2,
       note="Reads `parity` from the read_metadata JSON: `--interleaved_in` for a paired "
            "sample, plain `-i` for a single-end one. Settings under `fastp:` in the params "
            "file. The product is an aspire type on purpose, so the shipped "
@@ -251,9 +250,9 @@ TABLE: list[T] = [
            "own trimming."),
 
     T("merge_and_filter_reads", "FILTER_READS", 3221,
-      [RUN, NAME, META, _r("qc", "aspire::qc_reads", "name"), PARAMS],
+      [STUDY, META, _r("qc", "aspire::qc_reads", "meta"), PARAMS],
       [("filtered", "aspire::filtered_fasta"), ("counts", "aspire::read_counts")],
-      "name", folds=("MERGE_READS@3179",),
+      "meta", folds=("MERGE_READS@3179",),
       note="Branches on `parity`. Paired: `vsearch --fastq_mergepairs` (settings under "
            "`merge:`) then `--fastq_filter` (under `filter:`). Single-end: the filter "
            "alone. The merged pair is not a product; what a reader wants from the merge is "
@@ -262,13 +261,13 @@ TABLE: list[T] = [
       cpus=4, hours=2),
 
     T("denoise", "DENOISE", 3367,
-      [RUN, NAME, _r("filtered", "aspire::filtered_fasta", "name"), PARAMS],
+      [STUDY, META, _r("filtered", "aspire::filtered_fasta", "meta"), PARAMS],
       [("counts", "amplicon::asv_table"), ("seqs", "amplicon::asv_seqs")],
-      "run",
+      "study",
       folds=("RELABEL_FILTERED@3248", "CONCAT_FASTAS@3274", "DEREPLICATE@3298",
              "CHIMERA_CHECK@3393", "CREATE_COUNT_MATRIX@3417"),
       note="The study fan-in, and the one place reads become ASVs. Relabel each sample's "
-           "headers from the sample_name its fasta descends from (context.SourceOf, never "
+           "headers from the `sample` key of the read_metadata its fasta descends from (context.SourceOf, never "
            "the position in the group), concatenate, `--derep_fulllength`, "
            "`--cluster_unoise` (under `unoise:`), `--uchime3_denovo`, then "
            "`--usearch_global` of the pooled reads against the non-chimeric centroids "
@@ -278,29 +277,29 @@ TABLE: list[T] = [
       cpus=8, memory_gb=16, hours=6),
 
     T("filter_table", "FILTER_TABLE", 3444,
-      [RUN, _r("counts", "amplicon::asv_table", "run"),
-       _r("seqs", "amplicon::asv_seqs", "run"), PARAMS],
+      [STUDY, _r("counts", "amplicon::asv_table", "study"),
+       _r("seqs", "amplicon::asv_seqs", "study"), PARAMS],
       [("fcounts", "aspire::asv_filtered_counts"), ("fseqs", "aspire::asv_filtered_seqs")],
-      "run",
+      "study",
       note="Sample depth and ASV prevalence cuts, under `table_filter:`."),
 
     T("sina_trim", "SINA_TRIM", 3322,
-      [RUN, _r("fseqs", "aspire::asv_filtered_seqs", "run"),
+      [STUDY, _r("fseqs", "aspire::asv_filtered_seqs", "study"),
        _r("silva", "amplicon::silva_db")],
       [("trimmed", "aspire::sina_trimmed_seqs"), ("aligned", "aspire::sina_aligned_seqs"),
        ("log", "aspire::sina_log"), ("vreg", "aspire::sina_v_regions")],
-      "run",
+      "study",
       note="the .nf calls its input `derep_fasta`, but the workflow body wires "
            "FILTER_TABLE's filtered ASV sequences in (asv_pipeline.nf:2630-2631). "
            "The parameter name is legacy; the wiring is what is ported.",
       cpus=16, memory_gb=32, hours=8),
 
     T("taxonomy", "TAXONOMY", 3470,
-      [RUN, _r("trimmed", "aspire::sina_trimmed_seqs", "run"),
+      [STUDY, _r("trimmed", "aspire::sina_trimmed_seqs", "study"),
        _r("silva", "amplicon::silva_db")],
       [("tax", "amplicon::asv_taxonomy"), ("upper", "aspire::taxonomy_uppercase_seqs"),
        ("stats", "aspire::taxonomy_stats")],
-      "run",
+      "study",
       note="Absorbs the retired placeholder lane's amplicon/qiime2_taxonomy.py. Its "
            "method, for the protocol pass: `qiime feature-classifier classify-sklearn` "
            "with the NB classifier, then `classify-consensus-vsearch` against the SILVA "
@@ -313,13 +312,13 @@ TABLE: list[T] = [
       cpus=8, memory_gb=16, hours=6),
 
     T("mitomaster", "MITOMASTER", 3544,
-      [RUN, _r("fcounts", "aspire::asv_filtered_counts", "run"),
-       _r("fseqs", "aspire::asv_filtered_seqs", "run"),
+      [STUDY, _r("fcounts", "aspire::asv_filtered_counts", "study"),
+       _r("fseqs", "aspire::asv_filtered_seqs", "study"),
        _r("mito_src", "aspire::mito_reference_source"),
        _r("cont_src", "aspire::contaminant_reference_source")],
       [("master", "aspire::mitomaster_table"), ("mhits", "aspire::mito_blast6"),
        ("chits", "aspire::contaminant_blast6")],
-      "run", folds=("PREPARE_BLAST_DATABASES@3511",),
+      "study", folds=("PREPARE_BLAST_DATABASES@3511",),
       note="r4 fold. PREPARE_BLAST_DATABASES was two makeblastdb calls whose products "
            "each had one consumer, which was this transform. The standard library "
            "already treats that as inside-the-transform work -- "
@@ -328,16 +327,16 @@ TABLE: list[T] = [
       cpus=8, memory_gb=16, hours=6),
 
     T("curate", "MITO_DECONTAM", 3595,
-      [RUN, _r("fcounts", "aspire::asv_filtered_counts", "run"),
-       _r("fseqs", "aspire::asv_filtered_seqs", "run"),
-       _r("tax", "amplicon::asv_taxonomy", "run"),
-       _r("master", "aspire::mitomaster_table", "run"),
-       _r("mhits", "aspire::mito_blast6", "run"),
-       _r("chits", "aspire::contaminant_blast6", "run"),
+      [STUDY, _r("fcounts", "aspire::asv_filtered_counts", "study"),
+       _r("fseqs", "aspire::asv_filtered_seqs", "study"),
+       _r("tax", "amplicon::asv_taxonomy", "study"),
+       _r("master", "aspire::mitomaster_table", "study"),
+       _r("mhits", "aspire::mito_blast6", "study"),
+       _r("chits", "aspire::contaminant_blast6", "study"),
        PARAMS],
       [("clean", "aspire::counts_clean"), ("removed", "aspire::counts_removed"),
        ("summaries", "aspire::mito_summary_tables"), ("plots", "aspire::mito_plots")],
-      "run", folds=("FILTER_COUNTS@3637",),
+      "study", folds=("FILTER_COUNTS@3637",),
       note="Decides every non-target call and applies it in one step. The .nf split "
            "this in two and partitioned the result into four count tables; here there "
            "are two, the counts kept and the counts removed, and each removed ASV carries "
@@ -346,13 +345,13 @@ TABLE: list[T] = [
            "belong here as a second evidence input beside the contaminant hits."),
 
     T("read_accounting", "GENERAL_STATS", 3755,
-      [RUN, NAME,
-       _r("rjson", "aspire::fastp_report_json", "name"),
-       _r("rcounts", "aspire::read_counts", "name"),
-       _r("raw", "amplicon::asv_table", "run"),
-       _r("clean", "aspire::counts_clean", "run"),
-       _r("removed", "aspire::counts_removed", "run")],
-      [("fate", "aspire::read_fate")], "run",
+      [STUDY, META,
+       _r("rjson", "aspire::fastp_report_json", "meta"),
+       _r("rcounts", "aspire::read_counts", "meta"),
+       _r("raw", "amplicon::asv_table", "study"),
+       _r("clean", "aspire::counts_clean", "study"),
+       _r("removed", "aspire::counts_removed", "study")],
+      [("fate", "aspire::read_fate")], "study",
       note="One row per sample, one column per stage: raw and post-fastp from the fastp "
            "report, merged and filtered from the per-sample count file, mapped from the "
            "ASV table, then kept and removed by reason. The .nf read these out of other "
@@ -360,140 +359,115 @@ TABLE: list[T] = [
            "declared input."),
 
     T("sankey", "SANKEY", 3687,
-      [RUN, _r("fate", "aspire::read_fate", "run"),
-       _r("removed", "aspire::counts_removed", "run"),
-       _r("meta", "aspire::sample_metadata")],
-      [("out", "aspire::sankey_outputs")], "run",
+      [STUDY, _r("fate", "aspire::read_fate", "study"),
+       _r("removed", "aspire::counts_removed", "study")],
+      [("out", "aspire::sankey_outputs")], "study",
       note="`sankey.done` is dropped; the renderings are the output, and "
            "MASTER_SUMMARY reads the directory rather than the sentinel."),
 
     T("plot_metadata", "PLOT_METADATA", 3793,
-      [RUN, _r("fate", "aspire::read_fate", "run"),
-       _r("clean", "aspire::counts_clean", "run"),
-       _r("removed", "aspire::counts_removed", "run"),
-       _r("tax", "amplicon::asv_taxonomy", "run"),
-       _r("meta", "aspire::sample_metadata")],
+      [STUDY, _r("fate", "aspire::read_fate", "study"),
+       _r("clean", "aspire::counts_clean", "study"),
+       _r("removed", "aspire::counts_removed", "study"),
+       _r("tax", "amplicon::asv_taxonomy", "study"), PARAMS],
       [("md", "aspire::analysis_metadata"), ("am", "aspire::analysis_asv_meta"),
        ("counts", "aspire::analysis_counts"), ("md_mito", "aspire::metadata_mito"),
        ("am_mito", "aspire::asv_meta_mito"), ("af_mito", "aspire::asv_final_mito")],
-      "run", cpus=4, memory_gb=16, hours=3,
+      "study", cpus=4, memory_gb=16, hours=3,
       note="The join that turns counts into analysis tables, and now the only producer "
            "of the three consumer-facing channels. The .nf rebound those channels "
            "through label augmentation and batch correction; both are off by default, "
            "outside the reads-to-ASV pipeline, and not ported. The mitochondrial "
-           "tables come from the removed counts whose reason is mitochondrial."),
+           "tables come from the removed counts whose reason is mitochondrial. A label value "
+           "held by fewer than `analysis.min_level_size` samples is blanked here, so every "
+           "analysis skips that level and keeps the sample."),
 
     T("grouping_diagnostics", "GROUPING_DIAGNOSTICS", 4929,
-      [RUN, _r("md", "aspire::analysis_metadata", "run"),
-       _r("counts", "aspire::analysis_counts", "run")],
+      [STUDY, _r("md", "aspire::analysis_metadata", "study"),
+       _r("counts", "aspire::analysis_counts", "study")],
       [("out", "aspire::grouping_diagnostics_outputs"),
        ("assign", "aspire::soft_assignments"), ("valid", "aspire::soft_validation"),
        ("vsum", "aspire::soft_validation_summary")],
-      "run", cpus=4, memory_gb=16, hours=4,
-      note="The soft labels are still computed and reported. Nothing applies them: "
+      "study", cpus=4, memory_gb=16, hours=4,
+      note=LABELS_NOTE + " The soft labels are still computed and reported. Nothing applies them: "
            "GROUP_LABEL_AUGMENTATION, their only consumer in the .nf, is not ported."),
 
     T("plot_upset", "PLOT_UPSET", 3927,
-      [RUN, _r("md", "aspire::analysis_metadata", "run")],
-      [("out", "aspire::upset_plots")], "run"),
+      [STUDY, _r("md", "aspire::analysis_metadata", "study")],
+      [("out", "aspire::upset_plots")], "study",
+      note=LABELS_NOTE),
 
     T("bubbleplotter", "BUBBLEPLOTTER", 4018,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run")],
-      [("out", "aspire::bubble_plots")], "run", cpus=2, memory_gb=8),
+      [STUDY, _r("am", "aspire::analysis_asv_meta", "study")],
+      [("out", "aspire::bubble_plots")], "study", cpus=2, memory_gb=8,
+      note=LABELS_NOTE),
 
     T("umap_clustering", "UMAP_CLUSTERING", 4055,
       [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
        _r("am", "aspire::analysis_asv_meta", "survey")],
       [("out", "aspire::umap_plots")], "survey", cpus=2, memory_gb=8,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note=LABELS_NOTE + " r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("collectors_curve", "COLLECTORS_CURVE", 4364,
-      [RUN, _r("counts", "aspire::analysis_counts", "run"),
-       _r("md", "aspire::analysis_metadata", "run")],
-      [("out", "aspire::collectors_outputs")], "run", cpus=2, memory_gb=8, hours=2),
+      [STUDY, _r("counts", "aspire::analysis_counts", "study"),
+       _r("md", "aspire::analysis_metadata", "study")],
+      [("out", "aspire::collectors_outputs")], "study", cpus=2, memory_gb=8, hours=2,
+      note=LABELS_NOTE),
 
     T("diversity_analysis", "DIVERSITY_ANALYSIS", 4399,
       [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
        _r("md", "aspire::analysis_metadata", "survey")],
       [("out", "aspire::diversity_outputs")], "survey", cpus=4, memory_gb=16, hours=3,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note=LABELS_NOTE + " r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("indicspecies", "INDICSPECIES", 4518,
       [SURVEY, _r("md", "aspire::analysis_metadata", "survey"),
        _r("counts", "amplicon::asv_table", "survey")],
-      [("g1sum", "aspire::indicspecies_group1_summary"),
-       ("g2sum", "aspire::indicspecies_group2_summary"),
-       ("g1res", "aspire::indicspecies_group1_results"),
-       ("g2res", "aspire::indicspecies_group2_results"),
+      [("results", "aspire::indicspecies_results"),
        ("tables", "aspire::indicspecies_tables"),
        ("plots", "aspire::indicspecies_plots"),
        ("aligned", "aspire::indicspecies_aligned_plots")],
       "survey", folds=("INDICSPECIES_PLOTS@4608", "INDICSPECIES_ALIGNED_PLOTS@4792"),
-      cpus=8, memory_gb=32, hours=12, note=LIFT_NOTE_2),
-
-    T("voc_correlation", "VOC_CORRELATION", 4827,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("tables", "aspire::indicspecies_tables", "run")],
-      [("out", "aspire::voc_correlation_outputs")], "run", cpus=2, memory_gb=8),
+      cpus=8, memory_gb=32, hours=12,
+      note=LABELS_NOTE + " The .nf ran exactly two groupings as fixed channels and refused "
+           "to start with fewer; here there is one results directory for any number of "
+           "labels. " + LIFT_NOTE_2),
 
     T("measurement_association", "MEASUREMENT_ASSOCIATION", 4875,
       [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
        _r("am", "aspire::analysis_asv_meta", "survey"),
-       _r("md", "aspire::analysis_metadata", "survey")],
+       _r("md", "aspire::analysis_metadata", "survey"),
+       _r("measures", "aspire::sample_measurements", "survey")],
       [("out", "aspire::measurement_association_outputs")], "survey", cpus=2, memory_gb=8,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
-
-    T("group_power_analysis", "GROUP_POWER_ANALYSIS", 5030,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("tables", "aspire::indicspecies_tables", "run")],
-      [("out", "aspire::power_analysis_outputs")], "run",
-      cpus=8, memory_gb=32, hours=12,
-      note="one Nextflow task hiding a bash driver, three Python drivers, six "
-           "analysis scripts and an R script. One stub here is honest for a "
-           "topology pass and is the clearest candidate for expansion later."),
-
-    T("taxonomy_group_association", "TAXONOMY_GROUP_ASSOCIATION", 5113,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("counts", "aspire::analysis_counts", "run")],
-      [("out", "aspire::taxonomy_group_association_outputs")], "run",
-      cpus=4, memory_gb=16, hours=4),
-
-    T("paired_group_contrast", "PAIRED_GROUP_CONTRAST", 5234,
-      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
-       _r("am", "aspire::analysis_asv_meta", "survey")],
-      [("out", "aspire::paired_group_contrast_outputs")], "survey",
-      cpus=4, memory_gb=16, hours=4,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("clustermaps", "CLUSTERMAPS", 5324,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("md", "aspire::analysis_metadata", "run"),
-       _r("tables", "aspire::indicspecies_tables", "run"),
-       _r("removed", "aspire::counts_removed", "run")],
-      [("out", "aspire::clustermap_outputs")], "run", cpus=4, memory_gb=16, hours=3,
-      note="the .nf passes a boolean saying whether indicator species ran and "
+      [STUDY, _r("am", "aspire::analysis_asv_meta", "study"),
+       _r("md", "aspire::analysis_metadata", "study"),
+       _r("tables", "aspire::indicspecies_tables", "study"),
+       _r("removed", "aspire::counts_removed", "study")],
+      [("out", "aspire::clustermap_outputs")], "study", cpus=4, memory_gb=16, hours=3,
+      note=LABELS_NOTE + " the .nf passes a boolean saying whether indicator species ran and "
            "then globs the tables out of a shared directory. The directory is "
            "the real edge, so it is what is declared."),
 
     T("spieceasi", "SPIECEASI", 5452,
       [SURVEY, _r("policy", "aspire::spieceasi_on", "survey"),
        _r("counts", "amplicon::asv_table", "survey"),
-       _r("keep", "aspire::indicspecies_group1_summary", "survey")],
+       _r("keep", "aspire::indicspecies_results", "survey")],
       [("all", "aspire::network_graph_all"), ("thr", "aspire::network_graph_thr"),
        ("nf", "aspire::network_node_features")],
       "survey", cpus=16, memory_gb=64, hours=24,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note="Force-keeps every ASV the indicator species results call significant for any label. r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
 
     T("spieceasi_external", None, None,
-      [RUN, _r("policy", "aspire::spieceasi_off", "run"),
+      [STUDY, _r("policy", "aspire::spieceasi_off", "study"),
        _r("x_all", "aspire::external_graph_all"),
        _r("x_thr", "aspire::external_graph_thr"),
        _r("x_nf", "aspire::external_node_features")],
       [("all", "aspire::network_graph_all"), ("thr", "aspire::network_graph_thr"),
        ("nf", "aspire::network_node_features")],
-      "run",
+      "study",
       note="the `off` arm. Unlike the other off-arms this one is not a null "
            "producer: asv_pipeline.nf:2708-2715 substitutes pre-computed "
            "graph files from disk, so the driver has to supply them."),
@@ -515,10 +489,10 @@ TABLE: list[T] = [
            "disk if they exist and a zero-row placeholder if not."),
 
     T("asv_mag_link", "ASV_MAG_LINK", 5821,
-      [RUN, _r("policy", "aspire::asv_mag_link_on", "run"),
-       _r("fseqs", "aspire::asv_filtered_seqs", "run")],
+      [STUDY, _r("policy", "aspire::asv_mag_link_on", "study"),
+       _r("fseqs", "aspire::asv_filtered_seqs", "study")],
       [("pairing", "aspire::asv_mag_pairing"), ("out", "aspire::asv_mag_outputs")],
-      "run", cpus=8, memory_gb=32, hours=8,
+      "study", cpus=8, memory_gb=32, hours=8,
       note="`asv_mag_link.done` stood for two different things at its four "
            "consumers: the pairing table the network stages read by path, and "
            "the results directory the master summary scans. Both are declared."),
@@ -545,54 +519,54 @@ TABLE: list[T] = [
        _r("sub", "aspire::network_modules_sub", "survey"),
        _r("mall", "aspire::network_modules_all", "survey")],
       [("out", "aspire::network_outputs")], "survey", cpus=8, memory_gb=32, hours=6,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of `aspire::run` and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE run satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md." + " Reachable in principle and expensive in practice: it renders a "
+      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md." + " Reachable in principle and expensive in practice: it renders a "
            "co-occurrence network, so running it outside ASPIRE means supplying the "
            "network. That is a property of what it does, not of the gate removed."),
 
     T("graph_network_absent", None, None,
-      [RUN, _r("policy", "aspire::graph_network_off", "run")],
-      [("out", "aspire::network_outputs")], "run"),
+      [STUDY, _r("policy", "aspire::graph_network_off", "study")],
+      [("out", "aspire::network_outputs")], "study"),
 
     T("asv_mag_network", "ASV_MAG_NETWORK", 5654,
-      [RUN, _r("graph", "aspire::network_graph_all", "run"),
-       _r("nf", "aspire::network_node_features", "run"),
-       _r("tax", "amplicon::asv_taxonomy", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("pairing", "aspire::asv_mag_pairing", "run"),
-       _r("magl", "aspire::asv_mag_outputs", "run")],
-      [("out", "aspire::asv_mag_network_outputs")], "run", cpus=4, memory_gb=16, hours=4,
+      [STUDY, _r("graph", "aspire::network_graph_all", "study"),
+       _r("nf", "aspire::network_node_features", "study"),
+       _r("tax", "amplicon::asv_taxonomy", "study"),
+       _r("counts", "aspire::analysis_counts", "study"),
+       _r("pairing", "aspire::asv_mag_pairing", "study"),
+       _r("magl", "aspire::asv_mag_outputs", "study")],
+      [("out", "aspire::asv_mag_network_outputs")], "study", cpus=4, memory_gb=16, hours=4,
       note="the .nf picks the unthresholded or thresholded graph by config "
            "(`asv_mag_network.graph_variant`). Ported against the "
            "unthresholded one; a variant switch would be a seventh token for "
            "something no consumer can tell apart."),
 
     T("module_mag_anchors", "MODULE_MAG_ANCHORS", 5705,
-      [RUN, _r("mall", "aspire::network_modules_all", "run"),
-       _r("nf", "aspire::network_node_features", "run"),
-       _r("tax", "amplicon::asv_taxonomy", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("md", "aspire::analysis_metadata", "run"),
-       _r("pairing", "aspire::asv_mag_pairing", "run"),
-       _r("net", "aspire::network_outputs", "run")],
+      [STUDY, _r("mall", "aspire::network_modules_all", "study"),
+       _r("nf", "aspire::network_node_features", "study"),
+       _r("tax", "amplicon::asv_taxonomy", "study"),
+       _r("counts", "aspire::analysis_counts", "study"),
+       _r("md", "aspire::analysis_metadata", "study"),
+       _r("pairing", "aspire::asv_mag_pairing", "study"),
+       _r("net", "aspire::network_outputs", "study")],
       [("anchors", "aspire::module_asv_anchor_table"),
        ("summary", "aspire::module_mag_anchor_summary"),
        ("scores", "aspire::sample_module_scores"),
        ("top", "aspire::sample_top_modules"),
        ("matrix", "aspire::sample_module_matrix"),
        ("heatmaps", "aspire::sample_module_heatmaps")],
-      "run", cpus=4, memory_gb=16, hours=4),
+      "study", cpus=4, memory_gb=16, hours=4),
 
     T("master_summary", "MASTER_SUMMARY", 5763,
-      [RUN, _r("am", "aspire::analysis_asv_meta", "run"),
-       _r("counts", "aspire::analysis_counts", "run"),
-       _r("net", "aspire::network_outputs", "run"),
-       _r("sankey", "aspire::sankey_outputs", "run"),
-       _r("magl", "aspire::asv_mag_outputs", "run")],
+      [STUDY, _r("am", "aspire::analysis_asv_meta", "study"),
+       _r("counts", "aspire::analysis_counts", "study"),
+       _r("net", "aspire::network_outputs", "study"),
+       _r("sankey", "aspire::sankey_outputs", "study"),
+       _r("magl", "aspire::asv_mag_outputs", "study")],
       [("long", "aspire::master_long"), ("wide", "aspire::master_count_wide"),
        ("manifest", "aspire::master_source_manifest"),
        ("colmap", "aspire::master_column_mapping"),
        ("collisions", "aspire::master_column_collisions")],
-      "run", cpus=4, memory_gb=32, hours=4,
+      "study", cpus=4, memory_gb=32, hours=4,
       note="r4: the fourth requirement is gone with MASTER_SUMMARY_OPTIONAL_SLOT. "
            "Three `.done` barriers plus a --data-dir scan, replaced by three "
            "directory-typed requirements each with an off-arm producer. Which "
@@ -726,6 +700,7 @@ def check_table() -> None:
         assert row.name not in names, f"duplicate transform name [{row.name}]"
         names.add(row.name)
         slots = {v for v, _, _ in row.requires}
+        assert len(slots) == len(row.requires), f"[{row.name}] names a requirement slot twice"
         assert row.group_by in slots, (
             f"[{row.name}] groups by [{row.group_by}], which is not one of its requirements"
         )

@@ -15,13 +15,13 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-name    = model.AddRequirement(lib.GetType("sequences::sample_name"), parents={run})
-rjson   = model.AddRequirement(lib.GetType("aspire::fastp_report_json"), parents={name})
-rcounts = model.AddRequirement(lib.GetType("aspire::read_counts"), parents={name})
-raw     = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={run})
-clean   = model.AddRequirement(lib.GetType("aspire::counts_clean"), parents={run})
-removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={run})
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={study})
+rjson   = model.AddRequirement(lib.GetType("aspire::fastp_report_json"), parents={meta})
+rcounts = model.AddRequirement(lib.GetType("aspire::read_counts"), parents={meta})
+raw     = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={study})
+clean   = model.AddRequirement(lib.GetType("aspire::counts_clean"), parents={study})
+removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={study})
 fate    = model.AddProduct(lib.GetType("aspire::read_fate"))
 
 def protocol(context: ExecutionContext):
@@ -41,7 +41,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

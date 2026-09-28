@@ -13,8 +13,8 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-fseqs   = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={run})
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+fseqs   = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={study})
 silva   = model.AddRequirement(lib.GetType("amplicon::silva_db"))
 trimmed = model.AddProduct(lib.GetType("aspire::sina_trimmed_seqs"))
 aligned = model.AddProduct(lib.GetType("aspire::sina_aligned_seqs"))
@@ -41,7 +41,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=16,
         memory=Size.GB(32),

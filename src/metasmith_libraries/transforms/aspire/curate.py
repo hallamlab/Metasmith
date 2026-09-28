@@ -18,14 +18,14 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run       = model.AddRequirement(lib.GetType("aspire::run"))
-fcounts   = model.AddRequirement(lib.GetType("aspire::asv_filtered_counts"), parents={run})
-fseqs     = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={run})
-tax       = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={run})
-master    = model.AddRequirement(lib.GetType("aspire::mitomaster_table"), parents={run})
-mhits     = model.AddRequirement(lib.GetType("aspire::mito_blast6"), parents={run})
-chits     = model.AddRequirement(lib.GetType("aspire::contaminant_blast6"), parents={run})
-params    = model.AddRequirement(lib.GetType("aspire::params"), parents={run})
+study     = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+fcounts   = model.AddRequirement(lib.GetType("aspire::asv_filtered_counts"), parents={study})
+fseqs     = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={study})
+tax       = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={study})
+master    = model.AddRequirement(lib.GetType("aspire::mitomaster_table"), parents={study})
+mhits     = model.AddRequirement(lib.GetType("aspire::mito_blast6"), parents={study})
+chits     = model.AddRequirement(lib.GetType("aspire::contaminant_blast6"), parents={study})
+params    = model.AddRequirement(lib.GetType("aspire::params"), parents={study})
 clean     = model.AddProduct(lib.GetType("aspire::counts_clean"))
 removed   = model.AddProduct(lib.GetType("aspire::counts_removed"))
 summaries = model.AddProduct(lib.GetType("aspire::mito_summary_tables"))
@@ -51,7 +51,7 @@ _DIRECTORY_PRODUCTS = {summaries, plots}
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

@@ -2,10 +2,10 @@
 """measurement_association -- MEASUREMENT_ASSOCIATION (asv_pipeline.nf:4875)
 
 r4 ecology lift: requires the generic `amplicon::survey` grouping node and a
-bare `amplicon::asv_table` instead of `aspire::run` and
+bare `amplicon::asv_table` instead of the study root and
 `aspire::analysis_counts`, so it is reachable from any count table --
 `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2
-reports. An ASPIRE run satisfies the survey requirement unchanged. See
+reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See
 research/kbase/curation/r4/aspire_topology.md.
 
 Stub: the model is the port, the body only touches its outputs.
@@ -16,11 +16,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-survey = model.AddRequirement(lib.GetType("amplicon::survey"))
-counts = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
-am     = model.AddRequirement(lib.GetType("aspire::analysis_asv_meta"), parents={survey})
-md     = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={survey})
-out    = model.AddProduct(lib.GetType("aspire::measurement_association_outputs"))
+survey   = model.AddRequirement(lib.GetType("amplicon::survey"))
+counts   = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
+am       = model.AddRequirement(lib.GetType("aspire::analysis_asv_meta"), parents={survey})
+md       = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={survey})
+measures = model.AddRequirement(lib.GetType("aspire::sample_measurements"), parents={survey})
+out      = model.AddProduct(lib.GetType("aspire::measurement_association_outputs"))
 
 def protocol(context: ExecutionContext):
     made = {

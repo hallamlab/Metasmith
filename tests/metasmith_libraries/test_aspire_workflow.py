@@ -7,7 +7,7 @@ from conftest import MLIB
 PRESET = MLIB.parents[1] / "research" / "aspire" / "presets" / "aspire.yml"
 SWITCHES = ("spieceasi", "network_modules", "asv_mag_link", "graph_network")
 DEFAULT_ON = set(SWITCHES)
-REFERENCES = ("aspire::sample_metadata", "aspire::mito_reference_source",
+REFERENCES = ("aspire::mito_reference_source",
               "aspire::contaminant_reference_source", "amplicon::silva_db")
 CORE = ["amplicon::asv_taxonomy", "aspire::counts_clean", "aspire::read_fate"]
 
@@ -24,23 +24,22 @@ def aspire_transforms(mlib):
 def aspire_inputs(tmp_inputs):
     def _build(on=DEFAULT_ON, samples=2, parity="paired"):
         inputs = tmp_inputs(["aspire.yml", "amplicon.yml", "sequences.yml"])
-        run = inputs.AddValue("run.txt", "test_study", "aspire::run")
-        inputs.AddValue("params.yml", PRESET.read_text(), "aspire::params", parents={run})
-        # Reads hang off the sample name, not its read_metadata: a given four
-        # ancestors deep loses its read_pair link in the solver.
+        sheet = "sample\tlabel\n" + "".join(
+            f"sample_{i}\t{'A' if i % 2 else 'B'}\n" for i in range(1, samples + 1))
+        study = inputs.AddValue("study_metadata.tsv", sheet, "aspire::study_metadata")
+        inputs.AddValue("params.yml", PRESET.read_text(), "aspire::params", parents={study})
         for i in range(1, samples + 1):
-            name = inputs.AddValue(f"sample_{i}.txt", f"sample_{i}",
-                                   "sequences::sample_name", parents={run})
-            inputs.AddValue(f"read_metadata_{i}.json",
-                            {"parity": parity, "length_class": "short"},
-                            "sequences::read_metadata", parents={name})
+            meta = inputs.AddValue(f"read_metadata_{i}.json",
+                                   {"sample": f"sample_{i}", "parity": parity,
+                                    "length_class": "short"},
+                                   "sequences::read_metadata", parents={study})
             if parity == "paired":
                 pair = inputs.AddValue(f"read_pair_{i}.txt", f"sample_{i}",
-                                       "sequences::read_pair", parents={name})
+                                       "sequences::read_pair", parents={meta})
                 inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
                 inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
             else:
-                inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={name})
+                inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={meta})
 
         for dtype in REFERENCES:
             inputs.AddItem(DEFERRED, dtype)
@@ -48,7 +47,7 @@ def aspire_inputs(tmp_inputs):
         for base in SWITCHES:
             arm = "on" if base in on else "off"
             inputs.AddValue(f"policy_{base}.txt", arm, f"aspire::{base}_{arm}",
-                            parents={run})
+                            parents={study})
         if "spieceasi" not in on:
             for dtype in ("external_graph_all", "external_graph_thr",
                           "external_node_features"):
@@ -91,6 +90,21 @@ class TestAspireTopology:
         for row in ("fastp_qc", "merge_and_filter_reads", "denoise"):
             assert steps.count(row) == 1, steps
         assert {"taxonomy", "curate", "read_accounting"} <= set(steps), steps
+
+    # The reads are children of their metadata, which is a child of the sample sheet. A paired
+    # half is three ancestors deep, the most a given can be and keep its read_pair link.
+    def test_reads_descend_from_their_metadata(self, aspire_transforms):
+        lib = aspire_transforms[0]
+        fastp = next(ti for _p, ti in lib.IterateTransforms() if ti.name == "fastp_qc")
+
+        def slot(dtype):
+            want = lib.GetType(dtype).properties
+            return next(r for r in fastp.model.requires if r.properties == want)
+
+        reads, meta, study = (slot(t) for t in ("sequences::short_reads", "sequences::read_metadata",
+                                                 "aspire::study_metadata"))
+        assert reads.parents == {meta}
+        assert meta.parents == {study}
 
     def test_master_summary_solves(self, aspire_transforms, aspire_inputs):
         task = solve(aspire_inputs(), aspire_transforms, ["aspire::master_long"])

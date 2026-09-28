@@ -11,10 +11,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-counts  = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={run})
-seqs    = model.AddRequirement(lib.GetType("amplicon::asv_seqs"), parents={run})
-params  = model.AddRequirement(lib.GetType("aspire::params"), parents={run})
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+counts  = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={study})
+seqs    = model.AddRequirement(lib.GetType("amplicon::asv_seqs"), parents={study})
+params  = model.AddRequirement(lib.GetType("aspire::params"), parents={study})
 fcounts = model.AddProduct(lib.GetType("aspire::asv_filtered_counts"))
 fseqs   = model.AddProduct(lib.GetType("aspire::asv_filtered_seqs"))
 
@@ -36,7 +36,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

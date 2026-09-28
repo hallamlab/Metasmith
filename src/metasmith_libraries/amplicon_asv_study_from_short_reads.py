@@ -3,11 +3,13 @@
 # configuration: there is no way to rebind the channel their consumers read.
 # Each is a pair of mutually exclusive tokens and registering one arm selects it
 # -- the losing arm's transform has zero candidates for its token slot, so the
-# solver never instantiates it. They hang off `run` so a driver that split the
+# solver never instantiates it. They hang off the study so a driver that split the
 # library by sample could not mask them out from under the stages that need them.
 #
-# The sample is paired. A single-end study registers `sequences::short_reads_se`
-# under the sample name in place of the read pair, and the same targets solve
+# The study is its sample sheet: the sample id first, then one categorical label per
+# column. Each sample is a read_metadata under it, naming the sample, with its reads
+# beneath that. The sample is paired. A single-end study registers
+# `sequences::short_reads_se` under the read_metadata in place of the read pair, and the same targets solve
 # without the interleave step. A study has one parity: research/aspire/
 # aspire_asv_pipeline.py says why a mixed one cannot plan.
 #
@@ -41,7 +43,6 @@ SWITCHES = {
 }
 
 REFERENCES = [
-    "aspire::sample_metadata",
     "aspire::mito_reference_source",
     "aspire::contaminant_reference_source",
 ]
@@ -54,7 +55,6 @@ TARGETS = [
     "aspire::sankey_outputs",
     "aspire::analysis_metadata",
     "aspire::grouping_diagnostics_outputs",
-    "aspire::power_analysis_outputs",
     "aspire::collectors_outputs",
 ]
 
@@ -71,14 +71,13 @@ def build_spec(rebuild: bool = False) -> Spec:
     def inputs(lib):
         for tl in ("aspire.yml", "amplicon.yml", "sequences.yml"):
             lib.AddTypeLibrary(A.TYPES / tl)
-        run = lib.AddValue("run.txt", "aspire_study", "aspire::run")
-        lib.AddItem(DEFERRED, "aspire::params", parents={run})
-        name = lib.AddValue("sample_1.txt", "sample_1", "sequences::sample_name",
-                            parents={run})
-        lib.AddValue("read_metadata_1.json", {"parity": "paired", "length_class": "short"},
-                     "sequences::read_metadata", parents={name})
+        study = lib.AddItem(DEFERRED, "aspire::study_metadata")
+        lib.AddItem(DEFERRED, "aspire::params", parents={study})
+        meta = lib.AddValue("read_metadata_1.json",
+                            {"sample": "sample_1", "parity": "paired", "length_class": "short"},
+                            "sequences::read_metadata", parents={study})
         pair = lib.AddValue("read_pair_1.txt", "sample_1", "sequences::read_pair",
-                            parents={name})
+                            parents={meta})
         lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
         lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
         for dtype in REFERENCES:
@@ -86,7 +85,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         for base, on in SWITCHES.items():
             arm = "on" if on else "off"
             lib.AddValue(f"policy_{base}.txt", arm, f"aspire::{base}_{arm}",
-                         parents={run})
+                         parents={study})
 
     return Spec(
         input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),

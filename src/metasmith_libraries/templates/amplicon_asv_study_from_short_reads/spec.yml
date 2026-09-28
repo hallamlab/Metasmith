@@ -18,7 +18,6 @@ target_types:
 - aspire::sankey_outputs
 - aspire::analysis_metadata
 - aspire::grouping_diagnostics_outputs
-- aspire::power_analysis_outputs
 - aspire::collectors_outputs
 transform_libraries:
 - aspire
@@ -29,88 +28,77 @@ shared_input_paths: []
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/107f96ee180f49dfb9ead5c3f1b90640:
+    /msm_deferred/8febac05502f43d0978d1ffedcb5d87d:
+      type: aspire::contaminant_reference_source
+      instance_id: 1e2028fb1697601b6a0c1611a3221a1beb15a21d649e8aa7bae05fc3642c1d7f206d
+      origin: leaf
+    /msm_deferred/9829621102cf444cb0262bacd6e6ed50:
       type: sequences::zipped_forward_short_reads
       parents:
-        hg61nwSQyyCw@read_pair_1.txt: sequences::read_pair
-      instance_id: 1e2089af56ff74ff807972bcd2b55f459c3bdd218d750515e88fe937b09f39c4f272
+        ziUL8HPSUVAL@read_pair_1.txt: sequences::read_pair
+      instance_id: 1e202112925027eb5da2a79a350ddd3e15de8e1b7e074975858f0f179cabbc9631dc
       origin: leaf
-    /msm_deferred/2731a665063d4c27a66a769652ea6513:
+    /msm_deferred/ae0d3ffd8b464a3c8c6ffc98fe915a1b:
       type: aspire::mito_reference_source
-      instance_id: 1e2032afda05684bedb1285f2d6eb2376808eb7704b3fadf50686bd5f034c0404cfa
+      instance_id: 1e204265fc10c29b44b6708814d02b03948b3d35fedcdc0f771e740fb21579e9326f
       origin: leaf
-    /msm_deferred/50493ca671f74c748d76fb02443e820a:
-      type: aspire::sample_metadata
-      instance_id: 1e201059f787003c3d453319f1c5b1ad34c5be83c665c047519ec701e45e8ef6b82d
-      origin: leaf
-    /msm_deferred/62566be92e4c47feba56ecaa2851e8b2:
+    /msm_deferred/bcc4b56d08914719aa2a10652015ff6e:
       type: sequences::zipped_reverse_short_reads
       parents:
-        hg61nwSQyyCw@read_pair_1.txt: sequences::read_pair
-      instance_id: 1e207efff66b1364f901cf0d0fc40cbaab2db9b20ed1cda2aef1c0de3491d69149cd
+        ziUL8HPSUVAL@read_pair_1.txt: sequences::read_pair
+      instance_id: 1e203cfa3dac868d6bc3c4a3c1094f9433bb2aa25151e0dfd7dca25ca7bcaa85a55b
       origin: leaf
-    /msm_deferred/90dc87d999534c68bfa6f1a61d2a3c48:
-      type: aspire::contaminant_reference_source
-      instance_id: 1e20ebe09ff217829d8c165debeda7eedd28d0e04ba14cd069cd803f850e9a177241
-      origin: leaf
-    /msm_deferred/c5f2f40bae084778bd83bdb88c2c7b80:
+    /msm_deferred/d6b349528e714f4e908d721fc3534ea3:
       type: aspire::params
       parents:
-        hg61nwSQyyCw@run.txt: aspire::run
-      instance_id: 1e20bacb79f1dd9c200237b3173a95884d10d189aa1134b228d628adf3a1c774ea79
+        ziUL8HPSUVAL@/msm_deferred/f30fe06be04c4c768ad686e1820245a6: aspire::study_metadata
+      instance_id: 1e20b7afeb5d394803bf1cb208cf0b7af7730448fc9d2f65678ca90ba1e433b029fa
+      origin: leaf
+    /msm_deferred/f30fe06be04c4c768ad686e1820245a6:
+      type: aspire::study_metadata
+      instance_id: 1e207fa0ba4d82c1adb5ec58abd95ca06b728aa011eb7ca7bc243e9b0af4c67ae4d1
       origin: leaf
     policy_asv_mag_link.txt:
       type: aspire::asv_mag_link_on
       parents:
-        hg61nwSQyyCw@run.txt: aspire::run
-      instance_id: 1e20c6ba4af5a4afb76f5d5246480a9f3dd8e470de037d650a389704f4197c50fe9c
+        ziUL8HPSUVAL@/msm_deferred/f30fe06be04c4c768ad686e1820245a6: aspire::study_metadata
+      instance_id: 1e20f6992e6a1fd372590806f6e4fd52b1a8177fcce6cc79740aba034def8d04ad9c
       origin: leaf
     policy_graph_network.txt:
       type: aspire::graph_network_on
       parents:
-        hg61nwSQyyCw@run.txt: aspire::run
-      instance_id: 1e2084a9bfa75033b04895c959115a3bfa0757b1cc64a2bab0434fcfbe56ad874562
+        ziUL8HPSUVAL@/msm_deferred/f30fe06be04c4c768ad686e1820245a6: aspire::study_metadata
+      instance_id: 1e20c869b1581592b83d1d4dfa8716d6fad572eecf729617ab7770bb6e2fda58767f
       origin: leaf
     policy_network_modules.txt:
       type: aspire::network_modules_on
       parents:
-        hg61nwSQyyCw@run.txt: aspire::run
-      instance_id: 1e20a8b010aae2eae4cdc863452ee2f43df0ffdd3c8b051c1ec3cca6fdaba3deaede
+        ziUL8HPSUVAL@/msm_deferred/f30fe06be04c4c768ad686e1820245a6: aspire::study_metadata
+      instance_id: 1e205fbeef42699b77b81a7369ebc78c8ad7ea200d81b007761bfd6414ac522cd412
       origin: leaf
     policy_spieceasi.txt:
       type: aspire::spieceasi_on
       parents:
-        hg61nwSQyyCw@run.txt: aspire::run
-      instance_id: 1e2021099ba54d6f121a41775d58a1487f618ae821efd0588c6d73b9c4d55e39e084
+        ziUL8HPSUVAL@/msm_deferred/f30fe06be04c4c768ad686e1820245a6: aspire::study_metadata
+      instance_id: 1e20042fce430af8fee60195b51a803128a87fc95dbe6a130356b2987358f3963692
       origin: leaf
     read_metadata_1.json:
       type: sequences::read_metadata
       parents:
-        hg61nwSQyyCw@sample_1.txt: sequences::sample_name
-      instance_id: 1e20cde861fdc0e7670d2c264304a596a10b3cbb49ef10bcfe4672674b7010455711
+        ziUL8HPSUVAL@/msm_deferred/f30fe06be04c4c768ad686e1820245a6: aspire::study_metadata
+      instance_id: 1e20de3d25322d185bcbe9247b8b074caf87d9059532314200719cc01728c0d9cdd9
       origin: leaf
     read_pair_1.txt:
       type: sequences::read_pair
       parents:
-        hg61nwSQyyCw@sample_1.txt: sequences::sample_name
-      instance_id: 1e200be586da1e76f5f2f3080e52f473178f489c1df5ccc287d039e3c23c358d614e
-      origin: leaf
-    run.txt:
-      type: aspire::run
-      instance_id: 1e20e5608cde719c3d8ef0bc0a5f67b38e74a4e2e3601257a8cf96e00af8fc2beada
-      origin: leaf
-    sample_1.txt:
-      type: sequences::sample_name
-      parents:
-        hg61nwSQyyCw@run.txt: aspire::run
-      instance_id: 1e201c1441fc7bbfa3b0fd6506b59d4f851c25898bed27b33ff463fcbec614e82e64
+        ziUL8HPSUVAL@read_metadata_1.json: sequences::read_metadata
+      instance_id: 1e20057d85a895e51613c7a205e68919ec861cae28a8592d295adc3554faa840aa42
       origin: leaf
   values:
     policy_asv_mag_link.txt: 'on'
     policy_graph_network.txt: 'on'
     policy_network_modules.txt: 'on'
     policy_spieceasi.txt: 'on'
-    read_metadata_1.json: '{"parity": "paired", "length_class": "short"}'
+    read_metadata_1.json: '{"sample": "sample_1", "parity": "paired", "length_class":
+      "short"}'
     read_pair_1.txt: sample_1
-    run.txt: aspire_study
-    sample_1.txt: sample_1

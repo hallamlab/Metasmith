@@ -30,7 +30,7 @@ sys.path.insert(0, str(HERE))
 
 from aspire_asv_pipeline import (  # noqa: E402
     CASES, DEFAULT_ON, EXTERNAL_GRAPH, MLIB, PARITIES, PRESETS, REPO, SWITCHES, TRANSFORMS,
-    read_metadata, targets_for, transform_names,
+    read_metadata, study_sheet, targets_for, transform_names,
 )
 from metasmith.python_api import (  # noqa: E402
     DEFERRED, Agent, DataInstanceLibrary, Runtime, Source, TransformInstanceLibrary,
@@ -44,13 +44,12 @@ DAG_DIR = HERE / "reports" / "dag"
 STUDY = "aspire_mock_pilot"
 TYPE_LIBS = [MLIB / "data_types" / t for t in ("aspire.yml", "amplicon.yml", "sequences.yml")]
 
-# Three controls and three cases, so `Case` has both levels. Pair counts were
-# checked against the mock's fastq_validation.tsv.
+# Six of the mock's samples, named as the mock names them. Pair counts were checked
+# against the mock's fastq_validation.tsv.
 SAMPLES = ["CTRL_001_BAL", "CTRL_002_BRUSH", "CTRL_003_BAL",
            "CASE_001_BRUSH", "CASE_002_BAL", "CASE_003_BAL_CONTRA"]
 
 MOCK_REFERENCES = {
-    "aspire::sample_metadata": MOCK / "sample_metadata.tsv",
     "aspire::mito_reference_source": MOCK / "references" / "mitochondria.fasta",
     "aspire::contaminant_reference_source": MOCK / "references" / "contaminants.fasta",
 }
@@ -79,28 +78,29 @@ def cite(givens, location):
 
 
 def declare_study(smith, on, parity, preset):
-    """The study view: run, params, policy tokens, and under each sample its metadata and reads."""
+    """The study view: the sample sheet, params, policy tokens, and under the sheet each sample's
+    read metadata with its reads beneath it."""
     ns = f"aspire/{STUDY}"
     givens = smith.PoolGivens()
-    run = add_value(givens, f"{ns}/run", STUDY, "aspire::run", tags=["aspire", STUDY])
+    study = add_value(givens, f"{ns}/study_metadata", study_sheet(SAMPLES), "aspire::study_metadata",
+                      tags=["aspire", STUDY])
     add_file(givens, f"{ns}/params/{preset}", PRESETS / f"{preset}.yml", "aspire::params",
-             parents=[run], tags=["aspire", STUDY])
+             parents=[study], tags=["aspire", STUDY])
     for sid in SAMPLES:
         tags = ["aspire", STUDY, sid]
-        name = add_value(givens, f"{ns}/{sid}/sample_name", sid, "sequences::sample_name", parents=[run], tags=tags)
-        add_value(givens, f"{ns}/{sid}/read_metadata/{parity}", read_metadata(parity),
-                  "sequences::read_metadata", parents=[name], tags=tags)
+        meta = add_value(givens, f"{ns}/{sid}/read_metadata/{parity}", read_metadata(sid, parity),
+                         "sequences::read_metadata", parents=[study], tags=tags)
         if parity == "paired":
-            pair = add_value(givens, f"{ns}/{sid}/read_pair", sid, "sequences::read_pair", parents=[name], tags=tags)
+            pair = add_value(givens, f"{ns}/{sid}/read_pair", sid, "sequences::read_pair", parents=[meta], tags=tags)
             for mate, dtype in (("R1", "zipped_forward_short_reads"), ("R2", "zipped_reverse_short_reads")):
                 add_file(givens, f"{ns}/{sid}/{dtype}", MOCK / "fastq" / f"{sid}_{mate}.fastq.gz",
                          f"sequences::{dtype}", parents=[pair], tags=tags)
         else:
             add_file(givens, f"{ns}/{sid}/short_reads_se", MOCK / "fastq" / f"{sid}_R1.fastq.gz",
-                     "sequences::short_reads_se", parents=[name], tags=tags)
+                     "sequences::short_reads_se", parents=[meta], tags=tags)
     for base, enabled in on.items():
         arm = "on" if enabled else "off"
-        add_value(givens, f"{ns}/policy/{base}", arm, f"aspire::{base}_{arm}", parents=[run], tags=["aspire", STUDY])
+        add_value(givens, f"{ns}/policy/{base}", arm, f"aspire::{base}_{arm}", parents=[study], tags=["aspire", STUDY])
     return cite(givens, CACHE_DIR / f"study_{parity}_{preset}.xgdb")
 
 
@@ -134,7 +134,7 @@ def expected_givens(parity):
     reads = ({"sequences::read_pair": n, "sequences::zipped_forward_short_reads": n,
               "sequences::zipped_reverse_short_reads": n} if parity == "paired"
              else {"sequences::short_reads_se": n})
-    return {"aspire::run": 1, "aspire::params": 1, "sequences::sample_name": n,
+    return {"aspire::study_metadata": 1, "aspire::params": 1,
             "sequences::read_metadata": n, **reads}
 
 
@@ -185,7 +185,7 @@ def cmd_run(args):
     smith = Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
     study = declare_study(smith, on, args.parity, args.preset)
     task = smith.GenerateWorkflow(
-        samples=list(study.AsSamples("aspire::run")),
+        samples=list(study.AsSamples("aspire::study_metadata")),
         resources=[DataInstanceLibrary.Load(MLIB / "resources" / "env"),
                    declare_references(smith), declare_placeholders(on)],
         transforms=[TransformInstanceLibrary.Load(t) for t in TRANSFORMS],

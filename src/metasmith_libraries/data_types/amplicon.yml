@@ -35,7 +35,7 @@ types:
   # of MANY per-sample profiles, and metasmith has exactly one idiom for that: a logistics
   # grouping node the per-sample inputs descend from, so `InputGroup` has something to
   # group by. `transcriptomics::experiment`, `pangenome::pangenome` and `fabfos::run` are
-  # the same thing in their own lanes; the amplicon lane borrowed `aspire::run` and so
+  # the same thing in their own lanes; the amplicon lane borrowed ASPIRE's study root and so
   # never needed its own until the ecology transforms were lifted off that gate.
   survey:
     properties:

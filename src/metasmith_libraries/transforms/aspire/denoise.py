@@ -6,13 +6,14 @@ Folded in: RELABEL_FILTERED (asv_pipeline.nf:3248), CONCAT_FASTAS
 (asv_pipeline.nf:3393), CREATE_COUNT_MATRIX (asv_pipeline.nf:3417)
 
 The study fan-in, and the one place reads become ASVs. Relabel each sample's
-headers from the sample_name its fasta descends from (context.SourceOf, never
-the position in the group), concatenate, `--derep_fulllength`,
-`--cluster_unoise` (under `unoise:`), `--uchime3_denovo`, then
-`--usearch_global` of the pooled reads against the non-chimeric centroids
-(under `count:`). Every intermediate had exactly one consumer. The two
-products are the library's generic ASV types, so this is the seam a long-read
-denoiser joins at, the way both read lengths meet at `sequences::assembly`.
+headers from the `sample` key of the read_metadata its fasta descends from
+(context.SourceOf, never the position in the group), concatenate,
+`--derep_fulllength`, `--cluster_unoise` (under `unoise:`),
+`--uchime3_denovo`, then `--usearch_global` of the pooled reads against the
+non-chimeric centroids (under `count:`). Every intermediate had exactly one
+consumer. The two products are the library's generic ASV types, so this is the
+seam a long-read denoiser joins at, the way both read lengths meet at
+`sequences::assembly`.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -22,10 +23,10 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run      = model.AddRequirement(lib.GetType("aspire::run"))
-name     = model.AddRequirement(lib.GetType("sequences::sample_name"), parents={run})
-filtered = model.AddRequirement(lib.GetType("aspire::filtered_fasta"), parents={name})
-params   = model.AddRequirement(lib.GetType("aspire::params"), parents={run})
+study    = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+meta     = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={study})
+filtered = model.AddRequirement(lib.GetType("aspire::filtered_fasta"), parents={meta})
+params   = model.AddRequirement(lib.GetType("aspire::params"), parents={study})
 counts   = model.AddProduct(lib.GetType("amplicon::asv_table"))
 seqs     = model.AddProduct(lib.GetType("amplicon::asv_seqs"))
 
@@ -47,7 +48,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=8,
         memory=Size.GB(16),

@@ -5,7 +5,9 @@ The join that turns counts into analysis tables, and now the only producer of
 the three consumer-facing channels. The .nf rebound those channels through
 label augmentation and batch correction; both are off by default, outside the
 reads-to-ASV pipeline, and not ported. The mitochondrial tables come from the
-removed counts whose reason is mitochondrial.
+removed counts whose reason is mitochondrial. A label value held by fewer than
+`analysis.min_level_size` samples is blanked here, so every analysis skips
+that level and keeps the sample.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -15,12 +17,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-fate    = model.AddRequirement(lib.GetType("aspire::read_fate"), parents={run})
-clean   = model.AddRequirement(lib.GetType("aspire::counts_clean"), parents={run})
-removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={run})
-tax     = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={run})
-meta    = model.AddRequirement(lib.GetType("aspire::sample_metadata"))
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+fate    = model.AddRequirement(lib.GetType("aspire::read_fate"), parents={study})
+clean   = model.AddRequirement(lib.GetType("aspire::counts_clean"), parents={study})
+removed = model.AddRequirement(lib.GetType("aspire::counts_removed"), parents={study})
+tax     = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={study})
+params  = model.AddRequirement(lib.GetType("aspire::params"), parents={study})
 md      = model.AddProduct(lib.GetType("aspire::analysis_metadata"))
 am      = model.AddProduct(lib.GetType("aspire::analysis_asv_meta"))
 counts  = model.AddProduct(lib.GetType("aspire::analysis_counts"))
@@ -50,7 +52,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=4,
         memory=Size.GB(16),
