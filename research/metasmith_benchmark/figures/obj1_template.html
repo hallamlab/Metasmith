@@ -87,6 +87,8 @@ header { display: grid; gap: 16px; }
 section { display: grid; gap: 20px; }
 .sec-head { display: grid; gap: 8px; border-top: 2px solid var(--ink); padding-top: 14px; }
 .sec-head .eyebrow { color: var(--muted); }
+.sub-head { display: grid; gap: 4px; margin-top: 16px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.sub-head p { margin: 0; }
 
 .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; padding: 3px; background: var(--surface); gap: 3px; justify-self: start; }
 .seg button { font: 500 14px var(--sans); color: var(--ink-2); background: none; border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
@@ -104,6 +106,7 @@ section { display: grid; gap: 20px; }
 .dag figcaption span { font-size: 13px; color: var(--ink-2); }
 .dag .img { overflow-x: auto; }
 .dag img { width: 100%; max-width: 480px; height: auto; }
+.dag .img.natural img { width: auto; max-width: 100%; }
 figure { margin: 0; }
 
 .two { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
@@ -172,9 +175,9 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     <div class="sec-head">
       <div class="eyebrow">1 · workflow</div>
       <h2>The solved plan is nf-core's pipeline, step for step</h2>
-      <p class="muted">Left: nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right: the plan metasmith solved for E2, the one that ran. Both are drawn by metasmith's DAG renderer, with one colour per pipeline stage.</p>
+      <p class="muted">Left: nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right: the plan metasmith solved for E2, the one that ran. Both are drawn by metasmith's DAG renderer. nf-core's processes are coloured by pipeline stage, so its bookkeeping stands out. The plan's two scoring steps against the CAMI gold standard, and the inputs only they read, are left out: nf-core has no counterpart to them.</p>
     </div>
-    <div class="seg" role="group" aria-label="Read type">
+    <div class="seg" id="seg-full" role="group" aria-label="Read type">
       <button type="button" id="arm-short" data-arm="short" aria-pressed="true">Short reads · 208</button>
       <button type="button" id="arm-long" data-arm="long" aria-pressed="false">Long reads · 41</button>
     </div>
@@ -189,6 +192,24 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <div class="img" id="img-e2"></div>
       </figure>
     </div>
+    <div class="sub-head">
+      <h3>Steps only</h3>
+      <p class="muted">The same two graphs with every data node collapsed into the step that produces it, so only the order of work is left.</p>
+    </div>
+    <div class="seg" id="seg-steps" role="group" aria-label="Read type, steps only">
+      <button type="button" data-arm="short" aria-pressed="true">Short reads · 208</button>
+      <button type="button" data-arm="long" aria-pressed="false">Long reads · 41</button>
+    </div>
+    <div class="dags">
+      <figure class="dag">
+        <figcaption><b>nf-core/mag 5.5.0</b><span id="cap-e1-steps"></span></figcaption>
+        <div class="img natural" id="img-e1-steps"></div>
+      </figure>
+      <figure class="dag">
+        <figcaption><b>metasmith, solved</b><span id="cap-e2-steps"></span></figcaption>
+        <div class="img natural" id="img-e2-steps"></div>
+      </figure>
+    </div>
     <div class="two">
       <div class="panel">
         <div class="panel-head"><b>Tool-level dependencies</b><span>both graphs contracted to the steps that run a tool</span></div>
@@ -197,7 +218,6 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       </div>
       <ul class="notes">
         <li><b>Grey steps</b> are nf-core's bookkeeping and report processes: decompression, renaming, seqkit, FASTA splitting, depth summaries, Prodigal, QUAST and NanoPlot. metasmith does the format conversions inside each transform and runs no report steps.</li>
-        <li><b>Pink steps</b> are E2's scoring against the CAMI gold standard, which nf-core does not ship.</li>
         <li>Three transforms each hold two nf-core processes: <code>bowtie2_binning_bam</code> is BUILD and ALIGN, <code>minimap2_binning_bam</code> is INDEX and ALIGN, and <code>metabat2</code> is the depth table and MetaBAT2.</li>
         <li>nf-core runs one CheckM2 process over all four bin sets. The plan has one CheckM2 step per bin set.</li>
         <li>nextflow draws a channel from the trimmed reads straight to each binner and DAS Tool. The plan reaches them through the assembly and the read mapping, so the order of work is the same.</li>
@@ -289,13 +309,13 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
   // 1 · DAGs
   const STAGES = [["read QC", "#636EFA"], ["assembly", "#EF553B"], ["read mapping", "#00CC96"], ["binning", "#AB63FA"],
-    ["refinement", "#FFA15A"], ["bin quality", "#19D3F3"], ["E2 scoring", "#FF6692"], ["nf-core bookkeeping and reports", "#8A8A8A"]];
-  $("stage-legend").innerHTML = STAGES.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
+    ["refinement", "#FFA15A"], ["bin quality", "#19D3F3"], ["nf-core bookkeeping and reports", "#8A8A8A"]];
+  $("stage-legend").innerHTML = `<span class="muted">nf-core stages:</span>` + STAGES.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
   const DAGCAP = Object.fromEntries(["short", "long"].map((a) => { const s = DATA.dag[a]; return [a, [
     `${s.e1_processes} processes ran · ${s.e1_tool_processes} run a tool`,
-    `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps, ${s.scoring_steps} scoring`]]; }));
-  const imgs = (side, arm) => ["light", "dark"].map((th) =>
-    `<img class="${th}-only" src="dags/${side}_${arm}_${th}.svg" alt="${side === "e1" ? "nf-core/mag" : "metasmith"} DAG, ${ARM[arm].toLowerCase()}">`).join("");
+    `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps`]]; }));
+  const imgs = (side, arm, tag = "") => ["light", "dark"].map((th) =>
+    `<img class="${th}-only" src="dags/${side}_${arm}${tag}_${th}.svg" alt="${side === "e1" ? "nf-core/mag" : "metasmith"} DAG, ${ARM[arm].toLowerCase()}">`).join("");
 
   function edgeTables(arm) {
     const E = DATA.edges[arm];
@@ -315,15 +335,24 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   }
 
   function setArm(arm) {
-    document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.arm === arm)));
+    document.querySelectorAll("#seg-full button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.arm === arm)));
     $("img-e1").innerHTML = imgs("e1", arm);
     $("img-e2").innerHTML = imgs("e2", arm);
     $("cap-e1").textContent = DAGCAP[arm][0];
     $("cap-e2").textContent = DAGCAP[arm][1];
     edgeTables(arm);
   }
-  document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => setArm(b.dataset.arm)));
+  function setStepsArm(arm) {
+    document.querySelectorAll("#seg-steps button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.arm === arm)));
+    $("img-e1-steps").innerHTML = imgs("e1", arm, "_steps");
+    $("img-e2-steps").innerHTML = imgs("e2", arm, "_steps");
+    $("cap-e1-steps").textContent = DAGCAP[arm][0];
+    $("cap-e2-steps").textContent = DAGCAP[arm][1];
+  }
+  document.querySelectorAll("#seg-full button").forEach((b) => b.addEventListener("click", () => setArm(b.dataset.arm)));
+  document.querySelectorAll("#seg-steps button").forEach((b) => b.addEventListener("click", () => setStepsArm(b.dataset.arm)));
   setArm(location.hash === "#long" ? "long" : "short");
+  setStepsArm(location.hash === "#long" ? "long" : "short");
 
   // 2 · task counts: horizontal paired bars per transform
   function taskChart(arm, host) {

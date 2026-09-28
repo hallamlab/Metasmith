@@ -2,8 +2,9 @@
 
 E1's graph is nextflow's own `-with-dag` output (results/e1/dag/), projected to the processes that ran on
 that arm. E2's graph is the plan `drivers/e2_cami.py` solves, which is the plan that ran: CheckM2 on all four
-bin sets. Both are drawn by the same DagRenderer with one hue per pipeline stage, so a reader matches the two
-pictures by colour.
+bin sets. Both are drawn by the same DagRenderer, E1 with one hue per pipeline stage so its bookkeeping stands
+out, E2 plain. E2's two scoring steps against the CAMI gold standard, and the inputs only they read, are cut
+out: nf-core has no counterpart to them. Each arm is also drawn steps-only.
 
 The edge check contracts both graphs to the tool-bearing steps E2 has a transform for, then compares edges
 and reachability. Writes figures/f1/.
@@ -37,7 +38,6 @@ STAGES = {
     "binning": "#AB63FA",
     "refinement": "#FFA15A",
     "bin quality": "#19D3F3",
-    "E2 scoring": "#FF6692",
     "nf-core bookkeeping and reports": "#8A8A8A",
 }
 TRANSFORM_STAGE = {
@@ -47,8 +47,8 @@ TRANSFORM_STAGE = {
     "bowtie2_binning_bam": "read mapping", "minimap2_binning_bam": "read mapping",
     "metabat2": "binning", "semibin2": "binning", "comebin": "binning",
     "das_tool": "refinement", "checkm2": "bin quality",
-    "gold_standard": "E2 scoring", "amber": "E2 scoring",
 }
+SCORING = {"gold_standard", "amber"}
 
 # nextflow's DAG names a process by its module; the trace table names it by its last segment
 DOT_TO_TRACE = {
@@ -68,7 +68,7 @@ def trace(arm):
     return rows
 
 
-def e1_graph(arm, **kw):
+def e1_graph(arm, mode=DagMode.PLAIN, **kw):
     with contextlib.redirect_stdout(io.StringIO()):
         full = dot_to_msm.main(BENCH / f"results/e1/dag/e1_{arm}.dot", OUT / f".e1_{arm}_full")
     (OUT / f".e1_{arm}_full.svg").unlink()
@@ -93,7 +93,7 @@ def e1_graph(arm, **kw):
     # a given channel whose every consumer ran on the other arm has gone with them
     edges = [(a, b) for a, b in edges if not (a == "given" and b not in consumed)]
 
-    r = DagRenderer(mode=DagMode.PLAIN, **kw)
+    r = DagRenderer(mode=mode, **kw)
     for a, b in edges:
         for n in (a, b):
             r.add_node(kinds[n], n, labels.get(n))
@@ -107,11 +107,26 @@ def e1_graph(arm, **kw):
     return r, to_transform, stage
 
 
-def e2_graph(arm, **kw):
-    plan = render_e2.plan_for(arm)
-    r = plan.BuildDAG(mode=DagMode.PLAIN, blacklist=[render_e2.E2_ENV], **kw)
+def e2_graph(arm, mode=DagMode.PLAIN, **kw):
+    r = render_e2.plan_for(arm).BuildDAG(mode=mode, colour="none", blacklist=[render_e2.E2_ENV], **kw)
+    drop_scoring(r)
     tools = {n: r.labels[n].name for n, k in r._nodes.items() if k is NodeKind.TRANSFORM and n != "given"}
-    return r, tools, {n: TRANSFORM_STAGE[t] for n, t in tools.items()}
+    return r, tools
+
+
+def drop_scoring(r):
+    """Cut the scoring steps, then every data node left feeding nothing that no kept step produced."""
+    for n, k in list(r._nodes.items()):
+        if k is NodeKind.TRANSFORM and r.labels[n].name in SCORING:
+            r.remove_node(n)
+    while True:
+        made = {b for a, b in r._edges if r._nodes[a] is NodeKind.TRANSFORM and a != "given"}
+        dead = [n for n, k in r._nodes.items()
+                if k is not NodeKind.TRANSFORM and r.out_degree(n) == 0 and n not in made]
+        if not dead:
+            return
+        for n in dead:
+            r.remove_node(n)
 
 
 def paint(r, stage):
@@ -176,15 +191,17 @@ def main():
     rows, summary = [], {}
     for arm in ("short", "long"):
         for theme in ("light", "dark"):
-            kw = dict(theme=theme, background=False)
-            r1, t1, s1 = e1_graph(arm, **kw)
-            r2, t2, s2 = e2_graph(arm, **kw)
-            paint(r1, s1).render(OUT / f"e1_{arm}_{theme}", "svg")
-            paint(r2, s2).render(OUT / f"e2_{arm}_{theme}", "svg")
+            for mode, tag in ((DagMode.PLAIN, ""), (DagMode.STEPS, "_steps")):
+                kw = dict(theme=theme, background=False, mode=mode)
+                r1, t1, s1 = e1_graph(arm, **kw)
+                r2, t2 = e2_graph(arm, **kw)
+                paint(r1, s1).render(OUT / f"e1_{arm}{tag}_{theme}", "svg")
+                r2.render(OUT / f"e2_{arm}{tag}_{theme}", "svg")
+            r1, t1, _ = e1_graph(arm)
+            r2, t2 = e2_graph(arm)
 
-        scoring = {"gold_standard", "amber"}
         e1 = tool_edges(r1, t1)
-        e2 = {(a, b) for a, b in tool_edges(r2, t2) if a not in scoring and b not in scoring}
+        e2 = tool_edges(r2, t2)
         c1, c2 = closure(e1), closure(e2)
         for a, b in sorted(e1 | e2):
             where = "both" if (a, b) in e1 and (a, b) in e2 else ("E1" if (a, b) in e1 else "E2")
@@ -193,13 +210,12 @@ def main():
         n_proc = sum(1 for n, k in r1._nodes.items() if k is NodeKind.TRANSFORM and n != "given")
         n_step = sum(1 for n, k in r2._nodes.items() if k is NodeKind.TRANSFORM and n != "given")
         tools1 = {t for t in t1.values() if t}
-        tools2 = set(t2.values()) - scoring
+        tools2 = set(t2.values())
         print(f"{arm}: E1 {n_proc} processes ran, {sum(1 for t in t1.values() if t)} tool-bearing -> {len(tools1)} transforms;"
-              f" E2 {n_step} steps -> {len(tools2)} tools (+{len(set(t2.values()) & scoring)} scoring)")
+              f" E2 {n_step} steps -> {len(tools2)} tools")
         summary[arm] = dict(e1_processes=n_proc, e1_tool_processes=sum(1 for t in t1.values() if t),
                             e2_steps=n_step, tools=len(tools1), same_tools=tools1 == tools2,
                             checkm2_steps=sum(1 for t in t2.values() if t == "checkm2"),
-                            scoring_steps=sum(1 for t in t2.values() if t in scoring),
                             same_reachability=c1 == c2)
         print(f"  same tools: {tools1 == tools2}   E1-only {sorted(tools1 - tools2)}   E2-only {sorted(tools2 - tools1)}")
         print(f"  tool edges: both {len(e1 & e2)}, E1-only {len(e1 - e2)}, E2-only {len(e2 - e1)}")
