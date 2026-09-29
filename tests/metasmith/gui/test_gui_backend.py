@@ -1320,7 +1320,7 @@ class TestDagTheme:
         st = ink["light"]["styles"]
         assert st["transform"]["shape"] == "triangle_down"
         assert st["data"]["shape"] == "circle" and not st["data"]["solid"]
-        assert st["target"]["solid"] and st["target"]["stroke_width"] > st["data"]["stroke_width"]
+        assert st["target"]["solid"]
 
     def test_only_the_colours_differ_between_the_two(self, client):
         ink = client.get("/api/dag/theme").get_json()

@@ -1,106 +1,238 @@
+import itertools
 import random
 
 import pytest
 
-from metasmith.models.dag_layout import layout, measure, repeat_motifs
+from metasmith.models.dag_layout import Layout, layout, measure, natural_key, repeat_motifs
 
 
-def _lay(edges, nodes=None):
-    return layout(nodes or {}, edges)
+def _lay(edges, nodes=()):
+    return layout(nodes, edges)
 
 
 def _rows(lay):
-    return [n.name for n in lay.nodes]
+    return list(lay.order)
 
 
-def _lane(lay, name):
-    return lay[name].lane
+def _length(lay):
+    return sum(lay.row[c] - lay.row[p] for p, c in lay.edges)
 
 
-def test_empty_graph():
-    lay = _lay([])
-    assert (lay.nodes, lay.edges, lay.height) == ((), (), 0)
+def _shortest(names, edges):
+    """The least total edge length over every topological order, by an exact
+    DP over placed sets: the edges crossing a gap depend only on the set
+    above it, so this shares no bound or budget with the solver it checks."""
+    at = {n: i for i, n in enumerate(names)}
+    ups = [0] * len(names)
+    out = [0] * len(names)
+    for p, c in edges:
+        ups[at[c]] |= 1 << at[p]
+        out[at[p]] += 1
+    ins = [bin(u).count("1") for u in ups]
+    best = {0: (0, 0)}
+    for _ in names:
+        nxt = {}
+        for placed, (cost, cut) in best.items():
+            for v in range(len(names)):
+                if placed >> v & 1 or ups[v] & ~placed:
+                    continue
+                c = cut + out[v] - ins[v]
+                key = placed | 1 << v
+                if key not in nxt or cost + c < nxt[key][0]:
+                    nxt[key] = (cost + c, c)
+        best = nxt
+    return next(iter(best.values()))[0]
 
 
-def test_linear_chain_is_one_lane():
-    lay = _lay([("a", "b"), ("b", "c"), ("c", "d")])
-    assert _rows(lay) == ["a", "b", "c", "d"]
-    assert {n.lane for n in lay.nodes} == {0}
-    assert lay.width == 1
+def _random_dag(seed, n, p):
+    rng = random.Random(seed)
+    names = [f"n{i}" for i in range(n)]
+    perm = names[:]
+    rng.shuffle(perm)
+    edges = [(perm[i], perm[j]) for i in range(n) for j in range(i + 1, n) if rng.random() < p]
+    return names, edges
 
 
-def test_chain_edges_are_straight():
-    lay = _lay([("a", "b"), ("b", "c")])
-    for e in lay.edges:
-        assert {lane for _, lane in e.points} == {0.0}
+def _sparse_dag(seed, n):
+    rng = random.Random(seed)
+    names = [f"n{i}" for i in range(n)]
+    edges = []
+    for j in range(1, n):
+        for _ in range(1 + (rng.random() < 0.8)):
+            edges.append((names[rng.randrange(max(0, j - 12), j)], names[j]))
+    return names, edges
 
 
-def test_diamond_opens_and_closes_one_extra_lane():
-    lay = _lay([("a", "b"), ("a", "c"), ("b", "d"), ("c", "d")])
-    assert lay.width == 2
-    assert _lane(lay, "a") == _lane(lay, "d") == 0
+def _step_blocks(seed, names, edges):
+    """Random blocks shaped like a step and its outputs: a head and some of
+    its children, no two of them joined by an edge."""
+    rng = random.Random(seed)
+    linked = set(edges)
+    blocks, taken = [], set()
+    for head in rng.sample(names, len(names)):
+        if head in taken:
+            continue
+        members = [head]
+        for c in (c for p, c in edges if p == head and c not in taken):
+            if rng.random() < 0.7 and all((c, m) not in linked and (m, c) not in linked
+                                          for m in members[1:]):
+                members.append(c)
+        taken |= set(members)
+        blocks.append(members)
+    return blocks
 
 
-def test_join_is_below_every_parent():
-    lay = _lay([("a", "j"), ("b", "j"), ("c", "j"), ("a", "b"), ("a", "c")])
-    j = lay["j"].row
-    assert all(lay[p].row < j for p in ("a", "b", "c"))
+def _shortest_in_blocks(names, edges, blocks):
+    """The least total length over orders that keep every block contiguous,
+    head first, by a DP over placed blocks that tries every internal order."""
+    at = {n: i for i, n in enumerate(names)}
+    ups = [0] * len(names)
+    out = [0] * len(names)
+    for p, c in edges:
+        ups[at[c]] |= 1 << at[p]
+        out[at[p]] += 1
+    ins = [bin(u).count("1") for u in ups]
+    units = [[at[n] for n in b] for b in blocks]
+    best = {0: (0, 0)}
+    for _ in units:
+        nxt = {}
+        for placed, (cost, cut) in best.items():
+            for unit in units:
+                if placed >> unit[0] & 1:
+                    continue
+                for tail in itertools.permutations(unit[1:]):
+                    seq, done, total, c, ok = [unit[0], *tail], placed, cost, cut, True
+                    for v in seq:
+                        if ups[v] & ~done:
+                            ok = False
+                            break
+                        c += out[v] - ins[v]
+                        total += c
+                        done |= 1 << v
+                    if ok and (done not in nxt or total < nxt[done][0]):
+                        nxt[done] = (total, c)
+        best = nxt
+    return next(iter(best.values()))[0]
 
 
-def test_lane_is_reused_after_a_branch_closes():
-    lay = _lay([("root", "x"), ("x", "mid"), ("mid", "y"), ("y", "end"),
-                ("root", "mid"), ("mid", "end")])
-    assert lay.width == 2
+def _keeps_blocks(lay, blocks):
+    for block in blocks:
+        rows = sorted(lay.row[n] for n in block)
+        if rows != list(range(rows[0], rows[0] + len(block))) or lay.row[block[0]] != rows[0]:
+            return False
+    return True
 
 
-def test_leaf_child_is_emitted_directly_under_its_parent():
-    lay = _lay([("t", "dead_end"), ("t", "used"), ("used", "next"), ("next", "last")])
-    rows = _rows(lay)
+# -- the row order -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("seed", range(200))
+def test_the_row_order_is_the_shortest_that_keeps_every_block_whole(seed):
+    names, edges = _random_dag(seed, 3 + seed % 7, (0.15, 0.3, 0.5)[seed % 3])
+    blocks = _step_blocks(seed, names, edges)
+    lay = layout(names, edges, blocks=blocks)
+    assert lay.optimal
+    assert _keeps_blocks(lay, blocks)
+    assert _length(lay) == _shortest_in_blocks(names, list(lay.edges), blocks)
+
+
+def test_a_step_keeps_its_outputs_directly_below_it():
+    edges = [("reads", "qc"), ("qc", "clean"), ("qc", "report"), ("clean", "asm"),
+             ("asm", "contigs"), ("asm", "graph"), ("reads", "map"), ("contigs", "map")]
+    blocks = [["qc", "clean", "report"], ["asm", "contigs", "graph"]]
+    lay = layout([], edges, blocks=blocks)
+    assert _keeps_blocks(lay, blocks)
+
+
+def test_inside_a_block_the_most_used_output_comes_last():
+    edges = [("s", "busy"), ("s", "idle"), ("busy", "x"), ("busy", "y")]
+    lay = layout([], edges, blocks=[["s", "busy", "idle"]])
+    assert _rows(lay)[:3] == ["s", "idle", "busy"]
+
+
+def test_a_block_a_path_would_have_to_leave_and_reenter_is_dissolved():
+    edges = [("a", "x"), ("x", "b")]
+    lay = layout([], edges, blocks=[["a", "b"]])
+    assert _rows(lay) == ["a", "x", "b"]
+
+
+def test_an_order_that_splits_a_block_is_declined():
+    edges = [("s", "o"), ("r", "t")]
+    lay = layout([], edges, order=["s", "r", "o", "t"], blocks=[["s", "o"]])
+    assert _keeps_blocks(lay, [["s", "o"]])
+
+
+
+@pytest.mark.parametrize("seed", range(300))
+def test_the_row_order_is_the_shortest_there_is(seed):
+    names, edges = _random_dag(seed, 3 + seed % 7, (0.15, 0.3, 0.5)[seed % 3])
+    lay = layout(names, edges)
+    assert lay.optimal
+    assert _length(lay) == _shortest(list(lay.order), list(lay.edges))
+
+
+def test_a_thousand_nodes_come_out_the_same_every_time():
+    names, edges = _sparse_dag(1000, 1000)
+    first = layout(names, edges)
+    rng = random.Random(0)
+    rng.shuffle(names)
+    rng.shuffle(edges)
+    again = layout(names, edges)
+    assert (again.order, again.col) == (first.order, first.col)
+
+
+def test_a_small_graph_is_proven_shortest():
+    lay = _lay([("reads", "qc"), ("qc", "asm"), ("reads", "map"), ("asm", "map"),
+                ("map", "bins"), ("asm", "bins")])
+    assert lay.optimal
+
+
+def test_a_caller_may_fix_the_rows():
+    mine = ["c", "b", "a", "d"]
+    lay = layout(mine, [("a", "d"), ("b", "d")], order=mine)
+    assert _rows(lay) == mine
+    assert not lay.optimal
+
+
+def test_an_order_that_would_reverse_an_edge_is_declined():
+    edges = [("a", "b")]
+    assert _rows(layout([], edges, order=["b", "a"])) == ["a", "b"]
+    assert _rows(layout([], edges, order=["a"])) == ["a", "b"]
+    assert _rows(layout([], edges, order=["a", "b", "c"])) == ["a", "b"]
+
+
+def test_step_numbers_sort_numerically():
+    assert _rows(_lay([("r", "2 b"), ("r", "10 a")])) == ["r", "2 b", "10 a"]
+    assert natural_key("2 b") < natural_key("10 a")
+
+
+def test_a_leaf_child_is_emitted_directly_under_its_parent():
+    rows = _rows(_lay([("t", "dead_end"), ("t", "used"), ("used", "next"), ("next", "last")]))
     assert rows.index("dead_end") == rows.index("t") + 1
 
 
-def test_heaviest_child_inherits_the_lane():
-    lay = _lay([("t", "dead_end"), ("t", "used"), ("used", "next")])
-    assert _lane(lay, "used") == _lane(lay, "t")
-    assert _lane(lay, "dead_end") != _lane(lay, "t")
+def test_a_join_is_below_every_parent():
+    lay = _lay([("a", "j"), ("b", "j"), ("c", "j"), ("a", "b"), ("a", "c")])
+    assert all(lay.row[p] < lay.row["j"] for p in ("a", "b", "c"))
 
 
-def test_spine_is_the_heaviest_path_and_sits_in_lane_zero():
-    lay = _lay([("r", "short"), ("r", "long1"), ("long1", "long2"), ("long2", "long3")])
-    spine = [n.name for n in lay.nodes if n.spine]
-    assert spine == ["r", "long1", "long2", "long3"]
-    assert all(_lane(lay, n) == 0 for n in spine)
+def test_disconnected_components_all_appear():
+    assert set(_rows(_lay([("a", "b"), ("x", "y")]))) == {"a", "b", "x", "y"}
 
 
-def test_depth_is_longest_path_not_shortest():
-    lay = _lay([("a", "b"), ("b", "c"), ("a", "c")])
-    assert lay["c"].depth == 2
+def test_disjoint_components_are_ordered_smallest_first():
+    lay = _lay([("a", "b"), ("a", "c"), ("a", "d"), ("x", "y")])
+    assert _rows(lay) == ["x", "y", "a", "b", "c", "d"]
 
 
-def test_no_node_sits_in_a_lane_an_edge_is_spanning():
-    lay = _lay([
-        ("r", "a"), ("r", "b"), ("r", "c"),
-        ("a", "a2"), ("a2", "a3"), ("b", "b2"), ("c", "c2"),
-        ("a3", "j"), ("b2", "j"), ("c2", "j"),
-    ])
-    for e in lay.edges:
-        lo, hi = lay[e.src].row, lay[e.dst].row
-        for n in lay.nodes:
-            if lo < n.row < hi:
-                assert n.lane != e.lane, f"{n.name} sits on the rail {e.src}->{e.dst}"
+def test_component_order_tie_break_is_deterministic_and_input_order_independent():
+    edges = [("p", "q"), ("m", "n")]
+    assert _rows(_lay(edges)) == ["m", "n", "p", "q"]
+    assert _rows(_lay(list(reversed(edges)))) == ["m", "n", "p", "q"]
 
 
-def test_every_edge_segment_is_axis_aligned():
-    lay = _lay([("r", "a"), ("r", "b"), ("a", "a2"), ("a2", "j"), ("b", "j")])
-    for e in lay.edges:
-        for (r0, l0), (r1, l1) in zip(e.points, e.points[1:]):
-            assert r0 == r1 or l0 == l1
-
-
-def test_edges_run_downward():
-    lay = _lay([("r", "a"), ("r", "b"), ("a", "j"), ("b", "j")])
-    for e in lay.edges:
-        assert lay[e.src].row < lay[e.dst].row
+def test_an_isolated_node_is_a_component_of_one():
+    assert _rows(layout(["solo"], [("a", "b"), ("b", "c")])) == ["solo", "a", "b", "c"]
 
 
 _SHUFFLE_EDGES = [
@@ -117,22 +249,46 @@ def test_layout_ignores_the_order_edges_were_added():
     for _ in range(20):
         shuffled = _SHUFFLE_EDGES[:]
         rng.shuffle(shuffled)
-        assert _lay(shuffled) == reference
+        lay = _lay(shuffled)
+        assert (lay.order, lay.col, lay.edges) == (reference.order, reference.col, reference.edges)
 
 
 def test_layout_ignores_the_order_nodes_were_declared():
     names = sorted({n for e in _SHUFFLE_EDGES for n in e})
+    reference = _lay(_SHUFFLE_EDGES, names)
     rng = random.Random(1)
-    reference = _lay(_SHUFFLE_EDGES, {n: "k" for n in names})
     for _ in range(10):
         rng.shuffle(names)
-        assert _lay(_SHUFFLE_EDGES, {n: "k" for n in names}) == reference
+        lay = _lay(_SHUFFLE_EDGES, names)
+        assert (lay.order, lay.col) == (reference.order, reference.col)
 
 
-def test_step_numbers_sort_numerically():
-    lay = _lay([("r", "2 b"), ("r", "10 a")])
-    assert _rows(lay) == ["r", "2 b", "10 a"]
+def test_cycle_is_broken_and_flagged():
+    lay = _lay([("a", "b"), ("b", "c"), ("c", "a")])
+    assert len(lay.back) == 1
+    assert len(lay.edges) == 2
+    assert lay.height == 3
 
+
+def test_self_loop_is_a_back_edge():
+    lay = _lay([("a", "a")])
+    assert (lay.back, lay.edges) == ((("a", "a"),), ())
+
+
+def test_duplicate_edges_collapse():
+    assert len(_lay([("a", "b"), ("a", "b")]).edges) == 1
+
+
+def test_edge_endpoints_not_declared_as_nodes_are_adopted():
+    assert set(layout([], [("a", "b")]).order) == {"a", "b"}
+
+
+def test_empty_graph():
+    lay = _lay([])
+    assert (lay.order, lay.edges, lay.height, lay.width) == ((), (), 0, 0)
+
+
+# -- repeated blocks ---------------------------------------------------------
 
 _TAGS = ("a", "b", "c")
 _REPEATS = (
@@ -145,63 +301,33 @@ _REPEATS = (
     + [(f"{i + 3} score", "sink::quality") for i, _ in enumerate(_TAGS)]
     + [(f"{i + 6} classify", "sink::taxonomy") for i, _ in enumerate(_TAGS)]
 )
-_KINDS = {
-    **{f"{i} run": "T" for i in range(3)},
-    **{f"{i} score": "T" for i in range(3, 6)},
-    **{f"{i} classify": "T" for i in range(6, 9)},
-}
+
+
+def _run_motif(lay):
+    return next(m for m in repeat_motifs(lay) if m.heads[0] == "0 run")
 
 
 def test_a_repeated_block_is_found_by_shape_not_by_name():
-    lay = _lay(_REPEATS, _KINDS)
-    heads = {m.heads for m in repeat_motifs(lay)}
-    assert ("0 run", "1 run", "2 run") in heads
-    block = next(m for m in repeat_motifs(lay) if m.heads[0] == "0 run").blocks[0]
-    assert block == frozenset(
+    lay = _lay(_REPEATS)
+    assert _run_motif(lay).blocks[0] == frozenset(
         {"0 run", "out::a_bins", "out::a_table", "3 score", "6 classify"}
     )
 
 
-def test_every_instance_of_a_block_is_a_contiguous_run_of_rows():
-    lay = _lay(_REPEATS, _KINDS)
-    rows = {n.name: n.row for n in lay.nodes}
-    for m in repeat_motifs(lay):
-        for block in m.blocks:
-            span = sorted(rows[x] for x in block)
-            assert span == list(range(span[0], span[0] + len(span))), block
-
-
-def test_every_instance_emits_its_children_in_the_same_order():
-    lay = _lay(_REPEATS, _KINDS)
-    rows = {n.name: n.row for n in lay.nodes}
-    m = next(x for x in repeat_motifs(lay) if x.heads[0] == "0 run")
-    shapes = {
-        tuple(sorted((rows[x] - rows[head], m.twin[x]) for x in block))
-        for head, block in zip(m.heads, m.blocks)
+def test_every_instance_of_a_block_keeps_one_internal_order():
+    lay = _lay(_REPEATS)
+    m = _run_motif(lay)
+    orders = {
+        tuple(m.twin[x] for x in sorted(block, key=lay.row.__getitem__))
+        for block in m.blocks
     }
-    assert len(shapes) == 1, shapes
+    assert len(orders) == 1, orders
 
 
-def test_the_shared_supply_is_drawn_once_above_the_first_instance():
-    lay = _lay(_REPEATS, _KINDS)
-    rows = {n.name: n.row for n in lay.nodes}
-    m = next(x for x in repeat_motifs(lay) if x.heads[0] == "0 run")
-    assert rows["db::ref"] < min(rows[h] for h in m.heads)
-
-
-def test_a_shared_output_waits_for_every_instance():
-    lay = _lay(_REPEATS, _KINDS)
-    rows = {n.name: n.row for n in lay.nodes}
-    m = next(x for x in repeat_motifs(lay) if x.heads[0] == "0 run")
-    last = max(rows[x] for b in m.blocks for x in b)
-    for sink in ("sink::quality", "sink::taxonomy"):
-        assert rows[sink] > last, sink
-
-
-def test_congruence_is_the_biggest_set_of_instances_drawn_alike():
-    m = measure(_lay(_REPEATS, _KINDS))
-    assert m.repeats >= 3
-    assert m.congruent >= 3
+def test_congruence_counts_instances_drawn_alike():
+    m = measure(_lay(_REPEATS))
+    assert m.repeats == 3
+    assert 1 <= m.congruent <= m.repeats
     assert m.congruence == m.congruent / m.repeats
 
 
@@ -211,113 +337,164 @@ def test_a_graph_with_nothing_repeated_is_congruent_by_definition():
 
 
 def test_two_nodes_of_a_kind_are_not_a_class_on_their_own():
-    lay = _lay([("r", "x"), ("r", "y")])
-    assert repeat_motifs(lay) == ()
+    assert repeat_motifs(_lay([("r", "x"), ("r", "y")])) == ()
 
 
 def test_an_ancestor_and_its_descendant_are_never_two_instances():
     lay = _lay([("a", "b"), ("b", "c"), ("c", "d"), ("d", "e")])
-    assert all(
-        not (set(m.blocks[0]) & set(m.blocks[1])) for m in repeat_motifs(lay)
-    )
+    assert all(not (set(m.blocks[0]) & set(m.blocks[1])) for m in repeat_motifs(lay))
 
 
-def test_cycle_is_broken_and_flagged():
-    lay = _lay([("a", "b"), ("b", "c"), ("c", "a")])
-    backs = [e for e in lay.edges if e.back]
-    assert len(backs) == 1
-    assert len(lay.nodes) == 3
-    assert len({n.row for n in lay.nodes}) == 3
+# -- the grid ----------------------------------------------------------------
 
 
-def test_self_loop_is_a_back_edge():
-    lay = _lay([("a", "a")])
-    assert [e.back for e in lay.edges] == [True]
+def _max_live(lay):
+    return max((len(lay.live(h)) for h in range(-1, 2 * lay.height)), default=0)
 
 
-def test_duplicate_edges_collapse():
-    lay = _lay([("a", "b"), ("a", "b")])
-    assert len(lay.edges) == 1
+_SHAPES = {
+    "chain": [("a", "b"), ("b", "c"), ("c", "d")],
+    "diamond": [("a", "b"), ("a", "c"), ("b", "d"), ("c", "d")],
+    "join": [("a", "j"), ("b", "j"), ("c", "j"), ("a", "b"), ("a", "c")],
+    "fan": [("root", f"leaf_{i}") for i in range(7)] + [(f"leaf_{i}", "sink") for i in range(7)],
+    "reuse": [("root", "x"), ("x", "mid"), ("mid", "y"), ("y", "end"),
+              ("root", "mid"), ("mid", "end")],
+    "shuffle": _SHUFFLE_EDGES,
+    "repeats": list(_REPEATS),
+}
 
 
-def test_disconnected_components_all_appear():
-    lay = _lay([("a", "b"), ("x", "y")])
-    assert set(_rows(lay)) == {"a", "b", "x", "y"}
+@pytest.mark.parametrize("name", _SHAPES)
+def test_the_width_is_the_most_runs_ever_live_at_once(name):
+    lay = _lay(_SHAPES[name])
+    assert lay.width == _max_live(lay)
 
 
-def test_kind_is_carried_through_untouched():
-    sentinel = object()
-    lay = layout({"a": sentinel, "b": None}, [("a", "b")])
-    assert lay["a"].kind is sentinel
+@pytest.mark.parametrize("name", _SHAPES)
+def test_every_fed_node_has_one_bar_in_the_band_above_it(name):
+    lay = _lay(_SHAPES[name])
+    fed = {c for _, c in lay.edges}
+    assert set(lay.bars) == fed
+    for n, bar in lay.bars.items():
+        assert bar.band == 2 * lay.row[n] - 1
+        assert bar.col == lay.col[n]
+        assert sorted(f.src for f in bar.feeds) == sorted(lay.parents[n])
 
 
-def test_edge_endpoints_not_declared_as_nodes_are_adopted():
-    lay = layout({}, [("a", "b")])
-    assert {n.name for n in lay.nodes} == {"a", "b"}
+@pytest.mark.parametrize("name", _SHAPES)
+def test_a_route_has_at_most_one_horizontal_leg_and_it_is_the_bar(name):
+    lay = _lay(_SHAPES[name])
+    for src, dst in lay.edges:
+        points = lay.route(src, dst)
+        legs = [(a, b) for a, b in zip(points, points[1:]) if a[0] == b[0]]
+        assert len(legs) <= 1
+        for (h, _), _ in legs:
+            assert h == lay.bars[dst].band
+        for (h0, c0), (h1, c1) in zip(points, points[1:]):
+            assert h0 == h1 or c0 == c1
 
 
-@pytest.mark.parametrize("size", [1, 2, 50])
-def test_wide_fan_out_stays_consistent(size):
-    edges = [("root", f"leaf_{i:02d}") for i in range(size)]
-    lay = _lay(edges)
-    assert lay.height == size + 1
-    assert lay.width <= size + 1
+def test_a_chain_is_one_straight_column():
+    lay = _lay(_SHAPES["chain"])
+    assert lay.width == 1
+    assert set(lay.col.values()) == {0}
+    assert all(len(lay.route(*e)) == 2 for e in lay.edges)
 
 
-def _detours(lay):
-    return [
-        (e.src, e.dst)
-        for e in lay.edges
-        if not e.back
-        and not (
-            min(lay[e.src].lane, lay[e.dst].lane)
-            <= e.lane
-            <= max(lay[e.src].lane, lay[e.dst].lane)
-        )
-    ]
+def test_a_diamond_needs_one_extra_column():
+    assert _lay(_SHAPES["diamond"]).width == 2
 
 
-def test_a_rail_between_neighbouring_rows_does_not_take_a_lane_of_its_own():
-    edges = [
-        ("asv_seqs", "map_contigs"),
-        ("assembly", "map_contigs"),
-        ("identity_threshold", "map_contigs"),
-        ("map_contigs", "asv_contig_map"),
-        ("asv_seqs", "classify"),
-        ("silva_classifier", "classify"),
-        ("classify", "asv_taxonomy"),
-    ]
-    lay = _lay(edges)
-    assert _detours(lay) == []
+def test_a_column_is_reused_after_its_run_ends():
+    assert _lay(_SHAPES["reuse"]).width == 2
 
 
-def test_a_fan_out_is_allowed_every_lane_it_needs():
-    edges = [("root", f"leaf_{i}") for i in range(7)]
-    edges += [(f"leaf_{i}", "sink") for i in range(7)]
-    lay = _lay(edges)
-    assert measure(lay).lanes <= 8
-    assert measure(lay).detours == len(_detours(lay))
+def test_a_fan_out_takes_no_more_columns_than_it_needs():
+    lay = _lay(_SHAPES["fan"])
+    assert lay.width == _max_live(lay) <= 8
 
 
-def test_a_caller_may_fix_the_rows():
-    mine = ["c", "b", "a", "d"]
-    lay = layout({n: None for n in mine}, [("a", "d"), ("b", "d")], order=mine)
-    assert _rows(lay) == mine
+def test_a_last_child_takes_its_parents_column_as_a_straight_drop():
+    lay = _lay([("t", "dead_end"), ("t", "used"), ("used", "next")])
+    assert lay.col["used"] == lay.col["t"]
+    assert lay.col["next"] == lay.col["used"]
+    assert measure(lay).drops == 2
 
 
-def test_an_order_that_would_reverse_an_edge_is_declined():
-    edges = [("a", "b")]
-    assert _rows(layout({}, edges, order=["b", "a"])) == ["a", "b"]
-    assert _rows(layout({}, edges, order=["a"])) == ["a", "b"]
-    assert _rows(layout({}, edges, order=["a", "b", "c"])) == ["a", "b"]
+@pytest.mark.parametrize("seed", range(200))
+def test_no_node_bends_away_from_every_run_ending_at_it(seed):
+    names, edges = _random_dag(3000 + seed, 6 + seed % 30, (0.15, 0.3, 0.5)[seed % 3])
+    lay = layout(names, edges)
+    for bar in lay.bars.values():
+        if any(f.turns for f in bar.feeds):
+            assert any(f.turns and f.col == bar.col for f in bar.feeds), bar.node
+    assert measure(lay, motifs=()).bends == 0
 
 
-def test_given_rows_still_keep_the_rails_off_the_markers():
-    order = ["a", "b", "c", "d", "e"]
-    edges = [("a", "b"), ("a", "c"), ("b", "c"), ("a", "d"), ("a", "e"), ("d", "e")]
-    lay = layout({n: None for n in order}, edges, order)
-    assert _rows(lay) == order
-    occupied = {(n.row, n.lane) for n in lay.nodes}
-    for e in lay.edges:
-        for row in range(lay[e.src].row + 1, lay[e.dst].row):
-            assert (row, e.lane) not in occupied
+def test_a_fan_out_to_steps_down_the_page_crosses_nothing():
+    uses = {"db": "bin", "env_bin": "bin", "env_asm": "asm", "env_qc": "qc", "reads": "qc"}
+    edges = [("given", x) for x in uses] + [(x, s) for x, s in uses.items()]
+    edges += [("qc", "clean"), ("clean", "asm"), ("asm", "contigs"), ("contigs", "bin"),
+              ("clean", "bin")]
+    blocks = [["given", *uses], ["qc", "clean"], ["asm", "contigs"]]
+    m = measure(layout([], edges, blocks=blocks))
+    assert (m.crossings, m.bends, m.optimal_columns) == (0, 0, True)
+
+
+def _best_columns(lay):
+    """Every assignment of the runs to the layout's columns in which no two
+    runs sharing a column overlap and no node bends, scored as the solver
+    scores them."""
+    names = list(lay.order)
+    spans = [(lay.runs[n].top, lay.runs[n].bottom) for n in names]
+    best = None
+    for cols in itertools.product(range(lay.width), repeat=len(names)):
+        if any(cols[i] == cols[j] and spans[i][0] < spans[j][1] and spans[j][0] < spans[i][1]
+               for i in range(len(names)) for j in range(i)):
+            continue
+        trial = Layout(order=lay.order, col=dict(zip(names, cols)), edges=lay.edges,
+                       width=lay.width)
+        m = measure(trial, motifs=())
+        if m.bends:
+            continue
+        key = (m.crossings, m.hlen, m.off_right)
+        best = key if best is None or key < best else best
+    return best
+
+
+@pytest.mark.parametrize("seed", range(120))
+def test_the_columns_are_the_best_there_are(seed):
+    names, edges = _random_dag(1000 + seed, 3 + seed % 5, (0.3, 0.5)[seed % 2])
+    lay = layout(names, edges)
+    if lay.width ** len(names) > 50_000:
+        pytest.skip("too many assignments to enumerate")
+    m = measure(lay, motifs=())
+    assert lay.optimal_columns
+    assert (m.crossings, m.hlen, m.off_right) == _best_columns(lay)
+
+
+def test_a_bar_goes_round_a_run_rather_than_over_it():
+    lay = _lay(_SHAPES["join"])
+    assert measure(lay).crossings == 0
+
+
+def test_runs_sharing_a_column_never_overlap():
+    lay = _lay(_SHAPES["repeats"])
+    by_col = {}
+    for run in lay.runs.values():
+        by_col.setdefault(run.col, []).append((run.top, run.bottom))
+    for spans in by_col.values():
+        spans.sort()
+        assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:]))
+
+
+def test_a_leaf_run_ends_before_the_next_row():
+    lay = _lay([("a", "b")], ["a", "b", "solo"])
+    assert (lay.runs["b"].top, lay.runs["b"].bottom) == (2 * lay.row["b"] - 1, 2 * lay.row["b"] + 1)
+
+
+def test_the_metrics_read_off_the_grid():
+    lay = _lay(_SHAPES["diamond"])
+    m = measure(lay)
+    assert (m.length, m.width, m.optimal) == (_length(lay), 2, True)
+    assert m.off_right == sum(lay.width - 1 - c for c in lay.col.values())

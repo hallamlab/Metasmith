@@ -694,7 +694,7 @@ def _template_version(p, name: str, source: str) -> str | None:
 
 
 def _template_dag_path(p, name: str, version: str | None, theme: str) -> Path:
-    stamp = (version or "unversioned")[:12]
+    stamp = f"{(version or 'unversioned')[:12]}-g{op_workflow.GEOMETRY_VERSION}"
     return p.cache_dir / "template_dags" / stamp / f"{name}.{theme}.svg"
 
 
@@ -855,6 +855,10 @@ def get_workflow(name):
         or (wf.result.get("plan_graph") or {}).get("v") != op_workflow.GEOMETRY_VERSION
     ):
         display, plan_graph = _step_display(wf.path, p.root)
+        # the drawings cached beside the bundle were laid out by the same
+        # renderer as the geometry just found stale
+        for stale in _dag_cache_names():
+            (wf.path / stale).unlink(missing_ok=True)
         if display:
             wf = p.write_result(name, wf.result | {
                 "step_display": display, "plan_graph": plan_graph,
