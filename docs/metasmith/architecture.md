@@ -836,8 +836,10 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
   into, so it wins whole and says so.
 - **The workflow diagram's `<img src>` carries the plan's generation timestamp**, not just the
   theme: the route serves a file cached beside the bundle, so a url that never changes across a
-  re-solve is one the browser's cache keeps answering from. The cache is keyed on nothing about
-  the *renderer*, so changing how a node is drawn does not invalidate a drawing already on disk.
+  re-solve is one the browser's cache keeps answering from. The only renderer key is
+  `GEOMETRY_VERSION`: a bump rebuilds each stored plan graph and drops its cached drawings on the
+  next read, and stamps the template drawing directory. Change how a node is drawn without a bump
+  and the old drawings stay on disk.
 - **A step's controls sit level with its node, in the drawing's own pixels**, placed at the
   `dag_cy` the server measured off the same geometry `render_svg` is written in terms of. Scaling
   the image, or putting anything between it and the rows box, moves one origin and not the other —
@@ -859,7 +861,14 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
 - **A tutorial step names its control by a `data-tour` attribute** in the view that draws it.
   Renaming or removing one breaks nothing visible: the step shows its `waiting` text and never
   completes. A tab keeps its last selection, so a step that asks for something new compares
-  against what was open when it began, never against "something is selected".
+  against a snapshot, never against "something is selected". The snapshot waits until the
+  step's own section is open and `refresh` has marked its list loaded. Taken sooner, as on a
+  reload, it is of an empty list, and everything already there counts as new. Rail rows
+  (`data-rail-id`) and the `tour` prop on `StageProgress` and `JobLog` are anchors in the same way.
+- **A tutorial step's `id` keys the text edits made under `?tourEdit=1`**, so renaming an id
+  orphans its edits without warning. The agent, workflow and run a tutorial made are kept per
+  tutorial id, each recorded when the step that makes it completes. Both live in that browser's
+  local storage only. Nothing on the server ties a workflow to the tutorial that made it.
 
 ## DAG rendering
 
@@ -872,42 +881,79 @@ for raster formats and only as `neato -n2`, which honours our positions and lays
   the only thing keeping them apart. Shorten the id and the three fold into one node — after which
   the layout's cycle-breaker cuts edges to restore acyclicity, silently.
 - **A repeated block is a shape, never a name.** Products are named per instance, so nothing
-  matches as a string; a node's signature is its kind, its **fan-in**, and the sorted multiset of
-  its children's signatures to a bounded depth. Fan-in is in there because without it three
-  unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's block
-  is its descendants minus everything its siblings also reach — *not* its dominator subtree, which
-  loses any node with a second parent.
-- **Supply is emitted where it is consumed, not where it is declared.** A reference database is a
-  root that owns nothing; drawn at either end it holds a rail across every module between and
-  drags its consumers with it.
+  matches as a string; a node's signature is its **fan-in** and the sorted multiset of its
+  children's signatures to a bounded depth. Without fan-in, three unrelated merge steps hash alike.
+  An instance's block is its descendants minus everything its siblings also reach — *not* its
+  dominator subtree, which loses any node with a second parent.
 - **Colour is decoration and the layout must never see it.** Every scheme is a pure function of a
-  finished `Layout`. Two opposite jobs share the word: `lane` and `module` are graph colouring
-  (touching things differ), while `repeat` is the reverse — every instance of a motif in one hue.
-  Only the second makes a repetition visible, and only because the layout already put the
-  instances in the same shape.
+  finished `Layout`. Two opposite jobs share the word: `lane` (by column) and `module` are graph
+  colouring (touching things differ), while `repeat` is the reverse — every instance of a motif in
+  one hue. The scheme keeps the name `lane` because the GUI offers it by that name.
 - **`background=False` renders transparent**, for the GUI's card; node fills are untouched, so
   such a drawing is pixel-exact on a card of the theme's colour and only very close on any other.
+- **A data label's indent is `NodeGeometry.indent`, never folded into `label_x`.** In the label
+  column every node shares one `label_x`, and `DagRail.svelte` takes its gutter from the first
+  node's. Fold the indent in and the GUI's gutter shifts whenever the first row is data.
 
-**Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-congruence, rail rows, lanes, crossings, detours and module contiguity, and `layout` picks
-symmetry ahead of length. Congruence is *modal* — the largest set of instances arranged alike —
-because mean agreement is too coarse to separate row orders. Prefer adding a candidate to tuning a
-constant. Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`; a tuning change is free to
-improve one and has to say so out loud to make one worse.
+**The layout is two integers per node, and the drawer decides nothing.** `Layout` holds a row
+order and a column per node. Runs, bars and routes are derived from those, on half-rows: node row
+`r` sits at `2r`, the band above it at `2r − 1`. A node's run holds its column down to the band of
+its last child, and every edge into a node meets one bar in that band, so a route has at most one
+horizontal leg. A leaf's run ends at `2r + 1`, half-open. End it anywhere later and the next row
+cannot reuse the column. The drawer draws every turn as an arc, so an arc is a connection and a
+straight line through a junction is a crossing.
 
-Four things were measured and **rejected**, and the numbers are why they stay rejected: optimal
-Sugiyama layer assignment as a row sort (ranks are right, but many nodes share one, so the branch
-walk's grouping is lost and the drawing costs half again as much rail); sift-based local search on
-that objective (lowers the cost, scatters every cluster to do it); marker-to-label distance as a
-selection term (~11% more crossings across a 300-graph corpus, buys nothing on the metagenomics
-plan); and detour as anything but the last tie-break (crossings cannot see one, and most detours
-are forced). The first two are the general lesson: the objective is a proxy, and it stops agreeing
-with the picture close to its optimum. The last two are kept as *measurements* so either case can
-be re-argued in numbers.
+**The SVG draws each stretch of line once.** Every child of a node runs down the same column, and
+every parent of a node shares its bar, so edges retrace each other. An antialiased stroke drawn
+twice darkens its own edge and reads thicker at some zooms. `_strokes` cuts every straight piece
+where another touches it, keeps one piece per stretch, and rejoins the pieces into paths with butt
+caps. `Geometry` still carries one path per edge, because the GUI highlights edges one at a time.
+
+**The row order is a solve for minimum total edge length over blocks.** `DagRenderer` passes one
+block per step: the step and each node whose only producer is that step. A block takes consecutive
+rows, head first. Total length is the sum over nodes of in-degree minus out-degree times row, so
+the order inside a block is fixed before the search (rearrangement inequality). `_solve_component`
+then runs a beam DP over placed sets, one move per block, and `optimal` is true only when no layer
+was truncated. Repeated blocks then take one internal order: length outranks congruence.
+
+**CAUTION** Blocks raise the minimum length, by about 7% on a large metagenomics plan over the
+unconstrained order. That is the price of keeping outputs under their step, not a solver
+regression.
+
+**The columns are solved in stages: fewest columns, then fewest crossings, then least horizontal
+travel, with no bends.** A crossing is a live run strictly inside a bar's span other than its
+target, including a parent whose run continues below the bar, since the drawing shows it as a
+four-way junction. The rule against bends is hard: a node that ends a parent's run takes the column
+of one such parent. It never costs width, and can cost a crossing that one more column would win
+back, but width outranks crossings. `_columns` is the storyline sweep of Kostitsyna and Nöllenburg
+(GD 2015), fixed-parameter in the width, under a beam. `optimal_columns` is true only when no layer
+was cut. An unproven result is polished by `_improve`, which moves a run together with every run
+stacked straight below it, or the move would open a bend.
+
+Two things were considered and **rejected**:
+
+- **The storyline ILP of Gronemann et al. (GD 2016)**, solved with HiGHS. It still held 285
+  crossings on a long plan after 60 s, where the sweep reaches about 40 in under a second.
+- **A Sidney decomposition of the row order.** It cannot split a component: in an order-closed
+  set, in-degree minus out-degree sums to minus the edges leaving it, never above zero, so the
+  whole component is one block.
+
+A 100-node graph takes about 0.8 s, and the 1 s budget is pinned in `tests/metasmith/perf/`. Past
+that the result degrades to best-effort rather than failing. Ceilings are pinned in
+`tests/metasmith/unit/test_dag_stress.py`, and a solver change may move them either way.
+
+**A blacklist cuts, and `DagMode.STEPS` bypasses.** `DagRenderer(blacklist=...)` deletes every
+node whose type `IsA` one of the given types, with its edges, and wires nothing around it.
+`DagMode.STEPS` drops every data node and wires each step to the steps its data fed. Pass a generic
+type to cut a whole family.
 
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a declared
 dependency like any other, so without it every plan DAG grows an `env::*` node per step. Three
 defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
+
+**CAUTION** The namespace default catches only the standard library's environments. A library
+that declares environments in its own namespace reaches the drawing unless the caller blacklists
+its generic environment type.
 
 ## Versioning
 
