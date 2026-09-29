@@ -306,9 +306,11 @@ def write_dag(task, stem, cache_dir):
 # therefore on the project inode/byte quota, which is under pressure -- at N=70,785 genomes that
 # footprint is small next to the wall-clock saved, but it is a quota cost this step did not have
 # before. assembly_stats_pratama is deliberately NOT here despite the same clamp pressure: its
-# ~45 GB SAM/BAM intermediates are better off the quota, on node-local scratch.
+# ~45 GB SAM/BAM intermediates are better off the quota, on node-local scratch. spades_pratama is
+# not here for the same reason: its product is ~3 GB, but in place its spades_ws left ~120 GB per
+# sample on Lustre, and ~50 GB more for each attempt that ran out of memory.
 IN_PLACE_STEPS = (
-    "fastp", "bbduk_pratama", "megahit", "spades_pratama",
+    "fastp", "bbduk_pratama", "megahit",
     "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
     "vcontact3_pratama",
 )

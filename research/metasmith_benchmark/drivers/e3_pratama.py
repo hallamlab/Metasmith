@@ -52,7 +52,7 @@ SCALED = {
     "vibrant_pratama": (8, 16, 4),          # MaxRSS 7.3 GB, 0.8 h
     "virsorter2_pratama": (8, 16, 8),       # MaxRSS 5.0 GB, 4.7 h
     "genomad_pratama": (8, 16, 6),          # MaxRSS 11.3 GB, 2.2 h at 16 cpus
-    "genomad_island_annotate_pratama": (8, 16, 6),
+    "genomad_island_annotate_pratama": (8, 32, 6),  # OOM at 16 GB: mmseqs prefilter loads the whole DB
 }
 
 # The standard transforms each E3 library transform replaces, by library.
