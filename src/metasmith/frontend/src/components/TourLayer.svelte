@@ -16,6 +16,7 @@
     setHidden,
     setNavPosition,
     setStepText,
+    settleStep,
     stepText,
     tour,
     tourCtx,
@@ -51,6 +52,7 @@
   let done = $state(false)
   let watchRects = $state([])
   let flashes = $state([])
+  const flashIds = new Set()
   let calloutW = $state(0)
   let calloutH = $state(0)
   let listOpen = $state(false)
@@ -66,9 +68,10 @@
   // Polled every frame rather than observed: the target can appear late (a
   // modal opening, a solve finishing), move without resizing (the page
   // scrolling under it) or be replaced outright by a keyed remount, and no one
-  // observer sees all three. It runs while the tutorial is hidden too, so a
-  // step done with the tutorial tucked away still counts and still records
-  // what it made.
+  // observer sees all three. It runs while the tutorial is hidden too, at a
+  // slower beat, so a step done with the tutorial tucked away still counts and
+  // still records what it made.
+  const HIDDEN_POLL_MS = 500
   let armed = false
   let advanceTimer = null
   let scrolledFor = null
@@ -85,6 +88,11 @@
     let linked = false
     if (!key) return
     let raf = 0
+    let slow = 0
+    const later = () => {
+      if (tour.hidden) slow = setTimeout(tick, HIDDEN_POLL_MS)
+      else raf = requestAnimationFrame(tick)
+    }
     const tick = () => {
       const s = currentStep()
       if (!s) return
@@ -115,33 +123,39 @@
 
       let d = false
       try {
-        d = !!s.done?.(tourCtx, app, linksOf(tour.id)) || (!!s.touch && !!tourCtx.touched)
+        d = settleStep(s) && (!!s.done?.(tourCtx, app, linksOf(tour.id)) || (!!s.touch && !!tourCtx.touched))
       } catch {
         d = false
       }
       if (d && !linked && s.link) {
         linked = true
         try {
-          addLinks(s.link(tourCtx, app, linksOf(tour.id)))
+          const made = s.link(tourCtx, app, linksOf(tour.id))
+          addLinks(made)
+          // the rail row of what was just made; it may only appear with the
+          // section the step takes you to, so the diff below would miss it
+          for (const id of Object.values(made ?? {})) if (id) flashIds.add(id)
         } catch {
           /* a link that cannot be read is simply not recorded */
         }
       }
       // Seeing a step undone is what licenses its `done` to carry you on, so a
       // step revisited after it was finished waits for Next like any other.
+      // Editing text never moves on: the span being typed into would go with it.
       if (!d) armed = true
-      if (d && !done && armed && s.advance !== false && !advanceTimer) {
+      if (d && !done && armed && !tourEdit && s.advance !== false && !advanceTimer) {
         advanceTimer = setTimeout(() => {
           advanceTimer = null
           if (stepKey === key && done) nextStep()
         }, ADVANCE_MS)
       }
       done = d
-      raf = requestAnimationFrame(tick)
+      later()
     }
     raf = requestAnimationFrame(tick)
     return () => {
       cancelAnimationFrame(raf)
+      clearTimeout(slow)
       clearTimeout(advanceTimer)
       advanceTimer = null
     }
@@ -169,7 +183,10 @@
   // page changes out of the corner of the eye while the card is being read.
   // Switching sections is not a change: the new rail is taken as it is. Nor is
   // a list arriving -- an empty rail filling, or the archive toggle adding a
-  // batch -- so only a few rows turning up in a rail that had rows count.
+  // batch -- nor a list reshuffling, as a rename or a project switch does, so
+  // only a few rows turning up in a rail that kept all its rows count. What a
+  // step just made is flashed by id wherever its row turns up, since that row
+  // often arrives with the section change the diff ignores.
   $effect(() => {
     if (!tour.id) return
     let seen = null
@@ -177,15 +194,18 @@
     const poll = () => {
       const rows = [...document.querySelectorAll('[data-rail-id]')]
       const ids = new Set(rows.map((r) => r.dataset.railId))
-      if (seen && seenSection === app.section && !tour.hidden) {
+      const fresh = new Set([...flashIds].filter((id) => ids.has(id)))
+      for (const id of fresh) flashIds.delete(id)
+      if (seen && seenSection === app.section && seen.size && [...seen].every((id) => ids.has(id))) {
+        const added = [...ids].filter((id) => !seen.has(id))
+        if (added.length <= FLASH_MAX) for (const id of added) fresh.add(id)
+      }
+      if (fresh.size && !tour.hidden) {
         const now = Date.now()
-        const fresh = new Set([...ids].filter((id) => !seen.has(id)))
-        if (fresh.size && fresh.size <= FLASH_MAX && seen.size) {
-          flashes = [
-            ...flashes.filter((f) => !fresh.has(f.id)),
-            ...[...fresh].map((id) => ({ id, until: now + FLASH_MS, rect: null })),
-          ]
-        }
+        flashes = [
+          ...flashes.filter((f) => !fresh.has(f.id)),
+          ...[...fresh].map((id) => ({ id, until: now + FLASH_MS, rect: null })),
+        ]
       }
       seen = ids
       seenSection = app.section
@@ -232,7 +252,7 @@
   let prefY = $derived(clamp(tour.nav?.y ?? vh - (navH || 150) - 20, EDGE, vh - (navH || 40) - EDGE))
 
   let headerBottom = $derived.by(() => {
-    void vh
+    void vh, vw
     return document.querySelector('[data-tour="header"]')?.getBoundingClientRect().bottom ?? 0
   })
 
@@ -321,6 +341,8 @@
 
   function dragStart(e) {
     if (e.button !== 0 || e.target.closest('button')) return
+    // grabbed where it stands, which is not where it was put if it dodged
+    setNavPosition({ x: navPos.x, y: navPos.y }, false)
     drag = { dx: e.clientX - navPos.x, dy: e.clientY - navPos.y, id: e.pointerId }
     dragging = true
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -358,8 +380,11 @@
   const parts = (text) => String(text).split('`').map((s, i) => ({ code: i % 2 === 1, s }))
   const plain = (text) => String(text).replaceAll('`', '')
   const txt = (s, field, i = null) => stepText(t.id, s, field, i)
-  const save = (field, i = null) => (e) =>
-    setStepText(t.id, step, field, e.currentTarget.innerText.replace(/\n+$/, ''), i)
+  // bound to the step the span was drawn for, which by blur may not be current
+  const save = (s, field, i = null) => (e) =>
+    setStepText(t.id, s, field, e.currentTarget.innerText.replace(/\n+$/, ''), i)
+  // typing replaces the text node Svelte holds, so a reset has to redraw
+  let resets = $state(0)
 </script>
 
 {#snippet prose(field, i = null)}
@@ -369,7 +394,7 @@
       contenteditable="plaintext-only"
       spellcheck="true"
       data-ph={field === 'doneText' ? 'done — shown once the step is done' : field}
-      onblur={save(field, i)}
+      onblur={save(step, field, i)}
     >{txt(step, field, i)}</span>
   {:else}
     {#each parts(txt(step, field, i)) as p}{#if p.code}<code>{p.s}</code>{:else}{p.s}{/if}{/each}
@@ -410,7 +435,7 @@
     {/if}
   {/each}
 
-  {#key stepKey}
+  {#key `${stepKey}:${resets}`}
     <div
       class="callout"
       class:done
@@ -542,7 +567,7 @@
       <div class="editbar small">
         <span class="grow muted">editing · {editCount(t.id)} step(s) changed</span>
         <CopyButton text={exportEdits(t.id)} label="copy the edits as JSON" />
-        <button class="small" disabled={!editCount(t.id)} onclick={() => clearEdits(t.id)}>reset</button>
+        <button class="small" disabled={!editCount(t.id)} onclick={() => (clearEdits(t.id), resets++)}>reset</button>
       </div>
     {/if}
   </div>

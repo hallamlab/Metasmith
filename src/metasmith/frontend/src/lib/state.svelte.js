@@ -1,7 +1,7 @@
 import { api } from './api.svelte.js'
 
 export const SECTIONS = [
-  // Tutorials first, since it is where a newcomer starts; the rest in setup
+  // Tutorials leftmost, where a newcomer looks first; the rest in setup
   // order: you need a host before an agent, an agent before a run.
   // Data sits after Agents because a store belongs to one -- it is the same
   // pool a run's products land in, read as instances rather than as cache.
@@ -52,6 +52,8 @@ export const app = $state({
   runs: [],
   notice: null,
   loading: false,
+  // sections whose lists have come back at least once since the page opened
+  loaded: {},
   // the standard-library type vocabulary: identical for every workflow in the
   // project, so it is loaded once per session rather than once per workflow
   types: [],
@@ -498,6 +500,7 @@ export async function refresh(section = app.section) {
       await loadRuns()
       await loadAgents()
     }
+    app.loaded[section] = true
   } catch (e) {
     notify(e.message, e.kind ?? 'error')
   } finally {

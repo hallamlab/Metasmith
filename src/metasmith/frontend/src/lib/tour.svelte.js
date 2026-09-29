@@ -25,7 +25,9 @@ function restore() {
     }
     const t = findTutorial(raw.id)
     if (!t) return base
-    const step = Math.max(0, Math.min(t.steps.length - 1, Math.trunc(Number(raw.step)) || 0))
+    // by id first, so a tutorial that gained or lost a step reopens where you were
+    const byId = t.steps.findIndex((s) => s.id === raw.stepId)
+    const step = byId >= 0 ? byId : Math.max(0, Math.min(t.steps.length - 1, Math.trunc(Number(raw.step)) || 0))
     return { ...base, id: raw.id, step, hidden: !!(raw.hidden ?? raw.minimized) }
   } catch {
     return empty
@@ -41,14 +43,17 @@ export const tour = $state({
 })
 
 // Scratch shared by one pass through a tutorial -- a step records what existed
-// when it opened, a later step reads it. Not persisted: a reload starts clean
-// and each step's `done` has to hold up without it.
+// when it opened, a later step reads it. Not persisted: a reload retakes the
+// open step's snapshot (see `settleStep`), and a `done` that needs one stays
+// false until then -- fail closed, since true would record whatever happens
+// to be selected.
 export const tourCtx = {}
 
 function save() {
   try {
     const { id, step, hidden, nav, links, finished } = tour
-    localStorage.setItem(KEY, JSON.stringify({ id, step, hidden, nav, links, finished }))
+    const stepId = currentStep()?.id ?? null
+    localStorage.setItem(KEY, JSON.stringify({ id, step, stepId, hidden, nav, links, finished }))
   } catch {
     /* storage denied: the tour still runs, it just forgets on reload */
   }
@@ -60,9 +65,21 @@ export const linksOf = (id) => tour.links[id] ?? {}
 
 function enter(direction) {
   tour.arrived = direction
-  for (const k of ['touched']) delete tourCtx[k]
-  currentStep()?.enter?.(tourCtx, app)
+  for (const k of ['touched', 'entered']) delete tourCtx[k]
   save()
+}
+
+/** Run the current step's `enter` once its page is open and its list loaded,
+ *  and say whether it has run. A snapshot taken earlier -- on a reload, or a
+ *  restart from the Tutorials tab before the page it names has loaded -- is of
+ *  an empty list, and everything already there would then count as new. */
+export function settleStep(step = currentStep()) {
+  if (tourCtx.entered || !step) return true
+  if (!step.enter) return (tourCtx.entered = true)
+  const w = whereOf(step)
+  if (w && !(app.section === w.section && app.loaded[w.section])) return false
+  step.enter(tourCtx, app)
+  return (tourCtx.entered = true)
 }
 
 /** Start `id` from its first step, forgetting what an earlier pass made. */

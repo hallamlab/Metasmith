@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import threading
+import uuid
 from dataclasses import replace
 from fnmatch import fnmatch
 from pathlib import Path
@@ -855,10 +856,11 @@ def get_workflow(name):
         or (wf.result.get("plan_graph") or {}).get("v") != op_workflow.GEOMETRY_VERSION
     ):
         display, plan_graph = _step_display(wf.path, p.root)
-        # the drawings cached beside the bundle were laid out by the same
-        # renderer as the geometry just found stale
-        for stale in _dag_cache_names():
-            (wf.path / stale).unlink(missing_ok=True)
+        if plan_graph:
+            # the drawings cached beside the bundle were laid out by the same
+            # renderer as the geometry just replaced
+            for stale in _dag_cache_names():
+                (wf.path / stale).unlink(missing_ok=True)
         if display:
             wf = p.write_result(name, wf.result | {
                 "step_display": display, "plan_graph": plan_graph,
@@ -1293,10 +1295,20 @@ def workflow_dag(name):
         raise ProjectError(f"workflow [{name}] has no successful plan to draw")
     theme, background = _theme_arg(), _background_arg()
     svg = wf.path / _dag_cache_name(theme, background)
-    if not svg.is_file():
-        task = _load_task(wf.path)
-        task.plan.RenderDAG(str(svg), theme=theme, background=background)
-    return Response(svg.read_text(), mimetype="image/svg+xml")
+    try:
+        return Response(svg.read_text(), mimetype="image/svg+xml")
+    except FileNotFoundError:
+        pass
+    # drawn beside the cache and moved in whole: get_workflow may drop the cache
+    # at any moment, and a reader must never see a half-written file
+    tmp = svg.with_name(f".{uuid.uuid4().hex}.{svg.name}")
+    try:
+        _load_task(wf.path).plan.RenderDAG(str(tmp), theme=theme, background=background)
+        body = tmp.read_text()
+        os.replace(tmp, svg)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return Response(body, mimetype="image/svg+xml")
 
 
 @bp.post("/dag/layout")

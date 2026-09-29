@@ -35,7 +35,6 @@ const names = (list, key = (x) => x.name) => new Set(list.map(key))
 const runId = (r) => `${r.workflow}/${r.name}`
 
 const selectedAgent = (app) => app.agents.find((a) => a.name === app.selected.agents)
-const selectedRun = (app) => app.runs.find((r) => runId(r) === app.selected.runs)
 
 // Where a step happens, given what this pass has made so far: the recovery a
 // "take me there" and a jump from the Tutorials tab both use.
@@ -87,7 +86,10 @@ export default {
       do: 'click `+ agent`',
       enter: (c, app) => (c.agentAtEntry = app.selected.agents ?? null),
       done: (c, app) =>
-        app.section === 'agents' && !!app.selected.agents && app.selected.agents !== c.agentAtEntry,
+        app.section === 'agents' &&
+        'agentAtEntry' in c &&
+        !!app.selected.agents &&
+        app.selected.agents !== c.agentAtEntry,
       link: (_c, app) => ({ agent: app.selected.agents }),
     },
     {
@@ -362,7 +364,7 @@ export default {
       ],
       do: 'wait for the run to complete',
       doneText: 'completed',
-      done: (_c, app) => selectedRun(app)?.state === 'completed',
+      done: (_c, app, links) => app.runs.find((r) => runId(r) === (links.run ?? app.selected.runs))?.state === 'completed',
       waiting: 'Open the run from the Runs tab.',
     },
     {
