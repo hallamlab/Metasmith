@@ -42,8 +42,8 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml"
 # sacct recorded for waves 1-8 (September 2026), so the first grant covers p90 and the doubled one the
 # tail. CAUTION bbduk's -Xmx and MEGAHIT's --memory follow the grant, so their RSS measures the grant,
 # not the need. Their sizes come from spanish-lakes, whose bbduk ran at 2 cpus / 32 GB and MEGAHIT at
-# 8 / 32 on every sample. The two metaSPAdes lanes keep their declarations: 40 of 65 short-read
-# assemblies failed at 192 GB and finished at 384, and hybrid peaked at 238-402 GB.
+# 8 / 32 on every sample. Short-read metaSPAdes keeps its declaration: 40 of 65 assemblies failed at
+# 192 GB and finished at 384 GB, at MaxRSS 324-332 GB.
 SCALED = {
     "seqkit_reads": (2, 4, 1),              # MaxRSS 1.5 GB
     "bbduk_pratama": (4, 16, 2),
@@ -53,6 +53,7 @@ SCALED = {
     "virsorter2_pratama": (8, 16, 8),       # MaxRSS 5.0 GB, 4.7 h
     "genomad_pratama": (8, 16, 6),          # MaxRSS 11.3 GB, 2.2 h at 16 cpus
     "genomad_island_annotate_pratama": (8, 32, 6),  # OOM at 16 GB: mmseqs prefilter loads the whole DB
+    "spades_hybrid_pratama": (48, 384, 36),  # its declaration, capped at LARGE_MEMORY_STEPS' 768 GB
 }
 
 # The standard transforms each E3 library transform replaces, by library.

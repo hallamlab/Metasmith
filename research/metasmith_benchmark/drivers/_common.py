@@ -347,12 +347,12 @@ LONG_RUNNING_STEPS = {
 MAX_TASK_MEMORY_GB = 192
 
 # Sanctioned exceptions to the memory ceiling, same shape and same discipline as LONG_RUNNING_STEPS.
-# Hybrid metaSPAdes is the one measured case: six tasks at MaxRSS 238-402 GB, so its declared 384 GB
-# is the observation rather than a guess. It is listed for the day something scales it -- it is not
-# in any driver's SCALED today, so its resources come from its own declaration and this dict is
-# currently unused. Keep it that way: an entry here is a claim that a measurement justifies it.
+# Applies only to a step in a driver's SCALED. Hybrid metaSPAdes is the one measured case: nine tasks at
+# MaxRSS 180-384 GiB, two of them pinned at the 384 GiB grant, so a retry needs the 768 GB rung. Its own
+# declaration would double without a cap, and fir refuses the 3,072 GB fourth rung at submission,
+# which wedges the run. Keep entries to what a measurement justifies.
 LARGE_MEMORY_STEPS = {
-    "spades_hybrid_pratama": 384,
+    "spades_hybrid_pratama": 768,
 }
 
 
