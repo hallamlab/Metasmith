@@ -37,6 +37,8 @@
   let stageEl = $state(null)
   let imgEl = $state(null)
   let drag = $state(null)
+  // whether the viewer has zoomed or panned since the drawing was placed
+  let moved = $state(false)
 
   const MIN_SCALE = 0.2
   const MAX_SCALE = 8
@@ -47,6 +49,7 @@
   function center() {
     if (!stageEl || !imgEl?.naturalWidth) return
     scale = 1
+    moved = false
     tx = (stageEl.clientWidth - imgEl.naturalWidth) / 2
     ty = (stageEl.clientHeight - imgEl.naturalHeight) / 2
   }
@@ -67,6 +70,7 @@
     // shift turns the wheel into a scrollbar: some browsers already swap
     // deltaX/deltaY for us when shift is held, so take whichever axis carries
     // the motion rather than assuming deltaY
+    moved = true
     if (e.shiftKey) {
       ty -= e.deltaY || e.deltaX
       return
@@ -93,8 +97,11 @@
 
   function onPointerMove(e) {
     if (!drag || drag.id !== e.pointerId) return
-    tx = e.clientX - drag.x
-    ty = e.clientY - drag.y
+    const nx = e.clientX - drag.x
+    const ny = e.clientY - drag.y
+    if (Math.abs(nx - tx) + Math.abs(ny - ty) > 0) moved = true
+    tx = nx
+    ty = ny
   }
 
   function endDrag(e) {
@@ -172,6 +179,7 @@
   <div
     class="stage"
     data-tour="template-preview"
+    data-moved={moved || undefined}
     class:panning={!!drag}
     role="application"
     aria-label="template diagram — scroll to zoom, drag to pan"

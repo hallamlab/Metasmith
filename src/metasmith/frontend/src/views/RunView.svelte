@@ -1,6 +1,6 @@
 <script>
   import { api } from '../lib/api.svelte.js'
-  import { attempt, loadRuns, select } from '../lib/state.svelte.js'
+  import { attempt, loadRuns, select, setPanelOpen } from '../lib/state.svelte.js'
   import { runSuffix } from '../lib/runname.js'
   import Ago from '../components/Ago.svelte'
   import CopyButton from '../components/CopyButton.svelte'
@@ -24,6 +24,9 @@
   let steps = $state([])
   let tree = $state(null)
   let picked = $state(null)
+  $effect(() => {
+    if (picked) setPanelOpen('run', true)
+  })
   let jobId = $state(null)
   let busy = $state(false)
 
@@ -338,6 +341,14 @@
   }
 </script>
 
+{#snippet folder(path)}
+  <div class="folderbar small">
+    <span class="folderlabel">results folder</span>
+    <span class="mono truncate grow" title={path}>{path ?? '—'}</span>
+    {#if path}<CopyButton text={path} label="copy the results path" />{/if}
+  </div>
+{/snippet}
+
 {#if !rec}
   <p class="loading muted">loading…</p>
 {:else}
@@ -366,7 +377,7 @@
       </div>
     </div>
 
-    <StageProgress stages={STAGES} {stageStates} />
+    <StageProgress stages={STAGES} {stageStates} tour="run-progress" />
     {#if rec.survivors?.length}
       <p class="small warnline">
         cancel left {rec.survivors.length} process{rec.survivors.length === 1 ? '' : 'es'}
@@ -558,14 +569,8 @@
     <div class="card col" style="gap:8px" data-tour="run-results">
       <h3>results</h3>
       {#if !results?.collected}
-        <p class="small muted">
-          Results live on the agent until you collect them. Collecting copies the
-          result library into this run's own outputs folder.
-        </p>
-        <div class="row" style="gap:8px; align-items:center">
-          <p class="small mono muted" style="margin:0">{results?.path}</p>
-          <CopyButton text={results?.path} label="copy the results path" />
-        </div>
+        <p class="small muted" style="margin:0">No results yet</p>
+        {@render folder(results?.path)}
         <div>
           <button onclick={collect} disabled={rec.live} data-tour="collect">collect results</button>
         </div>
@@ -622,10 +627,7 @@
             {/if}
           </div>
         </details>
-        <div class="row" style="gap:8px; align-items:center">
-          <p class="small muted mono" style="margin:0">{results.path}</p>
-          <CopyButton text={results.path} label="copy the results path" />
-        </div>
+        {@render folder(results.path)}
       {/if}
     </div>
   </div>
@@ -635,6 +637,7 @@
     title="selected result"
     subtitle={picked?.name ?? 'nothing selected'}
     topDefault={240}
+    startOpen={false}
   >
     {#snippet top()}
       <AncestryList node={picked} onpick={pickPath} />
@@ -652,6 +655,24 @@
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
   .treebox { max-height: 340px; overflow: auto; }
+  .folderbar {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--sunken);
+    overflow: hidden;
+  }
+  .folderbar > * { display: flex; align-items: center; padding: 4px 8px; }
+  .folderbar .folderlabel {
+    flex: 0 0 auto;
+    background: var(--panel-2);
+    border-right: 1px solid var(--line);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .folderbar .grow { display: block; line-height: 20px; }
 
   /* the same four states as StageProgress's segments, as a marker beside a row */
   .pip {

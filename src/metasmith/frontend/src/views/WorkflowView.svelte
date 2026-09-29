@@ -589,6 +589,48 @@
     return () => io.disconnect()
   })
 
+  // A plan narrower than the card is centred by holding the row off its right
+  // edge, and the sticky resource header takes the same inset so it stays over
+  // the columns. The inset is capped by the room the control row has left
+  // beside its chips: past that the header would overflow the card, so the
+  // row gives up some centring rather than the header its columns.
+  let resBodyEl = $state(null)
+  let resInset = $state(0)
+  // the `gap` of `.dag-row` and of `.dag-controls`
+  const ROW_GAP = 10
+  const CONTROLS_GAP = 6
+
+  $effect(() => {
+    const box = dagEl
+    const body = resBodyEl
+    const controls = dagControlsEl
+    void planGraph
+    if (!box || !body) return
+    const row = box.querySelector('.dag-row')
+    const drawing = box.querySelector('.dag-scroll > *')
+    if (!row) return
+    const measure = () => {
+      const content = (drawing?.getBoundingClientRect().width ?? 0) + ROW_GAP + body.offsetWidth
+      const centred = (row.clientWidth - content) / 2
+      let room = Infinity
+      const head = controls?.querySelector('.dag-resources')
+      if (controls && head) {
+        const others = [...controls.children].filter((k) => {
+          const cs = getComputedStyle(k)
+          return k !== head && cs.position !== 'absolute' && cs.display !== 'none'
+        })
+        const used = others.reduce((w, k) => w + k.offsetWidth + CONTROLS_GAP, 0) + head.offsetWidth
+        // a row too narrow for all of it wraps the header onto a line of its own
+        room = controls.clientWidth - (used <= controls.clientWidth ? used : head.offsetWidth)
+      }
+      resInset = Math.max(0, Math.floor(Math.min(centred, room)))
+    }
+    const ro = new ResizeObserver(measure)
+    for (const el of [row, body, drawing, controls]) if (el) ro.observe(el)
+    measure()
+    return () => ro.disconnect()
+  })
+
   async function toggleDag() {
     const scroller = dagScroller()
     const before = dagControlsEl?.getBoundingClientRect().top
@@ -1374,7 +1416,7 @@
         </div>
 
         {#if showSolveBar}
-          <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
+          <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} tour="solve-progress" />
         {/if}
 
         {#if jobId}
@@ -1629,14 +1671,11 @@
                        onto the diagram's first node, but a plan that scrolled
                        the page past that point had already carried this bar up
                        here to answer "which column is cpus" -- so the in-flow
-                       one was always the redundant half. Pushed to the far
-                       right of the row by `margin-left: auto` rather than
-                       inline after the export group: the row's columns are
-                       right-justified against the same edge (see `.dag-row`),
-                       and matching `--res-cols` here is what keeps this bar
-                       sitting directly over them instead of just labelling the
-                       row from wherever it happens to end. -->
-                  <div class="dag-group dag-resources">
+                       one was always the redundant half. Pushed right by
+                       `margin-left: auto` and held off the edge by `resInset`,
+                       the same inset the row below is, so that with
+                       `--res-cols` it sits directly over its columns. -->
+                  <div class="dag-group dag-resources" style={`margin-right: ${resInset}px`}>
                     <span class="dag-group-label">resources</span>
                     <div class="dag-chips dag-res-head">
                       <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
@@ -1646,12 +1685,12 @@
               </div>
             {/if}
             {#if dagOpen}
-            <!-- Right-justified: the resource columns are a fixed width, so
-                 they anchor the row's right edge and the diagram grows to
-                 their left as the plan does. Only `.dag-scroll` scrolls --
+            <!-- Centred while it fits (see `resInset`); once it does not, the
+                 diagram takes the slack and the columns meet the right edge.
+                 Only `.dag-scroll` scrolls --
                  the columns are a flex sibling outside it, so they and the
                  header above stay in place while the diagram itself pans. -->
-            <div class="dag-row">
+            <div class="dag-row" style={`padding-right: ${resInset}px`}>
               <div class="dag-scroll">
                 {#if planGraph}
                   <DagRail
@@ -1673,7 +1712,7 @@
                          a top, so a row's offset is its node's `cy` less half a
                          pitch -- and both numbers come from the placement the
                          server stored, never from a constant here. -->
-                    <div class="res-body" style={`height: ${dagHeight}px`}>
+                    <div class="res-body" style={`height: ${dagHeight}px`} bind:this={resBodyEl}>
                       <!-- Nothing else here is in normal flow -- the guides and
                            rows below are all absolutely placed, which is how a
                            row can sit at its node's own `cy` instead of the
@@ -1747,7 +1786,7 @@
 
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
-              against library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
+              {' '}against library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
         {:else}
           <HintsPanel result={wf.result} onadd={useType} />
@@ -1993,18 +2032,16 @@
   /* The diagram sits on the card's own ground: it is drawn with no plate of its
      own, and one painted under it was never any colour but this card's -- which
      is also what a hollow marker is filled with, since hollow reads hollow only
-     where the fill and the ground agree. The resource columns are a fixed
-     width, so the row is right-justified against them instead of centred: the
-     diagram grows to their left as the plan does, and only once it runs out of
-     room does it scroll -- the columns stay put rather than being carried off
-     sideways with it. No fold and no height cap on the row itself: it grows
-     with the plan. */
+     where the fill and the ground agree. Right-justified, then held off the
+     edge by `resInset` to centre a plan that fits; with `.dag-scroll` shrinking
+     first, a wide plan scrolls while the fixed-width columns stay put rather
+     than being carried off sideways with it. No fold and no height
+     cap on the row itself: it grows with the plan. */
   .dag-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-top: 8px; }
   /* shrinks below its own content width before it grows the row -- which is
      what lets it scroll instead of pushing `.res-body` off the right edge */
   .dag-scroll { overflow-x: auto; min-width: 0; flex: 0 1 auto; }
-  /* the fixed-width half of the row; never shrinks, which is what anchors the
-     right edge `.dag-row` justifies against */
+  /* the fixed-width half of the row; never shrinks */
   .res-body { flex: 0 0 auto; position: relative; }
   /* the fold around the job log: a summary its own
      row with the status pill riding beside it, so a job's outcome reads
@@ -2044,6 +2081,7 @@
        alignment is what keeps the one pill level with the row of chips rather
        than floating against the middle of the taller block */
     align-items: flex-end;
+    flex-wrap: wrap;
     gap: 6px;
   }
   /* The row floats over the drawing it controls, and small type over a diagram
@@ -2163,9 +2201,6 @@
   }
   /* the gap that says these choose what is saved rather than what is drawn */
   .dag-export { margin-left: 18px; }
-  /* pushed to the row's own right edge rather than a fixed gap after export --
-     that is what keeps it flush with `.res-body` below, which is anchored to
-     the same edge by `.dag-row`'s `justify-content: flex-end` */
   .dag-resources { margin-left: auto; }
   /* "resources" names the whole grid below, not just its left edge */
   .dag-resources .dag-group-label { text-align: center; }

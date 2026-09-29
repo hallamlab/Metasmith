@@ -1,17 +1,27 @@
 <script>
-  import { app } from '../lib/state.svelte.js'
+  import { untrack } from 'svelte'
+  import { app, selectSection } from '../lib/state.svelte.js'
   import {
+    addLinks,
+    clearEdits,
     currentStep,
+    editCount,
+    exportEdits,
+    goWhere,
+    gotoStep,
+    linksOf,
     nextStep,
     prevStep,
-    gotoStep,
     resolveTarget,
-    setMinimized,
+    setHidden,
     setNavPosition,
-    stopTour,
+    setStepText,
+    stepText,
     tour,
     tourCtx,
+    tourEdit,
     tutorial,
+    whereOf,
   } from '../lib/tour.svelte.js'
   import CopyButton from './CopyButton.svelte'
   import Icon from './Icon.svelte'
@@ -20,6 +30,8 @@
   const GAP = 14
   const EDGE = 10
   const ADVANCE_MS = 900
+  const FLASH_MS = 4000
+  const FLASH_MAX = 3
 
   let t = $derived(tutorial())
   let step = $derived(tour.id ? currentStep() : null)
@@ -37,18 +49,26 @@
 
   let rect = $state(null)
   let done = $state(false)
+  let watchRects = $state([])
+  let flashes = $state([])
   let calloutW = $state(0)
   let calloutH = $state(0)
   let listOpen = $state(false)
   let vw = $state(window.innerWidth)
   let vh = $state(window.innerHeight)
 
+  const box = (r) => ({ left: r.left, top: r.top, width: r.width, height: r.height })
+  const same = (a, b) =>
+    !!a && !!b && a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height
+
   // -- following the target -------------------------------------------------
   //
   // Polled every frame rather than observed: the target can appear late (a
   // modal opening, a solve finishing), move without resizing (the page
   // scrolling under it) or be replaced outright by a keyed remount, and no one
-  // observer sees all three.
+  // observer sees all three. It runs while the tutorial is hidden too, so a
+  // step done with the tutorial tucked away still counts and still records
+  // what it made.
   let armed = false
   let advanceTimer = null
   let scrolledFor = null
@@ -60,6 +80,9 @@
     armed = tour.arrived === 'forward'
     done = false
     rect = null
+    watchRects = []
+    listOpen = false
+    let linked = false
     if (!key) return
     let raf = 0
     const tick = () => {
@@ -68,10 +91,8 @@
       const el = resolveTarget(s.target)
       if (el) {
         const r = el.getBoundingClientRect()
-        if (!rect || r.left !== rect.left || r.top !== rect.top || r.width !== rect.width || r.height !== rect.height) {
-          rect = { left: r.left, top: r.top, width: r.width, height: r.height }
-        }
-        if (scrolledFor !== key) {
+        if (!same(rect, r)) rect = box(r)
+        if (scrolledFor !== key && !tour.hidden) {
           scrolledFor = key
           const vh = window.innerHeight
           if (r.top < 0 || r.bottom > vh) {
@@ -82,11 +103,29 @@
       } else if (rect) {
         rect = null
       }
+
+      const watched = []
+      for (const w of s.watch ?? []) {
+        const wel = resolveTarget(w.target)
+        if (wel) watched.push({ ...box(wel.getBoundingClientRect()), label: w.label })
+      }
+      if (watched.length !== watchRects.length || watched.some((w, i) => !same(w, watchRects[i]))) {
+        watchRects = watched
+      }
+
       let d = false
       try {
-        d = !!s.done?.(tourCtx, app)
+        d = !!s.done?.(tourCtx, app, linksOf(tour.id)) || (!!s.touch && !!tourCtx.touched)
       } catch {
         d = false
+      }
+      if (d && !linked && s.link) {
+        linked = true
+        try {
+          addLinks(s.link(tourCtx, app, linksOf(tour.id)))
+        } catch {
+          /* a link that cannot be read is simply not recorded */
+        }
       }
       // Seeing a step undone is what licenses its `done` to carry you on, so a
       // step revisited after it was finished waits for Next like any other.
@@ -108,6 +147,63 @@
     }
   })
 
+  // A step with `touch` is done once the pointer has been over, pressed or
+  // scrolled on something matching it -- "hover a step", "click one".
+  $effect(() => {
+    if (!stepKey) return
+    const onEvent = (e) => {
+      const sel = currentStep()?.touch
+      if (sel && e.target instanceof Element && e.target.closest(sel)) tourCtx.touched = true
+    }
+    const opts = { capture: true, passive: true }
+    for (const type of ['pointerover', 'pointerdown', 'wheel']) document.addEventListener(type, onEvent, opts)
+    return () => {
+      for (const type of ['pointerover', 'pointerdown', 'wheel']) document.removeEventListener(type, onEvent, opts)
+    }
+  })
+
+  // -- what changed in the rails ---------------------------------------------
+  //
+  // A row that appears in a side rail while a tutorial runs -- the agent just
+  // made, the run just launched -- is outlined for a few seconds, because the
+  // page changes out of the corner of the eye while the card is being read.
+  // Switching sections is not a change: the new rail is taken as it is. Nor is
+  // a list arriving -- an empty rail filling, or the archive toggle adding a
+  // batch -- so only a few rows turning up in a rail that had rows count.
+  $effect(() => {
+    if (!tour.id) return
+    let seen = null
+    let seenSection = null
+    const poll = () => {
+      const rows = [...document.querySelectorAll('[data-rail-id]')]
+      const ids = new Set(rows.map((r) => r.dataset.railId))
+      if (seen && seenSection === app.section && !tour.hidden) {
+        const now = Date.now()
+        const fresh = new Set([...ids].filter((id) => !seen.has(id)))
+        if (fresh.size && fresh.size <= FLASH_MAX && seen.size) {
+          flashes = [
+            ...flashes.filter((f) => !fresh.has(f.id)),
+            ...[...fresh].map((id) => ({ id, until: now + FLASH_MS, rect: null })),
+          ]
+        }
+      }
+      seen = ids
+      seenSection = app.section
+      const now = Date.now()
+      const live = flashes
+        .filter((f) => f.until > now)
+        .map((f) => {
+          const el = document.querySelector(`[data-rail-id="${CSS.escape(f.id)}"]`)
+          return el ? { ...f, rect: box(el.getBoundingClientRect()) } : null
+        })
+        .filter(Boolean)
+      if (live.length !== flashes.length || live.some((f, i) => !same(f.rect, flashes[i].rect))) flashes = live
+    }
+    const timer = setInterval(poll, 250)
+    untrack(poll)
+    return () => clearInterval(timer)
+  })
+
   $effect(() => {
     const onresize = () => {
       vw = window.innerWidth
@@ -117,24 +213,42 @@
     return () => window.removeEventListener('resize', onresize)
   })
 
+  // -- how much of the page goes dark --------------------------------------
+  //
+  // Only an intro card and a control still waiting to be pressed dim the page.
+  // A step that waits on something -- a deploy, a solve, a run -- or points at
+  // something to read leaves the page lit, since what happens next happens out
+  // there and the dark would hide it.
+  let dim = $derived(!!step && !!rect && !!step.do && !step.wait && !step.watch?.length && step.dim !== false && !done)
+
   // -- where the callout goes ------------------------------------------------
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+  const NAV_W = 300
+  let navH = $state(0)
+  let dragging = $state(false)
+  let prefX = $derived(clamp(tour.nav?.x ?? vw - NAV_W - 20, EDGE, vw - NAV_W - EDGE))
+  let prefY = $derived(clamp(tour.nav?.y ?? vh - (navH || 150) - 20, EDGE, vh - (navH || 40) - EDGE))
+
+  let headerBottom = $derived.by(() => {
+    void vh
+    return document.querySelector('[data-tour="header"]')?.getBoundingClientRect().bottom ?? 0
+  })
 
   let placed = $derived.by(() => {
     const w = calloutW || 340
     const h = calloutH || 160
     if (!rect) {
       // Nothing to point at: an intro is centred, a step still waiting for its
-      // target sits above the navigator so it is read alongside it.
+      // target sits above where the navigator would like to be
       if (!step?.target) return { x: (vw - w) / 2, y: Math.max(EDGE, vh * 0.28 - h / 2), side: null }
-      return { x: vw - w - 20, y: Math.max(EDGE, navY - h - 12), side: null }
+      return { x: vw - w - 20, y: Math.max(headerBottom + EDGE, prefY - h - 12), side: null }
     }
     const r = rect
     const cx = r.left + r.width / 2
     const cy = r.top + r.height / 2
     // a card over the tab bar would hide the next step's control
-    const headerBottom = document.querySelector('[data-tour="header"]')?.getBoundingClientRect().bottom ?? 0
     const ceiling = r.top >= headerBottom ? headerBottom + EDGE : EDGE
     const at = {
       right: () => ({ x: r.left + r.width + PAD + GAP, y: clamp(cy - h / 2, ceiling, vh - h - EDGE) }),
@@ -148,8 +262,7 @@
       const p = at[side]()
       if (fits(p)) return { ...p, side }
     }
-    // a target bigger than the room around it: sit over its upper right,
-    // clear of the navigator's default corner
+    // a target bigger than the room around it: sit over its upper right
     return { x: vw - w - EDGE, y: clamp(r.top + 12, EDGE, vh - h - EDGE), side: null }
   })
 
@@ -166,16 +279,50 @@
   })
 
   // -- the navigator ---------------------------------------------------------
+  //
+  // It stands where you put it (bottom right until you move it) unless that
+  // covers the ring, a watched spot or the callout; then it takes the first
+  // corner that covers none of them, or the one that covers least.
+  let navPos = $derived.by(() => {
+    const h = navH || 150
+    if (dragging || !step) return { x: prefX, y: prefY }
+    const top = headerBottom + EDGE
+    const cands = [
+      { x: prefX, y: prefY },
+      { x: vw - NAV_W - 20, y: vh - h - 20 },
+      { x: 20, y: vh - h - 20 },
+      { x: vw - NAV_W - 20, y: top },
+      { x: 20, y: top },
+    ].map((p) => ({ x: clamp(p.x, EDGE, vw - NAV_W - EDGE), y: clamp(p.y, EDGE, vh - h - EDGE) }))
+    const obstacles = []
+    if (rect) obstacles.push({ l: rect.left - 12, t: rect.top - 12, r: rect.left + rect.width + 12, b: rect.top + rect.height + 12 })
+    for (const w of watchRects) obstacles.push({ l: w.left - 8, t: w.top - 8, r: w.left + w.width + 8, b: w.top + w.height + 8 })
+    obstacles.push({ l: placed.x, t: placed.y, r: placed.x + (calloutW || 340), b: placed.y + (calloutH || 160) })
+    const overlap = (p) =>
+      obstacles.reduce((sum, o) => {
+        const w = Math.min(p.x + NAV_W, o.r) - Math.max(p.x, o.l)
+        const hh = Math.min(p.y + h, o.b) - Math.max(p.y, o.t)
+        return sum + (w > 0 && hh > 0 ? w * hh : 0)
+      }, 0)
+    let best = cands[0]
+    let bestArea = overlap(best)
+    for (const c of cands.slice(1)) {
+      if (bestArea === 0) break
+      const a = overlap(c)
+      if (a < bestArea) {
+        best = c
+        bestArea = a
+      }
+    }
+    return best
+  })
 
-  const NAV_W = 300
-  let navH = $state(0)
-  let navX = $derived(clamp(tour.nav?.x ?? vw - NAV_W - 20, EDGE, vw - NAV_W - EDGE))
-  let navY = $derived(clamp(tour.nav?.y ?? vh - (navH || 150) - 20, EDGE, vh - (navH || 40) - EDGE))
   let drag = null
 
   function dragStart(e) {
     if (e.button !== 0 || e.target.closest('button')) return
-    drag = { dx: e.clientX - navX, dy: e.clientY - navY, id: e.pointerId }
+    drag = { dx: e.clientX - navPos.x, dy: e.clientY - navPos.y, id: e.pointerId }
+    dragging = true
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function dragMove(e) {
@@ -185,141 +332,218 @@
   function dragEnd(e) {
     if (drag?.id !== e.pointerId) return
     drag = null
+    dragging = false
     setNavPosition(tour.nav)
   }
+
+  // the step list, folded to the steps either side of this one
+  let peek = $derived.by(() => {
+    if (!t) return []
+    const out = []
+    for (const i of [tour.step - 1, tour.step, tour.step + 1]) {
+      if (i >= 0 && i < t.steps.length) out.push(i)
+    }
+    return out
+  })
+
+  let there = $derived.by(() => {
+    if (!step?.target || rect) return null
+    const w = whereOf(step)
+    if (!w) return null
+    const here = app.section === w.section && (!w.id || app.selected[w.section] === w.id)
+    return here ? null : w
+  })
 
   // backticks in a step's prose are code, and nothing else is markup
   const parts = (text) => String(text).split('`').map((s, i) => ({ code: i % 2 === 1, s }))
   const plain = (text) => String(text).replaceAll('`', '')
+  const txt = (s, field, i = null) => stepText(t.id, s, field, i)
+  const save = (field, i = null) => (e) =>
+    setStepText(t.id, step, field, e.currentTarget.innerText.replace(/\n+$/, ''), i)
 </script>
 
-{#if t && step}
-  {#if !tour.minimized}
-    {#if rect}
-      <div
-        class="ring"
-        class:done
-        aria-hidden="true"
-        style={`left:${rect.left - PAD}px; top:${rect.top - PAD}px; width:${rect.width + PAD * 2}px; height:${rect.height + PAD * 2}px`}
-      ></div>
-    {:else if !step.target}
-      <div class="scrim" aria-hidden="true"></div>
-    {/if}
-
-    {#key stepKey}
-      <div
-        class="callout"
-        class:done
-        role="dialog"
-        aria-label={step.title}
-        bind:clientWidth={calloutW}
-        bind:clientHeight={calloutH}
-        style={`left:${placed.x}px; top:${placed.y}px`}
-      >
-        {#if arrow}
-          <span class="arrow {placed.side}" style={`left:${arrow.left}px; top:${arrow.top}px`}></span>
-        {/if}
-        <div class="kicker small">
-          <span>{step.chapter}</span>
-          <span class="muted">{tour.step + 1} / {t.steps.length}</span>
-        </div>
-        <h2>{#each parts(step.title) as p}{#if p.code}<code>{p.s}</code>{:else}{p.s}{/if}{/each}</h2>
-        {#each step.body ?? [] as para}
-          <p>{#each parts(para) as p}{#if p.code}<code>{p.s}</code>{:else}{p.s}{/if}{/each}</p>
-        {/each}
-        {#if step.snippet}
-          <div class="snippet">
-            <pre class="mono">{step.snippet.text}</pre>
-            <CopyButton text={step.snippet.text} label={step.snippet.label ?? 'copy'} />
-          </div>
-        {/if}
-        {#if step.do}
-          <div class="do" class:done>
-            {#if done}
-              <Icon name="check" size={12} />
-              <span>{step.doneText ?? 'done'}</span>
-            {:else}
-              <span class="pip" aria-hidden="true"></span>
-              <span>{#each parts(step.do) as p}{#if p.code}<code>{p.s}</code>{:else}{p.s}{/if}{/each}</span>
-            {/if}
-          </div>
-        {/if}
-        {#if step.target && !rect && step.waiting}
-          <p class="small muted waiting">{step.waiting}</p>
-        {/if}
-      </div>
-    {/key}
+{#snippet prose(field, i = null)}
+  {#if tourEdit}
+    <span
+      class="editable"
+      contenteditable="plaintext-only"
+      spellcheck="true"
+      data-ph={field === 'doneText' ? 'done — shown once the step is done' : field}
+      onblur={save(field, i)}
+    >{txt(step, field, i)}</span>
+  {:else}
+    {#each parts(txt(step, field, i)) as p}{#if p.code}<code>{p.s}</code>{:else}{p.s}{/if}{/each}
   {/if}
+{/snippet}
+
+{#if t && step && !tour.hidden}
+  {#if rect}
+    <div
+      class="ring"
+      class:done
+      class:dim
+      aria-hidden="true"
+      style={`left:${rect.left - PAD}px; top:${rect.top - PAD}px; width:${rect.width + PAD * 2}px; height:${rect.height + PAD * 2}px`}
+    ></div>
+  {:else if !step.target}
+    <div class="scrim" aria-hidden="true"></div>
+  {/if}
+
+  {#each watchRects as w (w.label)}
+    <div
+      class="watch"
+      aria-hidden="true"
+      style={`left:${w.left - 4}px; top:${w.top - 4}px; width:${w.width + 8}px; height:${w.height + 8}px`}
+    >
+      <span class="wlabel small">{w.label}</span>
+    </div>
+  {/each}
+  {#each flashes as f (f.id)}
+    {#if f.rect}
+      <div
+        class="flash"
+        aria-hidden="true"
+        style={`left:${f.rect.left - 2}px; top:${f.rect.top - 2}px; width:${f.rect.width + 4}px; height:${f.rect.height + 4}px`}
+      >
+        <span class="wlabel small">new</span>
+      </div>
+    {/if}
+  {/each}
+
+  {#key stepKey}
+    <div
+      class="callout"
+      class:done
+      class:editing={tourEdit}
+      role="dialog"
+      aria-label={plain(txt(step, 'title'))}
+      bind:clientWidth={calloutW}
+      bind:clientHeight={calloutH}
+      style={`left:${placed.x}px; top:${placed.y}px`}
+    >
+      {#if arrow}
+        <span class="arrow {placed.side}" style={`left:${arrow.left}px; top:${arrow.top}px`}></span>
+      {/if}
+      <div class="kicker small">{step.chapter}</div>
+      <h2>{@render prose('title')}</h2>
+      {#each step.body ?? [] as _para, i}
+        <p>{@render prose('body', i)}</p>
+      {/each}
+      {#if step.snippet}
+        <div class="snippet">
+          <pre class="mono">{step.snippet.text}</pre>
+          <CopyButton text={step.snippet.text} label={step.snippet.label ?? 'copy'} />
+        </div>
+      {/if}
+      {#if step.do}
+        <div class="do" class:done>
+          {#if done && !tourEdit}
+            <Icon name="check" size={12} />
+            <span>{txt(step, 'doneText') || 'done'}</span>
+          {:else}
+            <span class="pip" aria-hidden="true"></span>
+            <span>{@render prose('do')}</span>
+          {/if}
+        </div>
+        {#if tourEdit}
+          <div class="do done small">
+            <Icon name="check" size={12} />
+            <span>{@render prose('doneText')}</span>
+          </div>
+        {/if}
+      {/if}
+      {#if step.target && (tourEdit ? step.waiting : !rect && step.waiting)}
+        <p class="small muted waiting">{@render prose('waiting')}</p>
+      {/if}
+      {#if there}
+        <button class="small there" onclick={() => goWhere(step)}>take me there ›</button>
+      {/if}
+    </div>
+  {/key}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="nav"
-    class:mini={tour.minimized}
+    class:dragging
     bind:clientHeight={navH}
-    style={`left:${navX}px; top:${navY}px; width:${NAV_W}px`}
+    style={`left:${navPos.x}px; top:${navPos.y}px; width:${NAV_W}px`}
   >
     <div class="navhead" onpointerdown={dragStart} onpointermove={dragMove} onpointerup={dragEnd} onpointercancel={dragEnd}>
       <span class="grip" aria-hidden="true">⠿</span>
-      <span class="grow truncate small">{t.title}</span>
+      <span class="grow truncate small" title={t.title}>{t.title}</span>
+      <span class="count small mono">{tour.step + 1}/{t.steps.length}</span>
       <button
         class="icon"
-        title={tour.minimized ? 'show the tutorial' : 'tuck the tutorial away — the page is yours'}
-        onclick={() => setMinimized(!tour.minimized)}
-      >{tour.minimized ? '▴' : '▾'}</button>
-      <button class="icon" title="end the tutorial" onclick={stopTour}>×</button>
+        title="every tutorial, and restarting this one from any chapter"
+        onclick={() => selectSection('tutorials')}
+      >☰</button>
+      <button
+        class="icon"
+        title="hide the tutorial — the tutorial button at the top brings it back where you left it"
+        onclick={() => setHidden(true)}
+      >×</button>
     </div>
 
-    {#if !tour.minimized}
-      <div class="bars" aria-hidden="true">
-        {#each chapters as c}
-          <div class="bar" style={`flex:${c.to - c.from + 1} 1 0`}>
-            <div
-              class="fill"
-              style={`width:${tour.step > c.to ? 100 : tour.step < c.from ? 0 : ((tour.step - c.from + 1) / (c.to - c.from + 1)) * 100}%`}
-            ></div>
-          </div>
-        {/each}
-      </div>
-      <div class="chapterline small">
-        {#each chapters as c}
-          <button
-            class="chap"
-            class:on={tour.step >= c.from && tour.step <= c.to}
-            style={`flex:${c.to - c.from + 1} 1 0`}
-            onclick={() => gotoStep(c.from)}
-            title={`jump to ${c.name}`}
-          >{c.name}</button>
-        {/each}
-      </div>
+    <div class="bars" aria-hidden="true">
+      {#each chapters as c}
+        <div class="bar" style={`flex:${c.to - c.from + 1} 1 0`}>
+          <div
+            class="fill"
+            style={`width:${tour.step > c.to ? 100 : tour.step < c.from ? 0 : ((tour.step - c.from + 1) / (c.to - c.from + 1)) * 100}%`}
+          ></div>
+        </div>
+      {/each}
+    </div>
+    <div class="chapterline small">
+      {#each chapters as c}
+        <button
+          class="chap"
+          class:on={tour.step >= c.from && tour.step <= c.to}
+          style={`flex:${c.to - c.from + 1} 1 0`}
+          onclick={() => gotoStep(c.from)}
+          title={`jump to ${c.name}`}
+        >{c.name}</button>
+      {/each}
+    </div>
 
-      <button class="steptoggle small" onclick={() => (listOpen = !listOpen)}>
-        <span class="muted">{listOpen ? '▾' : '▸'}</span>
-        <span class="grow truncate">{tour.step + 1}. {plain(step.title)}</span>
-        {#if done}<span class="ok"><Icon name="check" size={11} /></span>{/if}
-      </button>
-      {#if listOpen}
-        <ol class="steps small">
-          {#each t.steps as s, i}
-            <li>
-              <button class:on={i === tour.step} class:past={i < tour.step} onclick={() => gotoStep(i)}>
-                <span class="num">{i + 1}</span>
-                <span class="truncate">{plain(s.title)}</span>
-              </button>
-            </li>
-          {/each}
-        </ol>
-      {/if}
+    <ol class="steps small" class:open={listOpen}>
+      {#each listOpen ? t.steps.map((_s, i) => i) : peek as i (i)}
+        {@const s = t.steps[i]}
+        <li>
+          {#if i === tour.step}
+            <button
+              class="on"
+              onclick={() => (listOpen = !listOpen)}
+              title={listOpen ? 'fold the list' : 'every step'}
+            >
+              <span class="num">{i + 1}</span>
+              <span class="grow truncate">{plain(txt(s, 'title'))}</span>
+              {#if done}<span class="ok"><Icon name="check" size={11} /></span>{/if}
+              <span class="chev" aria-hidden="true">{listOpen ? '▴' : '▾'}</span>
+            </button>
+          {:else}
+            <button class:past={i < tour.step} class="peek" onclick={() => gotoStep(i)}>
+              <span class="num">{i + 1}</span>
+              <span class="grow truncate">{plain(txt(s, 'title'))}</span>
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ol>
 
-      <div class="navbtns">
-        <button onclick={prevStep} disabled={tour.step === 0}>‹ prev</button>
-        <button class="primary" onclick={nextStep}>
-          {tour.step === t.steps.length - 1 ? 'finish' : done || !step.do ? 'next ›' : 'skip ›'}
-        </button>
-      </div>
-    {:else}
-      <button class="steptoggle small" onclick={() => setMinimized(false)}>
-        <span class="grow truncate">{tour.step + 1}/{t.steps.length} · {plain(step.title)}</span>
+    <div class="navbtns">
+      <button onclick={prevStep} disabled={tour.step === 0}>‹ prev</button>
+      <button class="primary" onclick={nextStep}>
+        {tour.step === t.steps.length - 1 ? 'finish' : done || !step.do ? 'next ›' : 'skip ›'}
       </button>
+    </div>
+
+    {#if tourEdit}
+      <div class="editbar small">
+        <span class="grow muted">editing · {editCount(t.id)} step(s) changed</span>
+        <CopyButton text={exportEdits(t.id)} label="copy the edits as JSON" />
+        <button class="small" disabled={!editCount(t.id)} onclick={() => clearEdits(t.id)}>reset</button>
+      </div>
     {/if}
   </div>
 {/if}
@@ -332,17 +556,18 @@
     z-index: 1000;
     pointer-events: none;
   }
-  /* The dim is the ring's own shadow, so the hole in it is exactly the ring and
-     the page under both stays clickable. */
+  /* The dim, when there is one, is the ring's own shadow, so the hole in it is
+     exactly the ring and the page under both stays clickable. */
   .ring {
     position: fixed;
     z-index: 1000;
     pointer-events: none;
     border: 2px solid var(--accent);
     border-radius: 8px;
-    box-shadow: 0 0 0 200vmax var(--tour-scrim);
-    transition: left 0.18s, top 0.18s, width 0.18s, height 0.18s, border-color 0.2s;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+    transition: left 0.18s, top 0.18s, width 0.18s, height 0.18s, border-color 0.2s, box-shadow 0.3s;
   }
+  .ring.dim { box-shadow: 0 0 0 200vmax var(--tour-scrim); }
   .ring::after {
     content: '';
     position: absolute;
@@ -356,6 +581,32 @@
     from { inset: -2px; opacity: 0.9; }
     to { inset: -16px; opacity: 0; }
   }
+
+  /* what to keep an eye on while the step waits: dashed, labelled, never dim */
+  .watch, .flash {
+    position: fixed;
+    z-index: 1001;
+    pointer-events: none;
+    border: 2px dashed var(--accent);
+    border-radius: 8px;
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+  .flash { border-style: solid; border-color: var(--ok); animation: fade 4s ease-out forwards; }
+  .wlabel {
+    position: absolute;
+    top: -9px;
+    right: 8px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--panel);
+    font-size: 10px;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+  .flash .wlabel { background: var(--ok); }
+  @keyframes breathe { 50% { border-color: color-mix(in srgb, var(--accent) 35%, transparent); } }
+  @keyframes fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 
   .callout {
     position: fixed;
@@ -389,8 +640,6 @@
   .arrow.top { transform: rotate(-135deg); }
   .callout.done .arrow { border-color: var(--ok); }
   .kicker {
-    display: flex;
-    justify-content: space-between;
     color: var(--accent);
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -405,6 +654,16 @@
     border-radius: 3px;
     padding: 0 4px;
   }
+  .editable {
+    display: inline-block;
+    min-width: 2em;
+    outline: 1px dashed var(--muted);
+    outline-offset: 2px;
+    border-radius: 2px;
+    white-space: pre-wrap;
+  }
+  .editable:focus { outline-color: var(--accent); background: var(--sunken); }
+  .editable:empty::before { content: attr(data-ph); color: var(--muted); font-style: italic; }
   .snippet {
     display: flex;
     align-items: flex-start;
@@ -430,6 +689,7 @@
     background: color-mix(in srgb, var(--accent) 14%, transparent);
     font-size: 13px;
   }
+  .do + .do { margin-top: 6px; }
   .do.done { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
   .pip {
     flex: 0 0 auto;
@@ -441,6 +701,7 @@
   }
   @keyframes blink { 50% { opacity: 0.25; } }
   .waiting { margin: 8px 0 0; }
+  .there { margin-top: 8px; }
 
   .nav {
     position: fixed;
@@ -453,8 +714,9 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    transition: left 0.25s ease, top 0.25s ease;
   }
-  .nav.mini { padding-bottom: 8px; }
+  .nav.dragging { transition: none; }
   .navhead {
     display: flex;
     align-items: center;
@@ -464,6 +726,13 @@
     touch-action: none;
   }
   .grip { color: var(--muted); }
+  .count {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    color: var(--muted);
+  }
   .icon {
     padding: 0 7px;
     background: none;
@@ -488,23 +757,19 @@
     white-space: nowrap;
   }
   .chap.on { color: var(--text); }
-  .steptoggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    text-align: left;
-    background: var(--panel-2);
-  }
   .ok { color: var(--ok); display: flex; }
   .steps {
     list-style: none;
     margin: 0;
-    padding: 0;
-    max-height: 240px;
-    overflow-y: auto;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--sunken);
   }
+  .steps.open { max-height: 260px; overflow-y: auto; }
   .steps button {
     display: flex;
+    align-items: center;
     gap: 8px;
     width: 100%;
     text-align: left;
@@ -513,9 +778,18 @@
     padding: 2px 6px;
     color: var(--muted);
   }
+  .steps button.peek { opacity: 0.75; }
   .steps button.past { color: var(--text); }
   .steps button.on { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
+  .chev { color: var(--accent); flex: 0 0 auto; }
   .num { width: 18px; flex: 0 0 auto; text-align: right; color: var(--muted); }
   .navbtns { display: flex; justify-content: space-between; gap: 8px; }
   .navbtns button { flex: 1; }
+  .editbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--line);
+  }
 </style>

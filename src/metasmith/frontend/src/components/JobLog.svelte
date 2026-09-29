@@ -15,6 +15,7 @@
     header = true,
     status = $bindable(null),
     phase = $bindable(null),
+    tour = null,
   } = $props()
   let lines = $state([])
   let box = $state(null)
@@ -54,7 +55,7 @@
 </script>
 
 {#if jobId}
-  <div class="col">
+  <div class="col" data-tour={tour}>
     {#if header}
       <div class="spread">
         <h3>log</h3>

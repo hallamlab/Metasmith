@@ -1,9 +1,11 @@
 import { api } from './api.svelte.js'
 
 export const SECTIONS = [
-  // in setup order: you need a host before an agent, an agent before a run.
+  // Tutorials first, since it is where a newcomer starts; the rest in setup
+  // order: you need a host before an agent, an agent before a run.
   // Data sits after Agents because a store belongs to one -- it is the same
   // pool a run's products land in, read as instances rather than as cache.
+  { id: 'tutorials', label: 'Tutorials' },
   { id: 'ssh', label: 'SSH' },
   { id: 'agents', label: 'Agents' },
   { id: 'data', label: 'Data' },
@@ -40,7 +42,7 @@ const fromUrl = parseHash()
 export const app = $state({
   section: fromUrl.section,
   // one remembered selection per section, so switching tabs does not lose your place
-  selected: { ssh: null, agents: null, data: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
+  selected: { tutorials: null, ssh: null, agents: null, data: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
   showArchived: false,
   project: null,
   hosts: [],

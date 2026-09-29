@@ -302,10 +302,11 @@
       </div>
     {/if}
 
-    <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} />
+    <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} tour="agent-progress" />
 
     <JobLog
       {jobId}
+      tour="agent-log"
       bind:status={jobStatus}
       bind:phase={jobPhase}
       onend={async () => {
