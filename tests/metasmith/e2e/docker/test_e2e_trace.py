@@ -195,7 +195,8 @@ def _make_samples(
             )
 
     lib.Save()
-    return lib
+    # Read it back: a plan refuses a given whose identity this process minted.
+    return DataInstanceLibrary.Load(lib.location)
 
 
 def _make_task(
@@ -516,7 +517,8 @@ class TestTraceSharedInputs:
             )
 
         lib.Save()
-        return lib
+        # Read it back: a plan refuses a given whose identity this process minted.
+        return DataInstanceLibrary.Load(lib.location)
 
     def test_trace_records_all_parent_keys(self, tmp_path, mock_types, docker_image):
         from metasmith.telemetry import TraceIndex
