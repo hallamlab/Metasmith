@@ -9,17 +9,6 @@
   let active = $derived(tour.id === id)
   let finished = $derived(tour.finished.includes(id))
   let links = $derived(linksOf(id))
-  let chapters = $derived.by(() => {
-    if (!t) return []
-    const out = []
-    t.steps.forEach((s, i) => {
-      const last = out[out.length - 1]
-      if (!last || last.name !== s.chapter) out.push({ name: s.chapter, from: i, steps: [i] })
-      else last.steps.push(i)
-    })
-    return out
-  })
-
   const MADE = [
     { key: 'agent', label: 'agent', section: 'agents' },
     { key: 'workflow', label: 'workflow', section: 'workflows' },
@@ -71,7 +60,7 @@
         <h3 style="margin:0">what this tutorial made</h3>
         <p class="small muted" style="margin:0">
           Later steps pick these up. If one was deleted or went wrong, restart from
-          the chapter that makes it and the new one takes its place.
+          the step that makes it and the new one takes its place.
         </p>
         {#each made as m}
           <div class="row" style="gap:8px">
@@ -82,33 +71,27 @@
       </div>
     {/if}
 
-    {#each chapters as c}
-      <div class="card col" style="gap:6px">
-        <div class="spread">
-          <h3 style="margin:0">{c.name}</h3>
-          <button class="small" onclick={() => resumeTour(id, c.from)}>
-            {active || made.length ? 'restart from here' : 'start from here'}
-          </button>
-        </div>
-        <ol class="steps">
-          {#each c.steps as i}
-            {@const s = t.steps[i]}
-            <li>
-              <button
-                class:on={active && i === tour.step}
-                class:past={active && i < tour.step}
-                onclick={() => resumeTour(id, i)}
-                title="go to this step"
-              >
-                <span class="num">{i + 1}</span>
-                <span class="grow truncate">{plain(s.title)}</span>
-                {#if active && i === tour.step}<span class="tag live">here</span>{/if}
-              </button>
-            </li>
-          {/each}
-        </ol>
-      </div>
-    {/each}
+    <div class="card col" style="gap:6px">
+      <ol class="steps">
+        {#each t.steps as s, i}
+          {#if i === 0 || t.steps[i - 1].chapter !== s.chapter}
+            <li class="chap">{s.chapter}</li>
+          {/if}
+          <li>
+            <button
+              class:on={active && i === tour.step}
+              class:past={active && i < tour.step}
+              onclick={() => resumeTour(id, i)}
+              title={active || made.length ? 'restart from here' : 'start from here'}
+            >
+              <span class="num">{i + 1}</span>
+              <span class="grow truncate">{plain(s.title)}</span>
+              {#if active && i === tour.step}<span class="tag live">here</span>{/if}
+            </button>
+          </li>
+        {/each}
+      </ol>
+    </div>
   </div>
 {/if}
 
@@ -137,5 +120,13 @@
   .steps button:hover { background: var(--panel-2); }
   .steps button.past { color: var(--muted); }
   .steps button.on { border-color: var(--accent); background: var(--panel-2); }
+  .chap {
+    padding: 8px 6px 2px;
+    color: var(--accent);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .chap:first-child { padding-top: 0; }
   .num { width: 20px; flex: 0 0 auto; text-align: right; color: var(--muted); }
 </style>

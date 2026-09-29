@@ -37,16 +37,6 @@
   let t = $derived(tutorial())
   let step = $derived(tour.id ? currentStep() : null)
   let stepKey = $derived(t ? `${t.id}:${tour.step}` : null)
-  let chapters = $derived.by(() => {
-    if (!t) return []
-    const out = []
-    t.steps.forEach((s, i) => {
-      const last = out[out.length - 1]
-      if (!last || last.name !== s.chapter) out.push({ name: s.chapter, from: i, to: i })
-      else last.to = i
-    })
-    return out
-  })
 
   let rect = $state(null)
   let done = $state(false)
@@ -256,6 +246,20 @@
     return document.querySelector('[data-tour="header"]')?.getBoundingClientRect().bottom ?? 0
   })
 
+  // A callout with nothing to point at goes bottom right, and steps out of the
+  // navigator's way only when the two would actually overlap: above it if
+  // there is room, else below.
+  function clearOfNav(x, y, w, h) {
+    const top = headerBottom + EDGE
+    const n = { l: prefX - GAP, t: prefY - GAP, r: prefX + NAV_W + GAP, b: prefY + (navH || 150) + GAP }
+    y = clamp(y, top, vh - h - EDGE)
+    if (x < n.r && x + w > n.l && y < n.b && y + h > n.t) {
+      if (n.t - h >= top) y = n.t - h
+      else if (n.b + h <= vh - EDGE) y = n.b
+    }
+    return { x, y }
+  }
+
   let placed = $derived.by(() => {
     const w = calloutW || 340
     const h = calloutH || 160
@@ -263,7 +267,7 @@
       // Nothing to point at: an intro is centred, a step still waiting for its
       // target sits above where the navigator would like to be
       if (!step?.target) return { x: (vw - w) / 2, y: Math.max(EDGE, vh * 0.28 - h / 2), side: null }
-      return { x: vw - w - 20, y: Math.max(headerBottom + EDGE, prefY - h - 12), side: null }
+      return { ...clearOfNav(vw - w - 20, vh - h - 20, w, h), side: null }
     }
     const r = rect
     const cx = r.left + r.width / 2
@@ -358,14 +362,24 @@
     setNavPosition(tour.nav)
   }
 
-  // the step list, folded to the steps either side of this one
-  let peek = $derived.by(() => {
+  // the step list, folded to the steps either side of this one, with a
+  // chapter's name over the first of its steps shown
+  let rows = $derived.by(() => {
     if (!t) return []
+    const shown = listOpen
+      ? t.steps.map((_s, i) => i)
+      : [tour.step - 1, tour.step, tour.step + 1].filter((i) => i >= 0 && i < t.steps.length)
     const out = []
-    for (const i of [tour.step - 1, tour.step, tour.step + 1]) {
-      if (i >= 0 && i < t.steps.length) out.push(i)
-    }
+    shown.forEach((i, k) => {
+      const chapter = t.steps[i].chapter
+      if (k === 0 || t.steps[shown[k - 1]].chapter !== chapter) out.push({ key: `c${i}`, chapter })
+      out.push({ key: `s${i}`, i })
+    })
     return out
+  })
+  let listEl = $state(null)
+  $effect(() => {
+    if (listOpen && listEl) listEl.querySelector('button.on')?.scrollIntoView({ block: 'center' })
   })
 
   let there = $derived.by(() => {
@@ -499,7 +513,7 @@
       <span class="count small mono">{tour.step + 1}/{t.steps.length}</span>
       <button
         class="icon"
-        title="every tutorial, and restarting this one from any chapter"
+        title="every tutorial, and picking this one up at any step"
         onclick={() => selectSection('tutorials')}
       >☰</button>
       <button
@@ -509,30 +523,12 @@
       >×</button>
     </div>
 
-    <div class="bars" aria-hidden="true">
-      {#each chapters as c}
-        <div class="bar" style={`flex:${c.to - c.from + 1} 1 0`}>
-          <div
-            class="fill"
-            style={`width:${tour.step > c.to ? 100 : tour.step < c.from ? 0 : ((tour.step - c.from + 1) / (c.to - c.from + 1)) * 100}%`}
-          ></div>
-        </div>
-      {/each}
-    </div>
-    <div class="chapterline small">
-      {#each chapters as c}
-        <button
-          class="chap"
-          class:on={tour.step >= c.from && tour.step <= c.to}
-          style={`flex:${c.to - c.from + 1} 1 0`}
-          onclick={() => gotoStep(c.from)}
-          title={`jump to ${c.name}`}
-        >{c.name}</button>
-      {/each}
-    </div>
-
-    <ol class="steps small" class:open={listOpen}>
-      {#each listOpen ? t.steps.map((_s, i) => i) : peek as i (i)}
+    <ol class="steps small" class:open={listOpen} bind:this={listEl}>
+      {#each rows as row (row.key)}
+        {#if row.chapter}
+          <li class="chap">{row.chapter}</li>
+        {:else}
+        {@const i = row.i}
         {@const s = t.steps[i]}
         <li>
           {#if i === tour.step}
@@ -553,6 +549,7 @@
             </button>
           {/if}
         </li>
+        {/if}
       {/each}
     </ol>
 
@@ -765,23 +762,13 @@
     color: var(--muted);
   }
   .icon:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
-  .bars { display: flex; gap: 3px; }
-  .bar { min-width: 34px; height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
-  .fill { height: 100%; background: var(--accent); transition: width 0.25s; }
-  .chapterline { display: flex; gap: 3px; margin-top: -4px; }
   .chap {
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: 11px;
-    text-align: left;
-    min-width: 34px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    padding: 4px 6px 1px;
+    color: var(--accent);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
-  .chap.on { color: var(--text); }
   .ok { color: var(--ok); display: flex; }
   .steps {
     list-style: none;
