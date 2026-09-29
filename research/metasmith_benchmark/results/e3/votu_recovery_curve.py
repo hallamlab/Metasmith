@@ -11,7 +11,9 @@ A published name carries its sample, assembler and caller (Hain_H43_02um_R3_2019
 H14R101um_2022_longread-vibrant_...). The denominator is the published vOTUs of the selected runs'
 samples. A published vOTU counts as recovered at (ANI, AF) when some E3 sequence reaches both, with AF
 the fraction of the published vOTU that aligns. `same_sample` also requires that sequence to come from
-the published vOTU's own sample, read from the E3 frozen_id `run|lane|caller|contig|start_end`.
+the published vOTU's own sample, read from the E3 frozen_id `sample|lane|caller|contig|start_end`.
+The merge labels a sample by its imported read pair (`read_pair@<hash>`), so `--labels` maps each label
+to its run: `ls -d <imports>/e3/*/read_pair@*` lists them as `<run>/<label>`.
 """
 
 import argparse
@@ -100,9 +102,19 @@ def load_published(samples):
     return by_name
 
 
-def best_hits(skani_path, published, keys):
+def load_labels(path):
+    """Label -> run, from the `<run>/<label>` lines of an imports listing."""
+    labels = {}
+    for line in open(path) if path else ():
+        run, _, label = line.strip().rstrip("/").rpartition("/")
+        if label:
+            labels[label] = run.rsplit("/", 1)[-1]
+    return labels
+
+
+def best_hits(skani_path, published, keys, labels):
     """Per published name, the (ANI, AF) pairs reached by any E3 sequence and by one from its own sample."""
-    hits_any, hits_same = defaultdict(list), defaultdict(list)
+    hits_any, hits_same, unmapped = defaultdict(list), defaultdict(list), set()
     with open(skani_path, newline="") as f:
         for row in csv.DictReader(f, delimiter="\t"):
             pub = row["Query_name"].split()[0]
@@ -110,9 +122,13 @@ def best_hits(skani_path, published, keys):
                 continue
             point = (float(row["ANI"]), float(row["Align_fraction_query"]))
             hits_any[pub].append(point)
-            run = row["Ref_name"].split()[0].split("|")[0]
+            label = row["Ref_name"].split()[0].split("|")[0]
+            run = labels.get(label, label)
+            if run not in keys:
+                unmapped.add(label)
             if keys.get(run) == published[pub]["sample"]:
                 hits_same[pub].append(point)
+    assert not unmapped, f"E3 sample labels with no run, pass --labels: {sorted(unmapped)[:5]}"
     return hits_any, hits_same
 
 
@@ -126,7 +142,8 @@ def cmd_curve(args):
     unknown = set(runs) - set(keys)
     assert not unknown, f"not a scored short-read run: {sorted(unknown)}"
     published = load_published({keys[r] for r in runs})
-    hits_any, hits_same = best_hits(args.skani, published, keys)
+    labels = load_labels(args.labels)
+    hits_any, hits_same = best_hits(args.skani, published, keys, labels)
 
     groups = defaultdict(list)
     for name, row in published.items():
@@ -156,6 +173,7 @@ def main():
     c.add_argument("skani", help="an E3 recovery table (skani dist, published as query)")
     c.add_argument("--scope", required=True, help="label for the table, e.g. pool or final")
     c.add_argument("--runs", nargs="*", help="run accessions scored; default all 65")
+    c.add_argument("--labels", help="imports listing mapping read_pair labels to runs, one <run>/<label> per line")
     c.add_argument("--out", default="-")
     c.set_defaults(func=cmd_curve)
     args = p.parse_args()
