@@ -65,6 +65,9 @@ HOMES = {
 # WARNING never `exit` from a line here. It kills the agent's shell, and the caller sees
 # only a 300 s timeout.
 # CAUTION the `[ ! -e ]` guard keeps a second relay from replacing a running one's symlink.
+# CAUTION deploy a home with `deploy_home`, never `get_agent(...).Deploy`. Deploy writes these
+# lines into the home's lib/agent.yml, every task shell then runs them, and the echo's extra
+# line fails the task's one-line `pwd` check before the tool starts.
 SETUP_COMMANDS = [
     "module load apptainer",
     'MSM_RELAY_HOME="$PWD"; for _ in 1 2 3 4; do'
@@ -146,6 +149,13 @@ def get_agent(corpus):
     source = Source.FromLocal(home) if ON_HOST else SshSource(host=HPC_HOST, path=home).AsSource()
     return Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER,
                  setup_commands=SETUP_COMMANDS)
+
+
+def deploy_home(corpus):
+    home = HOMES[corpus]
+    source = Source.FromLocal(home) if ON_HOST else SshSource(host=HPC_HOST, path=home).AsSource()
+    Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER,
+          setup_commands=SETUP_COMMANDS[:1]).Deploy(assertive=True)
 
 
 def agent_for(corpus, remote, dryrun_home):
@@ -296,9 +306,11 @@ def write_dag(task, stem, cache_dir):
 # therefore on the project inode/byte quota, which is under pressure -- at N=70,785 genomes that
 # footprint is small next to the wall-clock saved, but it is a quota cost this step did not have
 # before. assembly_stats_pratama is deliberately NOT here despite the same clamp pressure: its
-# ~45 GB SAM/BAM intermediates are better off the quota, on node-local scratch.
+# ~45 GB SAM/BAM intermediates are better off the quota, on node-local scratch. spades_pratama is
+# not here for the same reason: its product is ~3 GB, but in place its spades_ws left ~120 GB per
+# sample on Lustre, and ~50 GB more for each attempt that ran out of memory.
 IN_PLACE_STEPS = (
-    "fastp", "bbduk_pratama", "megahit", "spades_pratama",
+    "fastp", "bbduk_pratama", "megahit",
     "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
     "vcontact3_pratama",
 )
@@ -335,12 +347,12 @@ LONG_RUNNING_STEPS = {
 MAX_TASK_MEMORY_GB = 192
 
 # Sanctioned exceptions to the memory ceiling, same shape and same discipline as LONG_RUNNING_STEPS.
-# Hybrid metaSPAdes is the one measured case: six tasks at MaxRSS 238-402 GB, so its declared 384 GB
-# is the observation rather than a guess. It is listed for the day something scales it -- it is not
-# in any driver's SCALED today, so its resources come from its own declaration and this dict is
-# currently unused. Keep it that way: an entry here is a claim that a measurement justifies it.
+# Applies only to a step in a driver's SCALED. Hybrid metaSPAdes is the one measured case: nine tasks at
+# MaxRSS 180-384 GiB, two of them pinned at the 384 GiB grant, so a retry needs the 768 GB rung. Its own
+# declaration would double without a cap, and fir refuses the 3,072 GB fourth rung at submission,
+# which wedges the run. Keep entries to what a measurement justifies.
 LARGE_MEMORY_STEPS = {
-    "spades_hybrid_pratama": 384,
+    "spades_hybrid_pratama": 768,
 }
 
 

@@ -8,7 +8,7 @@ run, assembled alone. 31 from 2019 and 34 from 2022 make Pratama's 65.
 and `--launch` act on the fir agent home, from a Slurm job there, and refuse until every
 run's interleave .ok stamp exists.
 
-Subcommands: list [--check], import, run [--dataset ...] [--limit N] [--dag] [--stage-only | --launch].
+Subcommands: list [--check], import, run [--runs ...] [--dataset ...] [--limit N] [--dag] [--stage-only | --launch].
 """
 
 import argparse
@@ -33,32 +33,27 @@ EXCLUDED_RUNS = {"ERR3858126"}
 EXPECTED_RUNS = 65
 # ENA's MinION runs as fetched, one per well; not interleaved or otherwise touched.
 RAW_2022 = Path(os.environ.get("PRATAMA_RAW_2022", "/scratch/phyberos/pratama2026/reads_2022"))
+# One hard link per hybrid pairing, staged by stage_hybrid_pairs.sh -- see hybrid_partners().
+HYBRID_PAIRS = Path(os.environ.get("PRATAMA_HYBRID_PAIRS", "/scratch/phyberos/pratama2026/hybrid_pairs"))
 EXPECTED_HYBRIDS = 17
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
-# First-attempt (cpus, GB, hours); retries scale with the attempt.
-#
-# assembly_stats_pratama and dramv_kofam_pratama were both retried to failure on fir at their
-# transform-declared cpus (4 and 16), and `sacct -X` shows the SAME shape both times: every
-# attempt died exit 140 within ~60 s of its walltime, at every memory grant tried, never OOM.
-# assembly_stats_pratama ran 4 cpus at 64G/12h, 128G/24h, 256G/48h and 512G/96h and failed all
-# four the same way, so the bottleneck is `minimap2 -t 4` against a 45.4 GB interleaved fastq,
-# not memory -- 64 GB back on attempt 1 is what the evidence supports, not a gamble. 32 cpus
-# also brings it back under this campaign's SPAdes envelope (48 cpus / 192 GB / 24 h); the 512
-# GB rung it reached unscaled exceeded that envelope. dramv_kofam_pratama ran 16 cpus at
-# 64G/20h (exit 140 at 19:59:30) and 128G/40h (still running at 1-12:39 when killed) -- same
-# walltime shape, and it spent ~17 h inside kofam hmmsearch, which parallelises well, so cpus
-# is the lever there too.
-#
-# CAUTION the 24 h clamp (MAX_TASK_DURATION, applied in make_slurm_config) and this entry are
-# ONE change, not two. Taken alone, the clamp would cap assembly_stats_pratama's ladder at
-# 12/24/24/24 h -- and it has already failed at 12 h, 24 h AND 48 h, so a clamped ladder with
-# the old cpus/memory would retry three rungs it can never pass and die silently via the
-# `ignore` error strategy, with nothing to say why.
+# First-attempt (cpus, GB, hours); retries double memory and time. Sized to the MaxRSS and wall that
+# sacct recorded for waves 1-8 (September 2026), so the first grant covers p90 and the doubled one the
+# tail. CAUTION bbduk's -Xmx and MEGAHIT's --memory follow the grant, so their RSS measures the grant,
+# not the need. Their sizes come from spanish-lakes, whose bbduk ran at 2 cpus / 32 GB and MEGAHIT at
+# 8 / 32 on every sample. Short-read metaSPAdes keeps its declaration: 40 of 65 assemblies failed at
+# 192 GB and finished at 384 GB, at MaxRSS 324-332 GB.
 SCALED = {
-    "megahit": (32, 128, 12),
-    "assembly_stats_pratama": (32, 64, 12),
-    "dramv_kofam_pratama": (48, 64, 12),
+    "seqkit_reads": (2, 4, 1),              # MaxRSS 1.5 GB
+    "bbduk_pratama": (4, 16, 2),
+    "megahit": (16, 64, 12),
+    "deepvirfinder_pratama": (8, 16, 6),    # MaxRSS 8.2 GB, 1.7 h at 16 cpus
+    "vibrant_pratama": (8, 16, 4),          # MaxRSS 7.3 GB, 0.8 h
+    "virsorter2_pratama": (8, 16, 8),       # MaxRSS 5.0 GB, 4.7 h
+    "genomad_pratama": (8, 16, 6),          # MaxRSS 11.3 GB, 2.2 h at 16 cpus
+    "genomad_island_annotate_pratama": (8, 32, 6),  # OOM at 16 GB: mmseqs prefilter loads the whole DB
+    "spades_hybrid_pratama": (48, 384, 36),  # its declaration, capped at LARGE_MEMORY_STEPS' 768 GB
 }
 
 # The standard transforms each E3 library transform replaces, by library.
@@ -89,6 +84,10 @@ def enumerate_runs():
 
 
 def select(runs, args):
+    if args.runs:
+        unknown = set(args.runs) - {r[0] for r in runs}
+        assert not unknown, f"not among the {len(runs)} short-read runs: {sorted(unknown)}"
+        runs = [r for r in runs if r[0] in args.runs]
     if args.dataset:
         runs = [r for r in runs if r[1] in args.dataset]
     if args.limit:
@@ -102,16 +101,33 @@ def missing_on_fir(runs):
     return out.split()
 
 
-def hybrid_partners():
-    """Illumina run -> its well's MinION file, for every 0.2 um 2022 replicate (Pratama's 17 hybrids)."""
+def hybrid_pairings():
+    """(illumina_run, minion_run) for every 0.2 um 2022 replicate paired with its well's MinION run.
+
+    The pure well-matching this and hybrid_partners() share, factored out so a test -- and
+    stage_hybrid_pairs.sh's own test -- can check the 17 pairs without touching a path.
+    """
     rows = c.pratama_rows()
-    minion = {r["sample_alias"].split("_")[0]: RAW_2022 / r["run_accession"] / f"{r['run_accession']}_1.fastq.gz"
+    minion = {r["sample_alias"].split("_")[0]: r["run_accession"]
               for r in rows if r["instrument_model"] == "MinION"}
-    partners = {r["run_accession"]: minion[r["sample_alias"][:3]]
-                for r in rows if r["dataset"] == "reads_2022" and r["library_layout"] == "PAIRED"
-                and r["sample_alias"].endswith("02um_2022") and r["sample_alias"][:3] in minion}
-    assert len(partners) == EXPECTED_HYBRIDS, f"{len(partners)} hybrid pairs, Pratama has {EXPECTED_HYBRIDS}"
-    return partners
+    pairs = [(r["run_accession"], minion[r["sample_alias"][:3]])
+             for r in rows if r["dataset"] == "reads_2022" and r["library_layout"] == "PAIRED"
+             and r["sample_alias"].endswith("02um_2022") and r["sample_alias"][:3] in minion]
+    assert len(pairs) == EXPECTED_HYBRIDS, f"{len(pairs)} hybrid pairs, Pratama has {EXPECTED_HYBRIDS}"
+    return pairs
+
+
+def hybrid_partners():
+    """Illumina run -> its own hard-linked copy of its well's MinION file (Pratama's 17 hybrids).
+
+    A distinct path per pairing, not the shared RAW_2022 source and not a symlink to it: the given
+    library's manifest is keyed by path (pool.py's GivenLibrary, transfer.py's Unpack), and importing
+    resolves symlinks to their target (ops.data's `Path(path).resolve()`) before that key is taken --
+    so three Illumina replicates sharing one MinION run would collapse to a single given however they
+    are named. A hard link is a second directory entry for the same bytes that `resolve()` does not
+    walk through, so it alone keeps the 17 pairings 17 distinct paths. stage_hybrid_pairs.sh creates them.
+    """
+    return {run: HYBRID_PAIRS / f"{run}__{minion_run}.fastq.gz" for run, minion_run in hybrid_pairings()}
 
 
 def declare_givens(smith, runs, ensure):
@@ -139,9 +155,7 @@ def build_transforms():
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench"), *std]
 
 
-def build_targets(with_host_prediction=False, with_gtdbtk=False):
-    """The tool table's E3 column, less its gapfills: BinSanity, abawaca, dRep, DeepVirFinder, MetaPop,
-    minced with its BLASTn spacers, and iPHoP on the augmented database."""
+def build_targets():
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
     t.Add("e3::fastp_report_json")
@@ -149,28 +163,21 @@ def build_targets(with_host_prediction=False, with_gtdbtk=False):
 
     # Hybrid design A: only the 17 runs that carry a MinION partner can produce it.
     t.Add("e3::hybrid_spades_assembly")
-
-    # MAG lane: metaSPAdes, MetaWRAP (CheckM inside it), DRAM on the MAGs.
-    spades = t.Add("sequences::spades_assembly")
-    for dtype in ("sequences::orfs", "sequences::gff", "sequences::assembly_stats",
-                  "sequences::assembly_per_contig_coverage",
-                  "binning::metawrap_contig_to_bin_table", "binning::metawrap_bin_stats",
-                  "e3::mag_dram_annotations", "e3::mag_dram_distill"):
-        t.Add(dtype, parents=[spades])
-    mags = t.Add("sequences::metawrap_bin_fasta", parents=[spades])
-    if with_gtdbtk:
-        t.Add("taxonomy::gtdbtk", parents=[mags])
-
-    # Viral lane: both assemblies' calls pooled into one frozen set.
+    t.Add("sequences::spades_assembly")
     t.Add("sequences::megahit_assembly")
+
+    # Every assembly lane's calls pooled into one frozen set and scored at the pool level, then
+    # curated, host-trimmed and clustered to vOTUs; the >=5 kb representatives go through the
+    # island filter to the final published-catalogue shape, scored against Pratama's vOTUs again.
     frozen = t.Add("viromics::dereplicated_candidate_virus")
-    viral = ["viromics::contig_length_table", "viromics::votu_cluster_table", "viromics::checkv_contamination",
-             "viromics::checkv_quality_summary", "viromics::vcontact3_network", "e3::viral_orfs", "e3::viral_gff",
-             "annotation::dramv_annotations", "annotation::dramv_distill", "pratama::votu_recovery_table"]
-    if with_host_prediction:
-        viral.append("e3::host_prediction_genome_default")
-    for dtype in viral:
+    for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
+                  "viromics::checkv_quality_summary", "pratama::votu_recovery_table"):
         t.Add(dtype, parents=[frozen])
+
+    curated = t.Add("e3::curated_candidate_virus", parents=[frozen])
+    t.Add("viromics::votu_cluster_table", parents=[curated])
+    final = t.Add("e3::final_votu_representatives", parents=[curated])
+    t.Add("e3::final_votu_recovery_table", parents=[final])
     return t
 
 
@@ -207,12 +214,14 @@ def cmd_run(args):
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
-                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), globals_lib],
+                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"), globals_lib],
         transforms=build_transforms(),
-        targets=build_targets(args.with_host_prediction, args.with_gtdbtk),
+        targets=build_targets(),
     )
     c.check_plan(task, {"viromics::contig_study": 1, "sequences::read_metadata": len(runs),
-                        "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs)})
+                        "sequences::read_pair": len(runs), "sequences::short_reads_pe": len(runs),
+                        "e3::nanopore_reads": sum(1 for r, _, _ in runs if r in hybrid_partners())})
     c.print_plan(task)
     interleave = [s for s in task.plan.steps if Path(s.transform._path).stem == "interleave_zipped_short_reads"]
     assert not interleave, "the plan interleaves reads that are registered pre-interleaved"
@@ -233,17 +242,13 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (("list", cmd_list), ("import", cmd_run), ("run", cmd_run)):
         p = sub.add_parser(name)
+        p.add_argument("--runs", nargs="*", help="run accessions, e.g. a hybrid pilot")
         p.add_argument("--dataset", nargs="*", help="reads_2019, reads_2022")
         p.add_argument("--limit", type=int)
-        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       with_host_prediction=False, with_gtdbtk=False)
+        p.set_defaults(fn=fn, dag=False, stage_only=False, launch=False, materialise=False, tag=None)
         if name == "list":
             p.add_argument("--check", action="store_true", help="count verified interleaved files on fir")
         elif name == "run":
-            p.add_argument("--with-host-prediction", action="store_true",
-                           help="iPHoP on the shipped database; needs ref::iphop_db staged")
-            p.add_argument("--with-gtdbtk", action="store_true",
-                           help="GTDB-Tk on the MAGs; needs ref::gtdb's representative genomes")
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e3_pratama.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
