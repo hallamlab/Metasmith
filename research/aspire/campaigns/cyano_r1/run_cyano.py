@@ -9,6 +9,7 @@
     python research/aspire/campaigns/cyano_r1/run_cyano.py run [--plan-only]
     python research/aspire/campaigns/cyano_r1/run_cyano.py status
     python research/aspire/campaigns/cyano_r1/run_cyano.py retrieve
+    python research/aspire/campaigns/cyano_r1/run_cyano.py dag
 
 Every download runs on the login node, since compute nodes have no internet. Connect to
 sockeye through the awm ssh domain first; every ssh here rides that connection.
@@ -35,6 +36,7 @@ from _driver import (  # noqa: E402
     provision_dev_overlay_remote, retrieve, sockeye_agent, ssh_once,
 )
 from aspire_asv_pipeline import read_metadata  # noqa: E402
+from metasmith.models.dag_renderer import DagMode  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
     DataInstanceLibrary, Duration, Resources, Size, TransformInstanceLibrary,
 )
@@ -265,10 +267,21 @@ def cmd_retrieve(_):
     return 0
 
 
+def cmd_dag(_):
+    task = plan(agent())
+    reports = HERE / "reports"
+    reports.mkdir(exist_ok=True)
+    # RenderDAG reads a dotted basename's suffix as the format, so the stem carries no dot.
+    for mode, suffix in ((DagMode.PLAIN, ""), (DagMode.STEPS, "_steps"), (DagMode.LEGEND, "_legend")):
+        print(task.plan.RenderDAG(str(reports / f"cyano_r1{suffix}"), format="svg",
+                                  show_step_order=True, mode=mode))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("list", "stage-reads", "stage-refs", "side-load-images", "check-refs", "status", "retrieve"):
+    for name in ("list", "stage-reads", "stage-refs", "side-load-images", "check-refs", "status", "retrieve", "dag"):
         sub.add_parser(name)
     run = sub.add_parser("run")
     run.add_argument("--plan-only", action="store_true")
@@ -276,7 +289,7 @@ def main():
     return {
         "list": cmd_list, "stage-reads": cmd_stage_reads, "stage-refs": cmd_stage_refs,
         "side-load-images": cmd_side_load_images, "check-refs": cmd_check_refs, "run": cmd_run,
-        "status": cmd_status, "retrieve": cmd_retrieve,
+        "status": cmd_status, "retrieve": cmd_retrieve, "dag": cmd_dag,
     }[args.cmd](args)
 
 

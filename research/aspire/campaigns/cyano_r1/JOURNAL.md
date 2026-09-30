@@ -68,3 +68,22 @@ best indicators reach p ≈ 0.002–0.006 with q ≈ 0.075 over 406 raw ASVs.
 SINA builds a 248 MB search index (`silva.sidx`) on first use, which takes about ten
 minutes. One built locally from the same ARB file sits in the sockeye bundle, so runs
 skip that build.
+
+---
+
+## 2026-09-29 — checked against upstream, and the run's DAG
+
+Every step up to the filtered ASV table uses upstream's commands, flags and shipped
+values, and the six scripts that decide the table are upstream's unmodified. Curation
+differs in three places. `docs/metasmith_libraries/ASPIRE_PORT.md` lists them. No run has
+yet diffed the port's table against upstream's on these reads.
+
+The ENA mapping was re-checked: every run's `sample_alias` equals its `library_name`, and
+our names match both. The label swap is in the deposit.
+
+`presets/tool_defaults.yml` sets `filter.max_ee: 0`, which `merge_and_filter_reads` passes
+as `--fastq_maxee 0`, and vsearch then drops almost every read. This run used the ASPIRE
+preset's 1.0 and is unaffected. Fixing it is left for a housekeeping pass.
+
+`run_cyano.py dag` re-plans to the same key, `Jj2MGd10`, and draws the three views into
+`reports/`.

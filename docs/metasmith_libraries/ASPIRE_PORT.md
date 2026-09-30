@@ -5,13 +5,10 @@
 toggles. `transforms/aspire/` is that pipeline expressed as a typed graph so the
 planner selects stages by what you ask for rather than by what you toggled.
 
-**This is a topology pass.** Every transform is a stub: the requirements,
-products, lineage and grouping are the port; the body touches its outputs and
-returns. Nothing here runs anything yet, and no transform declares an `env::`
-requirement — ASPIRE is 31 conda environments and zero containers, and env
-resolution is orthogonal to whether the graph closes. Sourcing biocontainer URIs
-is the gating item for ever running this off a workstation, and QIIME2, ConQuR
-and SpiecEasi are the three that will resist.
+Twelve of the 31 rows run: the reads-to-counts lane (`fastp_qc` through `curate` and
+`read_accounting`), plus `sankey`, `plot_metadata` and `indicspecies`. They ran green on
+sockeye over 18 public 16S samples (`research/aspire/campaigns/cyano_r1/`). The other 19
+rows are stubs that touch their outputs and return.
 
 ## What goes in this file
 
@@ -21,14 +18,13 @@ done rather than getting a note saying so.
 
 ## The table is the source
 
-`transforms/aspire/_generate.py` holds one row per ported process and writes both
-`data_types/aspire.yml` and all 37 stubs. Collapsing two nodes is a table edit
-and a regenerate, which is the whole reason it exists — this pass is for looking
-at the DAG and deciding what to merge. Once the bodies become real protocols,
-regenerating would clobber them; stop running it then.
+`transforms/aspire/_generate.py` holds one row per ported process and writes
+`data_types/aspire.yml` and every stub. It rewrites only files that begin with its banner. A
+file without the banner is a real body and is never touched. Each row carries the `.nf`
+process and line it came from, so the port stays auditable against the source.
 
-Each row carries the `.nf` process and line it came from, so the port stays
-auditable against the source.
+**CAUTION** A row edit must be mirrored by hand in a real body. `_generate.py --lint` fails
+until the body's requirements, products and grouping match its row.
 
 ## What the port does to the pipeline
 
@@ -52,7 +48,7 @@ That mechanism is why `data_types/aspire.yml` writes the token types with
 `extends:` on a mapping merges key by key with the child winning, so a child that
 restates any key the parent set — the `_:` description included — silently stops
 satisfying the parent. A list is a set union, so subsumption always holds.
-`python transforms/aspire/_generate.py --lint` asserts it for every edge.
+`--lint` asserts it for every edge.
 
 **Processes are folded along method boundaries, not Nextflow ones.** Module 1
 is ten rows for eighteen processes: `denoise` holds relabelling, concatenation,
@@ -61,44 +57,87 @@ dereplication, UNOISE, the chimera check and read mapping, and `curate` holds
 replace whole. Plot-only processes fold into the row that computed their tables.
 `research/aspire/contracts.md` records every fold against its upstream lines.
 
-**Augmentation, batch correction and the outlier checker are not ported.** Both
-stages default off and sit outside the reads-to-ASV pipeline. The outlier checker
-reads only batch correction's CLR table.
+**Not ported:** augmentation, batch correction and the outlier checker, which default off
+and sit outside the reads-to-ASV pipeline. Also not ported: the four analyses that exist
+upstream only for its lung study (`VOC_CORRELATION`, `GROUP_POWER_ANALYSIS`,
+`TAXONOMY_GROUP_ASSOCIATION` and `PAIRED_GROUP_CONTRAST`).
 
 **Thresholds are a typed input.** Every module-1 row requires `aspire::params`, a
-YAML file the driver registers under `run`. `research/aspire/presets/` offers the
-tool defaults and ASPIRE's study values under the same keys. **CAUTION:** a 0
+YAML file the driver registers under the study. `research/aspire/presets/` offers the
+tool defaults and ASPIRE's shipped values under the same keys. **CAUTION:** a 0
 there means off, where upstream's Groovy `?:` would substitute the code default.
+
+## How a real body runs
+
+Each real body requires an `env::` type and runs every script it needs as a `lib::aspire`
+resource. The `lib::aspire` entry in `data_types/lib.yml` says which scripts are upstream's
+unmodified, which lost only lung-study code, and which are new. The six that decide the
+count table are unmodified. `curate.py` is new, and it calls `filter_nontarget.py`'s own
+functions in upstream's order.
+
+The tools run from public images: fastp, vsearch, SINA, BLAST and QIIME2. The vendored
+scripts need R with indicspecies and a python plotting stack that no public image carries.
+They run in `quay.io/hallamlab/aspire`, which `docker/aspire/` builds.
+
+**CAUTION** Apptainer on a cluster runs with `--no-home`. SINA's ARB library, numba and
+kaleido each need a writable home, so `sina_trim`, `taxonomy` and `sankey` set `HOME` to the
+work directory. SINA reports a missing home as a corrupt ARB database.
+
+## Where the counts can differ from upstream
+
+Every step up to the filtered ASV table uses upstream's commands, flags and shipped values:
+fastp, pair merging, the expected-error and length filter, dereplication, UNOISE, uchime3,
+the count table, table filtering, SINA and the classifier. Curation differs in three places,
+and each can change the curated table.
+
+1. **MitoMaster is gone.** Upstream posts every ASV to mitomap.org, and compute nodes have
+   no internet. `mitomaster` writes an empty MitoMaster table, so only the BLAST screen
+   marks mitochondria. That equals upstream with `run_mitomaster: false`.
+2. **Curation drops no sample for its group.** Upstream deletes samples whose `Type_Group`
+   has fewer than 3 members before the abundance filter. The port keeps every sample, so
+   its table can hold more samples and more ASVs. See *Groups*.
+3. **`plot_metadata` skips the mito tables when no ASV is mitochondrial.** Upstream passes
+   `--make-mito` unconditionally, and the script raises on an empty table. Host-associated
+   samples never reach that case, and a culture does.
 
 ## The sample chain
 
-`aspire::run` is a value the driver registers once. Each sample is a
-`sequences::sample_name` under it, carrying a `sequences::read_metadata` and its
-reads side by side. Per-sample rows `group_by` the name, and `denoise` groups by
-`run`, which makes the study fan-in expressible at all.
+`aspire::study_metadata` is the root: the study's sample sheet, registered once. Each
+sample is a `sequences::read_metadata` under it, whose JSON carries `sample`, `parity` and
+`length_class`. The reads are children of their metadata. A paired sample's zipped halves sit
+under a `sequences::read_pair`. Per-sample rows `group_by` the read metadata. `denoise`
+groups by the study, which makes the study fan-in expressible.
 
-Every transform requires `run` even where its protocol never opens it. That puts
-`run` in each product's lineage, so a downstream `parents={run}` constraint has
-something to resolve against.
+The `sample` key is what keeps two samples' metadata distinct. `denoise` and
+`read_accounting` read it through `context.SourceOf`, never by position in the group.
 
-**The reads are siblings of `read_metadata`, not its children.** A given four
-ancestors deep (`run`, name, metadata, `read_pair`) loses its link to the
-`read_pair` in the solver, and `interleave_zipped_short_reads` gets no candidates.
-Any three-level chain solves. Nest the reads again only once the engine handles
-that depth.
+**CAUTION** Keep the chain three levels deep. A given four ancestors deep loses its link to
+its `read_pair` in the solver, and `interleave_zipped_short_reads` gets no candidates. A new
+level between the study and the read metadata brings that back.
+
+## Groups
+
+A group is any categorical label on the sample sheet. The sheet's first column is the
+sample id, and every other column is a label. Numeric measurements go in an optional
+`aspire::sample_measurements` table, which only `measurement_association` requires.
+An analysis that compares groups runs once per label. `indicspecies` writes one results
+table and one summary per label, and skips a label with fewer than two levels.
+
+`analysis.min_level_size` replaces upstream's sample drop. `plot_metadata` blanks a label
+value that fewer samples hold, so each analysis skips that level and keeps the sample.
 
 ## Where the parities join
 
 Paired and single-end reads join at `sequences::short_reads`, the type the rest of
-the library already shares. A paired sample is given as zipped halves under a
-`sequences::read_pair` and reaches it through `logistics/interleave_zipped_short_reads`.
-A single-end sample is given as `short_reads_se`, which already is one. `fastp_qc`
-and `merge_and_filter_reads` read the parity off `read_metadata` at run time.
+the library already shares. A paired sample reaches it through
+`logistics/interleave_zipped_short_reads`. A single-end sample is given as
+`short_reads_se`, which already is one. `fastp_qc` and `merge_and_filter_reads` read the
+parity off `read_metadata` at run time.
 
 **A study has one parity.** In one sample view the solver reaches `short_reads`
 by the cheaper route only, so a mixed study plans without the interleave step and
 its paired samples never reach the ASV table. The plan still reports success.
-Split into per-sample views, the study becomes two solver cases, and the `run`
+Split into per-sample views, the study becomes two solver cases, and the study
 fan-in solves in neither. The pilot's given-count check is what catches the first.
 
 **The long-read seam is the ASV table.** `denoise` emits `amplicon::asv_table`
@@ -120,22 +159,28 @@ checks as assertions: both parities, and one case per switch arm.
 
 ## Known-rough, for the next pass
 
-- Every transform is a stub. The topology, types and settings are the port, and
-  no row has a protocol or an environment yet.
+- No run has compared the port's ASV table with upstream's on the same reads. That diff
+  is the test of the claims under *Where the counts can differ from upstream*.
+- The mito and contaminant references are the mock dataset's FASTAs. Upstream's shipped
+  config names NCBI mitochondria and a contaminant BLAST database. `mitomaster` also takes
+  only FASTA, where upstream can read a prebuilt BLAST database.
+- Nothing removes chloroplast ASVs, upstream included. A plant or algal study keeps them
+  unless the contaminant FASTA covers them.
+- The ASPIRE preset excludes *Homo sapiens* and Mammalia, a human-host setting. Its 20/20
+  tail trims carry no stated source.
+- SINA reads SILVA 138.2 and the classifier reads SILVA 138. The `amplicon::silva_db`
+  bundle also carries an NB classifier that no row uses.
+- `quay.io/hallamlab/aspire` is not on quay. A cluster runs it only after
+  `run_cyano.py side-load-images` copies it into the image store.
 - The four token pairs and their four off-arm producers are machinery ASPIRE does
   not visibly have. Several stages are optional only because the `.nf` needed a
   flag, and once the planner selects by target some tokens can go.
 - `aspire::analysis_counts` does not carry `amplicon::asv_table`'s properties, so
-  the rows lifted onto `amplicon::survey` bind `denoise`'s raw table. The fix is
-  a type-graph decision, recorded in `research/aspire/contracts.md`.
-- `curate` models no negative controls and no lab contaminant set beyond the
-  contaminant FASTA it already takes. A negative-control evidence input is the
-  next addition there.
-- `GROUP_POWER_ANALYSIS` is one Nextflow task hiding a bash driver, three Python
-  drivers, six analysis scripts and an R script. It is the one candidate for
-  *expansion* rather than collapse.
+  the rows lifted onto `amplicon::survey` bind `denoise`'s raw table. `indicspecies`
+  therefore tests every raw ASV, not the curated ones. The fix is a type-graph decision,
+  recorded in `research/aspire/contracts.md`.
+- `curate` models no negative controls. A negative-control evidence input is the next
+  addition there.
 - `transforms/amplicon/blast_map_asvs.py` stays as the optional ASV-to-assembly
-  placement, a cousin of `ASV_MAG_LINK`. The placeholder lane's taxonomy transform
-  is gone, and its NB-plus-consensus merge rule lives in the `taxonomy` row's note.
-  `data_types/amplicon.yml` is the vocabulary this pipeline shares with the rest of
-  the library.
+  placement, a cousin of `ASV_MAG_LINK`. `data_types/amplicon.yml` is the vocabulary this
+  pipeline shares with the rest of the library.
