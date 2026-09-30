@@ -1,6 +1,6 @@
 <script>
   import { untrack } from 'svelte'
-  import { app, selectSection } from '../lib/state.svelte.js'
+  import { app } from '../lib/state.svelte.js'
   import {
     addLinks,
     clearEdits,
@@ -65,6 +65,21 @@
   let armed = false
   let advanceTimer = null
   let scrolledFor = null
+  let lastInput = 0
+
+  // A done step moves on once the hand has been still for ADVANCE_MS, so a zoom
+  // or a drag that finished the step is never cut off halfway through.
+  $effect(() => {
+    const stir = (e) => {
+      if (e.type !== 'pointermove' || e.buttons) lastInput = performance.now()
+    }
+    const opts = { capture: true, passive: true }
+    const types = ['wheel', 'pointerdown', 'pointermove', 'keydown', 'input']
+    for (const type of types) document.addEventListener(type, stir, opts)
+    return () => {
+      for (const type of types) document.removeEventListener(type, stir, opts)
+    }
+  })
 
   $effect(() => {
     const key = stepKey
@@ -133,11 +148,17 @@
       // step revisited after it was finished waits for Next like any other.
       // Editing text never moves on: the span being typed into would go with it.
       if (!d) armed = true
-      if (d && !done && armed && !tourEdit && s.advance !== false && !advanceTimer) {
-        advanceTimer = setTimeout(() => {
+      if (d && !done && armed && !tourEdit && !advanceTimer) {
+        const settle = () => {
+          const quiet = performance.now() - lastInput
+          if (quiet < ADVANCE_MS) {
+            advanceTimer = setTimeout(settle, ADVANCE_MS - quiet)
+            return
+          }
           advanceTimer = null
           if (stepKey === key && done) nextStep()
-        }, ADVANCE_MS)
+        }
+        advanceTimer = setTimeout(settle, ADVANCE_MS)
       }
       done = d
       later()
@@ -152,17 +173,21 @@
   })
 
   // A step with `touch` is done once the pointer has been over, pressed or
-  // scrolled on something matching it -- "hover a step", "click one".
+  // scrolled on something matching it -- "hover a step", "click one". Its
+  // `touchOn` narrows which of those count.
+  const TOUCH_ON = ['pointerover', 'pointerdown', 'wheel']
   $effect(() => {
     if (!stepKey) return
     const onEvent = (e) => {
-      const sel = currentStep()?.touch
-      if (sel && e.target instanceof Element && e.target.closest(sel)) tourCtx.touched = true
+      const s = currentStep()
+      if (!s?.touch || !(s.touchOn ?? TOUCH_ON).includes(e.type)) return
+      if (e.target instanceof Element && e.target.closest(s.touch)) tourCtx.touched = true
     }
     const opts = { capture: true, passive: true }
-    for (const type of ['pointerover', 'pointerdown', 'wheel']) document.addEventListener(type, onEvent, opts)
+    const types = [...TOUCH_ON, 'change']
+    for (const type of types) document.addEventListener(type, onEvent, opts)
     return () => {
-      for (const type of ['pointerover', 'pointerdown', 'wheel']) document.removeEventListener(type, onEvent, opts)
+      for (const type of types) document.removeEventListener(type, onEvent, opts)
     }
   })
 
@@ -235,10 +260,11 @@
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
-  const NAV_W = 300
+  let expanded = $state(false)
+  let navW = $derived(expanded ? 420 : 300)
   let navH = $state(0)
   let dragging = $state(false)
-  let prefX = $derived(clamp(tour.nav?.x ?? vw - NAV_W - 20, EDGE, vw - NAV_W - EDGE))
+  let prefX = $derived(clamp(tour.nav?.x ?? vw - navW - 20, EDGE, vw - navW - EDGE))
   let prefY = $derived(clamp(tour.nav?.y ?? vh - (navH || 150) - 20, EDGE, vh - (navH || 40) - EDGE))
 
   let headerBottom = $derived.by(() => {
@@ -251,7 +277,7 @@
   // there is room, else below.
   function clearOfNav(x, y, w, h) {
     const top = headerBottom + EDGE
-    const n = { l: prefX - GAP, t: prefY - GAP, r: prefX + NAV_W + GAP, b: prefY + (navH || 150) + GAP }
+    const n = { l: prefX - GAP, t: prefY - GAP, r: prefX + navW + GAP, b: prefY + (navH || 150) + GAP }
     y = clamp(y, top, vh - h - EDGE)
     if (x < n.r && x + w > n.l && y < n.b && y + h > n.t) {
       if (n.t - h >= top) y = n.t - h
@@ -304,41 +330,45 @@
 
   // -- the navigator ---------------------------------------------------------
   //
-  // It stands where you put it (bottom right until you move it) unless that
-  // covers the ring, a watched spot or the callout; then it takes the first
-  // corner that covers none of them, or the one that covers least.
+  // It stands where you put it (bottom right until you move it). When that
+  // covers the ring, a watched spot or the callout it slides the shortest way
+  // that clears them, and goes home once home is clear. A spot it already slid
+  // to is kept while it stays clear, so a target creeping as the page scrolls
+  // does not bounce it between two equally short ways out.
+  let slid = null
   let navPos = $derived.by(() => {
     const h = navH || 150
-    if (dragging || !step) return { x: prefX, y: prefY }
-    const top = headerBottom + EDGE
-    const cands = [
-      { x: prefX, y: prefY },
-      { x: vw - NAV_W - 20, y: vh - h - 20 },
-      { x: 20, y: vh - h - 20 },
-      { x: vw - NAV_W - 20, y: top },
-      { x: 20, y: top },
-    ].map((p) => ({ x: clamp(p.x, EDGE, vw - NAV_W - EDGE), y: clamp(p.y, EDGE, vh - h - EDGE) }))
+    const home = { x: prefX, y: prefY }
+    if (dragging || !step) return (slid = null), home
     const obstacles = []
     if (rect) obstacles.push({ l: rect.left - 12, t: rect.top - 12, r: rect.left + rect.width + 12, b: rect.top + rect.height + 12 })
     for (const w of watchRects) obstacles.push({ l: w.left - 8, t: w.top - 8, r: w.left + w.width + 8, b: w.top + w.height + 8 })
-    obstacles.push({ l: placed.x, t: placed.y, r: placed.x + (calloutW || 340), b: placed.y + (calloutH || 160) })
+    obstacles.push({ l: placed.x - 8, t: placed.y - 8, r: placed.x + (calloutW || 340) + 8, b: placed.y + (calloutH || 160) + 8 })
+    const onScreen = (p) => ({ x: clamp(p.x, EDGE, vw - navW - EDGE), y: clamp(p.y, EDGE, vh - h - EDGE) })
     const overlap = (p) =>
       obstacles.reduce((sum, o) => {
-        const w = Math.min(p.x + NAV_W, o.r) - Math.max(p.x, o.l)
+        const w = Math.min(p.x + navW, o.r) - Math.max(p.x, o.l)
         const hh = Math.min(p.y + h, o.b) - Math.max(p.y, o.t)
         return sum + (w > 0 && hh > 0 ? w * hh : 0)
       }, 0)
-    let best = cands[0]
-    let bestArea = overlap(best)
-    for (const c of cands.slice(1)) {
-      if (bestArea === 0) break
-      const a = overlap(c)
-      if (a < bestArea) {
-        best = c
-        bestArea = a
+    if (!overlap(home)) return (slid = null), home
+    if (slid) {
+      const kept = onScreen(slid)
+      if (!overlap(kept)) return (slid = kept)
+    }
+    // every way out is home with each axis either kept or pushed flush against
+    // some obstacle's edge; the nearest one that clears them all wins
+    const xs = [home.x, ...obstacles.flatMap((o) => [o.l - navW, o.r])]
+    const ys = [home.y, ...obstacles.flatMap((o) => [o.t - h, o.b])]
+    let best = null
+    for (const x of xs) {
+      for (const y of ys) {
+        const p = onScreen({ x, y })
+        const cost = [overlap(p), Math.hypot(p.x - home.x, p.y - home.y)]
+        if (!best || cost[0] < best.cost[0] || (cost[0] === best.cost[0] && cost[1] < best.cost[1])) best = { p, cost }
       }
     }
-    return best
+    return (slid = best.p)
   })
 
   let drag = null
@@ -364,9 +394,10 @@
 
   // the step list, folded to the steps either side of this one, with a
   // chapter's name over the first of its steps shown
+  let showAll = $derived(listOpen || expanded)
   let rows = $derived.by(() => {
     if (!t) return []
-    const shown = listOpen
+    const shown = showAll
       ? t.steps.map((_s, i) => i)
       : [tour.step - 1, tour.step, tour.step + 1].filter((i) => i >= 0 && i < t.steps.length)
     const out = []
@@ -379,7 +410,7 @@
   })
   let listEl = $state(null)
   $effect(() => {
-    if (listOpen && listEl) listEl.querySelector('button.on')?.scrollIntoView({ block: 'center' })
+    if (showAll && listEl) listEl.querySelector('button.on')?.scrollIntoView({ block: 'center' })
   })
 
   let there = $derived.by(() => {
@@ -424,7 +455,7 @@
       aria-hidden="true"
       style={`left:${rect.left - PAD}px; top:${rect.top - PAD}px; width:${rect.width + PAD * 2}px; height:${rect.height + PAD * 2}px`}
     ></div>
-  {:else if !step.target}
+  {:else if !step.target && step.dim !== false}
     <div class="scrim" aria-hidden="true"></div>
   {/if}
 
@@ -456,8 +487,8 @@
       class:editing={tourEdit}
       role="dialog"
       aria-label={plain(txt(step, 'title'))}
-      bind:clientWidth={calloutW}
-      bind:clientHeight={calloutH}
+      bind:offsetWidth={calloutW}
+      bind:offsetHeight={calloutH}
       style={`left:${placed.x}px; top:${placed.y}px`}
     >
       {#if arrow}
@@ -504,8 +535,9 @@
   <div
     class="nav"
     class:dragging
-    bind:clientHeight={navH}
-    style={`left:${navPos.x}px; top:${navPos.y}px; width:${NAV_W}px`}
+    class:expanded
+    bind:offsetHeight={navH}
+    style={`left:${navPos.x}px; top:${navPos.y}px; width:${navW}px`}
   >
     <div class="navhead" onpointerdown={dragStart} onpointermove={dragMove} onpointerup={dragEnd} onpointercancel={dragEnd}>
       <span class="grip" aria-hidden="true">⠿</span>
@@ -513,9 +545,10 @@
       <span class="count small mono">{tour.step + 1}/{t.steps.length}</span>
       <button
         class="icon"
-        title="every tutorial, and picking this one up at any step"
-        onclick={() => selectSection('tutorials')}
-      >☰</button>
+        title={expanded ? 'shrink this window' : 'enlarge this window to list every step'}
+        aria-pressed={expanded}
+        onclick={() => (expanded = !expanded)}
+      >{expanded ? '⤡' : '⤢'}</button>
       <button
         class="icon"
         title="hide the tutorial — the tutorial button at the top brings it back where you left it"
@@ -523,7 +556,7 @@
       >×</button>
     </div>
 
-    <ol class="steps small" class:open={listOpen} bind:this={listEl}>
+    <ol class="steps small" class:open={showAll} bind:this={listEl}>
       {#each rows as row (row.key)}
         {#if row.chapter}
           <li class="chap">{row.chapter}</li>
@@ -534,13 +567,13 @@
           {#if i === tour.step}
             <button
               class="on"
-              onclick={() => (listOpen = !listOpen)}
-              title={listOpen ? 'fold the list' : 'every step'}
+              onclick={() => (expanded ? null : (listOpen = !listOpen))}
+              title={expanded ? plain(txt(s, 'title')) : listOpen ? 'fold the list' : 'every step'}
             >
               <span class="num">{i + 1}</span>
               <span class="grow truncate">{plain(txt(s, 'title'))}</span>
               {#if done}<span class="ok"><Icon name="check" size={11} /></span>{/if}
-              <span class="chev" aria-hidden="true">{listOpen ? '▴' : '▾'}</span>
+              {#if !expanded}<span class="chev" aria-hidden="true">{listOpen ? '▴' : '▾'}</span>{/if}
             </button>
           {:else}
             <button class:past={i < tour.step} class="peek" onclick={() => gotoStep(i)}>
@@ -736,7 +769,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    transition: left 0.25s ease, top 0.25s ease;
+    transition: left 0.25s ease, top 0.25s ease, width 0.2s ease;
   }
   .nav.dragging { transition: none; }
   .navhead {
@@ -779,6 +812,9 @@
     background: var(--sunken);
   }
   .steps.open { max-height: 260px; overflow-y: auto; }
+  .nav.expanded .steps.open { max-height: min(60vh, 520px); }
+  .nav.expanded .steps { font-size: 13px; }
+  .nav.expanded .steps button { padding: 4px 8px; }
   .steps button {
     display: flex;
     align-items: center;
