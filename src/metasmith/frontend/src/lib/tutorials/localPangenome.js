@@ -120,7 +120,7 @@ export default {
       doneText: 'runtime chosen',
       // the field is filled before you reach it, so only a hand on it counts
       touch: '[data-tour="agent-runtime"]',
-      touchOn: ['pointerdown', 'change'],
+      touchOn: ['pointerdown', 'change', 'keydown'],
       waiting: 'Open your agent from the list on the left first.',
     },
     {
@@ -190,7 +190,9 @@ export default {
       ],
       do: 'scroll over it to zoom, or drag it to pan',
       doneText: 'moved it',
-      done: () => !!$('[data-tour="template-preview"][data-moved]'),
+      // a zoom made while the template was being chosen is not this step's
+      enter: (c) => (c.previewOpenedAt = Date.now()),
+      done: (c) => Number($('[data-tour="template-preview"]')?.dataset.moved ?? 0) > c.previewOpenedAt,
       waiting: 'Click `+ workflow` and choose the template again.',
     },
     {
@@ -304,9 +306,11 @@ export default {
         'Three steps: download each genome, build the pangenome, draw the heatmap. The download runs once per genome, side by side, and all three feed the one pangenome.',
         'The boxes beside each step override its cpus, memory and time for this workflow only.',
       ],
-      do: 'hover a step to light what it needs, or click one to read about it on the right',
+      do: 'click a step to read about it on the right; hovering one lights what it needs',
       doneText: 'explored',
+      // a hover on the way past is not reading it
       touch: '[data-tour="plan"] .dag-scroll button',
+      touchOn: ['pointerdown'],
       // clicking a step opens the panel on the right, which has to be lit
       dim: false,
     },

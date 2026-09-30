@@ -31,6 +31,7 @@
   const GAP = 14
   const EDGE = 10
   const ADVANCE_MS = 900
+  const SELECT_OPEN_MAX_MS = 10000
   const FLASH_MS = 4000
   const FLASH_MAX = 3
 
@@ -66,15 +67,26 @@
   let advanceTimer = null
   let scrolledFor = null
   let lastInput = 0
+  let selectOpenUntil = 0
 
   // A done step moves on once the hand has been still for ADVANCE_MS, so a zoom
-  // or a drag that finished the step is never cut off halfway through.
+  // or a drag that finished the step is never cut off halfway through. A
+  // native select's list swallows every event while it is open, so the press
+  // that opened one holds the advance until the page hears from the hand again:
+  // a key, a change, focus leaving, or the pointer moving over the page.
   $effect(() => {
     const stir = (e) => {
-      if (e.type !== 'pointermove' || e.buttons) lastInput = performance.now()
+      const now = performance.now()
+      if (e.type === 'pointerdown' && e.target instanceof Element && e.target.closest('select')) {
+        selectOpenUntil = now + SELECT_OPEN_MAX_MS
+      } else if (selectOpenUntil && (e.type !== 'pointermove' || now - lastInput > 150)) {
+        selectOpenUntil = 0
+        lastInput = now
+      }
+      if (e.type !== 'pointermove' || e.buttons) lastInput = now
     }
     const opts = { capture: true, passive: true }
-    const types = ['wheel', 'pointerdown', 'pointermove', 'keydown', 'input']
+    const types = ['wheel', 'pointerdown', 'pointermove', 'keydown', 'input', 'change', 'focusout']
     for (const type of types) document.addEventListener(type, stir, opts)
     return () => {
       for (const type of types) document.removeEventListener(type, stir, opts)
@@ -85,7 +97,7 @@
     const key = stepKey
     clearTimeout(advanceTimer)
     advanceTimer = null
-    armed = tour.arrived === 'forward'
+    armed = tour.arrived !== 'back' && tour.arrived !== 'jump'
     done = false
     rect = null
     watchRects = []
@@ -144,15 +156,18 @@
           /* a link that cannot be read is simply not recorded */
         }
       }
-      // Seeing a step undone is what licenses its `done` to carry you on, so a
-      // step revisited after it was finished waits for Next like any other.
+      // A step reached going forward or on a reload moves on once done. One you
+      // went back to or picked from the list waits for Next if it was already
+      // done, so it does not skip away the moment you chose it; seeing it undone
+      // licenses it again.
       // Editing text never moves on: the span being typed into would go with it.
       if (!d) armed = true
       if (d && !done && armed && !tourEdit && !advanceTimer) {
         const settle = () => {
-          const quiet = performance.now() - lastInput
-          if (quiet < ADVANCE_MS) {
-            advanceTimer = setTimeout(settle, ADVANCE_MS - quiet)
+          const now = performance.now()
+          const wait = selectOpenUntil > now ? 250 : ADVANCE_MS - (now - lastInput)
+          if (wait > 0) {
+            advanceTimer = setTimeout(settle, wait)
             return
           }
           advanceTimer = null
@@ -332,7 +347,8 @@
   //
   // It stands where you put it (bottom right until you move it). When that
   // covers the ring, a watched spot or the callout it slides the shortest way
-  // that clears them, and goes home once home is clear. A spot it already slid
+  // that clears them all, or stays put if no spot does, and goes home once home
+  // is clear. A spot it already slid
   // to is kept while it stays clear, so a target creeping as the page scrolls
   // does not bounce it between two equally short ways out.
   let slid = null
@@ -344,7 +360,8 @@
     if (rect) obstacles.push({ l: rect.left - 12, t: rect.top - 12, r: rect.left + rect.width + 12, b: rect.top + rect.height + 12 })
     for (const w of watchRects) obstacles.push({ l: w.left - 8, t: w.top - 8, r: w.left + w.width + 8, b: w.top + w.height + 8 })
     obstacles.push({ l: placed.x - 8, t: placed.y - 8, r: placed.x + (calloutW || 340) + 8, b: placed.y + (calloutH || 160) + 8 })
-    const onScreen = (p) => ({ x: clamp(p.x, EDGE, vw - navW - EDGE), y: clamp(p.y, EDGE, vh - h - EDGE) })
+    // a spot it slides to stays under the tab bar, whose tabs the next step may need
+    const onScreen = (p) => ({ x: clamp(p.x, EDGE, vw - navW - EDGE), y: clamp(p.y, headerBottom + EDGE, vh - h - EDGE) })
     const overlap = (p) =>
       obstacles.reduce((sum, o) => {
         const w = Math.min(p.x + navW, o.r) - Math.max(p.x, o.l)
@@ -352,10 +369,8 @@
         return sum + (w > 0 && hh > 0 ? w * hh : 0)
       }, 0)
     if (!overlap(home)) return (slid = null), home
-    if (slid) {
-      const kept = onScreen(slid)
-      if (!overlap(kept)) return (slid = kept)
-    }
+    const kept = slid && onScreen(slid)
+    if (kept && !overlap(kept)) return (slid = kept)
     // every way out is home with each axis either kept or pushed flush against
     // some obstacle's edge; the nearest one that clears them all wins
     const xs = [home.x, ...obstacles.flatMap((o) => [o.l - navW, o.r])]
@@ -368,6 +383,8 @@
         if (!best || cost[0] < best.cost[0] || (cost[0] === best.cost[0] && cost[1] < best.cost[1])) best = { p, cost }
       }
     }
+    // when nothing clears them all it stays put: a jump would still cover something
+    if (best.cost[0] > 0) return kept ?? home
     return (slid = best.p)
   })
 
@@ -410,7 +427,8 @@
   })
   let listEl = $state(null)
   $effect(() => {
-    if (showAll && listEl) listEl.querySelector('button.on')?.scrollIntoView({ block: 'center' })
+    void tour.step
+    if (showAll && listEl) listEl.querySelector('button.on')?.scrollIntoView({ block: 'nearest' })
   })
 
   let there = $derived.by(() => {
