@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-These tables are E4's full-run results: which bins got a model in each lane, how each model compares with metaGEM's published GEM for the same bin, and MEMOTE's results for all three. The `ablation_*` tables score E4's ablation ladder over a 1,408-bin subset. `findings/E4_REPRODUCTION.md` holds the medians and what they mean. The models themselves live only in the chunk archives, `e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst`, because each lane's cache entries and run directory were removed after archiving. The archives are now on chinook only. `findings/E4_REPRODUCTION.md` § Storage says where, and how to restore them.
+These tables are E4's full-run results: which bins got a model in each lane, how each model compares with metaGEM's published GEM for the same bin, and MEMOTE's results for all three. The `ablation_*` tables score E4's ablation ladder over a 1,408-bin subset. `findings/E4_REPRODUCTION.md` holds the medians and what they mean. The models themselves live only in the chunk archives, `e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst`, because each lane's cache entries and run directory were removed after archiving. The ablation's models live in its own rung archives. All the archives are now on chinook only. `findings/E4_REPRODUCTION.md` § Storage says where, and how to restore them.
 
 | File | Rows | What it is |
 |---|---|---|

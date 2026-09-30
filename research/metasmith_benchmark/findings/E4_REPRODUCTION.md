@@ -105,6 +105,8 @@ CAUTION restore to exactly `/scratch/phyberos/metagem`. The cache keys fold in a
 
 CAUTION Globus copies neither symlinks nor empty directories. The inventory beside the archive lists both, and `restore_metagem.sh` recreates them.
 
+The ablation's root moved from fir's `/scratch/phyberos/e4_ablation` to chinook, at `/Workspace_backups/Tony_Liu/fir_metagem/e4_ablation/` (Globus task `f2420b59-bc70-11f1-aeb2-0effcb3df825`, 2026-09-29), and the fir copy was deleted. It holds each rung's archive under `archive/<lane>/`, the smoke run's under `smoke_archive/`, the `e4abl` home, the refs and the images. `MANIFEST.tsv` lists every file with its size, and every file arrived checksummed at that size. The subset's inputs and E4's chunk archives stayed behind, because chinook already holds them under `metagem/`. The modern lane's helper writes its DIAMOND hits beside each input `.faa`, so fir's inputs also held one regenerable `.tsv` per bin.
+
 ## GEM quality
 
 metaGEM's paper publishes no MEMOTE score and no growth fraction (Zorrilla 2021, Discussion). It calls its models "FBA-ready" and "quality checked for basic functionality". metaGEM did publish its per-test MEMOTE 0.9.13 results for 14,015 of its 14,087 GEMs, as `published/<study>/memote_*.csv[.gz]`. E4 compares every model against those.
