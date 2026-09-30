@@ -7,6 +7,8 @@ extract  write every rung's model of every subset bin out of the lane archives, 
          R0 and M come from E4's archives, the other rungs from the ablation's. Run it on fir.
 compare  compare each rung's model with metaGEM's GEM and with the previous rung's, one row per bin,
          rung and reference.
+universe split the universe rung's effect: the share of metaGEM's reactions 1.6.6's universe lacks, and
+         each rung's parity with metaGEM over the reactions both universes hold.
 summary  medians and interquartile ranges of compare's table, pooled and per study.
 """
 
@@ -14,6 +16,7 @@ import argparse
 import csv
 import math
 import random
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -27,17 +30,18 @@ SEED = 20260928
 FRACTION = 0.10
 ROOT = Path("/scratch/phyberos/e4_ablation")
 
-# rung: (archive directory under ROOT, model type). Each rung adds one change to the one before it.
+# rung: (archive set, lane, model type). Each rung adds one change to the one before it. The "e4" set
+# is E4's own lane archives, the "ablation" set this ladder's.
 LADDER = {
-    "R0": ("e4_gems_archive/repro", "modelling::carveme_model_cplex"),
-    "R1": ("archive/repro", "modelling::carveme_model_cplex"),
-    "B": ("archive/bigg", "e4abl::model_bigg"),
-    "U": ("archive/universe", "e4abl::model_universe"),
-    "V": ("archive/version", "e4abl::model_version"),
-    "G": ("archive/gapfill", "e4abl::model_gapfill"),
-    "D": ("archive/diamond", "e4abl::model_diamond"),
-    "S": ("archive/scip", "e4abl::model_scip"),
-    "M": ("e4_gems_archive/modern", "modelling::carveme_model"),
+    "R0": ("e4", "repro", "modelling::carveme_model_cplex"),
+    "R1": ("ablation", "repro", "modelling::carveme_model_cplex"),
+    "B": ("ablation", "bigg", "e4abl::model_bigg"),
+    "U": ("ablation", "universe", "e4abl::model_universe"),
+    "V": ("ablation", "version", "e4abl::model_version"),
+    "G": ("ablation", "gapfill", "e4abl::model_gapfill"),
+    "D": ("ablation", "diamond", "e4abl::model_diamond"),
+    "S": ("ablation", "scip", "e4abl::model_scip"),
+    "M": ("e4", "modern", "modelling::carveme_model"),
 }
 RUNGS = list(LADDER)
 KINDS = ("reactions", "metabolites", "genes")
@@ -68,20 +72,43 @@ def cmd_pick(args):
         w.writerows(picked)
 
 
-def cmd_extract(args):
+# A step answered from another run's cache entry loses its non-leaf parents in the lineage index, so a
+# model built on reused hits has no path back to its bin. Its genes are its bin's protein ids.
+def adopt_orphans(archive, orphans, missing, study_of, out):
+    import e4_parity
     import e4_tally
 
-    wanted = {b for _, b in read_bins(args.bins_file)}
+    staging = out / "_orphans"
+    staging.mkdir(exist_ok=True)
+    e4_tally.extract_models(archive, {p: Path(p).name.removesuffix(".xml") for p in orphans}, staging)
+    pairs = e4_parity.pair_by_genes(staging, sorted(missing), study_of)
+    for b, xml in pairs.items():
+        Path(xml).rename(out / f"{b}.xml.gz")
+    for leftover in staging.iterdir():
+        leftover.unlink()
+    staging.rmdir()
+    return len(pairs)
+
+
+def cmd_extract(args):
+    import e4_parity
+    import e4_tally
+
+    e4_parity.PUBLISHED = args.root / "published"
+    study_of = {b: s for s, b in read_bins(args.bins_file)}
+    wanted = set(study_of)
+    sets = {"e4": args.e4_archive, "ablation": args.archive}
     for rung in args.rungs:
-        subdir, dtype = LADDER[rung]
+        which, lane, dtype = LADDER[rung]
+        source = sets[which] / lane
         out = args.out / rung
         if (out / ".done").exists():
             print(f"{rung}: already extracted", file=sys.stderr)
             continue
         out.mkdir(parents=True, exist_ok=True)
-        archives = sorted((args.root / subdir).glob("chunk*.tar.zst"))
+        archives = sorted(source.glob("chunk*.tar.zst"))
         if not archives:
-            sys.exit(f"{rung}: no archive under {args.root / subdir}")
+            sys.exit(f"{rung}: no archive under {source}")
         n = 0
         for archive in archives:
             manifest = e4_tally.read_index(archive)
@@ -92,7 +119,11 @@ def cmd_extract(args):
             if models:
                 e4_tally.extract_models(archive, models, out)
             n += len(models)
-            print(f"{rung} {archive.name}: {len(models)} models", file=sys.stderr)
+            orphans = [p for p, e in manifest.items() if e.get("type") == dtype and owner[p] is None]
+            adopted = adopt_orphans(archive, orphans, wanted - {b for b in models.values()}, study_of, out) if orphans else 0
+            n += adopted
+            print(f"{rung} {archive.name}: {len(models)} models, {adopted} of {len(orphans)} orphans paired by genes",
+                  file=sys.stderr)
         (out / ".done").write_text(f"{n}\n")
         print(f"{rung}: {n} of {len(wanted)} bins", file=sys.stderr)
 
@@ -148,6 +179,40 @@ def cmd_compare(args):
             print(f"  {b}", file=sys.stderr)
 
 
+def universe_reactions(path):
+    import e4_parity
+
+    return set(re.findall(r'<reaction [^>]*?id="([^"]+)"', e4_parity.read_sbml(path).decode()))
+
+
+def cmd_universe(args):
+    import e4_parity
+
+    e4_parity.PUBLISHED = args.root / "published"
+    old, new = universe_reactions(args.old_universe), universe_reactions(args.new_universe)
+    shared = old & new
+    print(f"universe reactions: 1.2.2 {len(old)}, 1.6.6 {len(new)}, shared {len(shared)}", file=sys.stderr)
+    by_study = defaultdict(list)
+    for study, b in read_bins(args.bins_file):
+        by_study[study].append(b)
+    columns = ["study", "bin", "metagem_reactions", "metagem_in_new_universe",
+               *(f"{r}_jaccard_shared_universe" for r in ("R1", "B", "U"))]
+    with open(args.out, "w", newline="") as fh:
+        out = csv.DictWriter(fh, columns, delimiter="\t", lineterminator="\n")
+        out.writeheader()
+        for study in sorted(by_study):
+            for b, published in e4_parity.published_models(study, by_study[study]):
+                theirs = set(e4_parity.parse_model(published)["reactions"])
+                row = {"study": study, "bin": b, "metagem_reactions": len(theirs),
+                       "metagem_in_new_universe": round(len(theirs & new) / len(theirs), 4)}
+                for rung in ("R1", "B", "U"):
+                    path = args.models / rung / f"{b}.xml.gz"
+                    if path.exists():
+                        ours = set(e4_parity.parse_model(e4_parity.read_sbml(path))["reactions"])
+                        row[f"{rung}_jaccard_shared_universe"] = round(jaccard(ours & shared, theirs & shared), 4)
+                out.writerow(row)
+
+
 def quartiles(values):
     if len(values) < 2:
         return (values[0],) * 3 if values else ("",) * 3
@@ -189,6 +254,8 @@ def main():
     extract = sub.add_parser("extract")
     extract.add_argument("--out", type=Path, required=True)
     extract.add_argument("--root", type=Path, default=ROOT)
+    extract.add_argument("--archive", type=Path, default=ROOT / "archive", help="the ablation's lane archives")
+    extract.add_argument("--e4-archive", type=Path, default=ROOT / "e4_gems_archive", help="E4's lane archives")
     extract.add_argument("--rungs", nargs="*", choices=RUNGS, default=RUNGS)
     extract.add_argument("--bins-file", type=Path, default=BINS)
     extract.set_defaults(func=cmd_extract)
@@ -198,6 +265,15 @@ def main():
     compare.add_argument("--root", type=Path, default=ROOT)
     compare.add_argument("--bins-file", type=Path, default=BINS)
     compare.set_defaults(func=cmd_compare)
+    universe = sub.add_parser("universe", help="split the universe rung's effect: reactions 1.6.6's universe lacks, "
+                              "and parity over the reactions both universes hold")
+    universe.add_argument("--models", type=Path, required=True, help="extract's --out")
+    universe.add_argument("--out", type=Path, required=True)
+    universe.add_argument("--root", type=Path, default=ROOT)
+    universe.add_argument("--bins-file", type=Path, default=BINS)
+    universe.add_argument("--old-universe", type=Path, default=ROOT / "refs/carveme122_universe_bacteria.xml.gz")
+    universe.add_argument("--new-universe", type=Path, default=ROOT / "refs/carveme166_universe_bacteria.xml.gz")
+    universe.set_defaults(func=cmd_universe)
     summary = sub.add_parser("summary")
     summary.add_argument("table", type=Path)
     summary.set_defaults(func=cmd_summary)
