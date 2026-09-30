@@ -1,9 +1,9 @@
 arm	binner	samples	assemblies_identical	asm_shared_bp_frac_min/median	asm_bp_frac_id99_min/median	E1_mags	E1_matched_pct	E1_unmatched	E1_unmatched_high	E2_mags	E2_matched_pct	E2_unmatched	E2_unmatched_high	matched_ani_median	median_abs_dcompleteness	matched_pairs	tier_changed	dcompleteness_gt10
-short	DASTool	21	21	1.0000 / 1.0000	1.0000 / 1.0000	253	94.1	15	1	250	95.2	12	1	100.0000	0.02	238	13	11
+short	DASTool	21	21	1.0000 / 1.0000	1.0000 / 1.0000	253	94.1	15	1	250	95.2	12	1	100.0000	0.02	238	15	11
 short	COMEBin	21	21	1.0000 / 1.0000	1.0000 / 1.0000	714	77.7	159	1	808	68.7	253	2	100.0000	1.17	555	46	48
-short	MetaBAT2	21	21	1.0000 / 1.0000	1.0000 / 1.0000	410	100.0	0	0	410	100.0	0	0	100.0000	0.00	410	0	0
+short	MetaBAT2	21	21	1.0000 / 1.0000	1.0000 / 1.0000	410	97.6	10	0	404	99.0	4	0	100.0000	0.00	400	8	3
 short	SemiBin2	21	21	1.0000 / 1.0000	1.0000 / 1.0000	657	95.4	30	0	645	97.2	18	0	100.0000	0.06	627	3	2
-long	DASTool	4	4	1.0000 / 1.0000	1.0000 / 1.0000	57	98.2	1	0	58	96.6	2	0	100.0000	0.00	56	0	0
+long	DASTool	4	4	1.0000 / 1.0000	1.0000 / 1.0000	57	96.5	2	0	58	94.8	3	0	100.0000	0.00	55	0	0
 long	COMEBin	4	4	1.0000 / 1.0000	1.0000 / 1.0000	212	70.8	62	0	213	70.4	63	0	100.0000	0.52	150	8	11
-long	MetaBAT2	4	4	1.0000 / 1.0000	1.0000 / 1.0000	165	100.0	0	0	165	100.0	0	0	100.0000	0.00	165	0	0
+long	MetaBAT2	4	4	1.0000 / 1.0000	1.0000 / 1.0000	165	98.8	2	0	165	98.8	2	0	100.0000	0.00	163	0	2
 long	SemiBin2	4	4	1.0000 / 1.0000	1.0000 / 1.0000	134	100.0	0	0	134	100.0	0	0	100.0000	0.00	134	0	0

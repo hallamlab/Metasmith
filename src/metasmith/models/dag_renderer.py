@@ -157,6 +157,11 @@ class DagRenderer:
         theme_obj = THEMES[theme]
         if not background:
             theme_obj = replace(theme_obj, plate=replace(theme_obj.plate, paint_background=False))
+        if mode is DagMode.STEPS:
+            # the rule heads a step's block of data; with no data there is no block
+            theme_obj = replace(theme_obj, styles={
+                k: replace(s, heading=False) for k, s in theme_obj.styles.items()
+            })
         self._theme = theme_obj
         self._mode = mode
         self._blacklist = tuple(blacklist)

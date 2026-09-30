@@ -114,6 +114,11 @@ def test_steps_mode_leaves_the_steps_and_wires_them_through():
     assert edges == {("s0", "s1")}
 
 
+def test_steps_mode_draws_no_rule_over_a_step():
+    assert "<line" in _build().to_svg()
+    assert "<line" not in _build(mode=DagMode.STEPS).to_svg()
+
+
 def test_the_legend_draws_one_block_per_named_transform():
     r = _build(mode=DagMode.LEGEND)
     blocks, _ = r._legend_blocks()

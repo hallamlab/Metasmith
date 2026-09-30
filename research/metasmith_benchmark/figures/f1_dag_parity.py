@@ -2,8 +2,10 @@
 
 E1's graph is nextflow's own `-with-dag` output (results/e1/dag/), projected to the processes that ran on
 that arm. E2's graph is the plan `drivers/e2_cami.py` solves, which is the plan that ran: CheckM2 on all four
-bin sets. Both are drawn by the same DagRenderer with one hue per pipeline stage, so a reader matches the two
-pictures by colour.
+bin sets. Both are drawn in full and steps-only by the same DagRenderer, every step coloured by its function
+from one palette, so a function reads the same in all eight graphs and nf-core's bookkeeping stands out
+in grey. E2's two scoring steps against the CAMI gold standard, and the inputs only they read, are cut out:
+nf-core has no counterpart to them. E1's Prodigal is cut out too.
 
 The edge check contracts both graphs to the tool-bearing steps E2 has a transform for, then compares edges
 and reachability. Writes figures/f1/.
@@ -16,6 +18,7 @@ import json
 import os
 import sys
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -30,25 +33,31 @@ import render_e2  # noqa: E402
 from metasmith.models.dag_colour import Colouring  # noqa: E402
 from metasmith.models.dag_renderer import DagMode, DagRenderer, NodeKind  # noqa: E402
 
+# the page's categorical slots 1-3 and 7 (violet) in pipeline order, stepped per theme; bookkeeping is neutral
 STAGES = {
-    "read QC": "#636EFA",
-    "assembly": "#EF553B",
-    "read mapping": "#00CC96",
-    "binning": "#AB63FA",
-    "refinement": "#FFA15A",
-    "bin quality": "#19D3F3",
-    "E2 scoring": "#FF6692",
-    "nf-core bookkeeping and reports": "#8A8A8A",
+    "read processing and QC": ("#2a78d6", "#3987e5"),
+    "assembly and read mapping": ("#eb6834", "#d95926"),
+    "binning and refinement": ("#1baf7a", "#199e70"),
+    "bin quality": ("#4a3aa7", "#9085e9"),
+    "nf-core bookkeeping and reports": ("#8a8a8a", "#7a7f88"),
 }
 TRANSFORM_STAGE = {
-    "fastqc_raw": "read QC", "fastp": "read QC", "fastqc_trimmed": "read QC",
-    "porechop_abi": "read QC", "chopper": "read QC",
-    "megahit": "assembly", "flye": "assembly",
-    "bowtie2_binning_bam": "read mapping", "minimap2_binning_bam": "read mapping",
-    "metabat2": "binning", "semibin2": "binning", "comebin": "binning",
-    "das_tool": "refinement", "checkm2": "bin quality",
-    "gold_standard": "E2 scoring", "amber": "E2 scoring",
+    "fastqc_raw": "read processing and QC", "fastp": "read processing and QC",
+    "fastqc_trimmed": "read processing and QC", "porechop_abi": "read processing and QC",
+    "chopper": "read processing and QC",
+    "megahit": "assembly and read mapping", "flye": "assembly and read mapping",
+    "bowtie2_binning_bam": "assembly and read mapping", "minimap2_binning_bam": "assembly and read mapping",
+    "metabat2": "binning and refinement", "semibin2": "binning and refinement", "comebin": "binning and refinement",
+    "das_tool": "binning and refinement", "checkm2": "bin quality",
 }
+# a filled step is ringed in the page's surface colour; the given step takes the ink
+PAGE_SURFACE = ("#fcfcfd", "#171b21")
+INK = ("#2b2b2b", "#dfe3ea")
+SCORING = {"gold_standard", "amber"}
+# reports and bookkeeping kept out of the steps-only grid, on whichever side has them
+STEPS_HIDDEN = {"fastqc_raw", "fastqc_trimmed", "seqkit_stats", "split_fasta", "mag_depths", "mag_depths_summary"}
+# gene calling on the assemblies: an annotation step outside the binning pipeline both arms compare
+E1_DROPPED = {"PRODIGAL"}
 
 # nextflow's DAG names a process by its module; the trace table names it by its last segment
 DOT_TO_TRACE = {
@@ -68,7 +77,7 @@ def trace(arm):
     return rows
 
 
-def e1_graph(arm, **kw):
+def e1_graph(arm, mode=DagMode.PLAIN, **kw):
     with contextlib.redirect_stdout(io.StringIO()):
         full = dot_to_msm.main(BENCH / f"results/e1/dag/e1_{arm}.dot", OUT / f".e1_{arm}_full")
     (OUT / f".e1_{arm}_full.svg").unlink()
@@ -81,7 +90,7 @@ def e1_graph(arm, **kw):
     def keep_proc(p):
         if p == "given":
             return True
-        if OTHER_ARM[arm] in p:
+        if OTHER_ARM[arm] in p or p in E1_DROPPED:
             return False
         return DOT_TO_TRACE.get(p, p) in ran
 
@@ -93,7 +102,7 @@ def e1_graph(arm, **kw):
     # a given channel whose every consumer ran on the other arm has gone with them
     edges = [(a, b) for a, b in edges if not (a == "given" and b not in consumed)]
 
-    r = DagRenderer(mode=DagMode.PLAIN, **kw)
+    r = DagRenderer(mode=mode, **kw)
     for a, b in edges:
         for n in (a, b):
             r.add_node(kinds[n], n, labels.get(n))
@@ -107,20 +116,60 @@ def e1_graph(arm, **kw):
     return r, to_transform, stage
 
 
-def e2_graph(arm, **kw):
-    plan = render_e2.plan_for(arm)
-    r = plan.BuildDAG(mode=DagMode.PLAIN, blacklist=[render_e2.E2_ENV], **kw)
+def e2_graph(arm, mode=DagMode.PLAIN, **kw):
+    r = render_e2.plan_for(arm).BuildDAG(mode=mode, colour="none", blacklist=[render_e2.E2_ENV], **kw)
+    drop_scoring(r)
     tools = {n: r.labels[n].name for n, k in r._nodes.items() if k is NodeKind.TRANSFORM and n != "given"}
-    return r, tools, {n: TRANSFORM_STAGE[t] for n, t in tools.items()}
+    return r, tools
 
 
-def paint(r, stage):
-    """Colour every step by its stage and every product by its producer's."""
-    nodes = {n: STAGES[s] for n, s in stage.items()}
+def drop_scoring(r):
+    """Cut the scoring steps, then every data node left feeding nothing that no kept step produced."""
+    for n, k in list(r._nodes.items()):
+        if k is NodeKind.TRANSFORM and r.labels[n].name in SCORING:
+            r.remove_node(n)
+    while True:
+        made = {b for a, b in r._edges if r._nodes[a] is NodeKind.TRANSFORM and a != "given"}
+        dead = [n for n, k in r._nodes.items()
+                if k is not NodeKind.TRANSFORM and r.out_degree(n) == 0 and n not in made]
+        if not dead:
+            return
+        for n in dead:
+            r.remove_node(n)
+
+
+def drop_steps(r, names):
+    """Cut the named steps and their products, then every input left feeding nothing."""
+    gone = {n for n, k in r._nodes.items() if k is NodeKind.TRANSFORM and r.labels[n].name in names}
+    gone |= {b for a, b in r._edges if a in gone and r._nodes[b] is not NodeKind.TRANSFORM}
+    for n in gone:
+        r.remove_node(n)
+    while True:
+        dead = [n for n, k in r._nodes.items() if k is not NodeKind.TRANSFORM and r.out_degree(n) == 0
+                and not any(b == n for _, b in r._edges)]
+        if not dead:
+            return r
+        for n in dead:
+            r.remove_node(n)
+
+
+def n_steps(r):
+    return sum(1 for n, k in r._nodes.items() if k is NodeKind.TRANSFORM and n != "given")
+
+
+def paint(r, stage, theme):
+    """Colour every step by its stage and every product by its producer's; steps are drawn filled."""
+    dark = theme == "dark"
+    nodes = {n: STAGES[s][dark] for n, s in stage.items()}
     for a, b in r._edges:
         if a in nodes and b not in nodes and r._nodes[b] is not NodeKind.TRANSFORM:
             nodes[b] = nodes[a]
     edges = {(a, b): nodes[a] for a, b in r._edges if a in nodes}
+    if "given" in r._nodes:
+        nodes["given"] = INK[dark]
+    styles = r._theme.styles
+    step = replace(styles[NodeKind.TRANSFORM], solid=True, stroke=PAGE_SURFACE[dark], stroke_width=1.0)
+    r._theme = replace(r._theme, styles={**styles, NodeKind.TRANSFORM: step})
     r.colouring = lambda lay=None: Colouring(nodes=nodes, edges=edges)
     return r
 
@@ -176,15 +225,21 @@ def main():
     rows, summary = [], {}
     for arm in ("short", "long"):
         for theme in ("light", "dark"):
-            kw = dict(theme=theme, background=False)
-            r1, t1, s1 = e1_graph(arm, **kw)
-            r2, t2, s2 = e2_graph(arm, **kw)
-            paint(r1, s1).render(OUT / f"e1_{arm}_{theme}", "svg")
-            paint(r2, s2).render(OUT / f"e2_{arm}_{theme}", "svg")
+            for mode, tag in ((DagMode.PLAIN, ""), (DagMode.STEPS, "_steps")):
+                kw = dict(theme=theme, background=False, mode=mode)
+                r1, t1, s1 = e1_graph(arm, **kw)
+                r2, t2 = e2_graph(arm, **kw)
+                if mode is DagMode.STEPS:
+                    drop_steps(r1, STEPS_HIDDEN)
+                    drop_steps(r2, STEPS_HIDDEN)
+                    shown = dict(e1_steps_shown=n_steps(r1), e2_steps_shown=n_steps(r2))
+                paint(r1, s1, theme).render(OUT / f"e1_{arm}{tag}_{theme}", "svg")
+                paint(r2, {n: TRANSFORM_STAGE[t] for n, t in t2.items()}, theme).render(OUT / f"e2_{arm}{tag}_{theme}", "svg")
+            r1, t1, _ = e1_graph(arm)
+            r2, t2 = e2_graph(arm)
 
-        scoring = {"gold_standard", "amber"}
         e1 = tool_edges(r1, t1)
-        e2 = {(a, b) for a, b in tool_edges(r2, t2) if a not in scoring and b not in scoring}
+        e2 = tool_edges(r2, t2)
         c1, c2 = closure(e1), closure(e2)
         for a, b in sorted(e1 | e2):
             where = "both" if (a, b) in e1 and (a, b) in e2 else ("E1" if (a, b) in e1 else "E2")
@@ -193,14 +248,13 @@ def main():
         n_proc = sum(1 for n, k in r1._nodes.items() if k is NodeKind.TRANSFORM and n != "given")
         n_step = sum(1 for n, k in r2._nodes.items() if k is NodeKind.TRANSFORM and n != "given")
         tools1 = {t for t in t1.values() if t}
-        tools2 = set(t2.values()) - scoring
+        tools2 = set(t2.values())
         print(f"{arm}: E1 {n_proc} processes ran, {sum(1 for t in t1.values() if t)} tool-bearing -> {len(tools1)} transforms;"
-              f" E2 {n_step} steps -> {len(tools2)} tools (+{len(set(t2.values()) & scoring)} scoring)")
+              f" E2 {n_step} steps -> {len(tools2)} tools")
         summary[arm] = dict(e1_processes=n_proc, e1_tool_processes=sum(1 for t in t1.values() if t),
                             e2_steps=n_step, tools=len(tools1), same_tools=tools1 == tools2,
                             checkm2_steps=sum(1 for t in t2.values() if t == "checkm2"),
-                            scoring_steps=sum(1 for t in t2.values() if t in scoring),
-                            same_reachability=c1 == c2)
+                            same_reachability=c1 == c2, **shown)
         print(f"  same tools: {tools1 == tools2}   E1-only {sorted(tools1 - tools2)}   E2-only {sorted(tools2 - tools1)}")
         print(f"  tool edges: both {len(e1 & e2)}, E1-only {len(e1 - e2)}, E2-only {len(e2 - e1)}")
         print(f"  reachability identical: {c1 == c2}   transitive reduction identical: {reduction(e1) == reduction(e2)}")

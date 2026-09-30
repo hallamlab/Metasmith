@@ -59,16 +59,24 @@ def runtime():
             for r in rows(RES / "metrics/runtime_totals.tsv")}
 
 
+SELF_PAIRS = [
+    ("E1ctl vs E1ctl2", "compare_arms_ctl_ctl2/e1ctl_e1ctl2"),
+    ("E1 vs E1ctl", "compare_arms_ctl/e1_e1ctl"),
+    ("E1 vs E1ctl2", "compare_arms_ctl2/e1_e1ctl2"),
+]
+
+
 def match_rates():
-    src = {"ctl": RES / "compare_arms_ctl/e1_e1ctl/summary.tsv",
-           "e2_25": RES / "compare_arms_ctl/e1_e2/summary.tsv",
-           "e2_all": RES / "compare_arms/summary.tsv"}
-    out = defaultdict(dict)
-    for key, path in src.items():
-        for r in rows(path):
-            out[f'{r["arm"]}/{r["binner"]}'][key] = dict(
-                e1=float(r["E1_matched_pct"]), other=float(r["E2_matched_pct"]),
-                e1_mags=int(r["E1_mags"]), other_mags=int(r["E2_mags"]), samples=int(r["samples"]))
+    """Per arm and binner, the share of the first run's bins matched: each nf-core pair on the control
+    samples, and nf-core against metasmith on all samples."""
+    out = defaultdict(lambda: dict(self=[]))
+    for label, sub in SELF_PAIRS:
+        for r in rows(RES / sub / "summary.tsv"):
+            out[f'{r["arm"]}/{r["binner"]}']["self"].append(dict(
+                pair=label, pct=float(r["E1_matched_pct"]), mags=int(r["E1_mags"]), samples=int(r["samples"])))
+    for r in rows(RES / "compare_arms/summary.tsv"):
+        out[f'{r["arm"]}/{r["binner"]}']["e2"] = dict(
+            pct=float(r["E1_matched_pct"]), mags=int(r["E1_mags"]), samples=int(r["samples"]))
     return out
 
 
@@ -100,8 +108,8 @@ def assemblies():
 
 
 def main():
-    data = dict(dag=json.loads((HERE / "f1/summary.json").read_text()), tasks=task_counts(), runtime=runtime(), match=match_rates(), tiers=tiers(),
-                edges=edge_check(), assemblies=assemblies(), binners=BINNERS)
+    data = dict(dag=json.loads((HERE / "f1/summary.json").read_text()), tasks=task_counts(), runtime=runtime(),
+                match=match_rates(), tiers=tiers(), edges=edge_check(), assemblies=assemblies(), binners=BINNERS)
     OUT.mkdir(exist_ok=True)
     template = (HERE / "obj1_template.html").read_text()
     (OUT / "index.html").write_text(template.replace("/*DATA*/null", json.dumps(data, separators=(",", ":"))))
