@@ -56,7 +56,7 @@ export default {
       body: [
         'This builds a pangenome of three E. coli strains — DH10B, K-12 and EPI300 — from nothing but their NCBI accession numbers, and draws it as a heatmap. Everything runs on this computer.',
         'On the way you make an agent, start a workflow from a template, hand it the three accessions, let metasmith plan the steps, and run them.',
-        'A ring marks where to act and a card like this says what to do. Most steps move on by themselves once you have done them. The window in the corner steps back and forth and lists every step; the tutorial button at the top hides it and brings it back.',
+        'A ring marks where to act and a card like this says what to do. Each step moves on by itself once you have done it. The window in the corner steps back and forth and lists every step; the tutorial button at the top hides it and brings it back.',
       ],
     },
 
@@ -116,10 +116,11 @@ export default {
       body: [
         'Every tool runs inside its own container, so nothing is installed by hand. Pick the runtime this machine has: Docker on most workstations, Apptainer on shared servers.',
       ],
-      do: 'check the runtime is the one this machine has',
+      do: 'open the list and pick the runtime this machine has',
       doneText: 'runtime chosen',
-      done: () => !!$('[data-tour="agent-runtime"]')?.value,
-      advance: false,
+      // the field is filled before you reach it, so only a hand on it counts
+      touch: '[data-tour="agent-runtime"]',
+      touchOn: ['pointerdown', 'change', 'keydown'],
       waiting: 'Open your agent from the list on the left first.',
     },
     {
@@ -189,8 +190,9 @@ export default {
       ],
       do: 'scroll over it to zoom, or drag it to pan',
       doneText: 'moved it',
-      done: () => !!$('[data-tour="template-preview"][data-moved]'),
-      advance: false,
+      // a zoom made while the template was being chosen is not this step's
+      enter: (c) => (c.previewOpenedAt = Date.now()),
+      done: (c) => Number($('[data-tour="template-preview"]')?.dataset.moved ?? 0) > c.previewOpenedAt,
       waiting: 'Click `+ workflow` and choose the template again.',
     },
     {
@@ -304,10 +306,11 @@ export default {
         'Three steps: download each genome, build the pangenome, draw the heatmap. The download runs once per genome, side by side, and all three feed the one pangenome.',
         'The boxes beside each step override its cpus, memory and time for this workflow only.',
       ],
-      do: 'hover a step to light what it needs, or click one to read about it on the right',
+      do: 'click a step to read about it on the right; hovering one lights what it needs',
       doneText: 'explored',
+      // a hover on the way past is not reading it
       touch: '[data-tour="plan"] .dag-scroll button',
-      advance: false,
+      touchOn: ['pointerdown'],
       // clicking a step opens the panel on the right, which has to be lit
       dim: false,
     },
@@ -394,7 +397,6 @@ export default {
       do: 'open the heatmap in the file tree — it is drawn in the panel on the right',
       doneText: 'opened',
       done: () => /heatmap/i.test($('[data-tour="run-results"] .row.sel')?.textContent ?? ''),
-      advance: false,
       dim: false,
     },
 
@@ -406,6 +408,8 @@ export default {
         'Agent, recipe, solve, run, results. Everything else is a variation on it: other templates, your own files as inputs, a remote agent for the big jobs.',
         'The Tutorials tab lists every tutorial and restarts this one from any chapter.',
       ],
+      // the heatmap just opened stays lit behind the last card
+      dim: false,
     },
   ],
 }
