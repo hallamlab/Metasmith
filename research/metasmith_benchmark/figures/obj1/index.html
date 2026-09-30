@@ -1,0 +1,437 @@
+<title>nf-core/mag Replication</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+:root {
+  --bg: #f5f6f8;
+  --surface: #fcfcfd;
+  --ink: #141820;
+  --ink-2: #4a5361;
+  --muted: #7d8593;
+  --rule: #dde1e7;
+  --grid: #e6e9ee;
+  --axis: #c3c8d0;
+  --accent: #0e6a70;
+  --accent-wash: rgba(14, 106, 112, 0.09);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --book: #8a8a8a;
+  --ring: #fcfcfd;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #101317;
+    --surface: #171b21;
+    --ink: #e6e9ee;
+    --ink-2: #b3bac6;
+    --muted: #8a92a0;
+    --rule: #2a3039;
+    --grid: #232830;
+    --axis: #3a414c;
+    --accent: #5cc4c9;
+    --accent-wash: rgba(92, 196, 201, 0.12);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --ring: #171b21;
+  }
+  :root:not([data-theme="light"]) .light-only { display: none; }
+  :root:not([data-theme="light"]) .dark-only { display: block; }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101317;
+  --surface: #171b21;
+  --ink: #e6e9ee;
+  --ink-2: #b3bac6;
+  --muted: #8a92a0;
+  --rule: #2a3039;
+  --grid: #232830;
+  --axis: #3a414c;
+  --accent: #5cc4c9;
+  --accent-wash: rgba(92, 196, 201, 0.12);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --ring: #171b21;
+}
+:root[data-theme="dark"] .light-only { display: none; }
+:root[data-theme="dark"] .dark-only { display: block; }
+.dark-only { display: none; }
+
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans); }
+.wrap { max-width: 1060px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--cond); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.005em; }
+h1 { font-size: clamp(30px, 4.6vw, 44px); line-height: 1.1; }
+h2 { font-size: 26px; line-height: 1.2; }
+h3 { font-size: 17px; line-height: 1.3; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 12px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--ink-2); }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+header { display: grid; gap: 16px; }
+.lede { font-size: 17px; color: var(--ink-2); }
+
+.verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.verdict { background: var(--surface); padding: 20px; display: grid; gap: 6px; align-content: start; }
+.verdict .k { font: 500 12px/1.4 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.verdict .v { font: 600 22px/1.25 var(--cond); }
+.verdict p { font-size: 14px; color: var(--ink-2); }
+
+section { display: grid; gap: 20px; }
+.sec-head { display: grid; gap: 8px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.sec-head .eyebrow { color: var(--muted); }
+
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; padding: 3px; background: var(--surface); gap: 3px; justify-self: start; }
+.seg button { font: 500 14px var(--sans); color: var(--ink-2); background: none; border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); }
+.seg button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+
+.dags { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.dag { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.dag figcaption { display: grid; gap: 2px; }
+.dag figcaption b { font: 600 15px var(--cond); }
+.dag figcaption span { font-size: 13px; color: var(--ink-2); }
+.dag .img { overflow-x: auto; }
+.dag img { width: 100%; max-width: 480px; height: auto; }
+figure { margin: 0; }
+
+.two { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.notes { display: grid; gap: 10px; font-size: 14px; color: var(--ink-2); padding: 0; margin: 0; list-style: none; }
+.notes li { padding-left: 16px; position: relative; }
+.notes li::before { content: ""; position: absolute; left: 0; top: 0.65em; width: 6px; height: 1px; background: var(--muted); }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font: 500 12px/1.3 var(--mono); letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; }
+td.n, th.n { text-align: right; }
+#edge-table td:last-child { white-space: normal; }
+tbody tr:last-child td { border-bottom: 0; }
+.check { display: inline-flex; align-items: center; gap: 6px; }
+.check::before { content: "✓"; font-weight: 600; color: var(--accent); }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 18px 12px; display: grid; gap: 12px; }
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.panel-head b { font: 600 15px var(--cond); }
+.panel-head span { font-size: 13px; color: var(--ink-2); }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--ink-2); font: 12px var(--sans); }
+.chart .tick { fill: var(--muted); font: 11px var(--mono); }
+.chart .val { fill: var(--ink); font: 500 11px var(--mono); }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .base { stroke: var(--axis); stroke-width: 1; }
+.s1 { fill: var(--s1); } .s2 { fill: var(--s2); } .s3 { fill: var(--s3); } .sb { fill: var(--book); }
+.mk { stroke: var(--ring); stroke-width: 2; }
+.hit { fill: transparent; cursor: default; }
+.hit:hover + g .mk, .row:hover .mk { stroke: var(--ink); }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.stat { display: grid; gap: 2px; align-content: start; }
+.stat .k { font-size: 13px; color: var(--ink-2); }
+.stat .v { font: 600 24px/1.2 var(--cond); }
+.stat .d { font-size: 13px; color: var(--muted); }
+
+details { font-size: 14px; }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details[open] summary { margin-bottom: 10px; }
+
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font: 12px/1.45 var(--sans); padding: 8px 10px; border-radius: 6px; max-width: 280px; z-index: 5; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+#tip b { font-weight: 600; }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 16px; }
+
+@media (max-width: 760px) {
+  .dags, .two, .panels { grid-template-columns: 1fr; }
+  .wrap { padding-inline: 16px; gap: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .seg button { transition: background 120ms, color 120ms; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">metasmith benchmark · objective 1 · E1 vs E2 on CAMI II</div>
+    <h1>Does metasmith reproduce nf-core/mag?</h1>
+    <p class="lede">E1 ran nf-core/mag 5.5.0 on 249 CAMI II samples: 208 short-read and 41 nanopore. E2 ran the same pipeline as a plan metasmith solved from a library of the same tool calls. The three tests below are the workflow each one ran, how it executed, and the genomes it produced.</p>
+    <div class="verdicts" id="verdicts"></div>
+  </header>
+
+  <section id="workflow">
+    <div class="sec-head">
+      <div class="eyebrow">1 · workflow</div>
+      <h2>The solved plan is nf-core's pipeline, step for step</h2>
+      <p class="muted">Left: nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right: the plan metasmith solved for E2, the one that ran. Both are drawn by metasmith's DAG renderer, with one colour per pipeline stage.</p>
+    </div>
+    <div class="seg" role="group" aria-label="Read type">
+      <button type="button" id="arm-short" data-arm="short" aria-pressed="true">Short reads · 208</button>
+      <button type="button" id="arm-long" data-arm="long" aria-pressed="false">Long reads · 41</button>
+    </div>
+    <div class="legend" id="stage-legend"></div>
+    <div class="dags">
+      <figure class="dag">
+        <figcaption><b>nf-core/mag 5.5.0</b><span id="cap-e1"></span></figcaption>
+        <div class="img" id="img-e1"></div>
+      </figure>
+      <figure class="dag">
+        <figcaption><b>metasmith, solved</b><span id="cap-e2"></span></figcaption>
+        <div class="img" id="img-e2"></div>
+      </figure>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <div class="panel-head"><b>Tool-level dependencies</b><span>both graphs contracted to the steps that run a tool</span></div>
+        <div class="tbl-wrap"><table id="edge-table"></table></div>
+        <details><summary>The edges only nf-core draws</summary><div class="tbl-wrap"><table id="edge-extra"></table></div></details>
+      </div>
+      <ul class="notes">
+        <li><b>Grey steps</b> are nf-core's bookkeeping and report processes: decompression, renaming, seqkit, FASTA splitting, depth summaries, Prodigal, QUAST and NanoPlot. metasmith does the format conversions inside each transform and runs no report steps.</li>
+        <li><b>Pink steps</b> are E2's scoring against the CAMI gold standard, which nf-core does not ship.</li>
+        <li>Three transforms each hold two nf-core processes: <code>bowtie2_binning_bam</code> is BUILD and ALIGN, <code>minimap2_binning_bam</code> is INDEX and ALIGN, and <code>metabat2</code> is the depth table and MetaBAT2.</li>
+        <li>nf-core runs one CheckM2 process over all four bin sets. The plan has one CheckM2 step per bin set.</li>
+        <li>nextflow draws a channel from the trimmed reads straight to each binner and DAS Tool. The plan reaches them through the assembly and the read mapping, so the order of work is the same.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="execution">
+    <div class="sec-head">
+      <div class="eyebrow">2 · execution</div>
+      <h2>Same work per sample, packed into fewer jobs</h2>
+      <p class="muted">Slurm tasks in the final deliverable, per transform. Failed attempts, cancellations and superseded reruns are excluded. nf-core's processes are summed into the transform that holds them.</p>
+    </div>
+    <div class="legend"><span><i style="background:var(--s1)"></i>nf-core/mag (E1)</span><span><i style="background:var(--s2)"></i>metasmith (E2)</span><span><i style="background:var(--book)"></i>nf-core bookkeeping and reports</span></div>
+    <div class="panels" id="task-panels"></div>
+    <div class="stats" id="run-stats"></div>
+  </section>
+
+  <section id="results">
+    <div class="sec-head">
+      <div class="eyebrow">3 · results</div>
+      <h2>The same genomes, within nf-core's own run-to-run noise on short reads</h2>
+      <p class="muted">A bin is matched when it has a reciprocal partner in the other run: skani ANI ≥ 95 and aligned fraction ≥ 50% in both directions. The control is a second nf-core run on 25 of the samples over E1's own assemblies, with a new MetaBAT2 and SemiBin2 seed. It measures how much nf-core disagrees with itself.</p>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--s1)"></i>nf-core vs nf-core rerun · 25 samples</span>
+      <span><i style="background:var(--s2);border-radius:1px;transform:rotate(45deg) scale(.85)"></i>nf-core vs metasmith · same 25</span>
+      <span><i style="background:var(--s3);border-radius:2px"></i>nf-core vs metasmith · all 249</span>
+    </div>
+    <div class="panels" id="match-panels"></div>
+    <details><summary>Match rates as a table</summary><div class="tbl-wrap"><table id="match-table"></table></div></details>
+    <ul class="notes" id="result-notes"></ul>
+    <div class="panel">
+      <div class="panel-head"><b>Bins by quality tier, all 249 samples</b><span>CheckM2, MIMAG thresholds</span></div>
+      <div class="tbl-wrap"><table id="tier-table"></table></div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Sources: <code>research/metasmith_benchmark/results/</code> on <code>feat/engine/bench-run</code>. Built by <code>figures/f1_dag_parity.py</code> and <code>figures/obj1_page.py</code>.</div>
+    <div>HQ: completeness &gt; 90 and contamination &lt; 5. MQ: completeness ≥ 50 and contamination &lt; 10. MIMAG's rRNA and tRNA criteria are not applied.</div>
+  </footer>
+</div>
+<div id="tip" hidden></div>
+
+<script>const DATA = {"dag":{"short":{"e1_processes":23,"e1_tool_processes":12,"e2_steps":15,"tools":10,"same_tools":true,"checkm2_steps":4,"scoring_steps":2,"same_reachability":true},"long":{"e1_processes":27,"e1_tool_processes":11,"e2_steps":14,"tools":9,"same_tools":true,"checkm2_steps":4,"scoring_steps":2,"same_reachability":true}},"tasks":{"short":{"rows":[{"tool":"fastqc_raw","e1":208,"e2":208,"e1_processes":["FASTQC_RAW"]},{"tool":"fastp","e1":208,"e2":208,"e1_processes":["FASTP"]},{"tool":"fastqc_trimmed","e1":208,"e2":208,"e1_processes":["FASTQC_TRIMMED"]},{"tool":"megahit","e1":208,"e2":208,"e1_processes":["MEGAHIT"]},{"tool":"bowtie2_binning_bam","e1":416,"e2":209,"e1_processes":["BOWTIE2_ASSEMBLY_ALIGN","BOWTIE2_ASSEMBLY_BUILD"]},{"tool":"metabat2","e1":416,"e2":209,"e1_processes":["JGISUMMARIZEBAMCONTIGDEPTHS","METABAT2"]},{"tool":"semibin2","e1":208,"e2":208,"e1_processes":["SEMIBIN_SINGLEEASYBIN"]},{"tool":"comebin","e1":208,"e2":208,"e1_processes":["COMEBIN"]},{"tool":"das_tool","e1":208,"e2":209,"e1_processes":["DASTOOL"]},{"tool":"checkm2","e1":831,"e2":109,"e1_processes":["CHECKM2_PREDICT"]}],"bookkeeping":{"e1":3532,"processes":8}},"long":{"rows":[{"tool":"porechop_abi","e1":41,"e2":41,"e1_processes":["PORECHOP_ABI"]},{"tool":"chopper","e1":41,"e2":42,"e1_processes":["CHOPPER"]},{"tool":"flye","e1":41,"e2":41,"e1_processes":["FLYE"]},{"tool":"minimap2_binning_bam","e1":82,"e2":42,"e1_processes":["MINIMAP2_ASSEMBLY_ALIGN","MINIMAP2_ASSEMBLY_INDEX"]},{"tool":"metabat2","e1":123,"e2":37,"e1_processes":["JGISUMMARIZEBAMCONTIGDEPTHS","METABAT2","METABAT2_B19_RERUN"]},{"tool":"semibin2","e1":41,"e2":41,"e1_processes":["SEMIBIN_SINGLEEASYBIN"]},{"tool":"comebin","e1":41,"e2":41,"e1_processes":["COMEBIN"]},{"tool":"das_tool","e1":41,"e2":40,"e1_processes":["DASTOOL"]},{"tool":"checkm2","e1":164,"e2":27,"e1_processes":["CHECKM2_PREDICT"]}],"bookkeeping":{"e1":827,"processes":19}}},"runtime":{"short":{"e1_h":986.1969444444444,"e2_h":905.4680555555556,"book_h":21.5825},"long":{"e1_h":103.41472222222222,"e2_h":115.79694444444445,"book_h":14.9225}},"match":{"short/DASTool":{"ctl":{"e1":95.6,"other":94.1,"e1_mags":249,"other_mags":253,"samples":21},"e2_25":{"e1":96.0,"other":95.2,"e1_mags":249,"other_mags":251,"samples":21},"e2_all":{"e1":94.6,"other":93.9,"e1_mags":2594,"other_mags":2614,"samples":208}},"short/COMEBin":{"ctl":{"e1":75.8,"other":77.3,"e1_mags":728,"other_mags":714,"samples":21},"e2_25":{"e1":76.9,"other":79.7,"e1_mags":728,"other_mags":703,"samples":21},"e2_all":{"e1":74.8,"other":74.9,"e1_mags":7593,"other_mags":7583,"samples":208}},"short/MetaBAT2":{"ctl":{"e1":93.6,"other":93.2,"e1_mags":408,"other_mags":410,"samples":21},"e2_25":{"e1":96.1,"other":96.6,"e1_mags":408,"other_mags":406,"samples":21},"e2_all":{"e1":96.5,"other":96.4,"e1_mags":4294,"other_mags":4300,"samples":208}},"short/SemiBin2":{"ctl":{"e1":95.7,"other":94.8,"e1_mags":651,"other_mags":657,"samples":21},"e2_25":{"e1":90.2,"other":90.4,"e1_mags":651,"other_mags":649,"samples":21},"e2_all":{"e1":90.9,"other":90.6,"e1_mags":6626,"other_mags":6649,"samples":208}},"long/DASTool":{"ctl":{"e1":100.0,"other":98.3,"e1_mags":59,"other_mags":60,"samples":4},"e2_25":{"e1":86.4,"other":91.1,"e1_mags":59,"other_mags":56,"samples":4},"e2_all":{"e1":90.8,"other":90.8,"e1_mags":567,"other_mags":567,"samples":41}},"long/COMEBin":{"ctl":{"e1":66.0,"other":60.6,"e1_mags":200,"other_mags":218,"samples":4},"e2_25":{"e1":55.5,"other":50.5,"e1_mags":200,"other_mags":220,"samples":4},"e2_all":{"e1":54.3,"other":50.9,"e1_mags":1975,"other_mags":2106,"samples":41}},"long/MetaBAT2":{"ctl":{"e1":95.2,"other":95.2,"e1_mags":165,"other_mags":165,"samples":4},"e2_25":{"e1":76.4,"other":75.9,"e1_mags":165,"other_mags":166,"samples":4},"e2_all":{"e1":77.1,"other":77.1,"e1_mags":1790,"other_mags":1791,"samples":41}},"long/SemiBin2":{"ctl":{"e1":63.3,"other":58.7,"e1_mags":128,"other_mags":138,"samples":4},"e2_25":{"e1":71.9,"other":66.2,"e1_mags":128,"other_mags":139,"samples":4},"e2_all":{"e1":72.4,"other":73.3,"e1_mags":1335,"other_mags":1318,"samples":41}}},"tiers":{"long/COMEBin":{"e1_hq":237,"e1_mq":339,"e1_lq":1399,"e2_hq":242,"e2_mq":347,"e2_lq":1517},"long/DASTool":{"e1_hq":258,"e1_mq":240,"e1_lq":69,"e2_hq":238,"e2_mq":254,"e2_lq":75},"long/MetaBAT2":{"e1_hq":200,"e1_mq":345,"e1_lq":1245,"e2_hq":197,"e2_mq":349,"e2_lq":1245},"long/SemiBin2":{"e1_hq":257,"e1_mq":334,"e1_lq":744,"e2_hq":253,"e2_mq":329,"e2_lq":736},"short/COMEBin":{"e1_hq":1636,"e1_mq":1606,"e1_lq":4351,"e2_hq":1661,"e2_mq":1635,"e2_lq":4287},"short/DASTool":{"e1_hq":1567,"e1_mq":911,"e1_lq":116,"e2_hq":1579,"e2_mq":908,"e2_lq":127},"short/MetaBAT2":{"e1_hq":1377,"e1_mq":1216,"e1_lq":1701,"e2_hq":1374,"e2_mq":1226,"e2_lq":1700},"short/SemiBin2":{"e1_hq":1552,"e1_mq":1487,"e1_lq":3587,"e2_hq":1563,"e2_mq":1489,"e2_lq":3597}},"edges":{"short":[{"src":"bowtie2_binning_bam","dst":"comebin","edge_in":"both","implied":true},{"src":"bowtie2_binning_bam","dst":"das_tool","edge_in":"E1","implied":true},{"src":"bowtie2_binning_bam","dst":"metabat2","edge_in":"both","implied":true},{"src":"bowtie2_binning_bam","dst":"semibin2","edge_in":"both","implied":true},{"src":"comebin","dst":"checkm2","edge_in":"both","implied":true},{"src":"comebin","dst":"das_tool","edge_in":"both","implied":true},{"src":"das_tool","dst":"checkm2","edge_in":"both","implied":true},{"src":"fastp","dst":"bowtie2_binning_bam","edge_in":"both","implied":true},{"src":"fastp","dst":"comebin","edge_in":"E1","implied":true},{"src":"fastp","dst":"das_tool","edge_in":"E1","implied":true},{"src":"fastp","dst":"fastqc_trimmed","edge_in":"both","implied":true},{"src":"fastp","dst":"megahit","edge_in":"both","implied":true},{"src":"fastp","dst":"metabat2","edge_in":"E1","implied":true},{"src":"fastp","dst":"semibin2","edge_in":"E1","implied":true},{"src":"megahit","dst":"bowtie2_binning_bam","edge_in":"both","implied":true},{"src":"megahit","dst":"comebin","edge_in":"both","implied":true},{"src":"megahit","dst":"das_tool","edge_in":"both","implied":true},{"src":"megahit","dst":"metabat2","edge_in":"both","implied":true},{"src":"megahit","dst":"semibin2","edge_in":"both","implied":true},{"src":"metabat2","dst":"checkm2","edge_in":"both","implied":true},{"src":"metabat2","dst":"das_tool","edge_in":"both","implied":true},{"src":"semibin2","dst":"checkm2","edge_in":"both","implied":true},{"src":"semibin2","dst":"das_tool","edge_in":"both","implied":true}],"long":[{"src":"chopper","dst":"comebin","edge_in":"E1","implied":true},{"src":"chopper","dst":"das_tool","edge_in":"E1","implied":true},{"src":"chopper","dst":"flye","edge_in":"both","implied":true},{"src":"chopper","dst":"metabat2","edge_in":"E1","implied":true},{"src":"chopper","dst":"minimap2_binning_bam","edge_in":"both","implied":true},{"src":"chopper","dst":"semibin2","edge_in":"E1","implied":true},{"src":"comebin","dst":"checkm2","edge_in":"both","implied":true},{"src":"comebin","dst":"das_tool","edge_in":"both","implied":true},{"src":"das_tool","dst":"checkm2","edge_in":"both","implied":true},{"src":"flye","dst":"comebin","edge_in":"both","implied":true},{"src":"flye","dst":"das_tool","edge_in":"both","implied":true},{"src":"flye","dst":"metabat2","edge_in":"both","implied":true},{"src":"flye","dst":"minimap2_binning_bam","edge_in":"both","implied":true},{"src":"flye","dst":"semibin2","edge_in":"both","implied":true},{"src":"metabat2","dst":"checkm2","edge_in":"both","implied":true},{"src":"metabat2","dst":"das_tool","edge_in":"both","implied":true},{"src":"minimap2_binning_bam","dst":"comebin","edge_in":"both","implied":true},{"src":"minimap2_binning_bam","dst":"das_tool","edge_in":"E1","implied":true},{"src":"minimap2_binning_bam","dst":"metabat2","edge_in":"both","implied":true},{"src":"minimap2_binning_bam","dst":"semibin2","edge_in":"both","implied":true},{"src":"porechop_abi","dst":"chopper","edge_in":"both","implied":true},{"src":"semibin2","dst":"checkm2","edge_in":"both","implied":true},{"src":"semibin2","dst":"das_tool","edge_in":"both","implied":true}]},"assemblies":{"short":{"id99_min":0.9683,"id99_med":0.9994,"exact_min":0.8791,"exact_med":0.9924},"long":{"id99_min":0.718,"id99_med":0.8045,"exact_min":0.0303,"exact_med":0.1105}},"binners":["DASTool","MetaBAT2","SemiBin2","COMEBin"]};</script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => n.toLocaleString("en-US");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const txt = (s, attrs, parent) => { const t = el("text", attrs, parent); t.textContent = s; return t; };
+  const NAMES = { DASTool: "DAS Tool", MetaBAT2: "MetaBAT2", SemiBin2: "SemiBin2", COMEBin: "COMEBin" };
+  const ARM = { short: "Short reads", long: "Long reads" };
+
+  // tooltip
+  const tip = $("tip");
+  function showTip(ev, html) {
+    tip.innerHTML = html; tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    let x = ev.clientX + 14, y = ev.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+    if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  // verdicts
+  const T = DATA.tasks, R = DATA.runtime, M = DATA.match, TI = DATA.tiers;
+  const tot = (arm) => T[arm].rows.reduce((a, r) => a + r.e1, 0) + T[arm].bookkeeping.e1;
+  const tot2 = (arm) => T[arm].rows.reduce((a, r) => a + r.e2, 0);
+  const allSame = ["short", "long"].every((a) => DATA.dag[a].same_tools && DATA.dag[a].same_reachability &&
+    DATA.edges[a].every((e) => e.edge_in === "both" || e.implied));
+  const nTools = (a) => T[a].rows.length;
+  $("verdicts").innerHTML = [
+    ["Workflow", `${nTools("short")} of ${nTools("short")} tools, ${nTools("long")} of ${nTools("long")} on long reads`,
+      allSame ? "The same tools in the same dependency order. Every edge nf-core draws is an edge or a path in the solved plan." : "See the edge check."],
+    ["Execution", `${(tot("short") / tot2("short")).toFixed(1)}× fewer tasks, ${(R.short.e2_h / R.short.e1_h).toFixed(2)}× the tool hours`,
+      `Short reads. Long reads: ${(tot("long") / tot2("long")).toFixed(1)}× fewer tasks, ${(R.long.e2_h / R.long.e1_h).toFixed(2)}× the hours. The gap is CheckM2 batching and processes folded into one transform.`],
+    ["Results", `${fmt(TI["short/DASTool"].e1_hq)} vs ${fmt(TI["short/DASTool"].e2_hq)} high-quality MAGs`,
+      "DAS Tool, short reads. On short reads E2 matches E1 as closely as nf-core matches itself, except SemiBin2. Long reads differ with the assembly."],
+  ].map(([k, v, p]) => `<div class="verdict"><div class="k">${k}</div><div class="v">${v}</div><p>${p}</p></div>`).join("");
+
+  // 1 · DAGs
+  const STAGES = [["read QC", "#636EFA"], ["assembly", "#EF553B"], ["read mapping", "#00CC96"], ["binning", "#AB63FA"],
+    ["refinement", "#FFA15A"], ["bin quality", "#19D3F3"], ["E2 scoring", "#FF6692"], ["nf-core bookkeeping and reports", "#8A8A8A"]];
+  $("stage-legend").innerHTML = STAGES.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
+  const DAGCAP = Object.fromEntries(["short", "long"].map((a) => { const s = DATA.dag[a]; return [a, [
+    `${s.e1_processes} processes ran · ${s.e1_tool_processes} run a tool`,
+    `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps, ${s.scoring_steps} scoring`]]; }));
+  const imgs = (side, arm) => ["light", "dark"].map((th) =>
+    `<img class="${th}-only" src="dags/${side}_${arm}_${th}.svg" alt="${side === "e1" ? "nf-core/mag" : "metasmith"} DAG, ${ARM[arm].toLowerCase()}">`).join("");
+
+  function edgeTables(arm) {
+    const E = DATA.edges[arm];
+    const both = E.filter((e) => e.edge_in === "both").length;
+    const e1only = E.filter((e) => e.edge_in === "E1");
+    const e2only = E.filter((e) => e.edge_in === "E2");
+    const rows = [
+      ["Tools", `${nTools(arm)}`, `${nTools(arm)}`, "same set"],
+      ["Edges in both", `${both}`, `${both}`, ""],
+      ["Edges in one only", `${e1only.length}`, `${e2only.length}`, e1only.every((e) => e.implied) && e2only.every((e) => e.implied) ? "implied by a path in the other" : "not all implied"],
+      ["Reachability", "", "", allSame ? "identical" : "differs"],
+    ];
+    $("edge-table").innerHTML = `<thead><tr><th></th><th class="n">nf-core</th><th class="n">metasmith</th><th>check</th></tr></thead><tbody>` +
+      rows.map((r) => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td><td>${r[3] ? `<span class="check">${r[3]}</span>` : ""}</td></tr>`).join("") + "</tbody>";
+    $("edge-extra").innerHTML = `<thead><tr><th>from</th><th>to</th><th>in the plan</th></tr></thead><tbody>` +
+      e1only.map((e) => `<tr><td class="mono">${e.src}</td><td class="mono">${e.dst}</td><td>${e.implied ? "via a path" : "missing"}</td></tr>`).join("") + "</tbody>";
+  }
+
+  function setArm(arm) {
+    document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.arm === arm)));
+    $("img-e1").innerHTML = imgs("e1", arm);
+    $("img-e2").innerHTML = imgs("e2", arm);
+    $("cap-e1").textContent = DAGCAP[arm][0];
+    $("cap-e2").textContent = DAGCAP[arm][1];
+    edgeTables(arm);
+  }
+  document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => setArm(b.dataset.arm)));
+  setArm(location.hash === "#long" ? "long" : "short");
+
+  // 2 · task counts: horizontal paired bars per transform
+  function taskChart(arm, host) {
+    const rows = T[arm].rows, book = T[arm].bookkeeping.e1;
+    const W = Math.max(300, host.clientWidth), labelW = 150, right = 46, rowH = 34, bar = 11, gap = 2, top = 8, axisH = 24;
+    const n = rows.length + 1, H = top + n * rowH + axisH;
+    const max = Math.max(book, ...rows.map((r) => Math.max(r.e1, r.e2)));
+    const step = max > 2000 ? 1000 : max > 400 ? 200 : 50;
+    const xmax = Math.ceil(max / step) * step;
+    const x = (v) => labelW + (W - labelW - right) * v / xmax;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Tasks per transform, ${ARM[arm]}` });
+    for (let v = 0; v <= xmax; v += step) {
+      el("line", { x1: x(v), x2: x(v), y1: top, y2: top + n * rowH, class: v ? "grid" : "base" }, svg);
+      txt(fmt(v), { x: x(v), y: H - 6, "text-anchor": "middle", class: "tick" }, svg);
+    }
+    const drawBar = (y, v, cls, g) => {
+      if (!v) return;
+      const x0 = x(0) + 1, x1 = x(v), r = Math.min(4, (x1 - x0) / 2);
+      el("path", { d: `M${x0},${y} H${x1 - r} Q${x1},${y} ${x1},${y + r} V${y + bar - r} Q${x1},${y + bar} ${x1 - r},${y + bar} H${x0} Z`, class: cls }, g);
+      txt(fmt(v), { x: x1 + 5, y: y + bar - 2, class: "val" }, g);
+    };
+    [...rows, { tool: "bookkeeping", e1: book, e2: 0 }].forEach((r, i) => {
+      const y = top + i * rowH + (rowH - 2 * bar - gap) / 2;
+      const g = el("g", { class: "row" }, svg);
+      txt(r.tool === "bookkeeping" ? "bookkeeping, reports" : r.tool, { x: labelW - 10, y: y + bar + 3, "text-anchor": "end" }, g);
+      drawBar(y, r.e1, r.tool === "bookkeeping" ? "sb" : "s1", g);
+      drawBar(y + bar + gap, r.e2, "s2", g);
+      const hit = el("rect", { x: 0, y: top + i * rowH, width: W, height: rowH, class: "hit" }, g);
+      const procs = r.e1_processes ? r.e1_processes.join(", ") : "";
+      hit.addEventListener("mousemove", (ev) => showTip(ev, r.tool === "bookkeeping"
+        ? `<b>nf-core bookkeeping and reports</b><br>${fmt(r.e1)} tasks. metasmith has no counterpart steps.`
+        : `<b>${r.tool}</b><br>nf-core ${fmt(r.e1)} · metasmith ${fmt(r.e2)}<br><span style="opacity:.75">${procs}</span>`));
+      hit.addEventListener("mouseleave", hideTip);
+    });
+    host.replaceChildren(svg);
+  }
+
+  const tp = $("task-panels");
+  tp.innerHTML = ["short", "long"].map((a) => `<div class="panel"><div class="panel-head"><b>${ARM[a]}</b><span>nf-core ${fmt(tot(a))} tasks · metasmith ${fmt(tot2(a))}</span></div><div class="chart" id="tasks-${a}"></div></div>`).join("");
+
+  const d = (a, t) => { const r = T[a].rows.find((r) => r.tool === t); return r.e1 - r.e2; };
+  $("run-stats").innerHTML = [
+    ["Tool hours, short reads", `${Math.round(R.short.e1_h)} h → ${Math.round(R.short.e2_h)} h`, "Summed Slurm elapsed time of the tool-bearing tasks, queue excluded."],
+    ["Tool hours, long reads", `${Math.round(R.long.e1_h)} h → ${Math.round(R.long.e2_h)} h`, `nf-core's bookkeeping adds ${Math.round(R.short.book_h)} h and ${Math.round(R.long.book_h)} h.`],
+    ["Where the short-read gap is", `${fmt(d("short", "checkm2"))} CheckM2 tasks`, `CheckM2 runs 200 bins per job in E2 and one job per sample and bin set in E1. Folding BUILD into ALIGN and the depth table into MetaBAT2 accounts for ${fmt(d("short", "bowtie2_binning_bam") + d("short", "metabat2"))} more.`],
+    ["Long reads", `${fmt(d("long", "checkm2"))} CheckM2 tasks`, "The long arm's metabat2 row includes E1's hand rerun of MetaBAT2 on all 41 samples."],
+  ].map(([k, v, p]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${p}</div></div>`).join("");
+
+  // 3 · match rates: dot plot, one row per binner
+  const SER = [["ctl", "s1", "circle", "nf-core vs nf-core rerun, 25 samples"], ["e2_25", "s2", "diamond", "nf-core vs metasmith, same 25 samples"], ["e2_all", "s3", "square", "nf-core vs metasmith, all samples"]];
+  function marker(shape, cx, cy, cls, g) {
+    const s = 5.5;
+    if (shape === "circle") return el("circle", { cx, cy, r: s, class: `${cls} mk` }, g);
+    if (shape === "square") return el("rect", { x: cx - s + 0.5, y: cy - s + 0.5, width: 2 * s - 1, height: 2 * s - 1, rx: 1.5, class: `${cls} mk` }, g);
+    return el("path", { d: `M${cx},${cy - s - 1} L${cx + s + 1},${cy} L${cx},${cy + s + 1} L${cx - s - 1},${cy} Z`, class: `${cls} mk` }, g);
+  }
+  function matchChart(arm, host) {
+    const W = Math.max(300, host.clientWidth), labelW = 84, right = 14, rowH = 44, top = 6, axisH = 26;
+    const H = top + DATA.binners.length * rowH + axisH, lo = 40, hi = 100;
+    const x = (v) => labelW + (W - labelW - right) * (v - lo) / (hi - lo);
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Matched bins, ${ARM[arm]}` });
+    for (let v = lo; v <= hi; v += 10) {
+      el("line", { x1: x(v), x2: x(v), y1: top, y2: top + DATA.binners.length * rowH, class: "grid" }, svg);
+      txt(v + "%", { x: x(v), y: H - 8, "text-anchor": "middle", class: "tick" }, svg);
+    }
+    DATA.binners.forEach((b, i) => {
+      const m = M[`${arm}/${b}`], cy = top + i * rowH + rowH / 2;
+      const g = el("g", { class: "row" }, svg);
+      el("line", { x1: labelW, x2: W - right, y1: cy, y2: cy, class: "grid" }, g);
+      txt(NAMES[b], { x: labelW - 12, y: cy + 4, "text-anchor": "end" }, g);
+      const vals = SER.map(([k]) => m[k].e1);
+      el("line", { x1: x(Math.min(...vals)), x2: x(Math.max(...vals)), y1: cy, y2: cy, class: "base" }, g);
+      SER.forEach(([k, cls, shape]) => marker(shape, x(m[k].e1), cy, cls, g));
+      const hit = el("rect", { x: 0, y: top + i * rowH, width: W, height: rowH, class: "hit" }, svg);
+      hit.addEventListener("mousemove", (ev) => showTip(ev, `<b>${NAMES[b]}, ${ARM[arm].toLowerCase()}</b><br>` + SER.map(([k, , , lab]) =>
+        `${lab}: ${m[k].e1.toFixed(1)}% of nf-core's ${fmt(m[k].e1_mags)} bins, ${m[k].other.toFixed(1)}% of the other's ${fmt(m[k].other_mags)}`).join("<br>")));
+      hit.addEventListener("mouseleave", hideTip);
+    });
+    host.replaceChildren(svg);
+  }
+  $("match-panels").innerHTML = ["short", "long"].map((a) => `<div class="panel"><div class="panel-head"><b>${ARM[a]}</b><span>share of nf-core's bins matched</span></div><div class="chart" id="match-${a}"></div></div>`).join("");
+  $("match-table").innerHTML = `<thead><tr><th>arm</th><th>binner</th>${SER.map(([, , , l]) => `<th class="n">${l}</th>`).join("")}</tr></thead><tbody>` +
+    ["short", "long"].flatMap((a) => DATA.binners.map((b) => {
+      const m = M[`${a}/${b}`];
+      return `<tr><td>${a}</td><td>${NAMES[b]}</td>${SER.map(([k]) => `<td class="n">${m[k].e1.toFixed(1)} / ${m[k].other.toFixed(1)}</td>`).join("")}</tr>`;
+    })).join("") + `</tbody>`;
+
+  // tiers
+  const delta = (a, b) => { const x = b - a; return x === 0 ? "±0" : (x > 0 ? "+" : "−") + fmt(Math.abs(x)); };
+  $("tier-table").innerHTML = `<thead><tr><th>arm</th><th>binner</th><th class="n">HQ nf-core</th><th class="n">HQ metasmith</th><th class="n">Δ</th><th class="n">MQ nf-core</th><th class="n">MQ metasmith</th><th class="n">Δ</th></tr></thead><tbody>` +
+    ["short", "long"].flatMap((a) => DATA.binners.map((b) => {
+      const t = TI[`${a}/${b}`];
+      return `<tr><td>${a}</td><td>${NAMES[b]}</td><td class="n">${fmt(t.e1_hq)}</td><td class="n">${fmt(t.e2_hq)}</td><td class="n muted">${delta(t.e1_hq, t.e2_hq)}</td><td class="n">${fmt(t.e1_mq)}</td><td class="n">${fmt(t.e2_mq)}</td><td class="n muted">${delta(t.e1_mq, t.e2_mq)}</td></tr>`;
+    })).join("") + "</tbody>";
+
+  const A = DATA.assemblies, pct = (v) => (100 * v).toFixed(v > 0.99 ? 2 : 1) + "%";
+  const ms = (a, b, k) => M[`${a}/${b}`][k].e1.toFixed(1) + "%";
+  $("result-notes").innerHTML = [
+    `<b>Short reads.</b> metasmith matches nf-core as closely as nf-core matches itself for DAS Tool (${ms("short", "DASTool", "e2_25")} vs ${ms("short", "DASTool", "ctl")}), MetaBAT2 and COMEBin. MetaBAT2 matches better against metasmith because E1 and E2 share its seed and the control does not.`,
+    `<b>SemiBin2</b> is the one short-read exception: ${ms("short", "SemiBin2", "e2_25")} against metasmith, ${ms("short", "SemiBin2", "ctl")} against the control.`,
+    `<b>Long reads</b> match less well, and the gap follows the assembly. E1 removed lambda-phage reads before Flye and E2 did not, and Flye ran on different thread counts, so the long assemblies share a median ${pct(A.long.exact_med)} of their bases in identical contigs, against 100% in the control. Short assemblies share ${pct(A.short.exact_med)}.`,
+    `The long-read control has four samples, so its percentages move by several points per sample.`,
+  ].map((s) => `<li>${s}</li>`).join("");
+
+  function draw() {
+    ["short", "long"].forEach((a) => { taskChart(a, $(`tasks-${a}`)); matchChart(a, $(`match-${a}`)); });
+  }
+  draw();
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(draw, 120); });
+})();
+</script>

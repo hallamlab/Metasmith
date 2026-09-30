@@ -95,3 +95,14 @@ types:
   # `env::ecspr.env`, invoked as a command -- so a consumer states a dependency
   # on a version rather than on a copy, and the transform and a benchmark run the
   # same executable. There is nothing left to stage.
+  # ASPIRE's scripts, from research/aspire/upstream/ASPIRE/processes (the tree rescued in
+  # dd08319f). filter_ASV_table, parse_sina_log, trim_v_sina, qiime_vs_classifier,
+  # mito_checker and filter_nontarget are unmodified. sankey_builder and plot_metadata lose
+  # only their lung-study examples and column derivations, plot_metadata also names the index
+  # its taxonomy merge loses under pandas 2.2, and run_indicspecies.R keeps only
+  # its generic per-label path. curate, read_accounting, upstream_layout and plot_indicators
+  # are new; each says what it replaces.
+  aspire:
+    properties:
+      src: aspire
+      usage: command line

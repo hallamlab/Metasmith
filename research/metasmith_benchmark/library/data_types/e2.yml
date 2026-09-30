@@ -1,0 +1,225 @@
+types:
+  # Every property carries `e2`, so no standard-library transform can bind to these types, nor
+  # these transforms to standard-library data.
+
+  read_metadata:
+    properties:
+      _: "one sample's read set as JSON: sample, length_class (short|long), platform (ILLUMINA, OXFORD_NANOPORE, OXFORD_NANOPORE_HQ, PACBIO_CLR, PACBIO_HIFI)"
+      e2: read_metadata
+      ext: json
+  # Two mate files, the pair E1's sample sheet names: fastp's adapter detection reads mate 2 only from --in2.
+  short_reads_1:
+    properties:
+      _: Illumina mate 1, gzipped FASTQ
+      e2: short_reads_1
+      ext: fastq.gz
+  short_reads_2:
+    properties:
+      _: Illumina mate 2, gzipped FASTQ
+      e2: short_reads_2
+      ext: fastq.gz
+  long_reads:
+    properties:
+      _: long reads, one gzipped FASTQ
+      e2: long_reads
+      ext: fq.gz
+  read_truth:
+    properties:
+      _: CAMISIM per-read genome of origin (reads_mapping.tsv.gz)
+      e2: read_truth
+      ext: tsv.gz
+  checkm2_database:
+    properties:
+      _: CheckM2 DIAMOND database file (uniref100.KO.1.dmnd), the one nf-core/mag's checkm2_db points at
+      e2: checkm2_database
+      ext: dmnd
+
+  fastqc_raw_reports:
+    properties:
+      _: FastQC html and zip for both mates of the raw reads, tarred
+      e2: fastqc_raw_reports
+      ext: tar.gz
+  fastqc_trimmed_reports:
+    properties:
+      _: FastQC html and zip for both mates of the fastp reads, tarred
+      e2: fastqc_trimmed_reports
+      ext: tar.gz
+  trimmed_short_reads:
+    properties:
+      _: fastp output, interleaved
+      e2: trimmed_short_reads
+      ext: fq.gz
+  fastp_json:
+    properties:
+      e2: fastp_json
+      ext: json
+  fastp_html:
+    properties:
+      e2: fastp_html
+      ext: html
+  adapter_trimmed_long_reads:
+    properties:
+      _: Porechop ABI output
+      e2: adapter_trimmed_long_reads
+      ext: fq.gz
+  filtered_long_reads:
+    properties:
+      _: Chopper output
+      e2: filtered_long_reads
+      ext: fq.gz
+
+  assembly:
+    properties:
+      e2: assembly
+      ext: fa
+  megahit_assembly:
+    extends:
+    - assembly
+    properties:
+      method: megahit
+  flye_assembly:
+    extends:
+    - assembly
+    properties:
+      method: flye
+  binning_bam:
+    properties:
+      _: the sample's own reads mapped to its own assembly, sorted, for the binners
+      e2: binning_bam
+      ext: bam
+
+  bin:
+    properties:
+      e2: bin
+      ext: fa
+  metabat2_bin:
+    extends:
+    - bin
+    properties:
+      method: metabat2
+  semibin2_bin:
+    extends:
+    - bin
+    properties:
+      method: semibin2
+  comebin_bin:
+    extends:
+    - bin
+    properties:
+      method: comebin
+  das_tool_bin:
+    extends:
+    - bin
+    properties:
+      method: das_tool
+  # Headerless `contig<TAB>bin`, the shape DAS Tool's Fasta_to_Contig2Bin writes.
+  metabat2_contig_to_bin:
+    properties:
+      e2: metabat2_contig_to_bin
+      ext: tsv
+  semibin2_contig_to_bin:
+    properties:
+      e2: semibin2_contig_to_bin
+      ext: tsv
+  comebin_contig_to_bin:
+    properties:
+      e2: comebin_contig_to_bin
+      ext: tsv
+  das_tool_contig_to_bin:
+    properties:
+      e2: das_tool_contig_to_bin
+      ext: tsv
+  das_tool_summary:
+    properties:
+      e2: das_tool_summary
+      ext: tsv
+  checkm2_quality:
+    properties:
+      _: CheckM2 quality_report.tsv row for one bin, with its header
+      e2: checkm2_quality
+      ext: tsv
+
+  contig_gold_standard:
+    properties:
+      _: Bioboxes gold standard for our own contigs, majority-voted from read_truth
+      e2: contig_gold_standard
+      ext: tsv
+  amber_results:
+    properties:
+      e2: amber_results
+      ext: tsv
+  amber_bin_metrics:
+    properties:
+      e2: amber_bin_metrics
+      ext: tsv
+
+  # Images. Each tag is the one nf-core/mag 5.5.0 (56abab5b) runs for that process.
+  fastp.env:
+    properties:
+      e2: env
+      provides: [fastp]
+  fastqc.env:
+    properties:
+      e2: env
+      provides: [fastqc]
+  megahit.env:
+    properties:
+      e2: env
+      provides: [megahit]
+  bowtie2.env:
+    properties:
+      e2: env
+      provides: [bowtie2, samtools]
+  porechop_abi.env:
+    properties:
+      e2: env
+      provides: [porechop_abi]
+  chopper.env:
+    properties:
+      e2: env
+      provides: [chopper]
+  flye.env:
+    properties:
+      e2: env
+      provides: [flye]
+  minimap2.env:
+    properties:
+      e2: env
+      provides: [minimap2, samtools]
+  jgi_depth.env:
+    properties:
+      e2: env
+      provides: [jgi_summarize_bam_contig_depths]
+  metabat2.env:
+    properties:
+      e2: env
+      provides: [metabat2]
+  semibin2.env:
+    properties:
+      e2: env
+      provides: [semibin2]
+  comebin.env:
+    properties:
+      e2: env
+      provides: [comebin]
+  das_tool.env:
+    properties:
+      e2: env
+      provides: [das_tool]
+  checkm2.env:
+    properties:
+      e2: env
+      provides: [checkm2]
+  amber.env:
+    properties:
+      e2: env
+      provides: [amber]
+  polars.env:
+    properties:
+      e2: env
+      provides: [py/polars]
+  cami_gold_standard.py:
+    properties:
+      _: "the gold-standard vote with CAMISIM ids read as strings; mousegut's genome_id mixes 190547.0 and denovoN"
+      e2: cami_gold_standard
+      usage: command line

@@ -1,0 +1,185 @@
+types:
+  # Products only Pratama's pipeline has. Everything else in the E3 library produces standard types,
+  # and the E3 driver masks the standard transform each one replaces.
+
+  fastp_report_json:
+    properties:
+      _: fastp's JSON report on the raw reads, run as a report only (no reads written)
+      e3: fastp_report_json
+      ext: json
+  fastp_report_html:
+    properties:
+      e3: fastp_report_html
+      ext: html
+
+  viral_orfs:
+    properties:
+      _: prodigal-gv proteins for the frozen viral set
+      e3: viral_orfs
+      Format: FASTA
+      Data: amino acid sequence
+      ext: faa
+  viral_gff:
+    properties:
+      _: prodigal-gv gene coordinates for the frozen viral set
+      e3: viral_gff
+      ext: gff
+
+  # Hybrid design A. Neither type extends a standard read or assembly type, so no standard long-read QC,
+  # assembler or binner binds to them.
+  nanopore_reads:
+    properties:
+      _: a well's 0.2 um 2022 MinION run as ENA serves it (basecalled; Pratama applies no other long-read QC)
+      e3: nanopore_reads
+      ext: fq.gz
+  hybrid_spades_assembly:
+    properties:
+      _: metaSPAdes --nanopore contigs from one 0.2 um 2022 Illumina replicate and its well's MinION run
+      e3: hybrid_spades_assembly
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+
+  votu_representatives_10kb:
+    properties:
+      _: the representative of every vOTU at least 10 kb long, cut from the frozen set by the vOTU table
+      e3: votu_representatives_10kb
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+
+  mag_dram_annotations:
+    properties:
+      _: DRAM.py annotate over one sample's refined MAGs, annotations.tsv
+      e3: mag_dram_annotations
+      ext: tsv
+  mag_dram_distill:
+    properties:
+      _: DRAM.py distill output directory for the same MAGs
+      e3: mag_dram_distill
+
+  host_prediction_genome_default:
+    properties:
+      _: iPHoP genome-level host call per frozen contig, against the shipped database without this survey's MAGs
+      e3: host_prediction_genome_default
+      Format: CSV
+      ext: csv
+  host_prediction_genus_default:
+    properties:
+      e3: host_prediction_genus_default
+      Format: CSV
+      ext: csv
+
+  # Wave 7: MetaWRAP decomposed into one transform per binner plus a refinement stage. Each binner's bins
+  # are a SIBLING type under e3, never a subtype of a standard bin type, so no standard binner, refiner or
+  # dereplicator binds to them and the refinement stage is the only consumer.
+  metawrap_metabat2_bins:
+    properties:
+      _: MetaWRAP's MetaBAT2 bins for one metaSPAdes assembly, as its binning module writes them
+      e3: metawrap_metabat2_bins
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+  metawrap_maxbin2_bins:
+    properties:
+      _: MetaWRAP's MaxBin2 bins for one metaSPAdes assembly
+      e3: metawrap_maxbin2_bins
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+  metawrap_concoct_bins:
+    properties:
+      _: MetaWRAP's CONCOCT bins for one metaSPAdes assembly
+      e3: metawrap_concoct_bins
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+
+  # Wave 7: the frozen viral set split for the per-contig callers. A SIBLING type, never a subtype of
+  # sequences::contig_batch, for the same tie-break reason as B23.
+  viral_contig_batch:
+    properties:
+      _: a slice of the frozen viral set, sized by base pairs, for the per-contig callers to run in parallel
+      e3: viral_contig_batch
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  # Per-batch products. All intermediates: e3::viral_orfs, e3::viral_gff and the four standard
+  # viromics::checkv_* types stay what the E3 driver targets, produced by the merges.
+  viral_orfs_batch:
+    properties:
+      _: prodigal-gv proteins for ONE slice of the frozen viral set
+      e3: viral_orfs_batch
+      Format: FASTA
+      Data: amino acid sequence
+      ext: faa
+  viral_gff_batch:
+    properties:
+      _: prodigal-gv gene coordinates for ONE slice of the frozen viral set
+      e3: viral_gff_batch
+      ext: gff
+  checkv_contamination_batch:
+    properties:
+      _: CheckV contamination.tsv for ONE slice of the frozen viral set
+      e3: checkv_contamination_batch
+      ext: tsv
+  checkv_quality_summary_batch:
+    properties:
+      _: CheckV quality_summary.tsv for ONE slice of the frozen viral set
+      e3: checkv_quality_summary_batch
+      ext: tsv
+  checkv_completeness_batch:
+    properties:
+      _: CheckV completeness.tsv for ONE slice of the frozen viral set
+      e3: checkv_completeness_batch
+      ext: tsv
+  checkv_complete_genomes_batch:
+    properties:
+      _: CheckV complete_genomes.tsv for ONE slice of the frozen viral set
+      e3: checkv_complete_genomes_batch
+      ext: tsv
+
+  # Wave 7: DRAM decomposed per annotator. These two are intermediates between annotate and distill;
+  # e3::mag_dram_annotations stays the merged table the driver targets.
+  mag_dram_kofam_annotations:
+    properties:
+      _: DRAM.py annotate over one sample's refined MAGs against KOfam only, annotations.tsv
+      e3: mag_dram_kofam_annotations
+      ext: tsv
+  mag_dram_pfam_annotations:
+    properties:
+      _: DRAM.py annotate over one sample's refined MAGs against Pfam only, annotations.tsv
+      e3: mag_dram_pfam_annotations
+      ext: tsv
+
+  # Wave 7: DRAM-v decomposed into CheckV, VirSorter2 prep, two annotators and distill. All intermediates;
+  # annotation::dramv_annotations and annotation::dramv_distill stay the products the driver targets.
+  dramv_checkv_combined:
+    properties:
+      _: CheckV's trimmed proviruses and viruses concatenated, the input VirSorter2 preps for DRAM-v
+      e3: dramv_checkv_combined
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fna
+  dramv_prep_contigs:
+    properties:
+      _: VirSorter2 --prep-for-dramv contigs, final-viral-combined-for-dramv.fa
+      e3: dramv_prep_contigs
+      Format: FASTA
+      Data: nucleotide sequence
+      ext: fa
+  dramv_prep_affi:
+    properties:
+      _: VirSorter2 --prep-for-dramv affi table, viral-affi-contigs-for-dramv.tab
+      e3: dramv_prep_affi
+      ext: tab
+  dramv_kofam_annotations:
+    properties:
+      _: DRAM-v.py annotate over the prepped viral contigs against KOfam only, annotations.tsv
+      e3: dramv_kofam_annotations
+      ext: tsv
+  dramv_pfam_annotations:
+    properties:
+      _: DRAM-v.py annotate over the prepped viral contigs against Pfam only, annotations.tsv
+      e3: dramv_pfam_annotations
+      ext: tsv

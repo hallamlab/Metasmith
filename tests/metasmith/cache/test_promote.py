@@ -62,6 +62,29 @@ def test_an_existing_shard_wins(tmp_path):
     assert not list(cache_root.glob("*.tmp"))
 
 
+def test_an_evicted_shard_is_replaced(tmp_path):
+    from metasmith.caching.invocation import probe
+    from metasmith.caching.promote import tombstone_shard
+
+    cache_root = tmp_path / "task_cache"
+    promote_members(
+        cwd=_task_dir(tmp_path, "t1", "first"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+    tombstone_shard(cache_root, KEY)
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
+
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t2", "second"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+
+    assert records[0]["status"] == "promoted"
+    assert probe(cache_root, bytes.fromhex(KEY)) is not None
+    assert (shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt").read_text() == "second"
+    assert not list(cache_root.glob("*.tmp")) and not list(cache_root.glob("*.dead"))
+
+
 def test_a_failed_member_is_recorded_and_not_promoted(tmp_path):
     cache_root = tmp_path / "task_cache"
     records = promote_members(

@@ -1,2 +1,0 @@
-sample,group,short_reads_1,short_reads_2,short_reads_platform
-marine_sample_0,marine,/scratch/phyberos/cami_nfcore_split_reads/marine/marine_sample_0_R1.fastq.gz,/scratch/phyberos/cami_nfcore_split_reads/marine/marine_sample_0_R2.fastq.gz,ILLUMINA

@@ -201,19 +201,23 @@ def _survey_inputs(lib):
     # Deferred like `ncbi::genome_name`: nothing produces a name.
     name = lib.AddValue("sample_name.txt", "sample_1", "sequences::sample_name",
                         parents={survey})
-    meta = lib.AddValue("read_metadata.json",
-                        {"parity": "paired", "length_class": "short"},
-                        "sequences::read_metadata", parents={name})
+    lib.AddValue("read_metadata.json", {"parity": "paired", "length_class": "short"},
+                 "sequences::read_metadata", parents={name})
+    # The pair sits beside the metadata, not under it: survey, name, metadata and pair
+    # would put the zipped halves four ancestors deep, where the solver loses their
+    # link to the read_pair.
     pair = lib.AddValue("read_pair.txt", "sample_1", "sequences::read_pair",
-                        parents={meta})
+                        parents={name})
     lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
     lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
     lib.AddItem(DEFERRED, "ref::kraken2_db")
     # The study's own sample sheet. Every producer of these two is still inside the
-    # ASPIRE pipeline and still gated on `aspire::run`, so outside a run they are
-    # what round 3 calls a deferred input: a table the researcher already has.
+    # ASPIRE pipeline and still gated on its study sheet, so outside a study they are
+    # what round 3 calls a deferred input: a table the researcher already has. The
+    # numeric measurements are the same kind of table.
     lib.AddItem(DEFERRED, "aspire::analysis_metadata", parents={survey})
     lib.AddItem(DEFERRED, "aspire::analysis_asv_meta", parents={survey})
+    lib.AddItem(DEFERRED, "aspire::sample_measurements", parents={survey})
     return survey
 
 
@@ -226,7 +230,7 @@ def a5_community_structure():
             "amplicon::asv_table",
             {"type": "aspire::diversity_outputs", "parents": [0]},
             {"type": "aspire::umap_plots", "parents": [0]},
-            {"type": "aspire::paired_group_contrast_outputs", "parents": [0]},
+            {"type": "aspire::indicspecies_results", "parents": [0]},
             {"type": "aspire::measurement_association_outputs", "parents": [0]},
         ],
         transform_libraries=[MLIB / "transforms" / g for g in (
@@ -244,7 +248,7 @@ def a5b_cooccurrence_network():
         lib.AddItem(DEFERRED, "amplicon::asv_taxonomy", parents={survey})
         # The ASPIRE policy tokens are inputs, not configuration -- each is a pair of
         # mutually exclusive types and registering one arm is how a stage is selected.
-        for token in ("spieceasi_on", "indicspecies_on", "network_modules_on",
+        for token in ("spieceasi_on", "network_modules_on",
                       "asv_mag_link_off", "graph_network_on"):
             lib.AddValue(f"policy_{token}.txt", token, f"aspire::{token}",
                          parents={survey})
@@ -404,7 +408,7 @@ ANALYSES = [
     ("a5_community_structure", a5_community_structure,
      "Who is in these samples and how does the community separate?",
      "Paired short reads per sample, a kraken2 database and the study's sample sheet.",
-     "A count table, diversity, an ordination and two group contrasts."),
+     "A count table, diversity, an ordination, indicator species per label and measurement associations."),
     ("a5b_cooccurrence_network", a5b_cooccurrence_network,
      "...and can I get a co-occurrence network out of the same table?",
      "The same inputs as a5.",

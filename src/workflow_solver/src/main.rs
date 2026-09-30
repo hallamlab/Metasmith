@@ -306,6 +306,14 @@ fn cmd_solve() -> Result<(), String> {
         // proved about. It is called here only to say which clause failed.
         if !solver_witness::check(&wp, &wq) {
             eprint!("{}", witness::render(&solver_witness_audit::audit(&wp, &wq)));
+            // The rejected plan is the only evidence of WHY a search failed, and
+            // it never leaves the process otherwise. Off unless asked for, so
+            // the refusal stays a refusal.
+            if let Ok(path) = std::env::var("MSM_SOLVER_DUMP_REJECTED") {
+                let body = serde_json::to_string(&plan).map_err(|e| e.to_string())?;
+                std::fs::write(&path, body).map_err(|e| e.to_string())?;
+                eprintln!("msm_solver: rejected plan written to {path}");
+            }
             return Err(
                 "the plan this search produced does not satisfy the specification; \
                  refusing to emit it (see the clauses above)"
