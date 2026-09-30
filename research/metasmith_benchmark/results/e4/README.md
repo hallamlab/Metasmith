@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-These tables are E4's full-run results: which bins got a model in each lane, how each model compares with metaGEM's published GEM for the same bin, and MEMOTE's results for all three. `findings/E4_REPRODUCTION.md` holds the medians and what they mean. The models themselves live only in the chunk archives on fir, `/scratch/phyberos/metagem/e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst`, because each lane's cache entries and run directory were removed after archiving.
+These tables are E4's full-run results: which bins got a model in each lane, how each model compares with metaGEM's published GEM for the same bin, and MEMOTE's results for all three. `findings/E4_REPRODUCTION.md` holds the medians and what they mean. The models themselves live only in the chunk archives, `e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst`, because each lane's cache entries and run directory were removed after archiving. The archives are now on chinook only. `findings/E4_REPRODUCTION.md` § Storage says where, and how to restore them.
 
 | File | Rows | What it is |
 |---|---|---|

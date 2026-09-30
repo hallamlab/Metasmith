@@ -5,12 +5,20 @@ repro   metaGEM's own carve and memote commands on the versions it ran (DIAMOND 
         MEMOTE 0.9.13), on CPLEX.
 modern  E5's GEM transforms, unchanged (CarveMe 1.6.6 on SCIP, MEMOTE 0.17.0), for comparison with E5.
 
+The ablation ladder between them, each lane adding one change to the one before, with no MEMOTE:
+bigg      repro with CarveMe 1.6.6's BiGG gene reference (proteins and gene-reaction table)
+universe  bigg carving from CarveMe 1.6.6's universe
+version   CarveMe 1.6.6's code, still one-step on CPLEX from DIAMOND 0.9.30 hits
+gapfill   version gap filled in a second step without gene scores, as the modern lane does
+diamond   gapfill with CarveMe's own DIAMOND 2.1.13 search
+scip      diamond on SCIP: the modern lane's transform on a Python 3.12 build of its image
+
 `run` solves against a local dry-run home and renders the DAG. `import`, `--materialise`,
 `--stage-only` and `--launch` act on the fir agent home, from a Slurm job there, after
 e4_extract_proteins.sh has unpacked the bins.
 
-Subcommands: list, import, run [--lane repro|modern] [--study ...] [--limit N] [--bins ...]
-[--chunk N --chunk-size S] [--dag] [--materialise | --stage-only | --launch].
+Subcommands: list, import, run [--lane <lane>] [--home metagem|e4abl] [--study ...] [--limit N]
+[--bins ... | --bins-file TSV] [--chunk N --chunk-size S] [--dag] [--materialise | --stage-only | --launch].
 """
 
 import argparse
@@ -31,16 +39,30 @@ from metasmith.python_api import (  # noqa: E402
 )
 
 PROTEIN_LIST = HERE / "e4_published_proteins.tsv"
-PUBLISHED = Path(os.environ.get("METAGEM_PUBLISHED", "/scratch/phyberos/metagem/published"))
+ROOTS = {"metagem": Path("/scratch/phyberos/metagem"), "e4abl": Path("/scratch/phyberos/e4_ablation")}
+PUBLISHED = Path(os.environ.get("METAGEM_PUBLISHED", ROOTS["metagem"] / "published"))
 STUDY_ORDER = ["li2019", "korem2015", "karlsson2013", "bissett_base", "sunagawa2015"]
 # metaGEM's workflow/scripts/media_db.tsv and its config's carveMedia.
 MEDIA_DB = HERE / "refs" / "metagem_media_db.tsv"
 MEDIUM_NAME = "M8"
 CPLEX_ROOT = Path(os.environ.get("CPLEX_ROOT", "/home/phyberos/projects/rpp-shallam/phyberos/cplex/cplex_runtime"))
 # CarveMe 1.2.2's bundled data/input/bigg_proteins.faa, sha256 88c7c932...c997.
-BIGG_PROTEINS = Path(os.environ.get("BIGG_PROTEINS", "/scratch/phyberos/metagem/refs/carveme122_bigg_proteins.faa"))
+BIGG_PROTEINS = Path(os.environ.get("BIGG_PROTEINS", ROOTS["metagem"] / "refs" / "carveme122_bigg_proteins.faa"))
+# CarveMe 1.6.6's bundled data/generated/ files, copied out of its image.
+CARVEME166_REFS = {"e4abl::carveme166_bigg_proteins": "carveme166_bigg_proteins.faa",
+                   "e4abl::carveme166_bigg_gprs": "carveme166_bigg_gprs.csv.gz",
+                   "e4abl::carveme166_universe": "carveme166_universe_bacteria.xml.gz"}
 EXTRA_CONFIG = HERE / "e4_gems.config.nf"
-STEPS = {"repro": 4, "modern": 2}
+HITS_0930 = ["init_db_166.py", "annotate_bigg_166.py"]
+RUNGS = {
+    "bigg": ("e4abl::model_bigg", [*HITS_0930, "carve_bigg.py"]),
+    "universe": ("e4abl::model_universe", [*HITS_0930, "carve_universe.py"]),
+    "version": ("e4abl::model_version", [*HITS_0930, "carve_version.py"]),
+    "gapfill": ("e4abl::model_gapfill", [*HITS_0930, "carve_gapfill.py"]),
+    "diamond": ("e4abl::model_diamond", ["carve_diamond.py"]),
+    "scip": ("e4abl::model_scip", ["carve_scip.py"]),
+}
+STEPS = {"repro": 4, "modern": 2, **{lane: len(files) for lane, (_, files) in RUNGS.items()}}
 
 
 def enumerate_bins():
@@ -59,6 +81,8 @@ def select(bins, args):
         for b in bins:
             per_study[b[0]].append(b)
         bins = [b for s in STUDY_ORDER for b in per_study[s][: args.limit]]
+    if args.bins_file:
+        args.bins = [r["bin"] for r in csv.DictReader(args.bins_file.open(), delimiter="\t")]
     if args.bins:
         wanted = set(args.bins)
         bins = [b for b in bins if b[1] in wanted]
@@ -81,6 +105,37 @@ def declare_globals(smith, ensure):
     return c.cite(givens, CACHE_DIR / "e4_gems_globals.xgdb", types, ensure)
 
 
+def declare_ablation_globals(smith, root, ensure):
+    givens = smith.PoolGivens()
+    c.add_value(givens, "ref/bench::metagem_media_db", MEDIA_DB.read_text(), "bench::metagem_media_db",
+                tags=["reference"])
+    c.add_value(givens, "ref/modelling::media", e4_metagem.MEDIUM_TSV.read_text(), "modelling::media",
+                tags=["reference"])
+    c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
+    c.declare_refs(givens, {"modelling::cplex_installation": CPLEX_ROOT,
+                            **{dtype: root / "refs" / name for dtype, name in CARVEME166_REFS.items()}})
+    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")]
+    types += [c.LIBRARY / "data_types" / t for t in ("bench.yml", "e4.yml", "e4abl.yml")]
+    return c.cite(givens, CACHE_DIR / "e4_gems_ablation_globals.xgdb", types, ensure)
+
+
+def ablation_expected(lane, n_bins):
+    expected = {"sequences::bin_orfs": n_bins, "modelling::medium_name": 1}
+    if lane != "scip":
+        expected["modelling::cplex_installation"] = 1
+    if lane in ("bigg", "universe", "version", "gapfill"):
+        expected["e4abl::carveme166_bigg_proteins"] = 1
+    if lane in ("bigg", "universe", "version"):
+        expected["bench::metagem_media_db"] = 1
+    if lane in ("gapfill", "diamond", "scip"):
+        expected["modelling::media"] = 1
+    if lane in ("bigg", "universe"):
+        expected["e4abl::carveme166_bigg_gprs"] = 1
+    if lane == "universe":
+        expected["e4abl::carveme166_universe"] = 1
+    return expected
+
+
 def modern_transforms():
     # E5's GEM library for --solver open (e5_pilot.build_transforms): the standard CarveMe and MEMOTE
     # transforms masked, so the bench library's 1.6.6 carveme_from_orfs and memote_score answer.
@@ -99,6 +154,13 @@ def declare_givens(smith, bins, ensure, name):
 
 def build_targets(lane):
     t = TargetBuilder()
+    if lane in RUNGS:
+        model_type, files = RUNGS[lane]
+        if "annotate_bigg_166.py" in files:
+            t.Add(model_type, parents=[t.Add("e4abl::bigg166_diamond_hits")])
+        else:
+            t.Add(model_type)
+        return t
     if lane == "modern":
         gem = t.Add("modelling::carveme_model")
         t.Add("modelling::memote_score", parents=[gem])
@@ -126,18 +188,40 @@ def cmd_run(args):
 
     importing = args.cmd == "import"
     remote = importing or args.stage_only or args.launch or args.materialise
-    smith = c.agent_for("metagem", remote, CACHE_DIR / "dryrun_home")
+    global CACHE_DIR, PUBLISHED, BIGG_PROTEINS
+    if args.home != "metagem":
+        CACHE_DIR = CACHE_DIR / args.home
+        PUBLISHED = Path(os.environ.get("METAGEM_PUBLISHED", ROOTS[args.home] / "published"))
+        BIGG_PROTEINS = Path(os.environ.get("BIGG_PROTEINS", ROOTS[args.home] / "refs" / "carveme122_bigg_proteins.faa"))
+        bins = [(s, b, PUBLISHED / s / "proteins" / p.name) for s, b, p in bins]
+    smith = c.agent_for(args.home, remote, CACHE_DIR / "dryrun_home")
     ensure = importing or args.import_givens or not remote
     name = "_".join([f"chunk{args.chunk}of{args.chunk_size}" if args.chunk else "all", *(args.study or []),
-                     *([f"limit{args.limit}"] if args.limit else []), *(["picked"] if args.bins else [])])
+                     *([f"limit{args.limit}"] if args.limit else []),
+                     *([args.bins_file.stem] if args.bins_file else ["picked"] if args.bins else [])])
     inputs = declare_givens(smith, bins, ensure, name)
     repro_globals = declare_globals(smith, ensure)
     modern_globals = e4_metagem.declare_globals(smith, "open", CACHE_DIR / "e4_gems_modern_globals.xgdb", ensure)
+    ablation_globals = declare_ablation_globals(smith, ROOTS[args.home], ensure) if args.home == "e4abl" else None
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(bins)} bins")
         return 0
 
-    if args.lane == "modern":
+    if args.lane in RUNGS:
+        if ablation_globals is None:
+            sys.exit(f"--lane {args.lane} runs only in --home e4abl")
+        task = smith.GenerateWorkflow(
+            samples=list(inputs.AsSamples("sequences::bin_orfs")),
+            resources=[DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e4"),
+                       DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e4abl"),
+                       DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), ablation_globals],
+            transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "logistics"),
+                        TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e4abl")
+                        .AsView({Path(f) for f in RUNGS[args.lane][1]})],
+            targets=build_targets(args.lane),
+        )
+        expected = ablation_expected(args.lane, len(bins))
+    elif args.lane == "modern":
         task = smith.GenerateWorkflow(
             samples=list(inputs.AsSamples("sequences::bin_orfs")),
             resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
@@ -183,10 +267,12 @@ def main():
         p.add_argument("--bins", nargs="*", help="exact metaGEM bin ids, e.g. SRR7664617_bin.15.p")
         p.add_argument("--chunk", type=int, help="1-based chunk of the sorted selection")
         p.add_argument("--chunk-size", type=int, default=2000)
+        p.add_argument("--bins-file", type=Path, help="a TSV with a bin column, e.g. e4_ablation_bins.tsv")
+        p.add_argument("--home", choices=sorted(ROOTS), default="metagem")
         p.set_defaults(fn=fn, lane="repro", dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False)
+                       import_givens=False, bins_file=None)
         if name == "run":
-            p.add_argument("--lane", choices=["repro", "modern"], default="repro")
+            p.add_argument("--lane", choices=["repro", "modern", *RUNGS], default="repro")
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_gems_<lane>.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")

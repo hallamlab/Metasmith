@@ -97,7 +97,13 @@ The modern lane's karlsson2013 and sunagawa2015 rows cover one and four fewer bi
 
 ### Storage
 
-WARNING the chunk archives are the only copy of E4's products. `/scratch/phyberos/metagem/e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst` holds each lane's `results/` with its lineage index, `_metadata/index.yml`, and the workflow files. After a lane was archived, its cache entries and its run directory were removed. The two lanes would have left about 720K inodes in the cache against about 330K of room, so Tony chose archiving per chunk (2026-09-22). A new plan over the same bins recomputes every step. It cannot reuse the archive.
+WARNING the chunk archives are the only copy of E4's products, and they exist only on chinook. Each `e4_gems_archive/<lane>/chunk<N>.<key>.tar.zst` holds that lane's `results/` with its lineage index, `_metadata/index.yml`, and the workflow files. After a lane was archived, its cache entries and its run directory were removed. The two lanes would have left about 720K inodes in the cache against about 330K of room, so Tony chose archiving per chunk (2026-09-22). A new plan over the same bins recomputes every step. It cannot reuse the archive.
+
+The whole of fir's `/scratch/phyberos/metagem` moved to Globus collection `2602486c-1e0f-47a0-be15-eec1b0ff0f96` (chinook), at `/Workspace_backups/Tony_Liu/fir_metagem/metagem/`, and the scratch copy was deleted (2026-09-25). The tree holds the chunk archives, metaGEM's published tables and GEMs, the study reads, and E5 metagem's run home and cache. `RESTORE.md` beside it holds the restore steps. `drivers/restore_metagem.sh` runs them, and `drivers/verify_metagem_archive.sh` is how the copy was verified.
+
+CAUTION restore to exactly `/scratch/phyberos/metagem`. The cache keys fold in absolute input paths, so a restore anywhere else leaves E5 metagem's cache cold without an error. `drivers/e4_tally.py`, `e4_quality.py` and `e4_quality_sample.py` also read the archives at that path.
+
+CAUTION Globus copies neither symlinks nor empty directories. The inventory beside the archive lists both, and `restore_metagem.sh` recreates them.
 
 ## GEM quality
 

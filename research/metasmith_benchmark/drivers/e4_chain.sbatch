@@ -7,6 +7,11 @@
 #
 # <lanes> is a comma list run in order within each chunk, e.g. repro,modern.
 #
+# The ablation ladder runs in its own home, as one chunk of the whole subset:
+#   sbatch --export=ALL,HOME_DIR=/scratch/phyberos/e4_ablation/metasmith,ARCHIVE=/scratch/phyberos/e4_ablation/archive,\
+#   TAG_PREFIX=e4a,CHUNK_SIZE=1408,E4_ARGS="--home e4abl --bins-file e4_ablation_bins.tsv" \
+#       e4_chain.sbatch <checkout> repro,bigg,universe,version,gapfill,diamond,scip 1 1
+#
 # Thresholds and knobs, overridable at submit time (sbatch --export=ALL,INODE_GATE=...):
 #   CHUNK_SIZE    bins per chunk, passed to e4_gems.py --chunk-size (default 2015, 7 chunks of 14,105)
 #   INODE_GATE    do not START a lane at or above this inode count (default 900000)
@@ -17,6 +22,10 @@
 #                 (default 1% of CHUNK_SIZE). CarveMe stops at its 6 h cap, and MEMOTE 0.9.13 at
 #                 its 4 h second attempt, on a few hard bins.
 #   RENEW         1 to resubmit a successor for the unfinished range before this job's wall (default 1)
+#   HOME_DIR      the agent home (default /scratch/phyberos/metagem/metasmith)
+#   ARCHIVE       where each lane's archive and stamps go (default /scratch/phyberos/metagem/e4_gems_archive)
+#   TAG_PREFIX    the jobs' and runs' name prefix (default e4g)
+#   E4_ARGS       extra e4_gems.py arguments for both phases, e.g. --home and --bins-file
 #
 # RESUMING. Phase 2 writes <archive>/<lane>/chunk<N>.launched. A rerun over a launched lane waits
 # on its driver while that is live, then goes to the gate and archive. One whose run died stops.
@@ -74,14 +83,18 @@ ignored_total=0
 
 DRIVERS="$CHECKOUT/research/metasmith_benchmark/drivers"
 SUBMIT="$DRIVERS/submit_driver.sbatch"
-HOME_DIR="/scratch/phyberos/metagem/metasmith"
+HOME_DIR="${HOME_DIR:-/scratch/phyberos/metagem/metasmith}"
 CACHE_DB="$HOME_DIR/task_cache/cache.sqlite"
-ARCHIVE="/scratch/phyberos/metagem/e4_gems_archive"
+ARCHIVE="${ARCHIVE:-/scratch/phyberos/metagem/e4_gems_archive}"
+TAG_PREFIX="${TAG_PREFIX:-e4g}"
+read -r -a E4_EXTRA <<< "${E4_ARGS:-}"
 LOGS="/scratch/phyberos/bench/logs"
 
-declare -A STEPS=([repro]=4 [modern]=2)
+declare -A STEPS=([repro]=4 [modern]=2 [bigg]=3 [universe]=3 [version]=3 [gapfill]=3 [diamond]=1 [scip]=1)
 declare -A FINAL=([repro]="modelling-carveme_model_cplex modelling-memote_results"
-                  [modern]="modelling-carveme_model modelling-memote_score")
+                  [modern]="modelling-carveme_model modelling-memote_score"
+                  [bigg]="e4abl-model_bigg" [universe]="e4abl-model_universe" [version]="e4abl-model_version"
+                  [gapfill]="e4abl-model_gapfill" [diamond]="e4abl-model_diamond" [scip]="e4abl-model_scip")
 
 log() { printf '%(%Y-%m-%dT%H:%M:%S)T %s\n' -1 "$*"; }
 die() { log "STOPPING: $*"; exit 1; }
@@ -148,7 +161,7 @@ renew() {
         log "RENEW FAILED: cannot resolve this script's path (got '${me:-}') -- chunks ${next}..${LAST} are NOT queued, resubmit by hand"
         return 1
     fi
-    sbatch --export="ALL,CHUNK_SIZE=$CHUNK_SIZE,INODE_GATE=$INODE_GATE,INODE_STOP=$INODE_STOP,BYTE_STOP_TIB=$BYTE_STOP_TIB,POLL_SECONDS=$POLL_SECONDS,IGNORE_TOLERANCE=$IGNORE_TOLERANCE,RENEW=$RENEW" \
+    sbatch --export="ALL,CHUNK_SIZE=$CHUNK_SIZE,INODE_GATE=$INODE_GATE,INODE_STOP=$INODE_STOP,BYTE_STOP_TIB=$BYTE_STOP_TIB,POLL_SECONDS=$POLL_SECONDS,IGNORE_TOLERANCE=$IGNORE_TOLERANCE,RENEW=$RENEW,HOME_DIR=$HOME_DIR,ARCHIVE=$ARCHIVE,TAG_PREFIX=$TAG_PREFIX,E4_ARGS=${E4_ARGS:-}" \
         "$me" "$CHECKOUT" "$LANES" "$next" "$LAST" \
         && log "renewed: successor submitted for chunks ${next}..${LAST}" \
         || { log "RENEW FAILED: sbatch refused -- chunks ${next}..${LAST} are NOT queued"; return 1; }
@@ -156,7 +169,7 @@ renew() {
 
 run_lane() {
     local lane="$1" chunk="$2"
-    local tag="e4g_${lane}_c${chunk}" steps="${STEPS[$lane]}"
+    local tag="${TAG_PREFIX}_${lane}_c${chunk}" steps="${STEPS[$lane]}"
     local done_file="$ARCHIVE/$lane/chunk${chunk}.done"
     if [ -f "$done_file" ]; then
         log "$tag already archived ($(cat "$done_file")), skipping"
@@ -185,7 +198,7 @@ run_lane() {
         return 0
     fi
 
-    while squeue -u "$USER" -h -o '%j' | grep -qE '^e4g_[a-z]+_c[0-9]+_prep$'; do
+    while squeue -u "$USER" -h -o '%j' | grep -qE '^e4[a-z]_[a-z]+_c[0-9]+_prep$'; do
         log "$tag waiting: another lane is importing"
         sleep "$POLL_SECONDS"
     done
@@ -198,7 +211,7 @@ run_lane() {
     # --- phase 1: materialise images and import the chunk's bins into the pool ---
     local p1 staged got skipped
     p1="$(sbatch --parsable -J "${tag}_prep" "$SUBMIT" "$CHECKOUT" e4_gems.py \
-            run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" --materialise --import --tag "$tag")" \
+            run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" "${E4_EXTRA[@]}" --materialise --import --tag "$tag")" \
         || die "sbatch refused phase 1 for $tag"
     log "phase 1 submitted as $p1"
     wait_for "$p1" "" "$tag phase 1"
@@ -211,7 +224,7 @@ run_lane() {
     [ "$(printf '%s\n' "$key" | grep -c .)" = "1" ] || die "$tag phase 1 log gave plan keys '$key', expected exactly 1 with ${steps} steps"
     log "$tag plan key: $key"
 
-    staged="$(grep -oE "staging \[e4_gems_inputs_chunk${chunk}of${CHUNK_SIZE}\.xgdb\] as \[[0-9]+\] of \[[0-9]+\] entries; \[[0-9]+\] skipped" "$p1log" | tail -1)" || true
+    staged="$(grep -oE "staging \[e4_gems_inputs_chunk${chunk}of${CHUNK_SIZE}[A-Za-z0-9_]*\.xgdb\] as \[[0-9]+\] of \[[0-9]+\] entries; \[[0-9]+\] skipped" "$p1log" | tail -1)" || true
     [ -n "$staged" ] || die "$tag phase 1 log has no staging line for its inputs"
     got="$(sed -E 's/.*as \[([0-9]+)\] of \[([0-9]+)\].*/\1 \2/' <<<"$staged")"
     skipped="$(sed -E 's/.*\[([0-9]+)\] skipped.*/\1/' <<<"$staged")"
@@ -222,7 +235,7 @@ run_lane() {
 
     # --- phase 2: launch. --launch takes NEITHER --materialise NOR --import ---
     p2="$(sbatch --parsable -J "$tag" "$SUBMIT" "$CHECKOUT" e4_gems.py \
-            run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" --launch --tag "$tag")" \
+            run --lane "$lane" --chunk "$chunk" --chunk-size "$CHUNK_SIZE" "${E4_EXTRA[@]}" --launch --tag "$tag")" \
         || die "sbatch refused phase 2 for $tag"
     log "phase 2 submitted as $p2"
     p2log="$LOGS/${tag}.${p2}.out"
