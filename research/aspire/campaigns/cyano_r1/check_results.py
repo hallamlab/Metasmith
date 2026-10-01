@@ -33,6 +33,64 @@ def phylum(taxon: str) -> str:
     return "unassigned"
 
 
+def check_analyses(results: Path, samples: list[str]) -> list[str]:
+    """One property per analysis row, each a statement about the cyano study's biology or shape."""
+    out = []
+
+    coll = pd.read_csv(product(results, "aspire::collectors_outputs") / "culture" / "collectors_curve_summary.tsv",
+                       sep="\t", index_col=0)
+    for group in coll.index:
+        stats = pd.read_csv(product(results, "aspire::collectors_outputs") / "culture" / "collectors_curve_stats"
+                            / f"{group}_collector_stats.tsv", sep="\t")
+        penult, final = stats["mean_asvs"].iloc[-2], stats["mean_asvs"].iloc[-1]
+        if penult < 0.95 * final:
+            out.append(f"collectors {group}: {penult:.1f} of {final:.0f} ASVs one sample short, not saturated")
+
+    div = product(results, "aspire::diversity_outputs")
+    shannon = pd.read_csv(div / "shannon.tsv", sep="\t", index_col=0)
+    if sorted(shannon.index) != samples or not (shannon.iloc[:, 0] > 0).all():
+        out.append(f"diversity: Shannon for {len(shannon)} samples, want {len(samples)} all positive")
+    perm = pd.read_csv(div / "culture" / "permanova_global_bray.tsv", sep="\t")
+    if not perm["p-value"].iloc[0] < 0.05:
+        out.append(f"diversity: culture does not separate on Bray-Curtis, p {perm['p-value'].iloc[0]}")
+
+    mito = product(results, "aspire::diversity_mito_outputs")
+    if not (mito / "ASV_target.mito.tsv").exists():
+        out.append("diversity_mito: no mito table")
+
+    umap = pd.read_csv(product(results, "aspire::umap_plots") / "culture" / "umap_clustering_results.tsv", sep="\t")
+    if len(umap) != len(samples):
+        out.append(f"umap: {len(umap)} embedded samples, want {len(samples)}")
+
+    if not list((product(results, "aspire::bubble_plots") / "culture").glob("bubble_plot_asv_depth_*.png")):
+        out.append("bubble: no per-culture bubble plot")
+
+    upset = product(results, "aspire::upset_plots") / "culture" / "metadata"
+    if not list(upset.glob("*presence_table.tsv")):
+        out.append("upset: no presence table")
+
+    gd = pd.read_csv(product(results, "aspire::grouping_diagnostics_outputs") / "tables"
+                     / "grouping_diagnostics_summary.tsv", sep="\t")
+    row = gd.loc[(gd["group_col"] == "culture") & (gd["metric"] == "bray")]
+    if row.empty or row["status"].iloc[0] != "ok" or not row["p_value"].iloc[0] < 0.05:
+        out.append(f"grouping_diagnostics: culture not resolved on Bray-Curtis: {row.to_dict('records')}")
+
+    genus = product(results, "aspire::clustermap_outputs") / "culture" / "clustermap_Genus_plot.tsv"
+    if not genus.exists() or len(pd.read_csv(genus, sep="\t")) == 0:
+        out.append("clustermaps: no genus heatmap table")
+
+    net = product(results, "aspire::network_outputs")
+    nodes = pd.read_csv(net / "spieceasi_node_features.csv")
+    for asv in ("ASV1", "ASV2"):
+        if asv not in set(nodes["Taxon"]):
+            out.append(f"network: {asv} is not a SpiecEasi node")
+    if len(pd.read_csv(net / "spieceasi_modules_sub.tsv", sep="\t")) == 0:
+        out.append("network: no module assignments")
+    if not list(net.rglob("*.png")):
+        out.append("network: no rendered network")
+    return out
+
+
 def main():
     results = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "data" / "aspire" / "cyano_r1"
     with open(HERE / "samples.tsv") as f:
@@ -70,6 +128,8 @@ def main():
     for kind in ("results", "summary"):
         if not (isa / f"culture_indicator_species_{kind}.tsv").exists():
             failures.append(f"indicspecies_results: no culture_indicator_species_{kind}.tsv")
+
+    failures += check_analyses(results, sorted(ena))
 
     print(f"ASVs in the clean table: {len(clean)} over {len(clean.columns)} samples")
     print("reads kept per stage, summed over samples:")

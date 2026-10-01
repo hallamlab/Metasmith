@@ -37,7 +37,8 @@ ROOT = os.environ.get("ASPIRE_CYANO_ROOT", "/scratch/st-shallam-1/txyliu/aspire_
 READS = f"{ROOT}/reads"
 MOCK_REFS = Path(os.environ.get("ASPIRE_MOCK_REFS", REPO / "data" / "aspire" / "mock_references"))
 
-TARGETS = ["aspire::read_fate", "aspire::sankey_outputs", "aspire::collectors_outputs",
+TARGETS = ["aspire::counts_clean", "amplicon::asv_taxonomy", "aspire::indicspecies_results",
+           "aspire::read_fate", "aspire::sankey_outputs", "aspire::collectors_outputs",
            "aspire::diversity_outputs", "aspire::diversity_mito_outputs", "aspire::umap_plots",
            "aspire::bubble_plots", "aspire::upset_plots", "aspire::grouping_diagnostics_outputs",
            "aspire::clustermap_outputs", "aspire::network_outputs"]
