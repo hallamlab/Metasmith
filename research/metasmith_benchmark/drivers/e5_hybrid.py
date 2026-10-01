@@ -11,7 +11,7 @@ seeded 10% of every long-read set that shares its samples with a short-read set,
 nearest sample and at least one, as E1's control subset rounds: six sets, 19 samples. The corpus
 picks the agent home: CAMI's five sets in one, Pratama's hybrid pairings in the other.
 
-Subcommands: list, import --corpus C, run --corpus C [--dag] [--stage-only | --launch | --materialise] [--import] [--tag].
+Subcommands: list, import --corpus C, run --corpus C [--dag] [--stage-only | --launch | --materialise] [--import] [--tag] [--opera-only].
 """
 
 import argparse
@@ -125,8 +125,11 @@ def build_transforms():
     return [qc, megahit, TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5")]
 
 
-def build_targets(corpus):
+def build_targets(corpus, opera_only):
     t = TargetBuilder()
+    if opera_only:
+        t.Add("e5::opera_ms_assembly")
+        return t
     t.Add("e5::quast_report")
     if corpus == "cami":
         t.Add("e5::metaquast_report")
@@ -151,17 +154,18 @@ def solve(args):
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5")],
         transforms=build_transforms(),
-        targets=build_targets(corpus),
+        targets=build_targets(corpus, args.opera_only),
     )
-    genomes = sum(1 for s in by_study if s in STUDIES)
+    genomes = 0 if args.opera_only else sum(1 for s in by_study if s in STUDIES)
     c.check_plan(task, {"viromics::contig_study": len(by_study), "e5::source_genomes": genomes,
                         "sequences::read_metadata": n, "sequences::read_pair": n, "sequences::short_reads_pe": n,
-                        "e3::nanopore_reads": n, "e5::long_read_platform": n})
+                        "e3::nanopore_reads": n, "e5::long_read_platform": 0 if args.opera_only else n})
     c.print_plan(task)
     if args.dag:
         c.write_dag(task, "e5_hybrid" if corpus == "cami" else "e5_hybrid_pratama", cache_dir)
     if remote:
-        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_hybrid_{corpus}", stage_only=args.stage_only,
+        tag = args.tag or f"e5_hybrid_{corpus}" + ("_opera" if args.opera_only else "")
+        c.stage_and_run(smith, task, cache_dir, tag, stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=100), process=dict(tries=3)),
                         scaled=SCALED[corpus], materialise=args.materialise)
 
@@ -189,7 +193,7 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--corpus", required=True, choices=("cami", "pratama"))
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False)
+                       import_givens=False, opera_only=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/")
             mode = p.add_mutually_exclusive_group()
@@ -197,6 +201,8 @@ def main():
             mode.add_argument("--launch", action="store_true")
             mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
+            p.add_argument("--opera-only", action="store_true",
+                           help="target the OPERA-MS assemblies alone, beside a full run that is still going")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")
     args = ap.parse_args()
