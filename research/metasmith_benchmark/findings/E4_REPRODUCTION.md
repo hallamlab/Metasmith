@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each. It also holds the full run's counts, parity and GEM quality, and which of metaGEM's published claims E4 reproduces. The ablation at the end assigns the modern lane's loss of similarity to its individual changes. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
+E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each. It also holds the full run's counts, parity and GEM quality, and which of metaGEM's published claims E4 reproduces. The ablation at the end assigns the modern lane's loss of similarity to its individual changes, and scores each of its rungs with MEMOTE 0.17. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
 
 - **Reproduction lane** (`--lane repro`): metaGEM's methods and materials, as close as fir allows.
 - **Modern lane** (`--lane modern`): E5's GEM transforms, unchanged, for comparison with E5.
@@ -106,6 +106,8 @@ CAUTION restore to exactly `/scratch/phyberos/metagem`. The cache keys fold in a
 CAUTION Globus copies neither symlinks nor empty directories. The inventory beside the archive lists both, and `restore_metagem.sh` recreates them.
 
 The ablation's root moved from fir's `/scratch/phyberos/e4_ablation` to chinook, at `/Workspace_backups/Tony_Liu/fir_metagem/e4_ablation/` (Globus task `f2420b59-bc70-11f1-aeb2-0effcb3df825`, 2026-09-29), and the fir copy was deleted. It holds each rung's archive under `archive/<lane>/`, the smoke run's under `smoke_archive/`, the `e4abl` home, the refs and the images. `MANIFEST.tsv` lists every file with its size, and every file arrived checksummed at that size. The subset's inputs and E4's chunk archives stayed behind, because chinook already holds them under `metagem/`. The modern lane's helper writes its DIAMOND hits beside each input `.faa`, so fir's inputs also held one regenerable `.tsv` per bin.
+
+The ablation's MEMOTE 0.17 output is one tar on chinook, `fir_metagem/e4_ablation/memote/e4_ablation_memote.tar` (Globus task `19e547d1-bde4-11f1-9b7b-0affd5e180af`, 2026-10-01, checksummed). It holds the 44 per-block tars, each with every model's score and per-test result, plus `ablation_memote.tsv` and `blocks.tsv`. `MANIFEST.tsv` predates it and does not list it. The fir working root, `/scratch/phyberos/e4_memote`, was deleted.
 
 ## GEM quality
 
@@ -297,11 +299,43 @@ The median bin has 83.2% of metaGEM's reactions in 1.6.6's universe (interquarti
 
 CAUTION: a reaction BiGG renamed between the two universes counts as absent from each. The split does not separate renamed reactions from new ones.
 
+### MEMOTE scores
+
+`drivers/e4_ablation_memote.py` scored every rung and metaGEM's published GEM for each subset bin with MEMOTE 0.17, through the modern lane's `memote_score.py` (fir jobs 62448450 and 62448866, 2026-10-01, checkout b5e5cee0). M is not rescored: its rows are the modern lane's archived scores. All 12,661 models finished, with no timeout. `results/e4/ablation_memote.tsv` holds one row per bin and source, and marks the 11 [lost bins](#lost-bins) `no model`. Figure 2 (`results/e4/figures/make_figures.py`) draws it.
+
+Every model is scored as built. R0 to U run CarveMe 1.2.2, whose SBML writer is framed 0.5.1, so their species carry no formula or charge attribute (see [above](#the-published-gems-carry-what-framed-052-writes)). From V on, CarveMe 1.6.6 writes the SBML. The writer therefore changes with the code at V, and the section scores show what it moves.
+
+| MEMOTE 0.17 score, median | metaGEM | R0 | R1 | B | U | V | G | D | S | M |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Total | 0.218 | 0.187 | 0.187 | 0.189 | 0.349 | 0.861 | 0.860 | 0.860 | 0.859 | 0.859 |
+| Consistency | 0.467 | 0.386 | 0.386 | 0.391 | 0.803 | 0.916 | 0.915 | 0.913 | 0.914 | 0.914 |
+| Metabolite annotation | 0.25 | 0.25 | 0.25 | 0.25 | 0.25 | 0.815 | 0.814 | 0.814 | 0.818 | 0.818 |
+| Reaction annotation | 0.25 | 0.25 | 0.25 | 0.25 | 0.25 | 0.774 | 0.773 | 0.773 | 0.776 | 0.776 |
+| Gene annotation | 0 | 0 | 0 | 0 | 0 | 0.333 | 0.333 | 0.333 | 0.333 | 0.333 |
+| SBO terms | 0 | 0 | 0 | 0 | 0 | 0.909 | 0.909 | 0.909 | 0.909 | 0.909 |
+
+Three checks hold:
+
+- **The rescoring matches the archived scorer.** S's median total is 0.8587 and M's archived one is 0.8586. The paired median difference is 0, and 17 of 1,408 bins differ by more than 0.01.
+- **Re-carving does not move the score.** R0 and R1 have the same medians. The paired median difference is 0, and 4 bins differ by more than 0.01.
+- **metaGEM's subset matches the sample.** Its median total is 0.218, against 0.219 over the 198-bin sample.
+
+Findings:
+
+- **The gene reference moves nothing.** B differs from R1 by 0.005 or less on every section.
+- **The universe alone doubles consistency.** U lifts it from 0.391 to 0.803 on 1.2.2's code and writer, and the total from 0.189 to 0.349. The annotation sections do not move.
+- **The annotation sections move only at V,** where the code and its writer change. From V on, the models carry SBO terms and annotation cross-references. CarveMe 1.2.2 writes its cross-references as notes, and writes no SBO term.
+- **After V, nothing moves MEMOTE.** The gap fill, DIAMOND, the solver and the Python stack together span 0.004 or less on every section median.
+
+CAUTION: consistency has two peaks from U on. 24% of U's bins and 26–31% of each of V to M's score below 0.7, most of them at 0.4–0.6. The rest score 0.85–1. M's archived scores split the same way, so the split is not an artifact of the rescoring. In the one pair compared, the low model fails MEMOTE's pass/fail stoichiometric-consistency test (6 unconserved metabolites) and the high one passes. The cause across all bins was not checked. The interquartile range of consistency and of the total spans both peaks, so read it as the split, not as spread.
+
+CAUTION: MEMOTE scores consistency and annotation, not biological accuracy. See [Modern lane against metaGEM](#modern-lane-against-metagem).
+
 ### Lost bins
 
 Every rung built a model for at least 99% of the subset. B, U and S lost none.
 
-- R1: all 1,408 models. MEMOTE stopped at its 4 h limit on 4 of them. The ablation does not compare MEMOTE results.
+- R1: all 1,408 models. The chain's MEMOTE 0.9.13 step stopped at its 4 h limit on 4 of them. [MEMOTE scores](#memote-scores) rescored all 1,408 with MEMOTE 0.17.
 - V: 4 bins at the 6 h carve limit: li2019 `SRR7664616_bin.29.p`, sunagawa2015 `ERR599038_bin.29.s`, `ERR598985_bin.29.p` and `ERR599028_bin.43.s`.
 - G: 3 bins at the 6 h carve limit: `ERR599038_bin.29.s`, `ERR598985_bin.29.p` and `ERR599028_bin.43.s`.
 - D: 4 bins out of memory at the 32 GB limit (exit 137), all sunagawa2015: `ERR599159_bin.47.s` in gap fill after 57 min, `ERR598985_bin.29.p` in reconstruction after 1 h 40 min, `ERR598985_bin.11.o` in gap fill after 2 h 24 min, and `ERR599162_bin.12.s` in reconstruction after 4 h 03 min.

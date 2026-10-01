@@ -1,0 +1,23 @@
+<title>E4 Figures</title>
+<style>
+  /* Layout: one column of white figure panels on a quiet ground. */
+  :root { --bg: #eeeeeb; --panel: #ffffff; --edge: #d6d5d0; --label: #52514e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1a1a19; --edge: #3a3a37; --label: #c3c2b7; color-scheme: dark } }
+  :root[data-theme="dark"] { --bg: #1a1a19; --edge: #3a3a37; --label: #c3c2b7; color-scheme: dark }
+  body { background: var(--bg); padding: 24px 16px; font-family: Arial, Helvetica, sans-serif; }
+  main { display: grid; gap: 24px; max-width: 960px; margin: 0 auto; }
+  figure { margin: 0; display: grid; gap: 8px; }
+  figcaption { color: var(--label); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 4px; padding: 12px; overflow-x: auto; }
+  .panel img { display: block; width: 100%; height: auto; }
+</style>
+<main>
+  <figure id="fig1">
+    <figcaption>Figure 1</figcaption>
+    <div class="panel"><img src="fig1_reproduction.svg" alt="Figure 1"></div>
+  </figure>
+  <figure id="fig2">
+    <figcaption>Figure 2</figcaption>
+    <div class="panel"><img src="fig2_ablation_memote.svg" alt="Figure 2"></div>
+  </figure>
+</main>
