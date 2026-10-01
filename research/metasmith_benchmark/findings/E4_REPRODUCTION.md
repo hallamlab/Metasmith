@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each. It also holds the full run's counts, parity and GEM quality, and which of metaGEM's published claims E4 reproduces. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
+E4 rebuilds metaGEM's genome-scale models (GEMs) from metaGEM's own published protein bins, in two lanes. This file records every known difference between each lane and what it is compared against, with the evidence for each. It also holds the full run's counts, parity and GEM quality, and which of metaGEM's published claims E4 reproduces. The ablation at the end assigns the modern lane's loss of similarity to its individual changes. It holds findings only. `drivers/e4_gems.py` is the source of truth for the commands, and the env files under `library/resources/e4/` pin the images. The per-bin tables are in `results/e4/`.
 
 - **Reproduction lane** (`--lane repro`): metaGEM's methods and materials, as close as fir allows.
 - **Modern lane** (`--lane modern`): E5's GEM transforms, unchanged, for comparison with E5.
@@ -33,7 +33,7 @@ These differ:
 | MEMOTE's dependencies | unpinned `pip install --user` | PyPI as it stood on 2019-12-05, the 0.9.13 release day | reproducible, and the closest thing to an unpinned install of that era | not measured |
 | DIAMOND threads | all cores of metaGEM's node | all 192 cores fir reports, in a 4-CPU job | CarveMe passes no `--threads` | none. DIAMOND's output does not depend on threads. |
 
-CAUTION: carve is not deterministic on CPLEX 22.2. Re-carving the same DIAMOND hits three times changed 0 to 25 reactions per bin, with identical genes and gene rules (4 bins). An exact match with the published models is out of reach on this solver.
+CAUTION: carve is not deterministic on CPLEX 22.2. A second run of the reproduction lane over 1,408 bins changed a median of 2 reactions per bin (95th percentile 17, maximum 83), with identical genes and gene rules in every bin. See [Ablation](#ablation-which-change-costs-the-modern-lane-its-similarity). An exact match with the published models is out of reach on this solver.
 
 ### Measured parity
 
@@ -105,6 +105,8 @@ CAUTION restore to exactly `/scratch/phyberos/metagem`. The cache keys fold in a
 
 CAUTION Globus copies neither symlinks nor empty directories. The inventory beside the archive lists both, and `restore_metagem.sh` recreates them.
 
+The ablation's root moved from fir's `/scratch/phyberos/e4_ablation` to chinook, at `/Workspace_backups/Tony_Liu/fir_metagem/e4_ablation/` (Globus task `f2420b59-bc70-11f1-aeb2-0effcb3df825`, 2026-09-29), and the fir copy was deleted. It holds each rung's archive under `archive/<lane>/`, the smoke run's under `smoke_archive/`, the `e4abl` home, the refs and the images. `MANIFEST.tsv` lists every file with its size, and every file arrived checksummed at that size. The subset's inputs and E4's chunk archives stayed behind, because chinook already holds them under `metagem/`. The modern lane's helper writes its DIAMOND hits beside each input `.faa`, so fir's inputs also held one regenerable `.tsv` per bin.
+
 ## GEM quality
 
 metaGEM's paper publishes no MEMOTE score and no growth fraction (Zorrilla 2021, Discussion). It calls its models "FBA-ready" and "quality checked for basic functionality". metaGEM did publish its per-test MEMOTE 0.9.13 results for 14,015 of its 14,087 GEMs, as `published/<study>/memote_*.csv[.gz]`. E4 compares every model against those.
@@ -152,7 +154,7 @@ MEMOTE 0.9.13 on both sides, paired over the 13,999 bins that both scored. The t
 | Reactions with no gene rule (fraction) | 0.245 | 0.247 | +0.004 |
 | Missing essential biomass precursors | 1 | 1 | 0 |
 
-Every model on both sides grows in MEMOTE's default medium: 14,015 of 14,015 for metaGEM and 14,088 of 14,088 for the reproduction lane. That medium is the one the SBML's own exchange bounds define. The medians hold per study except in size. korem2015's reproduction models are smaller, by a median of 58.5 reactions. sunagawa2015's are larger, by 12. A paired difference inside carve's own spread of 0 to 25 reactions per re-carve is not a difference.
+Every model on both sides grows in MEMOTE's default medium: 14,015 of 14,015 for metaGEM and 14,088 of 14,088 for the reproduction lane. That medium is the one the SBML's own exchange bounds define. The medians hold per study except in size. korem2015's reproduction models are smaller, by a median of 58.5 reactions. sunagawa2015's are larger, by 12. A paired difference inside carve's own re-carve spread, 17 reactions at the 95th percentile, is not a difference.
 
 ### Modern lane against metaGEM
 
@@ -224,9 +226,86 @@ These differ from E5:
 
 ## Modern lane against metaGEM
 
-These are the version effects the two E4 lanes isolate. Both lanes read the same proteins.
+These are the version effects the two E4 lanes isolate. Both lanes read the same proteins. The [ablation](#ablation-which-change-costs-the-modern-lane-its-similarity) measures each one except MEMOTE's.
 
 - CarveMe 1.6.6 searches its own BiGG protein set (26,727 sequences) against 1.2.2's 84,674, with a newer universe and gene–reaction table.
+- DIAMOND 2.1.13 replaces 0.9.30.
 - SCIP replaces CPLEX, with a 600 s cap on each solve.
 - Gapfill runs as a second call with no gene scores. It adds the fewest reactions, not the best-supported ones. `carveme_from_orfs.py` explains why SCIP needs the split.
+- Python 3.14 and the stock CarveMe 1.6.6 image replace Python 3.12.
 - MEMOTE 0.17.0 replaces 0.9.13, and runs through `memote_score.py` instead of metaGEM's two commands.
+
+## Ablation: which change costs the modern lane its similarity
+
+The modern lane changes several things at once, so the whole-lane comparison cannot say which change costs the similarity. The ablation rebuilds a stratified 10% subset along a ladder, and each rung changes one thing. `drivers/e4_ablation.py` picked the subset and scored the rungs. The per-bin tables are `results/e4/ablation_*.tsv`. All rungs ran on fir, 2026-09-28 to 2026-09-29.
+
+The subset is 1,408 bins, 10% of each study's bins that have a metaGEM GEM and a model in both archived lanes (14,076 bins): bissett_base 27, karlsson2013 413, korem2015 15, li2019 17 and sunagawa2015 936. The seed is in the driver. The subset's archived lanes match the full run: reaction Jaccard against metaGEM is 0.842 for the reproduction lane and 0.408 for the modern lane, against 0.840 and 0.409 over all bins.
+
+### The ladder
+
+| Rung | Change from the rung above | `e4_gems.py --lane` |
+|---|---|---|
+| R0 | none. The archived reproduction lane of the full run. | `repro` |
+| R1 | none. A second run of the reproduction lane, which measures the noise floor. | `repro` |
+| B | CarveMe 1.6.6's BiGG gene reference, on CarveMe 1.2.2 | `bigg` |
+| U | CarveMe 1.6.6's universe, on CarveMe 1.2.2 | `universe` |
+| V | CarveMe 1.6.6's code, on CPLEX 22.2 and Python 3.12, with metaGEM's `carve` command | `version` |
+| G | two-step gap fill with no gene scores, the modern lane's helper, on CPLEX | `gapfill` |
+| D | DIAMOND 2.1.13 in place of 0.9.30 | `diamond` |
+| S | SCIP 9.2.4 in place of CPLEX, with a 600 s cap on each solve | `scip` |
+| M | the stock CarveMe 1.6.6 image on Python 3.14. The archived modern lane of the full run. | `modern` |
+
+- The BiGG gene reference is the protein FASTA and the gene–reaction table, swapped as one unit. 1.2.2's draws on 73 BiGG models, about 60 of them E. coli strains, with 84,674 proteins and 306,100 table rows. 1.6.6's draws on 31 models, with 26,727 proteins and 108,091 rows. The two share 11,365 proteins. B and U run CarveMe 1.2.2 on a copy of its package that holds 1.6.6's table.
+- The universes hold 4,343 reactions (1.2.2) and 5,532 (1.6.6), and share 3,508.
+- V to S run the image that `library/resources/e4abl/carveme_166.env` pins: CarveMe 1.6.6 on Python 3.12, with fir's CPLEX 22.2 bound in at run time.
+- V and G read metaGEM's `media_db.tsv`. D and S read the built M8 table. Both hold metaGEM's 74 M8 compounds.
+- S↔M carries the Python stack and SCIP's time-capped noise together.
+
+CAUTION: CarveMe 1.2.2 loads a universe in its config's default SBML flavor, cobra. framed raises a TypeError on 1.6.6's universe that way, because some bounds are unset. Rung U's package copy sets `default_flavor = fbc2`, which loads it with 1.2.2's id convention.
+
+### Effects
+
+Pooled medians over 1,408 bins. The first two columns compare each rung with the rung above, over the bins both have. The rest compare each rung with metaGEM. "Reactions changed" is the size of the symmetric difference of the two reaction sets.
+
+| Rung | Reactions Jaccard, rung above | Reactions changed, rung above | Reactions Jaccard, metaGEM | Genes Jaccard, metaGEM | Shared reactions with a different gene rule, metaGEM | Reactions |
+|---|---|---|---|---|---|---|
+| R0 | | | 0.842 | 0.976 | 2.1% | 1,342 |
+| R1 | 0.999 | 2 | 0.841 | 0.976 | 2.1% | 1,343 |
+| B | 0.670 | 512 | 0.663 | 0.775 | 22.1% | 1,281 |
+| U | 0.514 | 864 | 0.426 | 0.727 | 23.1% | 1,432 |
+| V | 0.811 | 303 | 0.422 | 0.726 | 23.2% | 1,448 |
+| G | 0.993 | 11 | 0.421 | 0.726 | 23.2% | 1,450 |
+| D | 0.798 | 324 | 0.420 | 0.711 | 25.0% | 1,477 |
+| S | 0.724 | 444 | 0.409 | 0.706 | 25.7% | 1,288 |
+| M | 0.994 | 8 | 0.408 | 0.706 | 25.7% | 1,287 |
+
+metaGEM's median GEM in the subset has 1,342 reactions.
+
+- **Noise floor.** R1 changed a median of 2 reactions per bin against R0 (95th percentile 17, maximum 83). 437 of 1,408 models are identical. Genes and gene rules are identical in every bin.
+- **Two changes carry the loss.** The gene reference costs 0.178 reaction Jaccard against metaGEM, and the universe 0.237. Together they are 96% of the 0.433 between R1 and M.
+- **The gene reference** is the only change that moves the genes much: gene Jaccard against metaGEM falls from 0.976 to 0.775, and the share of shared reactions with a different gene rule rises from 2.1% to 22.1%.
+- **The code, DIAMOND and the solver reshape the models without moving them toward or away from metaGEM.** Each changes 300 to 450 reactions per bin against the rung above, and each moves reaction Jaccard against metaGEM by 0.011 or less. DIAMOND 2.1.13 also moves the genes: gene Jaccard 0.941 and 4.8% of gene rules against the rung above.
+- **The solver alone** (D↔S) changes a median of 444 reactions per bin and shrinks the median model from 1,477 to 1,288 reactions. It costs 0.011 reaction Jaccard and 0.005 gene Jaccard against metaGEM.
+- **The gap-fill method** changes 11 reactions per bin on CPLEX, near the noise floor.
+- **The Python stack** (S↔M) changes 8 reactions per bin.
+
+Every study shows the same pattern. Against metaGEM, the per-study medians run 0.644–0.696 at B, 0.419–0.470 at U and 0.405–0.447 at M. `results/e4/ablation_summary.tsv` holds every pair per study, with interquartile ranges.
+
+### The universe's share
+
+The median bin has 83.2% of metaGEM's reactions in 1.6.6's universe (interquartile range 81.8–84.7%, per-study medians 82.9–85.4%). From rung U on, the other 16.8% cannot be built. Over the 3,508 reactions both universes hold, reaction Jaccard against metaGEM is 0.844 at R1, 0.672 at B and 0.613 at U. So the universe costs 0.059 over the shared reactions and 0.237 overall. Most of its effect is reactions that only one universe holds, and U's models grow from 1,281 to 1,432 reactions.
+
+CAUTION: a reaction BiGG renamed between the two universes counts as absent from each. The split does not separate renamed reactions from new ones.
+
+### Lost bins
+
+Every rung built a model for at least 99% of the subset. B, U and S lost none.
+
+- R1: all 1,408 models. MEMOTE stopped at its 4 h limit on 4 of them. The ablation does not compare MEMOTE results.
+- V: 4 bins at the 6 h carve limit: li2019 `SRR7664616_bin.29.p`, sunagawa2015 `ERR599038_bin.29.s`, `ERR598985_bin.29.p` and `ERR599028_bin.43.s`.
+- G: 3 bins at the 6 h carve limit: `ERR599038_bin.29.s`, `ERR598985_bin.29.p` and `ERR599028_bin.43.s`.
+- D: 4 bins out of memory at the 32 GB limit (exit 137), all sunagawa2015: `ERR599159_bin.47.s` in gap fill after 57 min, `ERR598985_bin.29.p` in reconstruction after 1 h 40 min, `ERR598985_bin.11.o` in gap fill after 2 h 24 min, and `ERR599162_bin.12.s` in reconstruction after 4 h 03 min.
+
+CAUTION: CarveMe 1.6.6 on CPLEX takes hours and tens of gigabytes on a few bins, where SCIP's 600 s cap loses none. `ERR598985_bin.29.p` failed in V, G and D. In the smoke run, D's li2019 `SRR7664615_bin.3.s` took 3 h 42 min.
+
+CAUTION: a step that metasmith answers from another run's cache entry loses its non-leaf parents in the lineage index. B and U reused the smoke run's DIAMOND hits for its 10 bins, so those 10 models have no lineage path to their bin. `e4_ablation.py extract` pairs such a model with its bin by gene IDs. All 10 paired, with no ambiguous match.
