@@ -125,11 +125,11 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
     ("the three consumer-facing analysis channels", {
         "analysis_metadata": t(FILE, "study metadata joined to the microbial read accounting, as every analysis reads it", ext="tsv"),
         "analysis_asv_meta": t(FILE, "long-form microbial ASV table joined to metadata and taxonomy, as every analysis reads it", ext="tsv"),
-        # r4: deliberately NOT a property superset of `amplicon::asv_table`, and so
-        # deliberately not what the lifted ecology transforms read. Making it one would
-        # let `filter_table` -- which requires `amplicon::asv_table` -- consume its own
-        # descendant. See research/kbase/curation/r4/aspire_topology.md.
-        "analysis_counts": t(FILE, "the microbial ASV count matrix every analysis reads", ext="tsv"),
+        # A property superset of `amplicon::abundance_table`, the curated table the lifted
+        # ecology rows read, and deliberately NOT of `amplicon::asv_table`: that would let
+        # `filter_table`, which requires the raw table, consume its own descendant.
+        "analysis_counts": t(FILE, "the microbial ASV count matrix every analysis reads", ext="tsv",
+                             Data="analysis-ready sample by feature abundance matrix"),
     }),
     ("terminal analyses", {
         "upset_plots": t(DIR, "UpSet renderings of metadata group overlap"),
@@ -137,6 +137,7 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "umap_plots": t(DIR, "UMAP clustering renderings"),
         "collectors_outputs": t(DIR, "collector's curve renderings"),
         "diversity_outputs": t(DIR, "alpha and beta diversity results and renderings"),
+        "diversity_mito_outputs": t(DIR, "alpha and beta diversity of the mitochondrial reads beside the microbial ones"),
         "measurement_association_outputs": t(DIR, "ASV to continuous-measurement association results"),
         "clustermap_outputs": t(DIR, "abundance clustermap renderings"),
     }),
@@ -160,6 +161,7 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
         "network_outputs": t(DIR, "co-occurrence network renderings and overlays"),
     }),
     ("ASV to MAG linking", {
+        "mag_collection": t(DIR, "a MAG set laid out for the ASV linker -- genomes_subset/ with one FASTA per genome, barrnap/ with one GFF per genome named by the same stem, and Master_genome_QC.tsv keyed by genome id"),
         "asv_mag_pairing": t(FILE, "ASV to MAG pairing table", ext="tsv"),
         "asv_mag_outputs": t(DIR, "ASV to MAG linking results"),
         "asv_mag_network_outputs": t(DIR, "MAG-annotated co-occurrence network renderings"),
@@ -211,6 +213,14 @@ STUDY = ("study", "aspire::study_metadata", ())
 # fan-in needs a grouping parent its inputs descend from, and `aspire::study_metadata`
 # carries `amplicon::survey`'s property, so an ASPIRE study still satisfies it unchanged.
 SURVEY = ("survey", "amplicon::survey", ())
+
+LIFT_NOTE = (
+    "Hangs off the generic `amplicon::survey` grouping node and reads the curated "
+    "`amplicon::abundance_table`, so any analysis-ready count table reaches it -- "
+    "`kbase/profile_abundance/kraken_abundance.py` makes one from kraken2 reports. In an "
+    "ASPIRE study the table is `plot_metadata`'s curated counts, never `denoise`'s raw one: "
+    "the raw table does not satisfy the requirement. See research/kbase/curation/r4/aspire_topology.md."
+)
 
 LIFT_NOTE_2 = (
     "r4 ecology lift (second pass): lifted off the study root onto the generic `amplicon::survey` grouping node so `spieceasi` and `graph_network` -- lifted in the first pass -- are actually REACHABLE from a bare `amplicon::asv_table`. Lifting a transform whose own inputs are still gated moves the gate, it does not remove it. See research/kbase/curation/r4/analyses.md."
@@ -395,9 +405,13 @@ TABLE: list[T] = [
            "GROUP_LABEL_AUGMENTATION, their only consumer in the .nf, is not ported."),
 
     T("plot_upset", "PLOT_UPSET", 3927,
-      [STUDY, _r("md", "aspire::analysis_metadata", "study")],
+      [STUDY, _r("md", "aspire::analysis_metadata", "study"),
+       _r("clean", "aspire::counts_clean", "study"),
+       _r("counts", "aspire::analysis_counts", "study"),
+       _r("tax", "amplicon::asv_taxonomy", "study")],
       [("out", "aspire::upset_plots")], "study",
-      note=LABELS_NOTE),
+      note=LABELS_NOTE + " The .nf passes only the sheet and re-opens the target and final "
+           "count tables and the taxonomy from its output directory; all four are declared."),
 
     T("bubbleplotter", "BUBBLEPLOTTER", 4018,
       [STUDY, _r("am", "aspire::analysis_asv_meta", "study")],
@@ -405,10 +419,9 @@ TABLE: list[T] = [
       note=LABELS_NOTE),
 
     T("umap_clustering", "UMAP_CLUSTERING", 4055,
-      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
-       _r("am", "aspire::analysis_asv_meta", "survey")],
+      [SURVEY, _r("am", "aspire::analysis_asv_meta", "survey")],
       [("out", "aspire::umap_plots")], "survey", cpus=2, memory_gb=8,
-      note=LABELS_NOTE + " r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note=LABELS_NOTE + " Reads the long-form table only, as UMAP_CLUSTERING does."),
 
     T("collectors_curve", "COLLECTORS_CURVE", 4364,
       [STUDY, _r("counts", "aspire::analysis_counts", "study"),
@@ -417,14 +430,23 @@ TABLE: list[T] = [
       note=LABELS_NOTE),
 
     T("diversity_analysis", "DIVERSITY_ANALYSIS", 4399,
-      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
+      [SURVEY, _r("counts", "amplicon::abundance_table", "survey"),
        _r("md", "aspire::analysis_metadata", "survey")],
       [("out", "aspire::diversity_outputs")], "survey", cpus=4, memory_gb=16, hours=3,
-      note=LABELS_NOTE + " r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note=LABELS_NOTE + " " + LIFT_NOTE),
+
+    T("diversity_mito", "DIVERSITY_ANALYSIS", 4399,
+      [STUDY, _r("counts", "aspire::analysis_counts", "study"),
+       _r("removed", "aspire::counts_removed", "study"),
+       _r("md", "aspire::analysis_metadata", "study")],
+      [("out", "aspire::diversity_mito_outputs")], "study", cpus=4, memory_gb=16, hours=3,
+      note=LABELS_NOTE + " The .nf's `diversity.run_mito` branch, split out so the generic "
+           "row stays reachable from any count table. The mitochondrial counts are the removed "
+           "counts whose reason is mitochondrial, laid out as upstream's ASV_target.mito.tsv."),
 
     T("indicspecies", "INDICSPECIES", 4518,
       [SURVEY, _r("md", "aspire::analysis_metadata", "survey"),
-       _r("counts", "amplicon::asv_table", "survey")],
+       _r("counts", "amplicon::abundance_table", "survey")],
       [("results", "aspire::indicspecies_results"),
        ("tables", "aspire::indicspecies_tables"),
        ("plots", "aspire::indicspecies_plots"),
@@ -436,12 +458,12 @@ TABLE: list[T] = [
            "labels. " + LIFT_NOTE_2),
 
     T("measurement_association", "MEASUREMENT_ASSOCIATION", 4875,
-      [SURVEY, _r("counts", "amplicon::asv_table", "survey"),
+      [SURVEY, _r("counts", "amplicon::abundance_table", "survey"),
        _r("am", "aspire::analysis_asv_meta", "survey"),
        _r("md", "aspire::analysis_metadata", "survey"),
        _r("measures", "aspire::sample_measurements", "survey")],
       [("out", "aspire::measurement_association_outputs")], "survey", cpus=2, memory_gb=8,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note=LIFT_NOTE),
 
     T("clustermaps", "CLUSTERMAPS", 5324,
       [STUDY, _r("am", "aspire::analysis_asv_meta", "study"),
@@ -455,21 +477,21 @@ TABLE: list[T] = [
 
     T("spieceasi", "SPIECEASI", 5452,
       [SURVEY, _r("policy", "aspire::spieceasi_on", "survey"),
-       _r("counts", "amplicon::asv_table", "survey"),
+       _r("counts", "amplicon::abundance_table", "survey"),
        _r("keep", "aspire::indicspecies_results", "survey")],
       [("all", "aspire::network_graph_all"), ("thr", "aspire::network_graph_thr"),
        ("nf", "aspire::network_node_features")],
       "survey", cpus=16, memory_gb=64, hours=24,
-      note="Force-keeps every ASV the indicator species results call significant for any label. r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md."),
+      note="Force-keeps every ASV the indicator species results call significant for any label. " + LIFT_NOTE),
 
     T("spieceasi_external", None, None,
-      [STUDY, _r("policy", "aspire::spieceasi_off", "study"),
+      [SURVEY, _r("policy", "aspire::spieceasi_off", "survey"),
        _r("x_all", "aspire::external_graph_all"),
        _r("x_thr", "aspire::external_graph_thr"),
        _r("x_nf", "aspire::external_node_features")],
       [("all", "aspire::network_graph_all"), ("thr", "aspire::network_graph_thr"),
        ("nf", "aspire::network_node_features")],
-      "study",
+      "survey",
       note="the `off` arm. Unlike the other off-arms this one is not a null "
            "producer: asv_pipeline.nf:2708-2715 substitutes pre-computed "
            "graph files from disk, so the driver has to supply them."),
@@ -492,12 +514,14 @@ TABLE: list[T] = [
 
     T("asv_mag_link", "ASV_MAG_LINK", 5821,
       [STUDY, _r("policy", "aspire::asv_mag_link_on", "study"),
-       _r("fseqs", "aspire::asv_filtered_seqs", "study")],
+       _r("fseqs", "aspire::asv_filtered_seqs", "study"),
+       _r("mags", "aspire::mag_collection")],
       [("pairing", "aspire::asv_mag_pairing"), ("out", "aspire::asv_mag_outputs")],
       "study", cpus=8, memory_gb=32, hours=8,
       note="`asv_mag_link.done` stood for two different things at its four "
            "consumers: the pairing table the network stages read by path, and "
-           "the results directory the master summary scans. Both are declared."),
+           "the results directory the master summary scans. Both are declared. The .nf "
+           "read the genomes from `--genome-qc-dir`; that layout is `aspire::mag_collection`."),
 
     T("asv_mag_link_absent", None, None,
       [SURVEY, _r("policy", "aspire::asv_mag_link_off", "survey")],
@@ -513,7 +537,7 @@ TABLE: list[T] = [
        _r("all", "aspire::network_graph_all", "survey"),
        _r("thr", "aspire::network_graph_thr", "survey"),
        _r("nf", "aspire::network_node_features", "survey"),
-       _r("counts", "amplicon::asv_table", "survey"),
+       _r("counts", "amplicon::abundance_table", "survey"),
        _r("md", "aspire::analysis_metadata", "survey"),
        _r("pairing", "aspire::asv_mag_pairing", "survey"),
        _r("tax", "amplicon::asv_taxonomy", "survey"),
@@ -521,13 +545,14 @@ TABLE: list[T] = [
        _r("sub", "aspire::network_modules_sub", "survey"),
        _r("mall", "aspire::network_modules_all", "survey")],
       [("out", "aspire::network_outputs")], "survey", cpus=8, memory_gb=32, hours=6,
-      note="r4 ecology lift: requires the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table` instead of the study root and `aspire::analysis_counts`, so it is reachable from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces one from kraken2 reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See research/kbase/curation/r4/aspire_topology.md." + " Reachable in principle and expensive in practice: it renders a "
+      note=LIFT_NOTE + " Reachable in principle and expensive in practice: it renders a "
            "co-occurrence network, so running it outside ASPIRE means supplying the "
            "network. That is a property of what it does, not of the gate removed."),
 
     T("graph_network_absent", None, None,
-      [STUDY, _r("policy", "aspire::graph_network_off", "study")],
-      [("out", "aspire::network_outputs")], "study"),
+      [SURVEY, _r("policy", "aspire::graph_network_off", "survey")],
+      [("out", "aspire::network_outputs")], "survey",
+      note="the `off` arm: an empty directory, which the master summary scans and finds nothing in."),
 
     T("asv_mag_network", "ASV_MAG_NETWORK", 5654,
       [STUDY, _r("graph", "aspire::network_graph_all", "study"),
@@ -543,7 +568,8 @@ TABLE: list[T] = [
            "something no consumer can tell apart."),
 
     T("module_mag_anchors", "MODULE_MAG_ANCHORS", 5705,
-      [STUDY, _r("mall", "aspire::network_modules_all", "study"),
+      [STUDY, _r("policy", "aspire::asv_mag_link_on", "study"),
+       _r("mall", "aspire::network_modules_all", "study"),
        _r("nf", "aspire::network_node_features", "study"),
        _r("tax", "amplicon::asv_taxonomy", "study"),
        _r("counts", "aspire::analysis_counts", "study"),
@@ -556,25 +582,34 @@ TABLE: list[T] = [
        ("top", "aspire::sample_top_modules"),
        ("matrix", "aspire::sample_module_matrix"),
        ("heatmaps", "aspire::sample_module_heatmaps")],
-      "study", cpus=4, memory_gb=16, hours=4),
+      "study", cpus=4, memory_gb=16, hours=4,
+      note="Gated on the link, as the .nf's `networkEnabled && asvMagLinkEnabled` is. "
+           "`net` stands for the .nf's graph-network barrier."),
+
+    T("module_mag_anchors_absent", None, None,
+      [STUDY, _r("policy", "aspire::asv_mag_link_off", "study")],
+      [("anchors", "aspire::module_asv_anchor_table")], "study",
+      note="the `off` arm: a header-only anchor table, so the master summary solves without a link."),
 
     T("master_summary", "MASTER_SUMMARY", 5763,
       [STUDY, _r("am", "aspire::analysis_asv_meta", "study"),
        _r("counts", "aspire::analysis_counts", "study"),
+       _r("cmaps", "aspire::clustermap_outputs", "study"),
+       _r("indic", "aspire::indicspecies_results", "study"),
        _r("net", "aspire::network_outputs", "study"),
-       _r("sankey", "aspire::sankey_outputs", "study"),
+       _r("anchors", "aspire::module_asv_anchor_table", "study"),
        _r("magl", "aspire::asv_mag_outputs", "study")],
       [("long", "aspire::master_long"), ("wide", "aspire::master_count_wide"),
        ("manifest", "aspire::master_source_manifest"),
        ("colmap", "aspire::master_column_mapping"),
        ("collisions", "aspire::master_column_collisions")],
       "study", cpus=4, memory_gb=32, hours=4,
-      note="r4: the fourth requirement is gone with MASTER_SUMMARY_OPTIONAL_SLOT. "
-           "Three `.done` barriers plus a --data-dir scan, replaced by three "
-           "directory-typed requirements each with an off-arm producer. Which "
-           "of the merged tables actually appear is decided at runtime by a "
-           "config whitelist and stays a runtime parameter: modelling it in "
-           "the type system would need one transform per subset."),
+      note="The script scans four directories for the tables in its whitelist: clustermaps, "
+           "indicator species, the network's (node features and modules, which "
+           "`graph_network` copies into its outputs) and the link's. Each is declared, plus "
+           "the anchor table the .nf wrote into the network directory. The sankey barrier is "
+           "dropped: the script reads nothing of the sankey's. Which tables merge stays a "
+           "runtime whitelist, defaulted to this port's file names."),
 ]
 
 
@@ -739,6 +774,11 @@ def check_table() -> None:
     assert not unused, f"types declared but never used: {unused}"
 
 
+# Stand-ins for a cross-file `extends:`, which test_type_hierarchy.py forbids: each aspire type
+# carries the generic type's properties, and the lint checks that it still does.
+CROSS_FILE_SUPERSETS = [("study_metadata", "survey"), ("analysis_counts", "abundance_table")]
+
+
 def lint_extends() -> None:
     sys.path.insert(0, str(MLIB))
     from metasmith.python_api import DataTypeLibrary  # noqa: E402
@@ -758,6 +798,12 @@ def lint_extends() -> None:
                 f"{sorted(lib[parent].properties - lib[name].properties)}"
             )
     print(f"  extends: {edges} edge(s) all subsume")
+
+    amplicon = DataTypeLibrary.Load(MLIB / "data_types" / "amplicon.yml")
+    for name, generic in CROSS_FILE_SUPERSETS:
+        missing = sorted(amplicon[generic].properties - lib[name].properties)
+        assert not missing, f"[{name}] no longer satisfies [amplicon::{generic}]: missing {missing}"
+    print(f"  cross-file: {len(CROSS_FILE_SUPERSETS)} property superset(s) hold")
 
 
 def _signature(endpoint) -> tuple:

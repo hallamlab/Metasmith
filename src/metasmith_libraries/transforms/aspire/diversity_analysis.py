@@ -2,12 +2,13 @@
 """diversity_analysis -- DIVERSITY_ANALYSIS (asv_pipeline.nf:4399)
 
 Groups are the label columns of the sample sheet; the analysis runs once per
-label and skips a label with fewer than two levels. r4 ecology lift: requires
-the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table`
-instead of the study root and `aspire::analysis_counts`, so it is reachable
-from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces
-one from kraken2 reports. An ASPIRE study sheet satisfies the survey
-requirement unchanged. See research/kbase/curation/r4/aspire_topology.md.
+label and skips a label with fewer than two levels. Hangs off the generic
+`amplicon::survey` grouping node and reads the curated
+`amplicon::abundance_table`, so any analysis-ready count table reaches it --
+`kbase/profile_abundance/kraken_abundance.py` makes one from kraken2 reports.
+In an ASPIRE study the table is `plot_metadata`'s curated counts, never
+`denoise`'s raw one: the raw table does not satisfy the requirement. See
+research/kbase/curation/r4/aspire_topology.md.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -18,7 +19,7 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 survey = model.AddRequirement(lib.GetType("amplicon::survey"))
-counts = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
+counts = model.AddRequirement(lib.GetType("amplicon::abundance_table"), parents={survey})
 md     = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={survey})
 out    = model.AddProduct(lib.GetType("aspire::diversity_outputs"))
 

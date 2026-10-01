@@ -1,6 +1,8 @@
 name: aspire
 channels:
   - conda-forge
+  - bioconda
+  - ursky
 dependencies:
   - python=3.11
   - pandas=2.2.*
@@ -12,7 +14,19 @@ dependencies:
   - seaborn
   - plotly=5.24.*
   - python-kaleido=0.2.1
-  - r-base=4.4
+  - scikit-learn
+  - umap-learn
+  - hdbscan
+  - scikit-bio
+  - statsmodels
+  - statannotations
+  - networkx
+  - adjusttext
+  - upsetplot
+  - matplotlib-venn
+  - fastcluster
+  - blast
+  - r-base=4.5
   - r-indicspecies
   - r-optparse
   - r-dplyr
@@ -21,4 +35,12 @@ dependencies:
   - r-tibble
   - r-tidyr
   - r-permute
+  - r-vegan
+  - r-igraph
+  - r-glmnet
+  - r-huge
+  - r-pulsar
+  - r-rcpparmadillo
+  - r-vgam
+  - r-spieceasi=1.1.1
   - procps-ng

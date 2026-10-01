@@ -164,6 +164,7 @@ types:
     properties:
       _: the microbial ASV count matrix every analysis reads
       ext: tsv
+      Data: analysis-ready sample by feature abundance matrix
 # -- terminal analyses --
   upset_plots:
     properties:
@@ -184,6 +185,10 @@ types:
   diversity_outputs:
     properties:
       _: alpha and beta diversity results and renderings
+      Data: directory
+  diversity_mito_outputs:
+    properties:
+      _: alpha and beta diversity of the mitochondrial reads beside the microbial ones
       Data: directory
   measurement_association_outputs:
     properties:
@@ -256,6 +261,10 @@ types:
       _: co-occurrence network renderings and overlays
       Data: directory
 # -- ASV to MAG linking --
+  mag_collection:
+    properties:
+      _: a MAG set laid out for the ASV linker -- genomes_subset/ with one FASTA per genome, barrnap/ with one GFF per genome named by the same stem, and Master_genome_QC.tsv keyed by genome id
+      Data: directory
   asv_mag_pairing:
     properties:
       _: ASV to MAG pairing table

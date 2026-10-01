@@ -3,7 +3,8 @@
 
 `asv_mag_link.done` stood for two different things at its four consumers: the
 pairing table the network stages read by path, and the results directory the
-master summary scans. Both are declared.
+master summary scans. Both are declared. The .nf read the genomes from
+`--genome-qc-dir`; that layout is `aspire::mag_collection`.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -16,6 +17,7 @@ model = Transform()
 study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
 policy  = model.AddRequirement(lib.GetType("aspire::asv_mag_link_on"), parents={study})
 fseqs   = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={study})
+mags    = model.AddRequirement(lib.GetType("aspire::mag_collection"))
 pairing = model.AddProduct(lib.GetType("aspire::asv_mag_pairing"))
 out     = model.AddProduct(lib.GetType("aspire::asv_mag_outputs"))
 

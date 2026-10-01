@@ -2,11 +2,11 @@
 """spieceasi -- SPIECEASI (asv_pipeline.nf:5452)
 
 Force-keeps every ASV the indicator species results call significant for any
-label. r4 ecology lift: requires the generic `amplicon::survey` grouping node
-and a bare `amplicon::asv_table` instead of the study root and
-`aspire::analysis_counts`, so it is reachable from any count table --
-`kbase/profile_abundance/kraken_abundance.py` produces one from kraken2
-reports. An ASPIRE study sheet satisfies the survey requirement unchanged. See
+label. Hangs off the generic `amplicon::survey` grouping node and reads the
+curated `amplicon::abundance_table`, so any analysis-ready count table reaches
+it -- `kbase/profile_abundance/kraken_abundance.py` makes one from kraken2
+reports. In an ASPIRE study the table is `plot_metadata`'s curated counts,
+never `denoise`'s raw one: the raw table does not satisfy the requirement. See
 research/kbase/curation/r4/aspire_topology.md.
 
 Stub: the model is the port, the body only touches its outputs.
@@ -19,7 +19,7 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 survey = model.AddRequirement(lib.GetType("amplicon::survey"))
 policy = model.AddRequirement(lib.GetType("aspire::spieceasi_on"), parents={survey})
-counts = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
+counts = model.AddRequirement(lib.GetType("amplicon::abundance_table"), parents={survey})
 keep   = model.AddRequirement(lib.GetType("aspire::indicspecies_results"), parents={survey})
 all    = model.AddProduct(lib.GetType("aspire::network_graph_all"))
 thr    = model.AddProduct(lib.GetType("aspire::network_graph_thr"))

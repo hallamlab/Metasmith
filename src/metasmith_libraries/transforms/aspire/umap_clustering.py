@@ -2,12 +2,8 @@
 """umap_clustering -- UMAP_CLUSTERING (asv_pipeline.nf:4055)
 
 Groups are the label columns of the sample sheet; the analysis runs once per
-label and skips a label with fewer than two levels. r4 ecology lift: requires
-the generic `amplicon::survey` grouping node and a bare `amplicon::asv_table`
-instead of the study root and `aspire::analysis_counts`, so it is reachable
-from any count table -- `kbase/profile_abundance/kraken_abundance.py` produces
-one from kraken2 reports. An ASPIRE study sheet satisfies the survey
-requirement unchanged. See research/kbase/curation/r4/aspire_topology.md.
+label and skips a label with fewer than two levels. Reads the long-form table
+only, as UMAP_CLUSTERING does.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -18,7 +14,6 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 survey = model.AddRequirement(lib.GetType("amplicon::survey"))
-counts = model.AddRequirement(lib.GetType("amplicon::asv_table"), parents={survey})
 am     = model.AddRequirement(lib.GetType("aspire::analysis_asv_meta"), parents={survey})
 out    = model.AddProduct(lib.GetType("aspire::umap_plots"))
 

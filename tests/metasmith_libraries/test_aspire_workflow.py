@@ -8,7 +8,8 @@ PRESET = MLIB.parents[1] / "research" / "aspire" / "presets" / "aspire.yml"
 SWITCHES = ("spieceasi", "network_modules", "asv_mag_link", "graph_network")
 DEFAULT_ON = set(SWITCHES)
 REFERENCES = ("aspire::mito_reference_source",
-              "aspire::contaminant_reference_source", "amplicon::silva_db")
+              "aspire::contaminant_reference_source", "amplicon::silva_db",
+              "aspire::mag_collection")
 CORE = ["amplicon::asv_taxonomy", "aspire::counts_clean", "aspire::read_fate"]
 
 
@@ -110,7 +111,19 @@ class TestAspireTopology:
         task = solve(aspire_inputs(), aspire_transforms, ["aspire::master_long"])
         assert task.ok, f"master summary did not solve: dropped {sorted(task.plan.dropped_targets)}"
         steps = picked(task, aspire_transforms)
-        assert {"master_summary", "sankey", "indicspecies"} <= set(steps), steps
+        assert {"master_summary", "clustermaps", "indicspecies", "module_mag_anchors"} <= set(steps), steps
+        assert "sankey" not in steps, steps
+
+    # The curated counts are a type fence: the raw table cannot answer for them, so every
+    # analysis reads plot_metadata's output and filter_table never reads its own descendant.
+    def test_analyses_read_curated_counts(self, aspire_transforms, aspire_inputs):
+        targets = ["aspire::diversity_outputs", "aspire::indicspecies_results",
+                   "aspire::network_outputs"]
+        task = solve(aspire_inputs(), aspire_transforms, targets)
+        assert task.ok, f"dropped {sorted(task.plan.dropped_targets)}"
+        steps = picked(task, aspire_transforms)
+        assert steps.count("filter_table") == 1 and steps.count("plot_metadata") == 1, steps
+        assert {"diversity_analysis", "indicspecies", "spieceasi", "graph_network"} <= set(steps), steps
 
     def test_solve_is_reproducible(self, aspire_transforms, aspire_inputs):
         inputs = aspire_inputs()
@@ -130,6 +143,8 @@ class TestAspireTopology:
     ("asv_mag_link", "asv_mag_link", "asv_mag_link_absent",
      ["aspire::network_outputs"]),
     ("graph_network", "graph_network", "graph_network_absent",
+     ["aspire::master_long"]),
+    ("asv_mag_link", "module_mag_anchors", "module_mag_anchors_absent",
      ["aspire::master_long"]),
 ])
 class TestPolicySwitches:

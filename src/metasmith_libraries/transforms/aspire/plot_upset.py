@@ -2,7 +2,9 @@
 """plot_upset -- PLOT_UPSET (asv_pipeline.nf:3927)
 
 Groups are the label columns of the sample sheet; the analysis runs once per
-label and skips a label with fewer than two levels.
+label and skips a label with fewer than two levels. The .nf passes only the
+sheet and re-opens the target and final count tables and the taxonomy from its
+output directory; all four are declared.
 
 Stub: the model is the port, the body only touches its outputs.
 Regenerate with `python transforms/aspire/_generate.py`.
@@ -12,9 +14,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-study = model.AddRequirement(lib.GetType("aspire::study_metadata"))
-md    = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={study})
-out   = model.AddProduct(lib.GetType("aspire::upset_plots"))
+study  = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+md     = model.AddRequirement(lib.GetType("aspire::analysis_metadata"), parents={study})
+clean  = model.AddRequirement(lib.GetType("aspire::counts_clean"), parents={study})
+counts = model.AddRequirement(lib.GetType("aspire::analysis_counts"), parents={study})
+tax    = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={study})
+out    = model.AddProduct(lib.GetType("aspire::upset_plots"))
 
 def protocol(context: ExecutionContext):
     made = {
