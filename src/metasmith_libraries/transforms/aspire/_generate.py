@@ -511,6 +511,15 @@ TABLE: list[T] = [
       note=LIFT_NOTE_2 + " the `off` arm; asv_pipeline.nf:2726-2729 falls back to files on "
            "disk if they exist and a zero-row placeholder if not."),
 
+    T("collect_mags", None, None,
+      [("asm", "sequences::assembly", ()),
+       _r("table", "binning_local::cluster_table", "asm"),
+       _r("bins", "binning_local::quality_bin_fasta", "asm"),
+       _r("gffs", "binning_local::quality_bin_rrna_gff", "bins")],
+      [("out", "aspire::mag_collection")], "table",
+      note="no .nf process: upstream read a separate genome QC pipeline's directory. This "
+           "builds that layout from the binning lane's 95% centroid bins and their barrnap GFFs."),
+
     T("asv_mag_link", "ASV_MAG_LINK", 5821,
       [STUDY, _r("policy", "aspire::asv_mag_link_on", "study"),
        _r("fseqs", "aspire::asv_filtered_seqs", "study"),

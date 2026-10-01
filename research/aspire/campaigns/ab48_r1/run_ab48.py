@@ -15,7 +15,8 @@ Three studies, one driver:
 
 The reads were staged on sockeye by the asv_task project, one directory per sequencing run.
 The sheets come from capella and are pinned at data/aspire/hallam_16s_inputs. The AB48 MAGs
-are the 24 dereplicated quality bins of cyanoverse/ab48's revio assembly, staged under ROOT.
+are the 24 95%-ANI centroid bins of cyanoverse/ab48's revio assembly, staged under ROOT/mags
+with that assembly and its cluster table; the plan runs barrnap on them and builds the collection.
 Every AB48 and purify primer pair is 515F-Y/926R, which is the ASPIRE preset's amplicon, so
 the preset is the params file unchanged.
 """
@@ -30,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from _campaign import REFS, REPO, Campaign, Sample, main  # noqa: E402
+from _campaign import REFS, REPO, Campaign, MagSet, Sample, main  # noqa: E402
 from metasmith.python_api import Duration, Resources, Size  # noqa: E402
 
 ROOT = os.environ.get("ASPIRE_AB48_ROOT", "/scratch/st-shallam-1/txyliu/aspire_ab48")
@@ -195,7 +196,7 @@ def campaign(args) -> Campaign:
     samples, study = ab48_study(cohorts)
     return Campaign(name=f"{args.study}_r1", root=ROOT, samples=samples, study_sheet=study,
                     switches_on={"spieceasi", "network_modules", "asv_mag_link", "graph_network"},
-                    mag_collection=f"{ROOT}/mag_collection", **common)
+                    mags=MagSet(f"{ROOT}/mags"), **common)
 
 
 def cmd_list(c: Campaign, _args):

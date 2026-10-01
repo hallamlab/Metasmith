@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -56,6 +57,25 @@ class Sample:
     r2: str
 
 
+# A dedup run on the remote host: the assembly, the cluster table and the run's centroid bins
+# under bins/, which `collect_mags` lays out for the ASV-MAG linker after barrnap.
+@dataclass
+class MagSet:
+    root: str
+
+    @property
+    def assembly(self) -> str:
+        return f"{self.root}/assembly.fna"
+
+    @property
+    def cluster_table(self) -> str:
+        return f"{self.root}/cluster_table.tsv"
+
+    @cached_property
+    def bins(self) -> list[str]:
+        return [f"{self.root}/bins/{n}" for n in ssh_once(HOST, f"ls {self.root}/bins").split()]
+
+
 @dataclass
 class Campaign:
     name: str
@@ -68,7 +88,7 @@ class Campaign:
     mito_reference: str
     contaminant_reference: str
     switches_on: set[str] = field(default_factory=set)
-    mag_collection: str | None = None
+    mags: MagSet | None = None
     external_graphs: str | None = None
     measurements: str | None = None
     resource_overrides: dict = field(default_factory=dict)
@@ -88,8 +108,8 @@ class Campaign:
     def remote_inputs(self) -> list[str]:
         paths = [f"{SILVA}/{n}" for n in SILVA_FILES] + [self.mito_reference, self.contaminant_reference]
         paths += [p for s in self.samples for p in (s.r1, s.r2)]
-        if self.mag_collection:
-            paths.append(f"{self.mag_collection}/Master_genome_QC.tsv")
+        if self.mags:
+            paths += [self.mags.assembly, self.mags.cluster_table, *self.mags.bins]
         if self.external_graphs:
             paths += [f"{self.external_graphs}/{n}" for n in EXTERNAL_GRAPHS]
         return paths
@@ -128,13 +148,16 @@ def build_inputs(c: Campaign):
 def build_references(c: Campaign):
     lib = DataInstanceLibrary(c.work / "references.xgdb")
     lib.Purge()
-    for t in ("aspire.yml", "amplicon.yml"):
+    for t in ("aspire.yml", "amplicon.yml", "sequences.yml", "binning_local.yml"):
         lib.AddTypeLibrary(MLIB / "data_types" / t)
     lib.AddItem(SILVA, "amplicon::silva_db")
     lib.AddItem(c.mito_reference, "aspire::mito_reference_source")
     lib.AddItem(c.contaminant_reference, "aspire::contaminant_reference_source")
-    if c.mag_collection:
-        lib.AddItem(c.mag_collection, "aspire::mag_collection")
+    if c.mags:
+        asm = lib.AddItem(c.mags.assembly, "sequences::assembly")
+        lib.AddItem(c.mags.cluster_table, "binning_local::cluster_table", parents={asm})
+        for b in c.mags.bins:
+            lib.AddItem(b, "binning_local::quality_bin_fasta", parents={asm})
     if c.external_graphs:
         for name, dtype in EXTERNAL_GRAPHS.items():
             lib.AddItem(f"{c.external_graphs}/{name}", dtype)
@@ -149,7 +172,8 @@ def plan(c: Campaign, smith):
         samples=list(inputs.AsSamples("aspire::study_metadata")),
         resources=[DataInstanceLibrary.Load(MLIB / "resources" / n) for n in ("env", "lib")]
                   + [build_references(c)],
-        transforms=[TransformInstanceLibrary.Load(MLIB / "transforms" / n) for n in ("aspire", "logistics")],
+        transforms=[TransformInstanceLibrary.Load(MLIB / "transforms" / n)
+                    for n in ("aspire", "logistics", *(("metagenomics",) if c.mags else ()))],
         targets=c.targets,
     )
     if not task.ok:
