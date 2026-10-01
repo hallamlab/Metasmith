@@ -3,8 +3,13 @@
 #
 # The script globs its working directory for indicator summaries, as upstream stages them
 # there, so they are copied in. It requires two overlays, as upstream's study has two grouping
-# columns; a lone label is overlaid twice, the second time as `<label>_twin`. The product doubles as upstream's spieceasi directory, which
-# the master summary scans: it also holds the SpiecEasi node features and the module tables.
+# columns; a lone label is overlaid twice, the second time as `<label>_twin`.
+#
+# The ASV-MAG pairing is passed only when it has rows, as upstream passes it only when the
+# link ran: the script's loader fails on a header-only table.
+#
+# The product doubles as upstream's spieceasi directory, which the master summary scans: it
+# also holds the SpiecEasi node features and the module tables.
 #
 # This row reads no params, so a count table from outside ASPIRE can reach it.
 
@@ -44,6 +49,8 @@ def protocol(context: ExecutionContext):
         cp {i[nf]} {o}/spieceasi_node_features.csv
         cp {i[sub]} {o}/spieceasi_modules_sub.tsv
         cp {i[mall]} {o}/spieceasi_modules_all.tsv
+        pair=()
+        [ "$(wc -l < {i[pairing]})" -gt 1 ] && pair=(--asv-mag-pairing {i[pairing]})
         overlays=$(python {s}/upstream_layout.py isa_overlays --dir isa --metadata {i[md]} --out md.tsv)
         if [ -z "$overlays" ]; then
             echo "no label has an indicator summary: nothing to overlay" > {o}/NOTE.txt
@@ -53,7 +60,7 @@ def protocol(context: ExecutionContext):
                 --graph-pos-all {i[all]} --graph-pos-sub {i[thr]} --node-features {i[nf]} \
                 --asv-counts {i[counts]} --taxonomy {i[tax]} --metadata ../md.tsv \
                 --sample-col "{sid_col}" --isa-group-cols "$overlays" \
-                --isa-summary-mode default --asv-mag-pairing {i[pairing]} --color-col Color \
+                --isa-summary-mode default "${{pair[@]}}" --color-col Color \
                 --module-best-only --module-best-min-size 5 --module-best-min-stability 0.7 \
                 --module-isa-source "{labels[0]}" --module-isa-min-stat 0.25 --module-isa-max-q 0.05 \
                 --modules-sub {i[sub]} --modules-all {i[mall]} --layout-seed 42 --layout-scale 3.0 \
