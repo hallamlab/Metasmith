@@ -8,6 +8,9 @@ fate and the count tables, so the scripts run unmodified.
 
 `mito` writes the removed counts' mitochondrial rows as a count table and prints how many.
 
+`force_keep` merges every label's indicator summary into one ASV list for SpiecEasi's
+--force-keep-asvs, keeping the rows run_spieceasi.R's own reader would keep from one summary.
+
 `labels` prints the sheet labels an analysis runs over, one line each with a directory-safe
 name and a secondary label (the next analysable label, or itself when it is the only one),
 and records the rest with a reason. A label needs at least two non-empty levels.
@@ -103,6 +106,27 @@ def cmd_mito(args):
     print(len(mito))
 
 
+def cmd_force_keep(args):
+    keep = set()
+    for path in sorted(args.results.glob("*_indicator_species_summary.tsv")):
+        table = pd.read_csv(path, sep="\t", dtype=str)
+        if table.empty:
+            continue
+        if "ASV" not in table.columns:
+            keep.update(table.iloc[:, 0].dropna())
+            continue
+        rows = pd.Series(True, index=table.index)
+        if "significant" in table.columns:
+            rows &= table["significant"].str.lower().isin(["true", "t", "1", "yes"])
+        for q in ("q.value", "q_value"):
+            if q in table.columns:
+                rows &= pd.to_numeric(table[q], errors="coerce") < 0.05
+                break
+        keep.update(table.loc[rows, "ASV"].dropna())
+    pd.DataFrame({"ASV_ID": sorted(keep)}).to_csv(args.out, sep="\t", index=False)
+    print(len(keep))
+
+
 def cmd_labels(args):
     _sheet, _sid, labels = read_sheet(args.sheet)
     table = pd.read_csv(args.table, sep="\t", dtype=str, keep_default_na=False)
@@ -161,6 +185,9 @@ def main():
     p = sub.add_parser("mito")
     p.add_argument("--removed", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("force_keep")
+    p.add_argument("--results", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("labels")
     p.add_argument("--sheet", type=Path, required=True)
     p.add_argument("--table", type=Path, required=True)
@@ -174,7 +201,7 @@ def main():
     p.add_argument("--min-level-size", type=int, required=True)
     p.add_argument("tables", type=Path, nargs="+")
     args = ap.parse_args()
-    {"sankey": cmd_sankey, "metadata": cmd_metadata, "mito": cmd_mito, "labels": cmd_labels,
+    {"sankey": cmd_sankey, "metadata": cmd_metadata, "mito": cmd_mito, "force_keep": cmd_force_keep, "labels": cmd_labels,
      "recolor": cmd_recolor, "blank": cmd_blank}[args.cmd](args)
 
 

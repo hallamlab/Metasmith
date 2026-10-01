@@ -37,8 +37,10 @@ ROOT = os.environ.get("ASPIRE_CYANO_ROOT", "/scratch/st-shallam-1/txyliu/aspire_
 READS = f"{ROOT}/reads"
 MOCK_REFS = Path(os.environ.get("ASPIRE_MOCK_REFS", REPO / "data" / "aspire" / "mock_references"))
 
-TARGETS = ["aspire::counts_clean", "aspire::read_fate", "amplicon::asv_taxonomy",
-           "aspire::sankey_outputs", "aspire::analysis_metadata", "aspire::indicspecies_results"]
+TARGETS = ["aspire::read_fate", "aspire::sankey_outputs", "aspire::collectors_outputs",
+           "aspire::diversity_outputs", "aspire::diversity_mito_outputs", "aspire::umap_plots",
+           "aspire::bubble_plots", "aspire::upset_plots", "aspire::grouping_diagnostics_outputs",
+           "aspire::clustermap_outputs", "aspire::network_outputs"]
 SILVA_FILES = {
     "silva.arb.gz": "https://www.arb-silva.de/fileadmin/silva_databases/release_138_2/ARB_files/SILVA_138.2_SSURef_NR99_03_07_24_opt.arb.gz",
     "silva_seqs.qza": "https://data.qiime2.org/2024.10/common/silva-138-99-seqs.qza",
