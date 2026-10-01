@@ -2637,3 +2637,68 @@ reproduction peak stayed under 705K inodes, and the ETA moved from ~17:30 to ~07
 14,088 MEMOTE results, modern lane 14,097 of each, against metaGEM's 14,087 GEMs. Reproduction parity
 over 14,084 bins: reactions 0.840, genes 0.976. The quota after the last lane was 617,021 inodes and
 15.907 TiB. The archives, 20 GB in all, sit in `/scratch/phyberos/metagem/e4_gems_archive/`.
+
+### HH. E3 viral-only: a hybrid pilot, then wave e3_w9 over all 65 runs and 17 hybrid pairs
+
+E3 now stops at vOTUs: three assembly lanes, four callers, CheckV curation, MMseqs2 and the island
+filter (`findings/E3_PARITY.md`). Tony's order (2026-09-28): iterate a pilot until the whole pipeline
+completes for one sample, then run every Pratama sample.
+
+**Pilot.** Key `6zpGUpXC`, tag `e3_hpilot`, three runs with one hybrid pair each. The first driver,
+`61912218`, lost six seqkit and fastp tasks as ignored. That morning's home deploy had written the
+driver's relay setup lines into `lib/agent.yml`. Every task shell prepends that file, and the extra
+echo line broke bootstrap's one-line `pwd` read. Fix `c3b8ceb8`: `_common.deploy_home` writes only
+`module load apptainer`. The relaunch `61918508` (checkout `a59c7332`, the measured `SCALED` table)
+completed on 2026-09-29 with all 34 steps.
+- Short-read metaSPAdes failed twice at 192 GB in hammer ("need approx. 248–257 GB"). Both finished
+  at 384 GB with MaxRSS 324 and 332 GB, so 256 GB would also miss. The declaration stays at 192.
+- Hybrid metaSPAdes peaked at 180, 375 and 384 GB.
+- Island annotate hit an OOM at 16 GB in `mmseqs prefilter` over the whole geNomad DB. `SCALED` now
+  gives it 32 GB.
+- The merge labels a sample `read_pair@<hash>`, not its run. Commit `2a098181` gives the curve script
+  a `--labels` map, which fails on any unmapped label.
+
+**The pilot missed wave 8's cache, and the fix is the archived index.** The pilot recomputed QC,
+assembly, splits and calls although wave 8's archive holds them under the same transform keys. A
+fresh fir index mints fresh import ids, so no lineage key matched. `EnsurePoolEntries` reuses an entry
+by name, so restoring the archived index brings the archived identities back. Globus restored 3,262
+shard roots, 1.23 TB (task `11ff4a86`), and `imports/` (`13bf88e7`). The archived index went into
+place as `task_cache/cache.sqlite` (sha `eaee257a`). The pilot's index is kept beside it as
+`cache.sqlite.pilot_6zpGUpXC`.
+
+**The first launch still missed, because environment ids are tree-local.** Launch `62088624` sent
+every seqkit, bbduk and fastp task down the miss channel. The archived payload consumes env
+`1e206e2899…`, while checkout `85f49722` compiled `1e20b7997500…` from identical env content. Only the
+compiled `resources/env/_metadata/index.yml` differed. The fix copied that index from checkout
+`61c0eebc` into the syncing worktree. CAUTION: until the engine keys environments by content, any
+relaunch that must reuse this cache needs that env index in the tree it syncs from.
+
+**Pre-launch review** (commits `0de8d108`, `85f49722`):
+- `spades_pratama` left `IN_PLACE_STEPS`. Its in-place work dir is about 120 GB per sample, about
+  10 TB at 65 runs against 8.2 TB free.
+- Hybrid metaSPAdes joined `SCALED` at (48, 384, 36) with a 768 GB `LARGE_MEMORY_STEPS` cap. Its
+  uncapped ladder reached 3,072 GB on attempt 4, which fir refuses at submission.
+- The final set reports `fraction_any`. MMseqs2 picks one representative across samples, so
+  same-sample recovery there shrinks as samples are added.
+
+**Wave e3_w9.** Driver `62089381`, key `nP0Jxo8W`, checkout `85f49722`, after materialise `62089379`.
+Every short-read QC, assembly, split, geNomad and VIBRANT task came from the cache. VirSorter2 recomputed
+because its protocol changed for the boundary fix. The run completed on 2026-09-30 at 12:52.
+`nxf_tasks.csv` holds 4,718 rows: 4,704 COMPLETED and 14 FAILED, each recovered by a later attempt.
+All 17 hybrid assemblies finished without a retry, the longest in about 16 h.
+
+| Failed | Count | Cause | Fix for the next wave |
+|---|---|---|---|
+| `deepvirfinder_pratama` | 12 | TIMEOUT at 6 h. MaxRSS 16.8 GB at the 16 GiB cap with 14 min of cpu in 5.3 h: a memory stall, not an OOM. Each 32 GB retry finished in under 1 h. | `SCALED` (8, 32, 6) |
+| `pratama_votu_recovery` (pool) | 1 | OOM at 32 GB. MaxRSS 60.7 GB on the 64 GB retry. | `SCALED` (8, 128, 4) |
+| `mmseqs_votu_pratama` | 1 | OOM at 64 GB in linclust's kmermatcher. MMseqs2 sizes its table from node RAM, not the grant. MaxRSS 121.6 GB on the 128 GB retry. | `SCALED` (16, 128, 6) |
+
+`merge_candidate_calls_pratama` did not fail, but sat at its 16 GiB cap for 1 h 37 min. `SCALED` now
+gives it 32 GB.
+
+Record counts: pool 7,552,829, curated 7,102,468, 4,018,877 vOTUs, 243,688 representatives of at
+least 5 kb, and 243,186 after the island filter removed 502 of 639 over 100 kb. Scoring ran on fir
+from `/scratch/phyberos/bench/e3_score` (pool `62283560`, final `62291085`, per-sample `62284167`),
+because `sync.sh` leaves `results/` out of the checkout. The recovery is in
+`findings/E3_PARITY.md` § Recovery. The headline is 78.5% of the 257,252 published vOTUs recovered by
+the final set at ANI 95 / AF 85, and 89.8% of the hybrid lane.
