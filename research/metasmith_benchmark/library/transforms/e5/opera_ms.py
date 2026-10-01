@@ -22,12 +22,14 @@ def protocol(context: ExecutionContext):
     icontigs, ireads, inano, iout = context.Input(contigs), context.Input(reads), context.Input(nano), context.Output(out)
     threads = context.params.get("cpus") or 2
 
+    # OPERA-MS 0.9.0 refuses a gzipped long-read file.
     context.ExecWithEnv(env=image, cmd=f"""
         gzip -dcf {ireads.container} \
             | awk '{{ if (int((NR-1)/4) % 2 == 0) print > "r1.fastq"; else print > "r2.fastq" }}'
+        gzip -dcf {inano.container} > long.fastq
         perl {OPERA_MS} --contig-file {icontigs.container} --short-read1 r1.fastq --short-read2 r2.fastq \
-            --long-read {inano.container} --no-ref-clustering --no-polishing --num-processors {threads} --out-dir opera
-        rm r1.fastq r2.fastq
+            --long-read long.fastq --no-ref-clustering --no-polishing --num-processors {threads} --out-dir opera
+        rm r1.fastq r2.fastq long.fastq
         cat opera/assembly.stats || true
         cp opera/contigs.fasta {iout.container}
     """)
