@@ -436,8 +436,7 @@ TABLE: list[T] = [
       note=LABELS_NOTE + " " + LIFT_NOTE),
 
     T("diversity_mito", "DIVERSITY_ANALYSIS", 4399,
-      [STUDY, _r("counts", "aspire::analysis_counts", "study"),
-       _r("removed", "aspire::counts_removed", "study"),
+      [STUDY, _r("removed", "aspire::counts_removed", "study"),
        _r("md", "aspire::analysis_metadata", "study")],
       [("out", "aspire::diversity_mito_outputs")], "study", cpus=4, memory_gb=16, hours=3,
       note=LABELS_NOTE + " The .nf's `diversity.run_mito` branch, split out so the generic "

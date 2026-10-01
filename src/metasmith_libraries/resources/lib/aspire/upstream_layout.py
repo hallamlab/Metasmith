@@ -6,12 +6,22 @@ file name, a sample manifest mapping those names to samples, a metadata sheet ca
 Color column, and the count tables. This writes that tree from the sample sheet, the read
 fate and the count tables, so the scripts run unmodified.
 
+`mito` writes the removed counts' mitochondrial rows as a count table and prints how many.
+
+`labels` prints the sheet labels an analysis runs over, one line each with a directory-safe
+name and a secondary label (the next analysable label, or itself when it is the only one),
+and records the rest with a reason. A label needs at least two non-empty levels.
+
+`recolor` rewrites a table's Color column for another label, since upstream's scripts read
+one group-to-colour mapping and the metadata carries the first label's.
+
 `blank` applies analysis.min_level_size afterwards: a label value held by fewer samples is
 emptied in the tables the analyses read, so each analysis skips that level and keeps the
 sample.
 """
 
 import argparse
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -79,9 +89,44 @@ def cmd_metadata(args):
     (out / "mito" / "ASVs").mkdir(parents=True, exist_ok=True)
     clean = pd.read_csv(args.clean, sep="\t", index_col=0)
     clean.to_csv(out / "ASVs" / "ASV_target.micro.tsv", sep="\t")
-    removed = pd.read_csv(args.removed, sep="\t", index_col=0)
-    mito = removed.loc[removed["reason"] == "mitochondrial"].drop(columns="reason")
-    mito.to_csv(out / "mito" / "ASVs" / "ASV_target.mito.tsv", sep="\t")
+    mito_rows(args.removed).to_csv(out / "mito" / "ASVs" / "ASV_target.mito.tsv", sep="\t")
+
+
+def mito_rows(removed_path):
+    removed = pd.read_csv(removed_path, sep="\t", index_col=0)
+    return removed.loc[removed["reason"] == "mitochondrial"].drop(columns="reason")
+
+
+def cmd_mito(args):
+    mito = mito_rows(args.removed)
+    mito.to_csv(args.out, sep="\t")
+    print(len(mito))
+
+
+def cmd_labels(args):
+    _sheet, _sid, labels = read_sheet(args.sheet)
+    table = pd.read_csv(args.table, sep="\t", dtype=str, keep_default_na=False)
+    kept, skipped = [], []
+    for label in labels:
+        if label not in table.columns:
+            skipped.append((label, "absent from the analysis table"))
+            continue
+        n = len({v for v in table[label] if v})
+        if n < 2:
+            skipped.append((label, f"{n} non-empty level(s)"))
+        else:
+            kept.append(label)
+    pd.DataFrame(skipped, columns=["label", "reason"]).to_csv(args.skipped, sep="\t", index=False)
+    for i, label in enumerate(kept):
+        print(f"{label}\t{re.sub(r'[^A-Za-z0-9._-]', '_', label)}\t{kept[(i + 1) % len(kept)]}")
+
+
+def cmd_recolor(args):
+    table = pd.read_csv(args.table, sep="\t", dtype=str, keep_default_na=False)
+    levels = sorted(v for v in table[args.label].unique() if v)
+    colors = {lvl: PALETTE[i % len(PALETTE)] for i, lvl in enumerate(levels)}
+    table["Color"] = table[args.label].map(colors).fillna("#d3d3d3")
+    table.to_csv(args.out, sep="\t", index=False)
 
 
 def cmd_blank(args):
@@ -113,12 +158,24 @@ def main():
         if name == "metadata":
             p.add_argument("--clean", type=Path, required=True)
             p.add_argument("--removed", type=Path, required=True)
+    p = sub.add_parser("mito")
+    p.add_argument("--removed", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("labels")
+    p.add_argument("--sheet", type=Path, required=True)
+    p.add_argument("--table", type=Path, required=True)
+    p.add_argument("--skipped", type=Path, required=True)
+    p = sub.add_parser("recolor")
+    p.add_argument("--label", required=True)
+    p.add_argument("table", type=Path)
+    p.add_argument("out", type=Path)
     p = sub.add_parser("blank")
     p.add_argument("--sheet", type=Path, required=True)
     p.add_argument("--min-level-size", type=int, required=True)
     p.add_argument("tables", type=Path, nargs="+")
     args = ap.parse_args()
-    {"sankey": cmd_sankey, "metadata": cmd_metadata, "blank": cmd_blank}[args.cmd](args)
+    {"sankey": cmd_sankey, "metadata": cmd_metadata, "mito": cmd_mito, "labels": cmd_labels,
+     "recolor": cmd_recolor, "blank": cmd_blank}[args.cmd](args)
 
 
 if __name__ == "__main__":
