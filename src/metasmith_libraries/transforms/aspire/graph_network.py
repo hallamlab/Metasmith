@@ -2,7 +2,8 @@
 # every label of the sample sheet as an indicator overlay and the first as the module source.
 #
 # The script globs its working directory for indicator summaries, as upstream stages them
-# there, so they are copied in. The product doubles as upstream's spieceasi directory, which
+# there, so they are copied in. It requires two overlays, as upstream's study has two grouping
+# columns; a lone label is overlaid twice, the second time as `<label>_twin`. The product doubles as upstream's spieceasi directory, which
 # the master summary scans: it also holds the SpiecEasi node features and the module tables.
 #
 # This row reads no params, so a count table from outside ASPIRE can reach it.
@@ -43,21 +44,26 @@ def protocol(context: ExecutionContext):
         cp {i[nf]} {o}/spieceasi_node_features.csv
         cp {i[sub]} {o}/spieceasi_modules_sub.tsv
         cp {i[mall]} {o}/spieceasi_modules_all.tsv
-        cd isa
-        python {s}/graph_network.py --data-dir . --outdir {o} \
-            --graph-pos-all {i[all]} --graph-pos-sub {i[thr]} --node-features {i[nf]} \
-            --asv-counts {i[counts]} --taxonomy {i[tax]} --metadata {i[md]} \
-            --sample-col "{sid_col}" --isa-group-cols "{','.join(labels)}" \
-            --isa-summary-mode default --asv-mag-pairing {i[pairing]} --color-col Color \
-            --module-best-only --module-best-min-size 5 --module-best-min-stability 0.7 \
-            --module-isa-source "{labels[0]}" --module-isa-min-stat 0.25 --module-isa-max-q 0.05 \
-            --modules-sub {i[sub]} --modules-all {i[mall]} --layout-seed 42 --layout-scale 3.0 \
-            --degree-scale 80 --degree-size-mode legacy --degree-min-area 0 \
-            --edge-width-scale 5 --isa-scale 700 --abundance-size-mode legacy \
-            --abundance-reference 5000 --abundance-reference-area 80 --abundance-min-area 8 \
-            --abundance-max-area 420 --abundance-scale-power 1.6
-        cd ..
-        rm -rf isa
+        overlays=$(python {s}/upstream_layout.py isa_overlays --dir isa --metadata {i[md]} --out md.tsv)
+        if [ -z "$overlays" ]; then
+            echo "no label has an indicator summary: nothing to overlay" > {o}/NOTE.txt
+        else
+            cd isa
+            python {s}/graph_network.py --data-dir . --outdir {o} \
+                --graph-pos-all {i[all]} --graph-pos-sub {i[thr]} --node-features {i[nf]} \
+                --asv-counts {i[counts]} --taxonomy {i[tax]} --metadata ../md.tsv \
+                --sample-col "{sid_col}" --isa-group-cols "$overlays" \
+                --isa-summary-mode default --asv-mag-pairing {i[pairing]} --color-col Color \
+                --module-best-only --module-best-min-size 5 --module-best-min-stability 0.7 \
+                --module-isa-source "{labels[0]}" --module-isa-min-stat 0.25 --module-isa-max-q 0.05 \
+                --modules-sub {i[sub]} --modules-all {i[mall]} --layout-seed 42 --layout-scale 3.0 \
+                --degree-scale 80 --degree-size-mode legacy --degree-min-area 0 \
+                --edge-width-scale 5 --isa-scale 700 --abundance-size-mode legacy \
+                --abundance-reference 5000 --abundance-reference-area 80 --abundance-min-area 8 \
+                --abundance-max-area 420 --abundance-scale-power 1.6
+            cd ..
+        fi
+        rm -rf isa md.tsv
         rm -rf .cache
     """)
 

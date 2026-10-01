@@ -4,8 +4,9 @@
 #
 # Upstream's --mito-mode reruns the micro analysis and then calls the same pipeline on the
 # mito tables, so this calls it on the mito tables alone. A study with fewer than two
-# mitochondrial ASVs or samples carrying them has nothing to ordinate: the product then
-# holds only the mito table and a note saying why.
+# mitochondrial ASVs has nothing to ordinate: the product then holds only the mito table and a
+# note saying why. A label is judged on the samples that carry mitochondrial reads, since
+# calc_div drops the rest, and one whose carriers all share a level is skipped.
 
 from metasmith.python_api import *
 
@@ -36,7 +37,8 @@ def protocol(context: ExecutionContext):
         fi
         python {s}/calc_div.py --mito-table {o}/ASV_target.mito.tsv --mito-outdir {o}
         python {s}/upstream_layout.py labels --sheet {context.Input(study).container} \
-            --table {context.Input(md).container} --skipped {o}/skipped_labels.tsv > labels.tsv
+            --table {context.Input(md).container} --skipped {o}/skipped_labels.tsv \
+            --keep-samples {o}/shannon.mito.tsv > labels.tsv
         while IFS=$'\\t' read -r L D L2; do
             sec=()
             [ "$L2" != "$L" ] && sec=(--secondary-col "$L2")

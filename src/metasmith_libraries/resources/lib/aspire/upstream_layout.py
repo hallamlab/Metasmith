@@ -11,9 +11,15 @@ fate and the count tables, so the scripts run unmodified.
 `force_keep` merges every label's indicator summary into one ASV list for SpiecEasi's
 --force-keep-asvs, keeping the rows run_spieceasi.R's own reader would keep from one summary.
 
+`isa_overlays` prepares graph_network's indicator overlays in a directory of label summaries.
+The script requires two; a lone label is paired with a `<label>_twin` copy of itself, in the
+summaries and in the metadata. It writes the metadata the script should read and prints the
+overlay labels, or nothing when no label has a summary.
+
 `labels` prints the sheet labels an analysis runs over, one line each with a directory-safe
 name and a secondary label (the next analysable label, or itself when it is the only one),
-and records the rest with a reason. A label needs at least two non-empty levels.
+and records the rest with a reason. A label needs at least two non-empty levels, counted over
+--keep-samples when it is given.
 
 `recolor` rewrites a table's Color column for another label, since upstream's scripts read
 one group-to-colour mapping and the metadata carries the first label's.
@@ -127,9 +133,26 @@ def cmd_force_keep(args):
     print(len(keep))
 
 
+def cmd_isa_overlays(args):
+    suffix = "_indicator_species_summary.tsv"
+    labels = sorted(p.name[: -len(suffix)] for p in args.dir.glob(f"*{suffix}"))
+    md = pd.read_csv(args.metadata, sep="\t", dtype=str, keep_default_na=False)
+    if len(labels) == 1:
+        twin = f"{labels[0]}_twin"
+        (args.dir / f"{twin}{suffix}").write_bytes((args.dir / f"{labels[0]}{suffix}").read_bytes())
+        if labels[0] in md.columns:
+            md[twin] = md[labels[0]]
+        labels.append(twin)
+    md.to_csv(args.out, sep="\t", index=False)
+    print(",".join(labels))
+
+
 def cmd_labels(args):
-    _sheet, _sid, labels = read_sheet(args.sheet)
+    _sheet, sid_col, labels = read_sheet(args.sheet)
     table = pd.read_csv(args.table, sep="\t", dtype=str, keep_default_na=False)
+    if args.keep_samples is not None:
+        keep = set(pd.read_csv(args.keep_samples, sep="\t", index_col=0, dtype=str).index)
+        table = table.loc[table[sid_col].isin(keep)]
     kept, skipped = [], []
     for label in labels:
         if label not in table.columns:
@@ -188,10 +211,16 @@ def main():
     p = sub.add_parser("force_keep")
     p.add_argument("--results", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("isa_overlays")
+    p.add_argument("--dir", type=Path, required=True)
+    p.add_argument("--metadata", type=Path, required=True)
+    p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("labels")
     p.add_argument("--sheet", type=Path, required=True)
     p.add_argument("--table", type=Path, required=True)
     p.add_argument("--skipped", type=Path, required=True)
+    p.add_argument("--keep-samples", type=Path, default=None,
+                   help="a table whose first column lists the samples to judge the labels on")
     p = sub.add_parser("recolor")
     p.add_argument("--label", required=True)
     p.add_argument("table", type=Path)
@@ -201,7 +230,8 @@ def main():
     p.add_argument("--min-level-size", type=int, required=True)
     p.add_argument("tables", type=Path, nargs="+")
     args = ap.parse_args()
-    {"sankey": cmd_sankey, "metadata": cmd_metadata, "mito": cmd_mito, "force_keep": cmd_force_keep, "labels": cmd_labels,
+    {"sankey": cmd_sankey, "metadata": cmd_metadata, "mito": cmd_mito, "force_keep": cmd_force_keep,
+     "isa_overlays": cmd_isa_overlays, "labels": cmd_labels,
      "recolor": cmd_recolor, "blank": cmd_blank}[args.cmd](args)
 
 
