@@ -26,6 +26,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {o}
         n=$(python {s}/upstream_layout.py mito --removed {context.Input(removed).container} \
             --out {o}/ASV_target.mito.tsv)
@@ -48,6 +49,7 @@ def protocol(context: ExecutionContext):
                 --random-state 42 --verbose
         done < labels.tsv
         rm -f labels.tsv md.tsv
+        rm -rf .cache
     """)
 
     return ExecutionResult(

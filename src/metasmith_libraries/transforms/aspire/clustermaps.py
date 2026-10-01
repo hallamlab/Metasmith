@@ -28,6 +28,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {o}
         n=$(python {s}/upstream_layout.py mito --removed {context.Input(removed).container} --out mito.tsv)
         python {s}/upstream_layout.py labels --sheet {context.Input(study).container} \
@@ -46,6 +47,7 @@ def protocol(context: ExecutionContext):
                 --mito-sample-mode auto "${{extra[@]}}"
         done < labels.tsv
         rm -f labels.tsv md.tsv mito.tsv
+        rm -rf .cache
     """)
 
     return ExecutionResult(

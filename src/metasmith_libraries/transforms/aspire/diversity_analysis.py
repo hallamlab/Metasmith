@@ -25,6 +25,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {o}
         python {s}/calc_div.py --micro-table {context.Input(counts).container} --outdir {o}
         python {s}/upstream_layout.py labels --sheet {context.Input(survey).container} \
@@ -41,6 +42,7 @@ def protocol(context: ExecutionContext):
                 --random-state 42 --verbose
         done < labels.tsv
         rm -f labels.tsv md.tsv
+        rm -rf .cache
     """)
 
     return ExecutionResult(

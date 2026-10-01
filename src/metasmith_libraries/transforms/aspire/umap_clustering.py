@@ -21,6 +21,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {o}
         python {s}/upstream_layout.py labels --sheet {context.Input(survey).container} \
             --table {context.Input(am).container} --skipped {o}/skipped_labels.tsv > labels.tsv
@@ -34,6 +35,7 @@ def protocol(context: ExecutionContext):
                 --min-cluster-size 10 --min-samples 5 --hdbscan-metric euclidean --random-state 42
         done < labels.tsv
         rm -f labels.tsv am.tsv
+        rm -rf .cache
     """)
 
     return ExecutionResult(

@@ -28,7 +28,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
-        export MPLCONFIGDIR=$PWD/.mplconfig
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         python {s}/grouping_diagnostics.py --metadata {context.Input(md).container} \
             --asv-counts {context.Input(counts).container} --outdir {o} \
             --sample-col "{sid_col}" --group-cols "{','.join(labels)}" \
@@ -39,7 +39,7 @@ def protocol(context: ExecutionContext):
         cp {t}_assignments.tsv {outs[assign].container}
         cp {t}_validation.tsv {outs[valid].container}
         cp {t}_validation_summary.tsv {outs[vsum].container}
-        rm -rf .mplconfig
+        rm -rf .cache
     """)
 
     return ExecutionResult(

@@ -26,6 +26,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {iout.container}
         python {s}/measurement_association.py --asv-meta {context.Input(am).container} \
             --metadata {context.Input(md).container} --asv-counts {context.Input(counts).container} \
@@ -37,6 +38,7 @@ def protocol(context: ExecutionContext):
             --top-correlations 100 --correlation-direction both \
             --ordination-methods cca,rda,dbrda --permutations 999 --top-vectors 12 \
             --formats pdf,png,svg
+        rm -rf .cache
     """)
 
     return ExecutionResult(

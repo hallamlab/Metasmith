@@ -19,6 +19,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {iout.container}
         python {s}/upstream_layout.py labels --sheet {context.Input(study).container} \
             --table {context.Input(md).container} --skipped {iout.container}/skipped_labels.tsv > labels.tsv
@@ -31,6 +32,7 @@ def protocol(context: ExecutionContext):
                 --formats pdf,svg --xpad 0.5 --max-cols 3 --show-perms 10 --presence-threshold 0
         done < labels.tsv
         rm -f labels.tsv md.tsv
+        rm -rf .cache
     """)
 
     return ExecutionResult(

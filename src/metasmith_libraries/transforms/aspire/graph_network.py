@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
-        export MPLCONFIGDIR=$PWD/.mplconfig
+        export MPLCONFIGDIR=$PWD/.cache/mpl NUMBA_CACHE_DIR=$PWD/.cache/numba
         mkdir -p {o} isa
         cp {i[tables]}/*_indicator_species*_summary.tsv isa/ 2>/dev/null || true
         cp {i[nf]} {o}/spieceasi_node_features.csv
@@ -57,7 +57,8 @@ def protocol(context: ExecutionContext):
             --abundance-reference 5000 --abundance-reference-area 80 --abundance-min-area 8 \
             --abundance-max-area 420 --abundance-scale-power 1.6
         cd ..
-        rm -rf isa .mplconfig
+        rm -rf isa
+        rm -rf .cache
     """)
 
     return ExecutionResult(

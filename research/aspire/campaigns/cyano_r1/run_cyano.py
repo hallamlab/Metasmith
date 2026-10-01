@@ -52,6 +52,9 @@ RESOURCE_OVERRIDES = {
     "sina_trim": Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=6)),
     "taxonomy": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=6)),
     "indicspecies": Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=4)),
+    "spieceasi": Resources(cpus=8, memory=Size.GB(16), duration=Duration(hours=4)),
+    "network_modules": Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=2)),
+    "graph_network": Resources(cpus=2, memory=Size.GB(8), duration=Duration(hours=2)),
 }
 
 

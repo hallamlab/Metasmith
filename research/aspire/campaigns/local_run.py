@@ -102,8 +102,13 @@ def main():
         out = args.work / row
         shutil.rmtree(out, ignore_errors=True)
         os.environ["METASMITH_WORK_ROOT"] = str(out)
-        result = RunTransform(transform, lib, bindings(lib, transform), work_dir=out,
-                              agent_home=args.home, cpus=args.cpus, memory=args.memory)
+        try:
+            result = RunTransform(transform, lib, bindings(lib, transform), work_dir=out,
+                                  agent_home=args.home, cpus=args.cpus, memory=args.memory)
+        except Exception as e:
+            print(f"[{row}] raised {type(e).__name__}: {e}", flush=True)
+            failed.append(row)
+            continue
         for group in result.manifest:
             for dep, path in group.items():
                 produced[_dtype_of(lib, dep)] = str(path)
