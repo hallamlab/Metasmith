@@ -1,0 +1,63 @@
+types:
+  # The hybrid assembly pilot: one method from each school (graph resolution against polishing), scored against the source genomes.
+  # Each assembly carries every property of sequences::assembly, so standard assembly consumers take them.
+
+  long_read_platform:
+    properties:
+      _: the long reads' platform, which picks Flye's read mode (OXFORD_NANOPORE, OXFORD_NANOPORE_HQ, PACBIO_CLR, PACBIO_HIFI)
+      e5: long_read_platform
+      ext: json
+
+  flye_assembly:
+    properties:
+      _: metaFlye contigs from the long reads alone (long-read first)
+      e5: flye_assembly
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: assembler
+  polca_assembly:
+    properties:
+      _: the metaFlye contigs after POLCA with the sample's short reads, the end of the long-read-first lane
+      e5: polca_assembly
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: assembler
+  opera_ms_assembly:
+    properties:
+      _: OPERA-MS contigs, the MEGAHIT contigs scaffolded and gap-filled with the long reads, unpolished (short-read first)
+      e5: opera_ms_assembly
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: assembler
+
+  source_genomes:
+    properties:
+      _: the study's CAMI source genomes as CAMI ships them, one gzipped tarball of FASTAs
+      e5: source_genomes
+      ext: tar.gz
+  metaquast_report:
+    properties:
+      _: metaQUAST's combined and per-reference tables for one sample's assemblies side by side, as a gzipped tarball
+      e5: metaquast_report
+      ext: tar.gz
+  quast_report:
+    properties:
+      _: reference-free QUAST tables for one sample's assemblies side by side, as a gzipped tarball
+      e5: quast_report
+      ext: tar.gz
+
+  opera_ms.env:
+    properties:
+      e5: env
+      provides: [opera_ms]
+  masurca.env:
+    properties:
+      e5: env
+      provides: [polca]
+  quast.env:
+    properties:
+      e5: env
+      provides: [quast]
