@@ -35,6 +35,10 @@ SILVA = f"{REFS}/silva_138_2"
 SILVA_FILES = ("silva.arb", "silva_seqs.qza", "silva_tax.qza", "silva_nb_classifier.qza")
 IMAGE_STORE = os.environ.get("ASPIRE_IMAGE_STORE", SOCKEYE_IMAGE_STORE)
 CONTAINER = os.environ.get("ASPIRE_AGENT_CONTAINER", "docker://quay.io/hallamlab/metasmith:0.23.0")
+# The files a campaign with SpiecEasi switched off hands `spieceasi_external`.
+EXTERNAL_GRAPHS = {"network_all.graphml": "aspire::external_graph_all",
+                   "network_thr.graphml": "aspire::external_graph_thr",
+                   "node_features.csv": "aspire::external_node_features"}
 SWITCHES = ("spieceasi", "network_modules", "asv_mag_link", "graph_network")
 
 
@@ -65,6 +69,7 @@ class Campaign:
     contaminant_reference: str
     switches_on: set[str] = field(default_factory=set)
     mag_collection: str | None = None
+    external_graphs: str | None = None
     measurements: str | None = None
     resource_overrides: dict = field(default_factory=dict)
 
@@ -85,6 +90,8 @@ class Campaign:
         paths += [p for s in self.samples for p in (s.r1, s.r2)]
         if self.mag_collection:
             paths.append(f"{self.mag_collection}/Master_genome_QC.tsv")
+        if self.external_graphs:
+            paths += [f"{self.external_graphs}/{n}" for n in EXTERNAL_GRAPHS]
         return paths
 
 
@@ -128,6 +135,9 @@ def build_references(c: Campaign):
     lib.AddItem(c.contaminant_reference, "aspire::contaminant_reference_source")
     if c.mag_collection:
         lib.AddItem(c.mag_collection, "aspire::mag_collection")
+    if c.external_graphs:
+        for name, dtype in EXTERNAL_GRAPHS.items():
+            lib.AddItem(f"{c.external_graphs}/{name}", dtype)
     pin_external_leaf_ids(lib)
     lib.Save()
     return lib
@@ -150,7 +160,7 @@ def plan(c: Campaign, smith):
         got[g.dtype_name] = got.get(g.dtype_name, 0) + 1
     for dtype in ("sequences::read_metadata", "sequences::zipped_forward_short_reads",
                   "sequences::zipped_reverse_short_reads"):
-        if got.get(dtype) != n:
+        if got.get(dtype, n) != n:
             sys.exit(f"{dtype}: the plan carries {got.get(dtype, 0)}, the campaign has {n} samples")
     print(f"plan: {len(task.plan.steps)} steps over {n} samples, key={task.GetKey()}")
     return task

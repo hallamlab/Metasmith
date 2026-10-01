@@ -112,3 +112,11 @@ bound index 15, upper bound index 1). Plain StARS on the same path picks 60 edge
 instability 0.084. Lowering `lambda.min.ratio` from 0.1 to 0.01 leaves the bounded pick
 at one edge. The probes are in `cache/aspire/spieceasi_probe/`. The port keeps upstream's
 default. A non-trivial module test needs a larger study, which ab48_r1 provides.
+
+### The off arms, key ChuAixxj
+
+`run_cyano.py --off-arms` switches every network row off and hands `spieceasi_external`
+the Cc31JQoI run's SpiecEasi graphs from `external_graphs/`. It plans three steps, one per
+off arm, and all three succeed. The node features come out byte-identical to the file
+supplied. The module table is header-only. The graph output is an empty directory. The
+results were checked and deleted, not pinned.

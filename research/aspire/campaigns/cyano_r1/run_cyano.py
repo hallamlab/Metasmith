@@ -10,6 +10,11 @@
     python research/aspire/campaigns/cyano_r1/run_cyano.py status
     python research/aspire/campaigns/cyano_r1/run_cyano.py retrieve
     python research/aspire/campaigns/cyano_r1/run_cyano.py dag
+    python research/aspire/campaigns/cyano_r1/run_cyano.py --off-arms run
+
+`--off-arms` is the campaign `cyano_r1_off`: every network switch off, SpiecEasi's graphs
+supplied from `{ROOT}/external_graphs`, and the network products as its only targets. It
+proves the off arms, so its results are checked and not pinned.
 
 Every download runs on the login node, since compute nodes have no internet. Connect to
 sockeye through the awm ssh domain first; every ssh here rides that connection.
@@ -64,17 +69,22 @@ def samples():
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-def campaign(_args=None) -> Campaign:
+OFF_TARGETS = ["aspire::network_outputs", "aspire::network_node_features", "aspire::network_modules_sub"]
+
+
+def campaign(args=None) -> Campaign:
+    off = bool(args and args.off_arms)
     return Campaign(
-        name="cyano_r1", here=HERE, root=ROOT,
+        name="cyano_r1_off" if off else "cyano_r1", here=HERE, root=ROOT,
         samples=[Sample(s["sample"], f"{READS}/{s['sample']}_R1.fastq.gz",
                         f"{READS}/{s['sample']}_R2.fastq.gz") for s in samples()],
         study_sheet=(HERE / "study_metadata.tsv").read_text(),
         params=(HERE / "params.yml").read_text(),
-        targets=TARGETS,
+        targets=OFF_TARGETS if off else TARGETS,
         mito_reference=f"{REFS}/refseq_mitochondrion.fasta",
         contaminant_reference=f"{REFS}/contaminants.fasta",
-        switches_on={"spieceasi", "network_modules", "graph_network"},
+        switches_on=set() if off else {"spieceasi", "network_modules", "graph_network"},
+        external_graphs=f"{ROOT}/external_graphs" if off else None,
         resource_overrides=RESOURCE_OVERRIDES,
     )
 
@@ -113,4 +123,4 @@ def cmd_stage_refs(c, args):
 if __name__ == "__main__":
     raise SystemExit(main(__doc__, campaign, {
         "list": cmd_list, "stage-reads": cmd_stage_reads, "stage-refs": cmd_stage_refs,
-    }))
+    }, add_args=lambda ap: ap.add_argument("--off-arms", action="store_true")))
