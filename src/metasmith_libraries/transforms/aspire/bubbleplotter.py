@@ -1,7 +1,7 @@
 # bubbleplotter -- BUBBLEPLOTTER (asv_pipeline.nf:4018), once per label of the sample sheet
-# with at least two levels, at upstream's config defaults. The script facets by two columns;
-# the second is the next such label, or the label itself when it is the only one, as the
-# .nf's default `Month` names a column only the lung study has.
+# with at least two levels, at upstream's config defaults. The script's second facet column
+# is the next such label. A lone label gets none, as the .nf's default `Month` names a column
+# only the lung study has, and the script fails on a column it is given twice.
 
 from metasmith.python_api import *
 
@@ -27,10 +27,12 @@ def protocol(context: ExecutionContext):
             --table {context.Input(am).container} --skipped {o}/skipped_labels.tsv > labels.tsv
         while IFS=$'\\t' read -r L D L2; do
             mkdir -p {o}/$D
+            g2="$L2"
+            [ "$L2" = "$L" ] && g2=""
             python {s}/upstream_layout.py recolor --label "$L" {context.Input(am).container} am.tsv
             python {s}/bubbleplotter.py --input am.tsv --output-prefix {o}/$D/bubble_plot_asv \
                 --count-col count --sample-col "{sid_col}" --group1-col "$L" --color-col Color \
-                --group2-col "$L2" --no-auto-size --formats pdf,png,svg --figsize 32,60 \
+                --group2-col "$g2" --no-auto-size --formats pdf,png,svg --figsize 32,60 \
                 --bubble-scale 10
         done < labels.tsv
         rm -f labels.tsv am.tsv

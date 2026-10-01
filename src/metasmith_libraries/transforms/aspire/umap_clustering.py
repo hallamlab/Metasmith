@@ -1,7 +1,8 @@
 # umap_clustering -- UMAP_CLUSTERING (asv_pipeline.nf:4055), once per label of the sample
 # sheet with at least two levels, at upstream's config defaults. Reads the long-form table
-# only, as upstream does. The secondary column is the next such label, or the label itself
-# when it is the only one, as the .nf's default `Month` names a column only the lung study has.
+# only, as upstream does. The secondary column is the next such label. A lone label gets none,
+# as the .nf's default `Month` names a column only the lung study has, and the script fails
+# on a column it is given twice.
 
 from metasmith.python_api import *
 
@@ -27,10 +28,12 @@ def protocol(context: ExecutionContext):
             --table {context.Input(am).container} --skipped {o}/skipped_labels.tsv > labels.tsv
         while IFS=$'\\t' read -r L D L2; do
             mkdir -p {o}/$D
+            g2="$L2"
+            [ "$L2" = "$L" ] && g2=""
             python {s}/upstream_layout.py recolor --label "$L" {context.Input(am).container} am.tsv
             python {s}/umap_clustering.py --input am.tsv --output-prefix {o}/$D/umap_clustering \
                 --count-col count --sample-col "{sid_col}" --group1-col "$L" --color-col Color \
-                --group2-col "$L2" --formats pdf,png,svg --normalize clr --transform sqrt \
+                --group2-col "$g2" --formats pdf,png,svg --normalize clr --transform sqrt \
                 --n-neighbors 15 --min-dist 0.1 --umap-metric euclidean \
                 --min-cluster-size 10 --min-samples 5 --hdbscan-metric euclidean --random-state 42
         done < labels.tsv

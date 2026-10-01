@@ -22,7 +22,8 @@ MLIB = REPO / "src" / "metasmith_libraries"
 sys.path.insert(0, str(REPO / "src"))
 
 from metasmith.models.direct_run import RunTransform  # noqa: E402
-from metasmith.python_api import DataInstanceLibrary  # noqa: E402
+from metasmith.models.solver import Endpoint  # noqa: E402
+from metasmith.python_api import DataInstanceLibrary, TransformInstanceLibrary  # noqa: E402
 
 # The retrieved file names a campaign's results carry, by type. A survey slot takes the sheet
 # and an abundance slot the curated counts, as the planner wires them in an ASPIRE study.
@@ -61,10 +62,13 @@ def build_library(work: Path, src: Path, produced: dict[str, str]) -> DataInstan
     return lib
 
 
-def bindings(lib: DataInstanceLibrary, transform: Path) -> list[tuple[str, str]]:
-    from metasmith.python_api import TransformInstanceLibrary
+def _transform(transform: Path):
     tlib = TransformInstanceLibrary.ResolveParentLibrary(transform)
-    inst = tlib.GetTransform(transform.relative_to(Path(tlib.location).resolve()))
+    return tlib.GetTransform(transform.relative_to(Path(tlib.location).resolve()))
+
+
+def bindings(lib: DataInstanceLibrary, transform: Path) -> list[tuple[str, str]]:
+    inst = _transform(transform)
     by_props = {}
     for path, dtype in lib.manifest.items():
         by_props.setdefault(frozenset(lib.GetType(dtype).properties), []).append((dtype, path))
@@ -105,13 +109,17 @@ def main():
         try:
             result = RunTransform(transform, lib, bindings(lib, transform), work_dir=out,
                                   agent_home=args.home, cpus=args.cpus, memory=args.memory)
-        except Exception as e:
+        except (Exception, SystemExit) as e:
             print(f"[{row}] raised {type(e).__name__}: {e}", flush=True)
             failed.append(row)
             continue
-        for group in result.manifest:
-            for dep, path in group.items():
-                produced[_dtype_of(lib, dep)] = str(path)
+        # ExecuteStep hands back success alone; each product is named for its endpoint key.
+        for group in _transform(transform).model.produces:
+            for dep in group:
+                key = Endpoint(properties=set(dep.properties)).key
+                hits = list(out.glob(f"*-{key}"))
+                if hits:
+                    produced[_dtype_of(lib, dep)] = str(hits[0])
         ledger.write_text(json.dumps(produced, indent=1))
         print(f"[{row}] success={result.success}", flush=True)
         if not result.success:
