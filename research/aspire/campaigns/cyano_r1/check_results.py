@@ -84,9 +84,14 @@ def check_analyses(results: Path, samples: list[str]) -> list[str]:
     for asv in ("ASV1", "ASV2"):
         if asv not in set(nodes["Taxon"]):
             out.append(f"network: {asv} is not a SpiecEasi node")
-    if len(pd.read_csv(net / "spieceasi_modules_sub.tsv", sep="\t")) == 0:
-        out.append("network: no module assignments")
-    if not list(net.rglob("*.png")):
+    modules = pd.read_csv(net / "spieceasi_modules_sub.tsv", sep="\t")
+    if len(modules) != len(nodes):
+        out.append(f"network: {len(modules)} module assignments for {len(nodes)} nodes")
+    # Bounded StARS brackets the path inverted at 18 samples and keeps one edge (JOURNAL.md).
+    linked = int((nodes["Degree"] > 0).sum())
+    sizes = modules.groupby("module_id").size()
+    print(f"SpiecEasi: {len(nodes)} nodes, {linked} with an edge, largest module {sizes.max()} nodes")
+    if not list(net.glob("network_*.svg")):
         out.append("network: no rendered network")
     return out
 
@@ -119,10 +124,13 @@ def main():
     tax.index = [i.split(";")[0] for i in tax.index]
     phyla = tax["Taxon"].map(phylum)
     by_phylum = clean.groupby(phyla.reindex(clean.index).fillna("unassigned")).sum()
-    top = by_phylum.idxmax()
-    for sid, p in top.items():
-        if p != "Cyanobacteria":
-            failures.append(f"{sid}: top phylum is {p}, not Cyanobacteria")
+    # The study sequenced each culture's phycosphere, and in six samples its heterotrophs
+    # outweigh the cyanobacterium (JOURNAL.md), so the criterion is presence, not dominance.
+    cyano_share = by_phylum.loc["Cyanobacteria"] / by_phylum.sum() if "Cyanobacteria" in by_phylum.index \
+        else pd.Series(0.0, index=clean.columns)
+    for sid, share in cyano_share.items():
+        if share < 0.25:
+            failures.append(f"{sid}: Cyanobacteria is {share:.0%} of clean reads, under 25%")
 
     isa = product(results, "aspire::indicspecies_results")
     for kind in ("results", "summary"):

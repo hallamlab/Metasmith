@@ -87,3 +87,28 @@ preset's 1.0 and is unaffected. Fixing it is left for a housekeeping pass.
 
 `run_cyano.py dag` re-plans to the same key, `Jj2MGd10`, and draws the three views into
 `reports/`.
+
+## 2026-10-01 — every non-MAG analysis on sockeye, key Cc31JQoI
+
+The run targets the core tables and eleven analysis products. It ends with 76 tasks
+succeeded and none failed. `check_results.py` checks one property per analysis row and
+passes. Its results replace the 2026-09-28 pin.
+
+- Collector's curves saturate: one sample short of the full set, each culture is within
+  5% of its final ASV count.
+- Culture separates on Bray-Curtis: PERMANOVA pseudo-F 11.8, R² 0.42, p 0.002.
+- The mito reference is now RefSeq mitochondrion. It removes reads from ANA4, ANA6 and ANA8
+  only (69, 17 and 14), all one culture. The mito diversity row therefore judges each label
+  on the carrier samples, and skips `culture`.
+- `graph_network` needs two indicator overlays, as upstream's study has two labels. A lone
+  label is overlaid a second time as `<label>_twin`.
+
+### SpiecEasi keeps one edge at 18 samples
+
+The graph has 38 nodes and one edge (ASV39–ASV63). Every module but one is a singleton.
+The cause is upstream's default selection, not the port. `--pulsar-criterion bstars`
+turns on pulsar's gStARS bounds, and at 18 samples they bracket the path inverted (lower
+bound index 15, upper bound index 1). Plain StARS on the same path picks 60 edges at
+instability 0.084. Lowering `lambda.min.ratio` from 0.1 to 0.01 leaves the bounded pick
+at one edge. The probes are in `cache/aspire/spieceasi_probe/`. The port keeps upstream's
+default. A non-trivial module test needs a larger study, which ab48_r1 provides.
