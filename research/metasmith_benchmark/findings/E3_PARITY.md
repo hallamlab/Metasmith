@@ -4,7 +4,7 @@
 
 E3 replicates the viral half of Pratama 2026 on its 65 short-read runs and 17 hybrid pairs. It assembles every run, pools the viral calls of every assembly lane with each contig still marked by sample, curates and clusters the pool to vOTUs, and scores the result against the paper's 257,252 published vOTUs of at least 5 kb. The goal is to recover those vOTUs, not to re-run the paper's commands literally.
 
-This file compares each step of the paper with the plan `drivers/e3_pratama.py` solves to. It lists the heuristic values that plan depends on, the steps out of scope, and the open gaps. It holds findings only. The driver and `library/transforms/e3/` are the source of truth for the commands. The run history is in `R1_WAVES.md`, and the restore constraints are in `results/e3/RESUME.md`.
+This file compares each step of the paper with the plan `drivers/e3_pratama.py` solves to. It reports the recovery that plan reached on the full cohort, and lists the heuristic values it depends on, the steps out of scope and the open gaps. It holds findings only. The driver and `library/transforms/e3/` are the source of truth for the commands. The run history is in `R1_WAVES.md`, and the restore constraints are in `results/e3/RESUME.md`.
 
 The paper's authority, highest first:
 1. The authors' workflow files: `data/docs/pratama2026/Groundwater_virome/Workflows/MetaG_and_MAGs_bioinformatics.md` (MD below) and `Virus_bioinformatics.md` (VB below).
@@ -19,7 +19,7 @@ The solve has 34 steps. `page/dags/e3_pratama.dag.svg` draws it. The local plan 
 
 CAUTION: the plan binds 17 hybrid pairings only once each pairing has its own file on fir. Run `drivers/stage_hybrid_pairs.sh` on fir before a relaunch. The given library keys givens by path and resolves symlinks, so pairings that share a MinION file collapse to one given unless each is a separate hard link.
 
-A relaunch reuses wave 8's short-read assemblies and their geNomad and VIBRANT calls. It recomputes the hybrid assemblies, the VirSorter2 calls, the DeepVirFinder calls and every step from the merge onward.
+fir's task cache holds every step of wave e3_w9, so a relaunch of the same plan recomputes nothing. CAUTION: a cache hit needs the environment leaf ids the cache was written with, and those ids are local to the tree that compiled `resources/env/_metadata/index.yml`. Sync from a worktree carrying the env index of checkout `61c0eebc`. A fresh `-bm` mints new ids, and every task then misses the cache (`R1_WAVES.md` § HH).
 
 ## Decided differences
 
@@ -56,10 +56,59 @@ Status: **match** is the same command and settings. **version** is the same comm
 | Curation (Supp Fig 1) | keep if > 0 viral genes, or 0 viral and 0 host genes, or ≥ 75% unknown genes; CheckV host trimming; spot checks | `e3/curate_trim_batch_pratama.py:29-34` + `curate_merge_pratama.py` | differs | Gene counts come from CheckV's quality summary. A kept provirus enters as its trimmed region from `proviruses.fna`, every other kept contig whole from `viruses.fna`. No spot checks. The paper goes from 4,717,962 to 4,708,626 here. |
 | MMseqs2 (VB 50) | `easy-cluster --min-seq-id 0.95 -c 0.8` | `e3/mmseqs_votu_pratama.py:22` | match | Clusters the curated set. CAUTION: the Methods describe 80% coverage of the shorter sequence, but the workflow file's command uses cov-mode 0, which needs 80% of both. The command wins by the authority order. Under the Methods' wording a short call nested in a long one would cluster with it. |
 | vOTUs ≥ 5 kb | | `e3/votu_representatives_pratama.py:14` | match | |
-| Island filter (Methods) | drop vOTUs > 100 kb carrying transposon, LPS, endonuclease, integrase or plasmid-stability genes | `e3/genomad_island_annotate_pratama.py:18-36` + `island_filter_pratama.py:22-39` | match | The paper's categories, matched case-insensitively over geNomad's annotation columns. The paper removed 562. |
+| Island filter (Methods) | drop vOTUs > 100 kb carrying transposon, LPS, endonuclease, integrase or plasmid-stability genes | `e3/genomad_island_annotate_pratama.py:18-36` + `island_filter_pratama.py:22-39` | match | The paper's categories, matched case-insensitively over geNomad's annotation columns. The paper removed 562 of 637 vOTUs over 100 kb (88%). E3 removed 502 of 639 (79%). |
 | Recovery | | `S/viromics/pratama_votu_recovery.py:31-32`, `e3/final_votu_recovery_pratama.py:22-23` | | skani of the published vOTUs against the pooled set and against the final ≥ 5 kb set. |
 
 The published names carry sample, assembler and caller, so recovery can be scored per lane and per caller. By assembler, the published set holds 113,105 metaSPAdes, 112,924 MEGAHIT and 31,223 hybrid vOTUs. By caller, it holds 105,001 VIBRANT, 89,689 geNomad, 52,601 VirSorter2 and 9,961 DeepVirFinder vOTUs.
+
+## Recovery
+
+Wave e3_w9 ran the plan on all 65 runs and 17 hybrid pairs (`R1_WAVES.md` § HH). `results/e3/votu_recovery_curve.py` scores each skani table against the 257,252 published vOTUs, per lane and per caller. A published vOTU counts as recovered when a sequence matches it at or above the ANI and aligned-fraction cutoff. **Any** accepts a match from any run. **Same** accepts only a match from the run that the published name carries.
+
+Read one column per set:
+- For the pool, read **same**. Every call is still its own record there, so a vOTU's own sample can supply it.
+- For the final set, read **any**. MMseqs2 keeps one representative per cluster across all samples, so **same** falls as samples are added. It measures clustering, not recovery.
+
+| Set | ANI / AF | Any | Same |
+|---|---|---|---|
+| Pool | 90 / 30 | 99.2% | 96.5% |
+| Pool | 95 / 50 | 97.3% | 90.9% |
+| Pool | 95 / 85 | 82.1% | 67.6% |
+| Final ≥ 5 kb | 90 / 30 | 93.4% | 73.2% |
+| Final ≥ 5 kb | 95 / 50 | 91.4% | 69.7% |
+| Final ≥ 5 kb | 95 / 85 | 78.5% | 55.8% |
+
+By lane and caller at 95 / 85. The final set is a subset of the pool, so compare final **any** with pool **any**, never with pool **same**:
+
+| Published as | vOTUs | Pool, any | Pool, same | Final, any |
+|---|---|---|---|---|
+| hybrid metaSPAdes | 31,223 | 92.6% | 88.4% | 89.8% |
+| MEGAHIT | 112,924 | 85.4% | 74.7% | 81.8% |
+| metaSPAdes | 113,105 | 75.9% | 54.7% | 72.2% |
+| geNomad | 89,689 | 83.2% | 67.0% | 81.0% |
+| VIBRANT | 105,001 | 82.3% | 69.7% | 77.6% |
+| VirSorter2 | 52,601 | 80.0% | 64.4% | 76.1% |
+| DeepVirFinder | 9,961 | 81.1% | 66.3% | 77.8% |
+
+The callers score within 6 points of each other. The lanes do not. Short-read metaSPAdes trails MEGAHIT in both years, and most in 2019. Pool same-sample recovery, per sample, with the vOTU-weighted figure in brackets:
+- 2019 metaSPAdes: 32–49% (42%). 2019 MEGAHIT, from the same reads: 59–81% (75%).
+- 2022 metaSPAdes: 57–91% (66%). 2022 MEGAHIT: 68–82% (75%).
+- Hybrid metaSPAdes: 79–92% (88%).
+
+2019 MEGAHIT runs on the same sample keys and scores like 2022, so the 2019 metaSPAdes shortfall is not a key mismatch in scoring. `results/e3/votu_recovery_by_sample.py` gives these figures per sample and lane. The shortfall is not a smaller assembly either. Per run, the median 2019 metaSPAdes assembly holds 134 Mbp in contigs of at least 5 kb, against 118 Mbp in 2022 and 142 Mbp for 2019 MEGAHIT (`results/e3/assembly_size.py`). Even pool **any** is low for 2019 metaSPAdes (68% against 83% in 2022), so many of those published vOTUs match no E3 sequence. The 2019 runs come from an earlier study of the same site (the paper's ref. 57) and were sequenced on a NextSeq 500, the 2022 runs on a NovaSeq 6000. The cause is open (see Open gaps).
+
+Stage counts, against Supp Fig 1:
+
+| Stage | Paper | E3 |
+|---|---|---|
+| Identified contigs | 4,717,962 | 7,552,829 calls |
+| After the keep rules | 4,708,626 | 7,102,468 |
+| vOTUs | 2,412,499 (≥ 1 kb) | 4,018,877 (no length floor) |
+| vOTUs ≥ 5 kb | 257,814 | 243,688 |
+| Island filter removes | 562 of 637 over 100 kb | 502 of 639 |
+| Final vOTUs ≥ 5 kb | 257,252 | 243,186 |
+
+The final set is 94.5% the size of the published one. The upstream rows do not compare directly. E3 counts one record per caller call, and Supp Fig 1 does not say whether its "identified contigs" count calls or contigs. The paper's vOTU count has a 1 kb floor and E3's has none. With that caveat, E3's pool is 1.6 times the paper's, and its keep rules drop 6.0% against the paper's 0.2%. The paper states 562 removed. Its 637 is 562 plus the 75 published vOTUs over 100 kb.
 
 ## Tool versions
 
@@ -105,13 +154,17 @@ These size tasks and do not change the results. Where one does, the scientific t
 - Callers run on 240 Mbp contig batches (`S/logistics/splitContigsForAmr.py:10`, `e3/split_hybrid_contigs_pratama.py:15`), and CheckV on 500 Mbp slices of the pool. The paper runs each on the whole set.
 - CAUTION: geNomad's score calibration estimates the composition of each input file, so a 240 Mbp batch can shift a borderline geNomad score slightly. The other callers score each contig on its own.
 - Declared cpus, GB and hours live in each transform's resources. The largest are metaSPAdes 48/192/24 and hybrid 48/384/20.
-- The driver scales MEGAHIT past its declaration to 32/128/12 (`drivers/e3_pratama.py:42-44`).
-- Each retry doubles memory and time (`drivers/_common.py:398-399`). Time clamps at 24 h (`:315`), except 36 h for metaSPAdes and hybrid (`:321-326`). Memory clamps at 192 GB for scaled steps only (`:335`).
-- Nextflow runs 4 tries, arrays of 25 and a queue of 500 (`drivers/e3_pratama.py:216`).
+- `SCALED` overrides the first attempt of 12 steps (`drivers/e3_pratama.py:47-60`). Each entry is sized to the sacct MaxRSS and wall of waves 1–8 and e3_w9.
+- Each retry doubles memory and time (`drivers/_common.py:410-411`). Time clamps at 24 h (`:327`), except 36 h for metaSPAdes and hybrid (`:333-338`).
+- Memory clamps at 192 GB for `SCALED` steps only (`:347`), except 768 GB for hybrid (`:354-356`). A step outside `SCALED` doubles its declared memory without a cap.
+- Nextflow runs 4 tries, arrays of 25 and a queue of 500 (`drivers/e3_pratama.py:236`).
+- CAUTION: DeepVirFinder at its memory cap hangs instead of exiting. At 16 GB, 12 tasks sat at the cap for 5 h 59 min on about 15 min of cpu, then ended OUT_OF_MEMORY (11) or FAILED (1). Each 32 GB retry finished within an hour.
+- CAUTION: MMseqs2 sizes its k-mer table from the node's RAM, not the Slurm grant, so it does not split under a grant. It fails with OOM instead. Its 128 GB retry peaked at 116 GiB, so the grant fits only by margin. `--split-memory-limit` in `e3/mmseqs_votu_pratama.py` is the real fix.
 
 ## Open gaps
 
 | Gap | What closing it takes |
 |---|---|
-| No recovery number | Stage the hybrid pairs on fir, relaunch, and score both recovery tables per lane and per caller. |
+| 2019 metaSPAdes recovery | Find why 2019 metaSPAdes recovers 42% same-sample in the pool against 66% in 2022 and 75% for 2019 MEGAHIT. Check whether the paper reused ref. 57's 2019 assemblies, and whether NextSeq poly-G tails survive bbduk. Then compare the published 2019 metaSPAdes vOTUs with our contigs directly: length, ANI and aligned fraction of their best hits. |
+| Pool size and keep-rule drop | Find why E3 pools 7.55 M calls against the paper's 4.72 M, and why its keep rules drop 6.0% against 0.2%. Count the pool per caller and per length class first. |
 | Curation spot checks | None. The paper's six example contigs illustrate figures and are not a sample. |
