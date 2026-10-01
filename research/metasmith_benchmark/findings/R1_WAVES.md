@@ -2673,7 +2673,7 @@ compiled `resources/env/_metadata/index.yml` differed. The fix copied that index
 `61c0eebc` into the syncing worktree. CAUTION: until the engine keys environments by content, any
 relaunch that must reuse this cache needs that env index in the tree it syncs from.
 
-**Pre-launch review** (commits `0de8d108`, `85f49722`):
+**Pre-launch review.** Two fixes landed as commits `0de8d108` and `85f49722`, and one reporting rule was set:
 - `spades_pratama` left `IN_PLACE_STEPS`. Its in-place work dir is about 120 GB per sample, about
   10 TB at 65 runs against 8.2 TB free.
 - Hybrid metaSPAdes joined `SCALED` at (48, 384, 36) with a 768 GB `LARGE_MEMORY_STEPS` cap. Its
@@ -2689,9 +2689,9 @@ All 17 hybrid assemblies finished without a retry, the longest in about 16 h.
 
 | Failed | Count | Cause | Fix for the next wave |
 |---|---|---|---|
-| `deepvirfinder_pratama` | 12 | TIMEOUT at 6 h. MaxRSS 16.8 GB at the 16 GiB cap with 14 min of cpu in 5.3 h: a memory stall, not an OOM. Each 32 GB retry finished in under 1 h. | `SCALED` (8, 32, 6) |
-| `pratama_votu_recovery` (pool) | 1 | OOM at 32 GB. MaxRSS 60.7 GB on the 64 GB retry. | `SCALED` (8, 128, 4) |
-| `mmseqs_votu_pratama` | 1 | OOM at 64 GB in linclust's kmermatcher. MMseqs2 sizes its table from node RAM, not the grant. MaxRSS 121.6 GB on the 128 GB retry. | `SCALED` (16, 128, 6) |
+| `deepvirfinder_pratama` | 12 | Hung at the 16 GiB cap (MaxRSS 16.0 GiB) for 5 h 59 min on about 15 min of cpu, then ended OUT_OF_MEMORY (11) or FAILED (1). Each 32 GB retry finished within an hour. | `SCALED` (8, 32, 6) |
+| `pratama_votu_recovery` (pool) | 1 | OOM at 32 GB. MaxRSS 58 GiB on the 64 GB retry. | `SCALED` (8, 128, 4) |
+| `mmseqs_votu_pratama` | 1 | OOM at 64 GB in linclust's kmermatcher. MMseqs2 sizes its table from node RAM, not the grant. MaxRSS 116 GiB on the 128 GB retry. | `SCALED` (16, 128, 6), and `--split-memory-limit` still to add |
 
 `merge_candidate_calls_pratama` did not fail, but sat at its 16 GiB cap for 1 h 37 min. `SCALED` now
 gives it 32 GB.

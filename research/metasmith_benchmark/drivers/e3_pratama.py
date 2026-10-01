@@ -39,7 +39,7 @@ EXPECTED_HYBRIDS = 17
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml")] + [c.LIBRARY / "data_types" / "e3.yml"]
 
 # First-attempt (cpus, GB, hours); retries double memory and time. Sized to the MaxRSS and wall that
-# sacct recorded for waves 1-8 (September 2026), so the first grant covers p90 and the doubled one the
+# sacct recorded for waves 1-8 and e3_w9 (September 2026), so the first grant covers p90 and the doubled one the
 # tail. CAUTION bbduk's -Xmx and MEGAHIT's --memory follow the grant, so their RSS measures the grant,
 # not the need. Their sizes come from spanish-lakes, whose bbduk ran at 2 cpus / 32 GB and MEGAHIT at
 # 8 / 32 on every sample. Short-read metaSPAdes keeps its declaration: 40 of 65 assemblies failed at
@@ -48,15 +48,15 @@ SCALED = {
     "seqkit_reads": (2, 4, 1),              # MaxRSS 1.5 GB
     "bbduk_pratama": (4, 16, 2),
     "megahit": (16, 64, 12),
-    "deepvirfinder_pratama": (8, 32, 6),    # 16 GB stalls at the cap on 240 Mbp batches, no OOM
+    "deepvirfinder_pratama": (8, 32, 6),    # 12 of ~1,070 hung 6 h at a 16 GiB cap
     "vibrant_pratama": (8, 16, 4),          # MaxRSS 7.3 GB, 0.8 h
     "virsorter2_pratama": (8, 16, 8),       # MaxRSS 5.0 GB, 4.7 h
     "genomad_pratama": (8, 16, 6),          # MaxRSS 11.3 GB, 2.2 h at 16 cpus
     "genomad_island_annotate_pratama": (8, 32, 6),  # OOM at 16 GB: mmseqs prefilter loads the whole DB
     "spades_hybrid_pratama": (48, 384, 36),  # its declaration, capped at LARGE_MEMORY_STEPS' 768 GB
     "merge_candidate_calls_pratama": (4, 32, 4),  # 65 runs sat at a 16 GB cap for 1.6 h
-    "pratama_votu_recovery": (8, 128, 4),   # 65 runs: OOM at 32 GB, MaxRSS 60.7 GB at 64
-    "mmseqs_votu_pratama": (16, 128, 6),    # 65 runs: OOM at 64 GB, MaxRSS 121.6 GB at 128
+    "pratama_votu_recovery": (8, 128, 4),   # 65 runs: OOM at 32 GB, MaxRSS 58 GiB at 64
+    "mmseqs_votu_pratama": (16, 128, 6),    # 65 runs: OOM at 64 GB, MaxRSS 116 GiB at 128
 }
 
 # The standard transforms each E3 library transform replaces, by library.

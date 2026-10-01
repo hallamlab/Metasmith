@@ -78,36 +78,37 @@ Read one column per set:
 | Final ≥ 5 kb | 95 / 50 | 91.4% | 69.7% |
 | Final ≥ 5 kb | 95 / 85 | 78.5% | 55.8% |
 
-By lane and caller at 95 / 85, the headline columns:
+By lane and caller at 95 / 85. The final set is a subset of the pool, so compare final **any** with pool **any**, never with pool **same**:
 
-| Published as | vOTUs | Pool, same | Final, any |
-|---|---|---|---|
-| hybrid metaSPAdes | 31,223 | 88.4% | 89.8% |
-| MEGAHIT | 112,924 | 74.7% | 81.8% |
-| metaSPAdes | 113,105 | 54.7% | 72.2% |
-| geNomad | 89,689 | 67.0% | 81.0% |
-| VIBRANT | 105,001 | 69.7% | 77.6% |
-| VirSorter2 | 52,601 | 64.4% | 76.1% |
-| DeepVirFinder | 9,961 | 66.3% | 77.8% |
+| Published as | vOTUs | Pool, any | Pool, same | Final, any |
+|---|---|---|---|---|
+| hybrid metaSPAdes | 31,223 | 92.6% | 88.4% | 89.8% |
+| MEGAHIT | 112,924 | 85.4% | 74.7% | 81.8% |
+| metaSPAdes | 113,105 | 75.9% | 54.7% | 72.2% |
+| geNomad | 89,689 | 83.2% | 67.0% | 81.0% |
+| VIBRANT | 105,001 | 82.3% | 69.7% | 77.6% |
+| VirSorter2 | 52,601 | 80.0% | 64.4% | 76.1% |
+| DeepVirFinder | 9,961 | 81.1% | 66.3% | 77.8% |
 
-The callers score within 6 points of each other. The lanes do not. The short-read metaSPAdes lane is the gap, and it is a 2019 effect:
-- 2019 metaSPAdes reaches 32–49% same-sample recovery in the pool, per sample (42% overall).
-- 2019 MEGAHIT, assembled from the same reads, reaches 59–81% (75%).
-- 2022 metaSPAdes reaches 57–91% (66%), and hybrid metaSPAdes 79–92% (88%).
+The callers score within 6 points of each other. The lanes do not. Short-read metaSPAdes trails MEGAHIT in both years, and most in 2019. Pool same-sample recovery, per sample, with the vOTU-weighted figure in brackets:
+- 2019 metaSPAdes: 32–49% (42%). 2019 MEGAHIT, from the same reads: 59–81% (75%).
+- 2022 metaSPAdes: 57–91% (66%). 2022 MEGAHIT: 68–82% (75%).
+- Hybrid metaSPAdes: 79–92% (88%).
 
-A sample's missing vOTUs match its biological neighbours instead: the other replicates of the same well and filter, then the same well in the other year. That rules out a sample-key mismatch in scoring (`results/e3/votu_recovery_by_sample.py`). The cause is open (see Open gaps). It is not a smaller 2019 assembly. Per run, the median 2019 metaSPAdes assembly holds 134 Mbp in contigs of at least 5 kb against 118 Mbp in 2022, at N50 375 against 385 (`results/e3/assembly_size.py`). Even the any-sample column is low for 2019 metaSPAdes (68% against 83% in 2022), so many of those published vOTUs match no E3 sequence at all.
+2019 MEGAHIT runs on the same sample keys and scores like 2022, so the 2019 metaSPAdes shortfall is not a key mismatch in scoring. `results/e3/votu_recovery_by_sample.py` gives these figures per sample and lane. The shortfall is not a smaller assembly either. Per run, the median 2019 metaSPAdes assembly holds 134 Mbp in contigs of at least 5 kb, against 118 Mbp in 2022 and 142 Mbp for 2019 MEGAHIT (`results/e3/assembly_size.py`). Even pool **any** is low for 2019 metaSPAdes (68% against 83% in 2022), so many of those published vOTUs match no E3 sequence. The 2019 runs come from an earlier study of the same site (the paper's ref. 57) and were sequenced on a NextSeq 500, the 2022 runs on a NovaSeq 6000. The cause is open (see Open gaps).
 
 Stage counts, against Supp Fig 1:
 
 | Stage | Paper | E3 |
 |---|---|---|
-| Identified contigs | 4,717,962 | 7,552,829 |
+| Identified contigs | 4,717,962 | 7,552,829 calls |
 | After the keep rules | 4,708,626 | 7,102,468 |
 | vOTUs | 2,412,499 (≥ 1 kb) | 4,018,877 (no length floor) |
 | vOTUs ≥ 5 kb | 257,814 | 243,688 |
-| After the island filter | 257,252 | 243,186 |
+| Island filter removes | 562 of 637 over 100 kb | 502 of 639 |
+| Final vOTUs ≥ 5 kb | 257,252 | 243,186 |
 
-The final set is 94.5% the size of the published one. E3's pool is 1.6 times the paper's, and its keep rules drop 6.0% against the paper's 0.2%. The upstream counts do not compare directly, because the paper's vOTU count has a 1 kb floor and E3's has none.
+The final set is 94.5% the size of the published one. The upstream rows do not compare directly. E3 counts one record per caller call, and Supp Fig 1 does not say whether its "identified contigs" count calls or contigs. The paper's vOTU count has a 1 kb floor and E3's has none. With that caveat, E3's pool is 1.6 times the paper's, and its keep rules drop 6.0% against the paper's 0.2%. The paper states 562 removed. Its 637 is 562 plus the 75 published vOTUs over 100 kb.
 
 ## Tool versions
 
@@ -157,13 +158,13 @@ These size tasks and do not change the results. Where one does, the scientific t
 - Each retry doubles memory and time (`drivers/_common.py:410-411`). Time clamps at 24 h (`:327`), except 36 h for metaSPAdes and hybrid (`:333-338`).
 - Memory clamps at 192 GB for `SCALED` steps only (`:347`), except 768 GB for hybrid (`:354-356`). A step outside `SCALED` doubles its declared memory without a cap.
 - Nextflow runs 4 tries, arrays of 25 and a queue of 500 (`drivers/e3_pratama.py:236`).
-- CAUTION: DeepVirFinder at its memory cap stalls instead of dying of OOM. At 16 GB it ran 5.3 h on 14 min of cpu and hit the time limit, so its TIMEOUT is a memory failure.
-- CAUTION: MMseqs2 sizes its k-mer table from the node's RAM, not the Slurm grant, so it does not split under a grant. It fails with OOM instead. `--split-memory-limit` in `e3/mmseqs_votu_pratama.py` would bound it, and `SCALED` grants 128 GB until then.
+- CAUTION: DeepVirFinder at its memory cap hangs instead of exiting. At 16 GB, 12 tasks sat at the cap for 5 h 59 min on about 15 min of cpu, then ended OUT_OF_MEMORY (11) or FAILED (1). Each 32 GB retry finished within an hour.
+- CAUTION: MMseqs2 sizes its k-mer table from the node's RAM, not the Slurm grant, so it does not split under a grant. It fails with OOM instead. Its 128 GB retry peaked at 116 GiB, so the grant fits only by margin. `--split-memory-limit` in `e3/mmseqs_votu_pratama.py` is the real fix.
 
 ## Open gaps
 
 | Gap | What closing it takes |
 |---|---|
-| 2019 metaSPAdes recovery | Find why 2019 metaSPAdes recovers 42% same-sample against 66% in 2022 and 75% for 2019 MEGAHIT. Our 2019 assemblies are not smaller, so compare the published 2019 metaSPAdes vOTUs with our contigs directly: length, ANI and aligned fraction of their best hits. |
+| 2019 metaSPAdes recovery | Find why 2019 metaSPAdes recovers 42% same-sample in the pool against 66% in 2022 and 75% for 2019 MEGAHIT. Check whether the paper reused ref. 57's 2019 assemblies, and whether NextSeq poly-G tails survive bbduk. Then compare the published 2019 metaSPAdes vOTUs with our contigs directly: length, ANI and aligned fraction of their best hits. |
 | Pool size and keep-rule drop | Find why E3 pools 7.55 M calls against the paper's 4.72 M, and why its keep rules drop 6.0% against 0.2%. Count the pool per caller and per length class first. |
 | Curation spot checks | None. The paper's six example contigs illustrate figures and are not a sample. |
