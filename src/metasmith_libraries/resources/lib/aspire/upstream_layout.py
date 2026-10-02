@@ -22,7 +22,9 @@ and records the rest with a reason. A label needs at least two non-empty levels,
 --keep-samples when it is given.
 
 `recolor` rewrites a table's Color column for another label, since upstream's scripts read
-one group-to-colour mapping and the metadata carries the first label's.
+one group-to-colour mapping and the metadata carries the first label's. plot_diversity.py
+cannot colour an empty group, so diversity drops the samples a label leaves empty and takes
+a secondary label only when it is complete over the rest.
 
 `blank` applies analysis.min_level_size afterwards: a label value held by fewer samples is
 emptied in the tables the analyses read, so each analysis skips that level and keeps the
@@ -170,10 +172,15 @@ def cmd_labels(args):
 
 def cmd_recolor(args):
     table = pd.read_csv(args.table, sep="\t", dtype=str, keep_default_na=False)
+    if args.drop_unlabelled:
+        table = table.loc[table[args.label] != ""]
     levels = sorted(v for v in table[args.label].unique() if v)
     colors = {lvl: PALETTE[i % len(PALETTE)] for i, lvl in enumerate(levels)}
     table["Color"] = table[args.label].map(colors).fillna("#d3d3d3")
     table.to_csv(args.out, sep="\t", index=False)
+    if args.secondary and args.secondary != args.label and args.secondary in table.columns \
+            and (table[args.secondary] != "").all():
+        print(args.secondary)
 
 
 def cmd_blank(args):
@@ -223,6 +230,9 @@ def main():
                    help="a table whose first column lists the samples to judge the labels on")
     p = sub.add_parser("recolor")
     p.add_argument("--label", required=True)
+    p.add_argument("--drop-unlabelled", action="store_true", help="drop rows with an empty --label")
+    p.add_argument("--secondary", default=None,
+                   help="print this label back when every kept row has a value for it")
     p.add_argument("table", type=Path)
     p.add_argument("out", type=Path)
     p = sub.add_parser("blank")

@@ -4,6 +4,9 @@
 # then upstream's network, clustermap and link tables.
 #
 # Upstream wrote the anchor table into the network directory, so it is staged there again.
+# The script names a table's columns by its path below a directory named for its source, and
+# clustermaps writes one clustermap_ASV_ID_plot.tsv per label, so the clustermaps are staged
+# under `clustermaps` to keep the label in the name. Without it two labels' columns collide.
 
 from metasmith.python_api import *
 
@@ -50,14 +53,15 @@ def protocol(context: ExecutionContext):
         set -euo pipefail
         cp -r --no-preserve=mode {context.Input(net).container} spieceasi
         cp {context.Input(anchors).container} spieceasi/module_asv_anchor_table.tsv
+        ln -s {context.Input(cmaps).container} clustermaps
         isa=$(cd {ind} && ls *_indicator_species_summary.tsv *_indicator_species_results.tsv 2>/dev/null | paste -sd, -) || true
         python {s}/build_master_asv_summary.py --asv-meta {context.Input(am).container} \
             --asv-counts {context.Input(counts).container} \
-            --clustermaps-dir {context.Input(cmaps).container} --indicspecies-dir {ind} \
+            --clustermaps-dir clustermaps --indicspecies-dir {ind} \
             --spieceasi-dir spieceasi --asv-mag-dir {context.Input(magl).container} \
             --whitelist "${{isa:+$isa,}}{WHITELIST}" --outdir res --max-direct-cols 300
         {copies}
-        rm -rf res spieceasi
+        rm -rf res spieceasi clustermaps
     """)
 
     return ExecutionResult(

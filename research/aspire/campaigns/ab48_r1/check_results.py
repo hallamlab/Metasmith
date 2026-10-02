@@ -2,12 +2,12 @@
 """Check a retrieved AB48 run against its acceptance criteria.
 
     python research/aspire/campaigns/ab48_r1/run_ab48.py --study ab48_e5 fetch-intermediates \\
-        aspire::asv_filtered_seqs aspire::asv_mag_outputs aspire::module_asv_anchor_table
-    python research/aspire/campaigns/ab48_r1/check_results.py [--name ab48_e5_r1]
+        filter_table asv_mag_link module_mag_anchors
+    python research/aspire/campaigns/ab48_r1/check_results.py --intermediates DIR [--results DIR]
 
-The results come from data/aspire/<name>, the intermediates from cache/aspire/<name>/intermediates,
-and the July DADA2 lane's per-cohort ASVs and contig map from --july. Prints every failure and
-exits non-zero if there is one.
+The results default to data/aspire/<name>. The intermediates are the directory
+fetch-intermediates printed, one subdirectory per transform. The July DADA2 lane's per-cohort
+ASVs and contig map come from --july. Prints every failure and exits non-zero if there is one.
 
 The independent BLAST runs blastn from the aspire image over the linker's own barrnap catalogue,
 so it re-derives the pairing rule rather than the 16S extraction.
@@ -25,19 +25,31 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[3]
 sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE))
 from _campaign import aspire_image  # noqa: E402
+from run_ab48 import ANALYSES  # noqa: E402
 
-AB48 = Path("/home/tony/agentic_workspace/projects/cyanoverse/ab48/data/revio/bins")
 SODALINEMA = "1-15-"
 MIN_PIDENT, MIN_QCOV = 97.0, 90.0
 TOP = 10
 
 
+class Missing(Exception):
+    pass
+
+
 def product(root: Path, dtype: str) -> Path:
     hits = sorted((root / dtype.replace("::", "-")).glob("*"))
     if not hits:
-        sys.exit(f"FAIL {dtype}: absent under {root}")
+        raise Missing(f"{dtype} absent under {root}")
     return hits[0]
+
+
+def step_output(inter: Path, transform: str, pattern: str, header: str = "") -> Path:
+    for p in sorted((inter / transform).glob(pattern)):
+        if not header or (p.is_file() and open(p).readline().startswith(header)):
+            return p
+    raise Missing(f"{transform}: no [{pattern}] output starting [{header}] under {inter}")
 
 
 def read_fasta(path: Path) -> dict[str, str]:
@@ -86,37 +98,40 @@ def independent_candidates(seqs: Path, magl: Path, work: Path) -> dict[str, set[
     return cands
 
 
-def contig_bins() -> dict[str, str]:
-    """ABC- is the revio assembly's prefix in the July contig map; the bins drop it."""
-    with open(AB48 / "cluster_table.tsv") as f:
-        centroids = [r["bin_id"] for r in csv.DictReader(f, delimiter="\t") if r["is_centroid_95"] == "1"]
-    out = {}
-    for b in centroids:
-        with open(AB48 / "quality" / f"{b}.fna") as f:
-            for line in f:
-                if line.startswith(">"):
-                    out[f"ABC-{line[1:].split()[0]}"] = b.lower()
-    return out
+def rrna_loci(magl: Path) -> dict[str, list[tuple[int, int, str]]]:
+    """The 16S loci barrnap called, by contig as the July map names it (the revio assembly's
+    contigs carry an ABC- prefix there and none in the bins)."""
+    loci: dict[str, list[tuple[int, int, str]]] = {}
+    with open(magl / "references" / "barrnap_16s_reference_catalog.tsv") as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            loci.setdefault(f"ABC-{r['seq_id']}", []).append((int(r["start"]), int(r["end"]), r["genome_id"]))
+    return loci
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="ab48_e5_r1")
+    ap.add_argument("--results", type=Path)
+    ap.add_argument("--intermediates", type=Path, required=True)
     ap.add_argument("--july", type=Path, default=REPO / "cache" / "aspire" / "t10_mags" / "july")
     args = ap.parse_args()
-    results = REPO / "data" / "aspire" / args.name
-    inter = REPO / "cache" / "aspire" / args.name / "intermediates"
+    results = (args.results or REPO / "data" / "aspire" / args.name).resolve()
+    inter = args.intermediates.resolve()
     fails: list[str] = []
+
+    for dtype in ANALYSES:
+        if not list((results / dtype.replace("::", "-")).glob("*")):
+            fails.append(f"{dtype}: no product, so its step failed or never ran")
 
     clean = pd.read_csv(product(results, "aspire::counts_clean"), sep="\t", index_col=0)
     tax = pd.read_csv(product(results, "amplicon::asv_taxonomy"), sep="\t", index_col=0)
     tax.index = [i.split(";")[0] for i in tax.index]
     taxon = tax["Taxon"].reindex(clean.index).fillna("")
     totals = clean.sum(axis=1).sort_values(ascending=False)
-    seqs_path = product(inter, "aspire::asv_filtered_seqs")
+    seqs_path = step_output(inter, "filter_table", "*.fasta.gz")
     seqs = read_fasta(seqs_path)
     pairing = pd.read_csv(product(results, "aspire::asv_mag_pairing"), sep="\t", dtype=str).set_index("ASV_ID")
-    magl = product(inter, "aspire::asv_mag_outputs")
+    magl = next(p for p in (inter / "asv_mag_link").iterdir() if p.is_dir())
     print(f"{clean.shape[1]} samples, {len(clean)} curated ASVs, "
           f"{pairing['pairing_status'].value_counts().to_dict()} over {len(pairing)} filtered ASVs")
 
@@ -146,15 +161,26 @@ def main():
           f"{len(disagree)} disagreements")
     fails += [f"pairing: {d}" for d in disagree[:20]]
 
-    # 3. The July contig map agrees: an ASV whose sequence hit a binned contig pairs with that bin.
+    # 3. The July contig map agrees: an ASV whose sequence lies inside a binned 16S gene pairs
+    # with that bin. A July hit outside every 16S locus is an off-target amplicon of genomic DNA,
+    # which the linker rightly cannot pair, since it pairs through 16S genes only.
     cohort = next(args.july.iterdir())
     july = read_fasta(next((cohort / "asv_seqs").glob("*")))
-    bins_of = contig_bins()
+    loci = rrna_loci(magl)
     july_bins: dict[str, set[str]] = {}
+    off_target = set()
     for line in open(next((cohort / "asv_contig_map").glob("*"))):
-        q, contig, pident, length = line.split("\t")[:4]
-        if float(pident) == 100.0 and int(length) == len(july[q]) and contig in bins_of:
-            july_bins.setdefault(q, set()).add(bins_of[contig])
+        q, contig, pident, length, *_, s0, s1 = line.split("\t")[:10]
+        if float(pident) != 100.0 or int(length) != len(july[q]):
+            continue
+        lo, hi = sorted((int(s0), int(s1)))
+        inside = {g for a, b, g in loci.get(contig, []) if a <= lo and hi <= b}
+        if inside:
+            july_bins.setdefault(q, set()).update(inside)
+        elif contig.startswith("ABC-"):
+            off_target.add(q)
+    print(f"July contig map: {len(off_target - july_bins.keys())} July ASVs hit the revio assembly "
+          f"outside every 16S locus")
     checked = 0
     for q, bins in july_bins.items():
         for asv, s in seqs.items():
@@ -163,7 +189,7 @@ def main():
                 mine = cands.get(asv, set())
                 if not bins & mine:
                     fails.append(f"July {q} hits {sorted(bins)}; its match {asv} pairs with {sorted(mine) or 'nothing'}")
-    print(f"July contig map: {len(july_bins)} July ASVs on a binned contig, {checked} port ASVs checked against them")
+    print(f"July contig map: {len(july_bins)} July ASVs inside a binned 16S gene, {checked} port ASVs checked against them")
     if not checked:
         fails.append("no port ASV shares a sequence with a July ASV on a binned contig")
 
@@ -204,20 +230,22 @@ def main():
     # 7. The MAG network, the anchors and the master summary carry real pairs.
     mnet = product(results, "aspire::asv_mag_network_outputs")
     accepted = pd.read_csv(mnet / "mapping" / "asv_mag_network_accepted_mappings.tsv", sep="\t")
-    anchors = pd.read_csv(product(inter, "aspire::module_asv_anchor_table"), sep="\t")
-    long = pd.read_csv(product(results, "aspire::master_long"), sep="\t", dtype=str,
-                       usecols=["ASV_ID", "asv_mag_link__asv2mag_pairing__pairing_status"])
-    paired_long = long.loc[long["asv_mag_link__asv2mag_pairing__pairing_status"].str.startswith("paired", na=False),
-                           "ASV_ID"].nunique()
-    print(f"MAG network: {len(accepted)} accepted ASV-MAG mappings; anchors: "
-          f"{int(anchors['has_mag_pair'].astype(str).eq('True').sum())} module ASVs with a MAG pair; "
-          f"master summary: {paired_long} paired ASVs")
+    anchors = pd.read_csv(step_output(inter, "module_mag_anchors", "*.tsv", "Taxon\tmodule_id"), sep="\t")
+    n_anchor = int(anchors["has_mag_pair"].astype(str).eq("True").sum())
+    print(f"MAG network: {len(accepted)} accepted ASV-MAG mappings; anchors: {n_anchor} module ASVs with a MAG pair")
     if accepted.empty:
         fails.append("asv_mag_network: no accepted mapping")
-    if not anchors["has_mag_pair"].astype(str).eq("True").any():
+    if not n_anchor:
         fails.append("module_mag_anchors: no module ASV has a MAG pair")
-    if not paired_long:
-        fails.append("master_summary: no ASV carries a pairing")
+    if list((results / "aspire-master_long").glob("*")):
+        path = product(results, "aspire::master_long")
+        col = next(c for c in open(path).readline().rstrip("\n").split("\t")
+                   if c.startswith("asv_mag_link__") and c.endswith("asv2mag_pairing__pairing_status"))
+        long = pd.read_csv(path, sep="\t", dtype=str, usecols=["ASV_ID", col])
+        paired = long.loc[long[col].str.startswith("paired", na=False), "ASV_ID"].nunique()
+        print(f"master summary: {paired} paired ASVs")
+        if not paired:
+            fails.append("master_summary: no ASV carries a pairing")
 
     for f in fails:
         print(f"FAIL {f}")

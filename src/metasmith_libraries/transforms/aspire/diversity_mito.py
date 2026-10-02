@@ -40,9 +40,10 @@ def protocol(context: ExecutionContext):
             --table {context.Input(md).container} --skipped {o}/skipped_labels.tsv \
             --keep-samples {o}/shannon.mito.tsv > labels.tsv
         while IFS=$'\\t' read -r L D L2; do
+            L2=$(python {s}/upstream_layout.py recolor --label "$L" --drop-unlabelled --secondary "$L2" \
+                {context.Input(md).container} md.tsv)
             sec=()
-            [ "$L2" != "$L" ] && sec=(--secondary-col "$L2")
-            python {s}/upstream_layout.py recolor --label "$L" {context.Input(md).container} md.tsv
+            [ -n "$L2" ] && sec=(--secondary-col "$L2")
             python {s}/plot_diversity.py --metadata md.tsv --sample-col "{sid_col}" \
                 --group-col "$L" --color-col Color "${{sec[@]}}" \
                 --alpha-table {o}/shannon.mito.tsv --distance-bray {o}/bray.mito.tsv \

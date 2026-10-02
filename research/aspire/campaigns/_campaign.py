@@ -290,32 +290,22 @@ def cmd_retrieve(c: Campaign, _):
     return 0
 
 
-def intermediate_key(dtype: str) -> str:
-    from metasmith.models.solver import Endpoint
-    lib = DataInstanceLibrary(Path(os.environ.get("TMPDIR", "/tmp")) / "aspire_types.xgdb")
-    lib.Purge()
-    for t in ("aspire.yml", "amplicon.yml", "sequences.yml", "binning_local.yml"):
-        lib.AddTypeLibrary(MLIB / "data_types" / t)
-    key = Endpoint(properties=set(lib.GetType(dtype).properties)).key
-    lib.Purge()
-    return key
-
-
 # A product the plan does not target never reaches the results directory. Its producer's
-# work directory holds the real file; every consumer's holds a symlink to it.
+# work directory holds the real files; every consumer's holds symlinks to them. A workflow
+# names a product by a key the plan assigns, not the type's, so the step is found by name.
 def cmd_fetch_intermediates(c: Campaign, args):
-    smith = agent(c)
-    task = plan(c, smith)
-    work = f"{c.agent_home}/runs/{task.GetKey()}/nxf_work"
-    dest = c.work / "intermediates"
-    for dtype in args.dtypes:
-        key = intermediate_key(dtype)
-        hits = ssh_once(HOST, f"find {work} -mindepth 3 -maxdepth 3 -name '*-{key}*' ! -type l").split()
-        assert len(hits) == 1, f"[{dtype}] want one producer copy under {work}, found {hits}"
-        out = dest / dtype.replace("::", "-")
+    key = args.key or plan(c, agent(c)).GetKey()
+    run = f"{c.agent_home}/runs/{key}"
+    dest = c.work / f"intermediates_{key}"
+    for t in args.transforms:
+        rows = ssh_once(HOST, f"tail -q -n +2 $(ls -d {run}/_metasmith/logs.2* | tail -1)/nxf_tasks.csv"
+                              f" | awk -F, '$4 ~ /^p[0-9]+__{t}(_cached)? / && $5 == \"COMPLETED\" {{print $2}}'").split()
+        assert len(rows) == 1, f"[{t}] want one completed task in {run}, found {rows}"
+        out = dest / t
         out.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["rsync", "-a", f"{HOST}:{hits[0]}", f"{out}/"], check=True)
-        print(f"{dtype}: {out / Path(hits[0]).name}")
+        subprocess.run(["rsync", "-a", "--no-links", "--exclude", ".*",
+                        f"{HOST}:{run}/nxf_work/{rows[0]}*/", f"{out}/"], check=True)
+        print(f"{t}: {out}")
     return 0
 
 
@@ -349,6 +339,7 @@ def main(doc: str, make_campaign, extra: dict | None = None, add_args=None):
         if name == "run":
             p.add_argument("--plan-only", action="store_true")
         if name == "fetch-intermediates":
-            p.add_argument("dtypes", nargs="+", help="e.g. aspire::asv_filtered_seqs")
+            p.add_argument("transforms", nargs="+", help="transform names, e.g. filter_table")
+            p.add_argument("--key", help="a run planned from an earlier tree, instead of re-planning")
     args = ap.parse_args()
     return commands[args.cmd](make_campaign(args), args)
