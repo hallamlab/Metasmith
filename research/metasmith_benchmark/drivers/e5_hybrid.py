@@ -4,7 +4,8 @@
   short first  MEGAHIT on the short reads, then OPERA-MS scaffolds and gap-fills its contigs with the long reads
   long first   metaFlye on the long reads, then POLCA corrects it with the short reads
 
-Short reads take E5's QC (bbduk on Pratama's settings); long reads go in raw, as Pratama's do. QUAST
+Short reads take bbduk: on JGI's settings for CAMI (the standard library's, Clum et al. 2021), on
+Pratama's own for Pratama. Long reads go in raw, as Pratama's do. QUAST
 scores every sample's four assemblies (MEGAHIT, OPERA-MS, Flye, Flye + POLCA) without references, and
 metaQUAST scores the CAMI samples' against their study's source genomes as well. The samples are a
 seeded 10% of every long-read set that shares its samples with a short-read set, rounded to the
@@ -49,7 +50,7 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml"
 SCALED = {
     # metaQUAST indexes the whole study's genomes once per assembly, in parallel: plant's fungi and
     # toy_humangut's human genome put that past 64 GB.
-    "cami": {"bbduk_pratama": (4, 16, 2), "megahit": (16, 64, 12), "metaquast": (16, 128, 12)},
+    "cami": {"bbduk": (4, 16, 2), "megahit": (16, 64, 12), "metaquast": (16, 128, 12)},
     # Pratama's MinION runs hold 6.4 to 12.9 Gbp, against 1 to 3 for a CAMI long-read sample.
     "pratama": {"bbduk_pratama": (4, 16, 2), "megahit": (16, 64, 12), "flye": (16, 128, 24)},
 }
@@ -121,10 +122,14 @@ def declare_givens(smith, by_study, cache_dir, ensure):
     return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
 
 
-def build_transforms():
-    qc = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3").AsView({Path("bbduk_pratama.py")})
-    megahit = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "assembly").AsView({Path("megahit.py")})
-    return [qc, megahit, TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5")]
+# CAMI II's simulator scatters Q3 bases through every short read, so Pratama's `qtrim=rl trimq=20` keeps 14% of them.
+def build_transforms(corpus):
+    assembly = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "assembly")
+    if corpus == "cami":
+        qc = [assembly.AsView({Path("seqkit_reads.py"), Path("bbduk.py")})]
+    else:
+        qc = [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3").AsView({Path("bbduk_pratama.py")})]
+    return qc + [assembly.AsView({Path("megahit.py")}), TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5")]
 
 
 def build_targets(corpus, opera_only):
@@ -155,7 +160,7 @@ def solve(args):
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5")],
-        transforms=build_transforms(),
+        transforms=build_transforms(corpus),
         targets=build_targets(corpus, args.opera_only),
     )
     genomes = 0 if args.opera_only else sum(1 for s in by_study if s in STUDIES)
