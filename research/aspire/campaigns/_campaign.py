@@ -240,7 +240,8 @@ def cmd_side_load_images(c: Campaign, _):
 
 def cmd_check_refs(c: Campaign, _):
     wanted = c.remote_inputs()
-    out = ssh_once(HOST, "; ".join(f'[ -s {p} ] || echo "MISSING {p}"' for p in wanted))
+    out = "".join(ssh_once(HOST, "; ".join(f'[ -s {p} ] || echo "MISSING {p}"' for p in wanted[i:i + 200]))
+                  for i in range(0, len(wanted), 200))
     missing = [ln for ln in out.splitlines() if ln.startswith("MISSING")]
     print("\n".join(missing) if missing else f"all {len(wanted)} inputs present on {HOST}")
     return 1 if missing else 0
