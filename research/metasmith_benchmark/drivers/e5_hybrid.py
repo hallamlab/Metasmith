@@ -11,7 +11,7 @@ seeded 10% of every long-read set that shares its samples with a short-read set,
 nearest sample and at least one, as E1's control subset rounds: six sets, 19 samples. The corpus
 picks the agent home: CAMI's five sets in one, Pratama's hybrid pairings in the other.
 
-Subcommands: list, import --corpus C, run --corpus C [--dag] [--stage-only | --launch | --materialise] [--import] [--tag] [--opera-only].
+Subcommands: list, import --corpus C, run --corpus C [--dag] [--stage-only | --launch | --materialise] [--import] [--tag] [--opera-only] [--clear].
 """
 
 import argparse
@@ -167,7 +167,8 @@ def solve(args):
         tag = args.tag or f"e5_hybrid_{corpus}" + ("_opera" if args.opera_only else "")
         c.stage_and_run(smith, task, cache_dir, tag, stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=100), process=dict(tries=3)),
-                        scaled=SCALED[corpus], materialise=args.materialise)
+                        scaled=SCALED[corpus], materialise=args.materialise,
+                        on_exist="clear" if args.clear else "update")
 
 
 def cmd_list(args):
@@ -193,7 +194,7 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--corpus", required=True, choices=("cami", "pratama"))
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False, opera_only=False)
+                       import_givens=False, opera_only=False, clear=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/")
             mode = p.add_mutually_exclusive_group()
@@ -201,6 +202,8 @@ def main():
             mode.add_argument("--launch", action="store_true")
             mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
+            p.add_argument("--clear", action="store_true",
+                           help="restage from scratch, which a protocol-only transform edit needs; deletes the run's logs")
             p.add_argument("--opera-only", action="store_true",
                            help="target the OPERA-MS assemblies alone, beside a full run that is still going")
             p.add_argument("--import", dest="import_givens", action="store_true",

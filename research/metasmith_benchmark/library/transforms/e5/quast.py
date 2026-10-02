@@ -17,7 +17,7 @@ LABELS = {"megahit": megahit, "opera_ms": opera, "flye": flye, "flye_polca": pol
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     threads = context.params.get("cpus") or 4
-    fastas = " ".join(context.Input(r).container for r in LABELS.values())
+    fastas = " ".join(str(context.Input(r).container) for r in LABELS.values())
 
     context.ExecWithEnv(env=image, cmd=f"""
         quast.py {fastas} -l {",".join(LABELS)} -o q -t {threads} --no-icarus --no-plots --no-html

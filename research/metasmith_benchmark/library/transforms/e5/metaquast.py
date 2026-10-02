@@ -21,7 +21,7 @@ LABELS = {"megahit": megahit, "opera_ms": opera, "flye": flye, "flye_polca": pol
 def protocol(context: ExecutionContext):
     igenomes, iout = context.Input(genomes), context.Output(out)
     threads = context.params.get("cpus") or 4
-    fastas = " ".join(context.Input(r).container for r in LABELS.values())
+    fastas = " ".join(str(context.Input(r).container) for r in LABELS.values())
 
     # One reference per genome FASTA, wherever the tarball nests it. --fragmented because CAMI's source
     # genomes are drafts: a contig spanning two pieces of a draft is not a misassembly. --max-ref-number 0
