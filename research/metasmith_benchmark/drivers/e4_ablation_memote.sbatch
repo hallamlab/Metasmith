@@ -6,6 +6,10 @@
 #
 #   sbatch --array=1-<n> e4_ablation_memote.sbatch <work> <images dir> <memote_score.py> [block|retry]
 #
+# With REWRITE_IMAGE (a CarveMe 1.6.6 image) and REWRITE (sbml_rewrite.py) set, each model is first
+# rewritten through CarveMe 1.6.6's SBML writer and the rewrite is scored. The task tar then also holds
+# <source>/<bin>.rewrite.json and <source>/<bin>.rewritten.xml.gz. A failed rewrite is exit rewrite:<code>.
+#
 # CAUTION a task killed at its time limit packs what it scored so far, on the USR1 that --signal sends.
 #SBATCH --account=rpp-shallam
 #SBATCH --cpus-per-task=8
@@ -15,7 +19,7 @@
 #SBATCH --output=/scratch/phyberos/bench/logs/e4_ablation_memote.%A_%a.out
 set -euo pipefail
 
-export WORK="$1" IMAGES="$2" SCORE="$3"
+export WORK="$1" IMAGES="$2" SCORE="$3" REWRITE_IMAGE="${REWRITE_IMAGE:-}" REWRITE="${REWRITE:-}"
 KIND="${4:-block}"
 NAME="${KIND}_$(printf %02d "$SLURM_ARRAY_TASK_ID")"
 export T="${SLURM_TMPDIR:-/tmp}/e4m.$NAME"
@@ -28,6 +32,19 @@ score_one() {
     local src="$1" bin="$2" start=$SECONDS rc=0
     mkdir -p "$T/out/$src" "$T/run/$src.$bin"
     gunzip -c "$T/in/$src/$bin.xml.gz" > "$T/run/$src.$bin/model.xml"
+    if [ -n "$REWRITE_IMAGE" ]; then
+        mv "$T/run/$src.$bin/model.xml" "$T/run/$src.$bin/built.xml"
+        apptainer exec --cleanenv --env "PYTHONNOUSERSITE=1,HOME=$T/home" -B "$T,$(dirname "$REWRITE")" \
+            --pwd "$T/run/$src.$bin" "$REWRITE_IMAGE" python "$REWRITE" "$T/run/$src.$bin/built.xml" \
+            "$T/run/$src.$bin/model.xml" "$T/out/$src/$bin.rewrite.json" > "$T/run/$src.$bin/log" 2>&1 || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            tail -5 "$T/run/$src.$bin/log" | sed "s|^|$src/$bin: |"
+            rm -r "$T/run/$src.$bin"
+            printf '%s\t%s\trewrite:%s\t%s\n' "$src" "$bin" "$rc" "$((SECONDS - start))" >> "$T/out/status.tsv"
+            return
+        fi
+        gzip -c "$T/run/$src.$bin/model.xml" > "$T/out/$src/$bin.rewritten.xml.gz"
+    fi
     timeout "$MODEL_TIMEOUT" apptainer exec --cleanenv --env "PYTHONNOUSERSITE=1,HOME=$T/home" \
         -B "$T,$(dirname "$SCORE")" --pwd "$T/run/$src.$bin" "$IMAGES/memote_017.sif" \
         python "$SCORE" "$T/run/$src.$bin/model.xml" "$T/run/$src.$bin/report.html" \
