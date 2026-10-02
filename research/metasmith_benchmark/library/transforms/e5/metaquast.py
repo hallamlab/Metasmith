@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
         echo "references: $(ls refs | wc -l)"
         metaquast.py {fastas} -l {",".join(LABELS)} -r refs -o mq -t {threads} --fragmented --max-ref-number 0 \
             --no-icarus --no-plots --no-html
-        if grep -rl --include=quast.log "Failed aligning" mq; then exit 1; fi
+        if grep -q "Failed aligning" mq/combined_reference/quast.log; then exit 1; fi
         cd mq && tar czf {iout.container} $(ls -d combined_reference/*.tsv summary/TSV \
             runs_per_reference/*/report.tsv not_aligned/report.tsv metaquast.log 2>/dev/null)
     """)
