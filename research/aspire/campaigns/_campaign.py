@@ -298,8 +298,8 @@ def cmd_fetch_intermediates(c: Campaign, args):
     run = f"{c.agent_home}/runs/{key}"
     dest = c.work / f"intermediates_{key}"
     for t in args.transforms:
-        rows = ssh_once(HOST, f"tail -q -n +2 $(ls -d {run}/_metasmith/logs.2* | tail -1)/nxf_tasks.csv"
-                              f" | awk -F, '$4 ~ /^p[0-9]+__{t}(_cached)? / && $5 == \"COMPLETED\" {{print $2}}'").split()
+        rows = ssh_once(HOST, f"tail -q -n +2 $(ls -d {run}/_metasmith/logs.2* | tail -1)/nxf_trace.tsv"
+                              f" | awk -F'\\t' '$4 ~ /^p[0-9]+__{t}(_cached)? / && $5 == \"COMPLETED\" {{print $2}}'").split()
         assert len(rows) == 1, f"[{t}] want one completed task in {run}, found {rows}"
         out = dest / t
         out.mkdir(parents=True, exist_ok=True)
