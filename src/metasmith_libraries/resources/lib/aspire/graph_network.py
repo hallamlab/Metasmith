@@ -192,10 +192,11 @@ def natural_sort_key(value: object) -> Tuple:
     for part in parts:
         if not part:
             continue
+        # metasmith port: tagged, so a number and a word at one position compare instead of raising.
         if part.isdigit():
-            out.append(int(part))
+            out.append((0, int(part)))
         else:
-            out.append(part.lower())
+            out.append((1, part.lower()))
     return tuple(out)
 
 
