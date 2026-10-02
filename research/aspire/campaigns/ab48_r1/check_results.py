@@ -27,7 +27,7 @@ REPO = HERE.parents[3]
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from _campaign import aspire_image  # noqa: E402
-from run_ab48 import ANALYSES  # noqa: E402
+from run_ab48 import AB48_COHORTS, ANALYSES  # noqa: E402
 
 SODALINEMA = "1-15-"
 MIN_PIDENT, MIN_QCOV = 97.0, 90.0
@@ -108,6 +108,21 @@ def rrna_loci(magl: Path) -> dict[str, list[tuple[int, int, str]]]:
     return loci
 
 
+def load_july(root: Path, cohorts: list[str]):
+    """The July lane ran one DADA2 workflow per cohort. Its ASV ids are md5 sums of the
+    sequence, so the cohorts merge on id."""
+    seqs, totals, tax, hits = {}, [], [], []
+    for c in cohorts:
+        d = root / c
+        seqs.update(read_fasta(next((d / "asv_seqs").glob("*"))))
+        totals.append(pd.read_csv(next((d / "asv_table").glob("*")), sep="\t", index_col=0).sum(axis=1))
+        tax.append(pd.read_csv(next((d / "asv_taxonomy").glob("*")), sep="\t", index_col=0)["Taxon"])
+        hits += open(next((d / "asv_contig_map").glob("*"))).read().splitlines()
+    total = pd.concat(totals).groupby(level=0).sum().sort_values(ascending=False)
+    taxon = pd.concat(tax).groupby(level=0).first()
+    return seqs, total, taxon, hits
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="ab48_e5_r1")
@@ -164,12 +179,12 @@ def main():
     # 3. The July contig map agrees: an ASV whose sequence lies inside a binned 16S gene pairs
     # with that bin. A July hit outside every 16S locus is an off-target amplicon of genomic DNA,
     # which the linker rightly cannot pair, since it pairs through 16S genes only.
-    cohort = next(args.july.iterdir())
-    july = read_fasta(next((cohort / "asv_seqs").glob("*")))
+    cohorts = AB48_COHORTS if args.name.startswith("ab48_r1") else ["lab_25-07-23_Enrichment5"]
+    july, july_tot, july_tax, july_hits = load_july(args.july, cohorts)
     loci = rrna_loci(magl)
     july_bins: dict[str, set[str]] = {}
     off_target = set()
-    for line in open(next((cohort / "asv_contig_map").glob("*"))):
+    for line in july_hits:
         q, contig, pident, length, *_, s0, s1 = line.split("\t")[:10]
         if float(pident) != 100.0 or int(length) != len(july[q]):
             continue
@@ -194,16 +209,13 @@ def main():
         fails.append("no port ASV shares a sequence with a July ASV on a binned contig")
 
     # 4. The dominant ASVs are the July lane's dominant ASVs, and the dominant genera agree.
-    july_tab = pd.read_csv(next((cohort / "asv_table").glob("*")), sep="\t", index_col=0, comment=None)
-    july_tot = july_tab.sum(axis=1).sort_values(ascending=False)
     july_top = [july[q] for q in july_tot.index[:3 * TOP] if q in july]
     unmatched = [a for a in totals.index[:TOP] if not any(related(seqs[a], j) for j in july_top)]
     print(f"top {TOP} ASVs: {TOP - len(unmatched)} match one of the July lane's top {3 * TOP} by sequence")
     if len(unmatched) > TOP // 5:
         fails.append(f"top ASVs with no July counterpart: {unmatched}")
-    july_tax = pd.read_csv(next((cohort / "asv_taxonomy").glob("*")), sep="\t", index_col=0)["Taxon"]
     port_genera = clean.groupby(taxon.map(genus)).sum().sum(axis=1).drop("unassigned", errors="ignore")
-    july_genera = july_tab.groupby(july_tax.reindex(july_tab.index).fillna("").map(genus)).sum().sum(axis=1)
+    july_genera = july_tot.groupby(july_tax.reindex(july_tot.index).fillna("").map(genus)).sum()
     july_genera = july_genera.drop("unassigned", errors="ignore")
     pg, jg = list(port_genera.nlargest(5).index), list(july_genera.nlargest(5).index)
     print(f"top genera: port {pg}, July {jg}")
