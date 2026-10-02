@@ -1,0 +1,210 @@
+<title>E5 Hybrid Pilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; each metric is a table with lanes as columns, grouped by school, the adopted lane tinted. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --fg: #1d2523;
+  --muted: #5b6a66;
+  --rule: #d5dcd9;
+  --accent: #0f6b5c;
+  --adopt: #e3f0ec;
+  --best: #0f6b5c;
+  --warn: #8a5a12;
+  --warn-bg: #f7eedd;
+  --display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121816; --surface: #19211f; --fg: #e2e9e6; --muted: #98a7a2; --rule: #2e3a37;
+    --accent: #5fc4ae; --adopt: #1d3530; --best: #7fd8c3; --warn: #e3b46a; --warn-bg: #33291a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121816; --surface: #19211f; --fg: #e2e9e6; --muted: #98a7a2; --rule: #2e3a37;
+  --accent: #5fc4ae; --adopt: #1d3530; --best: #7fd8c3; --warn: #e3b46a; --warn-bg: #33291a;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--body); }
+main { max-width: 52rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: grid; gap: 40px; }
+h1, h2 { font-family: var(--display); font-weight: 650; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 2.1rem; line-height: 1.15; }
+h2 { font-size: 1.35rem; }
+p { margin: 0; max-width: 65ch; }
+section { display: grid; gap: 14px; min-width: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+header { display: grid; gap: 14px; }
+.decision { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; font-size: 1.05rem; }
+.decision strong { color: var(--accent); }
+.note { color: var(--muted); font-size: 0.9rem; }
+.caution { background: var(--warn-bg); color: var(--fg); padding: 12px 16px; border-radius: 4px; font-size: 0.92rem; max-width: none; }
+.caution b { color: var(--warn); font: 600 0.75rem/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; margin-right: 6px; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+th, td { padding: 7px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+th:first-child, td:first-child { text-align: left; }
+thead th { font: 500 0.78rem/1.3 var(--body); color: var(--muted); vertical-align: bottom; }
+thead tr.school th { font: 500 0.7rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.07em; border-bottom: none; padding-top: 10px; text-align: center; }
+tbody tr:last-child td { border-bottom: none; }
+td { font-family: var(--mono); font-size: 0.85rem; }
+td:first-child { font-family: var(--body); font-size: 0.9rem; }
+.adopt { background: var(--adopt); }
+.best { color: var(--best); font-weight: 600; }
+.na { color: var(--muted); }
+td.sub { color: var(--muted); font-family: var(--body); font-size: 0.82rem; padding-left: 24px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
+dt { font-weight: 600; }
+dd { margin: 0; min-width: 0; }
+ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; max-width: 65ch; }
+.refs { font-size: 0.85rem; color: var(--muted); display: grid; gap: 6px; }
+.refs a { color: var(--accent); word-break: break-all; }
+@media (max-width: 560px) { dl { grid-template-columns: 1fr; gap: 2px 0; } dd { margin-bottom: 8px; } h1 { font-size: 1.7rem; } }
+</style>
+
+<main>
+  <header>
+    <span class="eyebrow">metasmith benchmark · E5 · 19 samples · 2026-10-02</span>
+    <h1>E5 hybrid pilot: graph resolution against polishing</h1>
+    <p class="decision">E5 adopts <strong>MEGAHIT → OPERA-MS</strong>. It holds the most sequence in long contigs on CAMI's PacBio sets, is the cheapest hybrid lane on every CAMI dataset, and stays within 3 points of the best recovery everywhere.</p>
+    <p class="caution"><b>Caution</b>Pratama, the one real Nanopore dataset, favours polishing: Flye + POLCA costs 45 CPU-hours against 88 for OPERA-MS, with an N50 of 26.7 kb against 4.3 kb. Re-test the choice when E5 runs Pratama at scale.</p>
+    <p class="note">Medians per dataset. CAMI is scored by metaQUAST against the genomes present in each sample. Pratama has no references, so only its contiguity and cost are measured. The tinted column is the adopted lane. Bold marks the best lane in each row.</p>
+  </header>
+
+  <section>
+    <h2>Contiguity</h2>
+    <p>Sequence in contigs of 50 kb or more, in Mb. Flye fragments on CAMI's simulated PacBio CLR reads. OPERA-MS gains over MEGAHIT everywhere.</p>
+    <div class="scroll"><table>
+      <thead>
+        <tr class="school"><th></th><th colspan="2">Graph resolution</th><th colspan="2">Polishing</th></tr>
+        <tr><th>Dataset</th><th>MEGAHIT</th><th class="adopt">OPERA-MS</th><th>Flye</th><th>Flye + POLCA</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>marine PacBio</td><td>19.7</td><td class="adopt best">41.8</td><td>0.0</td><td>0.0</td></tr>
+        <tr><td>plant PacBio</td><td>25.4</td><td class="adopt best">37.1</td><td>0.9</td><td>0.9</td></tr>
+        <tr><td>strain PacBio</td><td>4.2</td><td class="adopt best">7.8</td><td>0.2</td><td>0.2</td></tr>
+        <tr><td>plant Nanopore</td><td>26.6</td><td class="adopt">49.3</td><td class="best">64.6</td><td>64.3</td></tr>
+        <tr><td>toy humangut Nanopore</td><td>66.4</td><td class="adopt best">107.2</td><td>101.8</td><td>101.6</td></tr>
+        <tr><td>Pratama Nanopore</td><td>14.1</td><td class="adopt">93.4</td><td class="best">125.4</td><td>125.2</td></tr>
+      </tbody>
+    </table></div>
+    <p>NA50 against the sample's genomes. Pratama's row is N50.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Dataset</th><th>MEGAHIT</th><th class="adopt">OPERA-MS</th><th>Flye</th><th>Flye + POLCA</th></tr></thead>
+      <tbody>
+        <tr><td>marine PacBio</td><td>1.6 kb</td><td class="adopt best">7.2 kb</td><td>4.3 kb</td><td>4.2 kb</td></tr>
+        <tr><td>plant PacBio</td><td>3.4 kb</td><td class="adopt best">15.8 kb</td><td>4.3 kb</td><td>4.3 kb</td></tr>
+        <tr><td>strain PacBio</td><td>4.4 kb</td><td class="adopt best">8.4 kb</td><td>4.5 kb</td><td>4.5 kb</td></tr>
+        <tr><td>plant Nanopore</td><td>3.3 kb</td><td class="adopt">20.2 kb</td><td class="best">91.8 kb</td><td class="best">91.8 kb</td></tr>
+        <tr><td>toy humangut Nanopore</td><td>14.9 kb</td><td class="adopt">66.0 kb</td><td class="best">69.2 kb</td><td>69.0 kb</td></tr>
+        <tr><td>Pratama Nanopore (N50)</td><td>1.5 kb</td><td class="adopt">4.3 kb</td><td class="best">26.8 kb</td><td>26.7 kb</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Recovery</h2>
+    <p>Mean genome fraction over the genomes present in the sample, in percent. The ceiling is the sample's own gold-standard assembly, which no assembly of that sample can beat.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Dataset</th><th>Ceiling</th><th>MEGAHIT</th><th class="adopt">OPERA-MS</th><th>Flye</th><th>Flye + POLCA</th></tr></thead>
+      <tbody>
+        <tr><td>marine PacBio</td><td class="na">60.0</td><td>21.1</td><td class="adopt best">21.9</td><td>9.5</td><td>9.5</td></tr>
+        <tr><td>plant PacBio</td><td class="na">31–38</td><td>10.0</td><td class="adopt best">10.2</td><td>5.5</td><td>5.5</td></tr>
+        <tr><td>plant Nanopore</td><td class="na">34–36</td><td>10.6</td><td class="adopt best">11.1</td><td>9.8</td><td>9.9</td></tr>
+        <tr><td>toy humangut Nanopore</td><td class="na">46–54</td><td>37.1</td><td class="adopt best">38.5</td><td>31.3</td><td>31.2</td></tr>
+        <tr><td>strain PacBio</td><td class="na">26–34</td><td class="na">(58.0)</td><td class="adopt na">(67.5)</td><td class="na">(81.2)</td><td class="na">(81.9)</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Strain recovery exceeds its ceiling because metaQUAST credits a contig to every near-identical sibling strain it matches. Strain recovery and strain error rates are not used.</p>
+  </section>
+
+  <section>
+    <h2>Error rate</h2>
+    <p>Mismatches and indels per 100 kb aligned, pooled over metaQUAST's per-reference runs. Misassemblies per Mb aligned.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Dataset</th><th>MEGAHIT</th><th class="adopt">OPERA-MS</th><th>Flye</th><th>Flye + POLCA</th></tr></thead>
+      <tbody>
+        <tr><td>marine PacBio</td><td></td><td class="adopt"></td><td></td><td></td></tr>
+        <tr><td class="sub">mismatches</td><td>1,112</td><td class="adopt">1,454</td><td>674</td><td class="best">649</td></tr>
+        <tr><td class="sub">indels</td><td class="best">15</td><td class="adopt">604</td><td>2,251</td><td>1,665</td></tr>
+        <tr><td class="sub">misassemblies</td><td>35.1</td><td class="adopt">30.0</td><td class="best">0.4</td><td class="best">0.4</td></tr>
+        <tr><td>plant PacBio</td><td></td><td class="adopt"></td><td></td><td></td></tr>
+        <tr><td class="sub">mismatches</td><td>887</td><td class="adopt">1,145</td><td>460</td><td class="best">458</td></tr>
+        <tr><td class="sub">indels</td><td class="best">17</td><td class="adopt">482</td><td>1,996</td><td>1,644</td></tr>
+        <tr><td class="sub">misassemblies</td><td>20.7</td><td class="adopt">18.1</td><td class="best">0.3</td><td class="best">0.3</td></tr>
+        <tr><td>plant Nanopore</td><td></td><td class="adopt"></td><td></td><td></td></tr>
+        <tr><td class="sub">mismatches</td><td class="best">908</td><td class="adopt">1,614</td><td>1,279</td><td>1,291</td></tr>
+        <tr><td class="sub">indels</td><td class="best">20</td><td class="adopt">651</td><td>1,208</td><td>601</td></tr>
+        <tr><td class="sub">misassemblies</td><td>20.1</td><td class="adopt">19.1</td><td class="best">3.9</td><td>4.0</td></tr>
+        <tr><td>toy humangut Nanopore</td><td></td><td class="adopt"></td><td></td><td></td></tr>
+        <tr><td class="sub">mismatches</td><td class="best">191</td><td class="adopt">656</td><td>855</td><td>567</td></tr>
+        <tr><td class="sub">indels</td><td class="best">6</td><td class="adopt">419</td><td>659</td><td>312</td></tr>
+        <tr><td class="sub">misassemblies</td><td>5.2</td><td class="adopt">5.2</td><td class="best">1.4</td><td class="best">1.4</td></tr>
+      </tbody>
+    </table></div>
+    <p>OPERA-MS inherits MEGAHIT's strain-consensus mismatches and chimeras, and adds 400–650 indels per 100 kb from gap fills of raw long reads. The pilot switched off OPERA-MS's own Pilon polishing. Measuring it on is the first follow-up. POLCA cuts Flye's indels by 18–53%.</p>
+  </section>
+
+  <section>
+    <h2>Cost</h2>
+    <p>CPU-hours per sample for the whole lane, QC included, from Slurm accounting. Bold marks the cheaper of the two hybrid lanes.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Dataset</th><th>MEGAHIT</th><th class="adopt">OPERA-MS</th><th>Flye</th><th>Flye + POLCA</th></tr></thead>
+      <tbody>
+        <tr><td>marine PacBio</td><td>21</td><td class="adopt best">35</td><td>60</td><td>65</td></tr>
+        <tr><td>plant PacBio</td><td>11</td><td class="adopt best">17</td><td>56</td><td>62</td></tr>
+        <tr><td>strain PacBio</td><td>4</td><td class="adopt best">7</td><td>28</td><td>30</td></tr>
+        <tr><td>plant Nanopore</td><td>9</td><td class="adopt best">16</td><td>10</td><td>17</td></tr>
+        <tr><td>toy humangut Nanopore</td><td>7</td><td class="adopt best">15</td><td>10</td><td>15</td></tr>
+        <tr><td>Pratama Nanopore</td><td>50</td><td class="adopt">88</td><td>33</td><td class="best">45</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Every lane peaks under 64 GB. Hybrid metaSPAdes, which this lane replaces, took 48 cores, up to 384 GB and more than 11 hours per Pratama pairing in E3.</p>
+  </section>
+
+  <section>
+    <h2>The lanes</h2>
+    <dl>
+      <dt>QC</dt><dd>bbduk. CAMI uses JGI's settings, which keep 99.97% of CAMI II's bases. Pratama's own <code>trimq=20</code> keeps 14%, because CAMI II simulates Q3 base calls.</dd>
+      <dt>MEGAHIT</dt><dd>Short reads only. The baseline for graph resolution.</dd>
+      <dt>OPERA-MS 0.9.0</dt><dd>Scaffolds and gap-fills MEGAHIT's contigs with the long reads. No reference clustering, no polishing.</dd>
+      <dt>Flye 2.9.6</dt><dd>Long reads only, <code>--meta</code>, in the platform's read mode. The baseline for polishing.</dd>
+      <dt>Flye + POLCA</dt><dd>Flye's contigs corrected with the short reads by POLCA from MaSuRCA 4.1.4.</dd>
+    </dl>
+    <p class="note">The pilot draws 10% of the samples of every dataset with both long and short reads: CAMI II marine (1), plant PacBio (2), plant Nanopore (2), strain (10), CAMI III toy humangut (2) and Pratama 2026 (2). Each sample assembles all of its reads.</p>
+  </section>
+
+  <section>
+    <h2>Why the numbers are believable</h2>
+    <p>CAMI II's published scores are higher because they came from pooled co-assemblies. Four checks confirm the single-sample numbers:</p>
+    <ol>
+      <li>The gold-standard assembly of marine sample 3, scored the same way, has 0 mismatches, 0 indels and 0 misassemblies.</li>
+      <li>Counting only uniquely mapped contigs moves marine's error rates by 10–30% and keeps every lane in the same order.</li>
+      <li>One sample covers only 26–60% of its genomes, by its own gold standard. MEGAHIT reaches 29–35% of that ceiling on CAMI II, and CAMI II's pooled marine MEGAHIT reached 53% of its pooled ceiling.</li>
+      <li>CAMI II also found Flye weak on marine and strong on plant Nanopore.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Joining Flye with MEGAHIT</h2>
+    <p><code>flye --subassemblies</code> keeps only the regions both assemblies share, 8–26% of its input, and recovery falls to 3–17%. A merge that adds the MEGAHIT contigs Flye + POLCA lacks has the best recovery on every scored dataset (23.7, 11.2, 13.9 and 40.0%). It loses long contigs on CAMI PacBio and costs 1.3–4.3× the OPERA-MS lane, so it does not change the decision.</p>
+  </section>
+
+  <section class="refs">
+    <span class="eyebrow">References</span>
+    <span>Bertrand 2019, OPERA-MS. <a href="https://doi.org/10.1038/s41587-019-0191-2">doi.org/10.1038/s41587-019-0191-2</a></span>
+    <span>Clum 2021, JGI metagenome workflow. <a href="https://doi.org/10.1128/mSystems.00804-20">doi.org/10.1128/mSystems.00804-20</a></span>
+    <span>Kolmogorov 2020, metaFlye. <a href="https://doi.org/10.1038/s41592-020-00971-x">doi.org/10.1038/s41592-020-00971-x</a></span>
+    <span>Li 2015, MEGAHIT. <a href="https://doi.org/10.1093/bioinformatics/btv033">doi.org/10.1093/bioinformatics/btv033</a></span>
+    <span>Li 2018, minimap2. <a href="https://doi.org/10.1093/bioinformatics/bty191">doi.org/10.1093/bioinformatics/bty191</a></span>
+    <span>Meyer 2022, CAMI II. <a href="https://doi.org/10.1038/s41592-022-01431-4">doi.org/10.1038/s41592-022-01431-4</a></span>
+    <span>Mikheenko 2016, MetaQUAST. <a href="https://doi.org/10.1093/bioinformatics/btv697">doi.org/10.1093/bioinformatics/btv697</a></span>
+    <span>Pratama 2026, Nat Commun 17:2179. <a href="https://doi.org/10.1038/s41467-026-68914-2">doi.org/10.1038/s41467-026-68914-2</a></span>
+    <span>Zimin &amp; Salzberg 2020, POLCA. <a href="https://doi.org/10.1371/journal.pcbi.1007981">doi.org/10.1371/journal.pcbi.1007981</a></span>
+  </section>
+</main>

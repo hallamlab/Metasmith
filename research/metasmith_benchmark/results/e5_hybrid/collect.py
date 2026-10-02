@@ -7,9 +7,10 @@ import csv, re, subprocess, sys
 from pathlib import Path
 
 HOMES = [Path("/scratch/phyberos/cami/metasmith"), Path("/scratch/phyberos/pratama2026/metasmith")]
-RUNS = {"kCByAwkU", "aRB4jlc0", "AlYvDWmZ", "NBqReG0G", "XjL5E3Zv"}
-# kCByAwkU ran CAMI on Pratama's QC, which starved every short-read step; only its Flye stands.
-STARVED = "kCByAwkU"
+RUNS = {"kCByAwkU", "aRB4jlc0", "oeGtlXNs", "AlYvDWmZ", "NBqReG0G", "XjL5E3Zv"}
+# kCByAwkU ran CAMI on Pratama's QC, which starved every short-read step, and AlYvDWmZ reran its OPERA-MS on those
+# starved MEGAHIT contigs. Only kCByAwkU's Flye stands.
+STARVED = {"kCByAwkU", "AlYvDWmZ"}
 STEPS = {"seqkit_reads", "bbduk", "bbduk_pratama", "megahit", "flye", "polca", "opera_ms", "quast", "metaquast"}
 REPORTS = {"quast", "metaquast"}
 TRACES = [*Path("/scratch/phyberos/bench/e5_hybrid/runlogs").glob("*/logs.*/nxf_trace.tsv"),
@@ -19,7 +20,7 @@ OUT = Path(__file__).resolve().parent
 STEP_RE = re.compile(r'^echo "([a-z_]+)"$', re.M)
 SAMPLE_RE = re.compile(r"/imports/e5h/([A-Za-z0-9_]+)/read_metadata@")
 # seqkit_reads requires the reads alone, not their metadata, so it is placed by the reads file bbduk also reads.
-READS_RE = re.compile(r"/scratch/\S+?/reads/anonymous_reads\.fq\.gz")
+READS_RE = re.compile(r"/scratch/[\w./-]+/anonymous_reads\.fq\.gz")
 RUN_RE = re.compile(r"/msm_home/runs/([A-Za-z0-9]{8})/")
 JOB_RE = re.compile(r"phyberos\.(\d+)\.\d+")
 WORK_RE = re.compile(r"cwd \[\S+/runs/([A-Za-z0-9]{8})/nxf_work/([0-9a-f]{2})/([0-9a-f]{6})")
@@ -39,11 +40,12 @@ def raw_entries():
         for sh in (home / "task_cache").glob("*/*/logs/.command.sh"):
             text = sh.read_text(errors="replace")
             step = STEP_RE.search(text)
-            sample, reads = SAMPLE_RE.search(text), READS_RE.findall(text)
             run = RUN_RE.search(text)
             if not (step and run) or step[1] not in STEPS or run[1] not in RUNS:
                 continue
-            if run[1] == STARVED and step[1] != "flye":
+            sample = SAMPLE_RE.search(text)
+            reads = READS_RE.findall(text) if step[1] in ("seqkit_reads", "bbduk") else []
+            if run[1] in STARVED and step[1] != "flye":
                 continue
             out = sh.with_name(".command.out")
             text = out.read_text(errors="replace") if out.exists() else ""
