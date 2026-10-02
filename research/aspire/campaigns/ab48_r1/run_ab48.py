@@ -10,7 +10,7 @@ Three studies, one driver:
 
     ab48_e5   the 2025-07-23 Enrichment5 run alone, 96 samples on one instrument
     ab48      AB48's historical and seven lab cohorts, 200 samples
-    purify    the purify Spirulina samples that carry primers, with the bioreactor's sensor
+    purify    the purify bioreactor samples that carry primers, with the bioreactor's sensor
               readings as measurements
 
 The reads were staged on sockeye by the asv_task project, one directory per sequencing run.
@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from _campaign import REFS, REPO, Campaign, MagSet, Sample, main  # noqa: E402
+from _campaign import HOST, REFS, REPO, Campaign, MagSet, Sample, main, ssh_once  # noqa: E402
 from metasmith.python_api import Duration, Resources, Size  # noqa: E402
 
 ROOT = os.environ.get("ASPIRE_AB48_ROOT", "/scratch/st-shallam-1/txyliu/aspire_ab48")
@@ -55,19 +55,22 @@ SENSORS = {"Temperature (°C)": "temperature_c", "pH": "ph", "CO2(Injections / 1
            "Tank Volume (L)": "tank_volume_l", "Growth Rate": "growth_rate"}
 WINDOW = timedelta(days=7)
 
+ANALYSES = ["aspire::counts_clean", "amplicon::asv_taxonomy", "aspire::indicspecies_results",
+            "aspire::read_fate", "aspire::sankey_outputs", "aspire::collectors_outputs",
+            "aspire::diversity_outputs", "aspire::diversity_mito_outputs", "aspire::umap_plots",
+            "aspire::bubble_plots", "aspire::upset_plots", "aspire::grouping_diagnostics_outputs",
+            "aspire::clustermap_outputs", "aspire::network_outputs", "aspire::asv_mag_pairing",
+            "aspire::asv_mag_network_outputs", "aspire::master_long"]
 TARGETS = {
-    "ab48_e5": ["aspire::counts_clean", "aspire::read_fate", "aspire::indicspecies_results",
-                "aspire::diversity_outputs", "aspire::network_outputs", "aspire::asv_mag_pairing",
-                "aspire::master_long"],
-    "ab48": ["aspire::counts_clean", "aspire::read_fate", "aspire::indicspecies_results",
-             "aspire::diversity_outputs", "aspire::network_outputs", "aspire::asv_mag_pairing",
-             "aspire::asv_mag_network_outputs", "aspire::master_long"],
+    "ab48_e5": ANALYSES,
+    "ab48": ANALYSES,
     "purify": ["aspire::counts_clean", "aspire::read_fate", "aspire::measurement_association_outputs"],
 }
 RESOURCE_OVERRIDES = {
     "sina_trim": Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=6)),
     "taxonomy": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=6)),
     "denoise": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=12)),
+    "spieceasi": Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=12)),
 }
 
 
@@ -81,13 +84,17 @@ def _csv(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+# A library that failed sequencing is staged as an empty gzip, which fastp reads as zero reads
+# and fails on. Such a sample is left out of the study rather than carried as a dead step.
 def staged_reads(cohort: str) -> dict[str, Sample]:
+    base = f"{STAGED}/{cohort}/reads"
+    empty = set(ssh_once(HOST, f"find {base} -size -100c -printf '%f\\n'").split())
     out = {}
     for row in _tsv(SHEETS / "manifests" / f"{cohort}.tsv"):
-        sid = row["sample-id"]
-        base = f"{STAGED}/{cohort}/reads"
-        out[sid] = Sample(sid, f"{base}/{row['forward-absolute-filepath']}",
-                          f"{base}/{row['reverse-absolute-filepath']}")
+        r1, r2 = row["forward-absolute-filepath"], row["reverse-absolute-filepath"]
+        if r1 in empty or r2 in empty:
+            continue
+        out[row["sample-id"]] = Sample(row["sample-id"], f"{base}/{r1}", f"{base}/{r2}")
     return out
 
 
@@ -133,7 +140,7 @@ def ab48_study(cohorts: list[str]):
     for cohort in cohorts:
         reads.update(staged_reads(cohort))
     for r in crosswalk():
-        if r["cohort"] not in cohorts:
+        if r["cohort"] not in cohorts or r["asv_table_id"] not in reads:
             continue
         meta = taxa_metadata(r, by_id)
         rows.append({"sample": r["asv_table_id"], "cohort": r["cohort"],
@@ -173,14 +180,19 @@ def purify_study():
     seen = set()
     for r in crosswalk():
         sid = r["asv_table_id"]
-        if r["cohort"] not in PURIFY_COHORTS or sid in seen:
+        if r["cohort"] not in PURIFY_COHORTS or sid in seen or sid not in reads:
             continue
         seen.add(sid)
         m = meta.get(r["display_label"], {})
         rows.append({"sample": sid, "date": m.get("Date", r["date"]),
                      **{c: _label(m.get(c, "")) for c in PURIFY_LABELS}})
+    # Only the bioreactor samples have sensor readings. Upstream fills a missing measurement with
+    # the column median, so a seed or lab sample would enter the ordination with readings it never
+    # had. A label left with one level says nothing about five samples, so it is dropped.
+    rows = [r for r in rows if r["Condition"] == "PBR"]
+    labels = [c for c in PURIFY_LABELS if len({r[c] for r in rows}) > 1]
     samples = [reads[r["sample"]] for r in rows]
-    return samples, sheet(rows, PURIFY_LABELS), pbr_measurements(rows)
+    return samples, sheet(rows, labels), pbr_measurements(rows)
 
 
 def campaign(args) -> Campaign:
