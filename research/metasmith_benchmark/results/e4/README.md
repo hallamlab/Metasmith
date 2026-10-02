@@ -17,6 +17,8 @@ These tables are E4's full-run results: which bins got a model in each lane, how
 | `ablation_summary.tsv` | 102 rows | medians and interquartile ranges of `ablation_parity.tsv`, pooled and per study |
 | `ablation_universe.tsv` | 1,408 bins | the share of metaGEM's reactions in CarveMe 1.6.6's universe, and parity with metaGEM over the reactions both universes hold, for rungs R1, B and U |
 | `ablation_memote.tsv` | 14,080 rows | MEMOTE 0.17 total and section scores for metaGEM's GEM and every rung, one row per bin and source. `note` is `no model` where a rung built none. |
+| `ablation_memote_rewritten.tsv` | 7,040 rows | as `ablation_memote.tsv`, for metaGEM's GEM and rungs R0 to U after each model is rewritten through CarveMe 1.6.6's SBML writer |
+| `ablation_rewrite_fidelity.tsv` | 7,040 rows | what each rewrite changed: per check, the count of elements that differ, and the formulas, charges, SBO terms and annotation namespaces before and after |
 
 A per-test column holds MEMOTE's metric, and `<test>_n` holds the count or value it came from.
 
@@ -41,3 +43,5 @@ A parity row with only `no published GEM` is one of the 18 bins metaGEM built no
 | S | `scip` | `fHy9Gtxj` |
 
 `drivers/e4_ablation_memote.sbatch` scored metaGEM's GEMs and rungs R0 to S (jobs 62448450 and 62448866, 2026-10-01, checkout b5e5cee0) over models from a fresh `extract` of the rung archives. `e4_ablation_memote.py collect` wrote `ablation_memote.tsv`, taking M's rows from `quality_modern.tsv`. `figures/make_figures.py` draws E4's figures from these tables.
+
+The same sbatch with `REWRITE_IMAGE` set to the stock CarveMe 1.6.6 image (reframed 1.6.0) wrote the two rewrite tables (jobs 62505042 and 62505653, 2026-10-01, checkout c8b0c61a). `drivers/sbml_rewrite.py` holds the rewrite and its checks.
