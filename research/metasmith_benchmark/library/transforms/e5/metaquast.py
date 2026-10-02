@@ -25,7 +25,8 @@ def protocol(context: ExecutionContext):
 
     # One reference per genome FASTA, wherever the tarball nests it. --fragmented because CAMI's source
     # genomes are drafts: a contig spanning two pieces of a draft is not a misassembly. --max-ref-number 0
-    # stops metaQUAST reaching for SILVA when it is given references.
+    # stops metaQUAST reaching for SILVA when it is given references. metaQUAST exits 0 when minimap2 dies
+    # under the memory cap and drops that assembly from every table, so a failed alignment fails the step.
     context.ExecWithEnv(env=image, cmd=f"""
         mkdir -p unpacked refs
         tar xzf {igenomes.container} -C unpacked
@@ -36,6 +37,7 @@ def protocol(context: ExecutionContext):
         echo "references: $(ls refs | wc -l)"
         metaquast.py {fastas} -l {",".join(LABELS)} -r refs -o mq -t {threads} --fragmented --max-ref-number 0 \
             --no-icarus --no-plots --no-html
+        if grep -rl --include=quast.log "Failed aligning" mq; then exit 1; fi
         cd mq && tar czf {iout.container} $(ls -d combined_reference/*.tsv summary/TSV \
             runs_per_reference/*/report.tsv not_aligned/report.tsv metaquast.log 2>/dev/null)
     """)

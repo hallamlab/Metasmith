@@ -47,7 +47,9 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml"
     [c.LIBRARY / "data_types" / t for t in ("e3.yml", "e5.yml")]
 # E3's first-attempt (cpus, GB, hours) for the two steps it shares.
 SCALED = {
-    "cami": {"bbduk_pratama": (4, 16, 2), "megahit": (16, 64, 12)},
+    # metaQUAST indexes the whole study's genomes once per assembly, in parallel: plant's fungi and
+    # toy_humangut's human genome put that past 64 GB.
+    "cami": {"bbduk_pratama": (4, 16, 2), "megahit": (16, 64, 12), "metaquast": (16, 128, 12)},
     # Pratama's MinION runs hold 6.4 to 12.9 Gbp, against 1 to 3 for a CAMI long-read sample.
     "pratama": {"bbduk_pratama": (4, 16, 2), "megahit": (16, 64, 12), "flye": (16, 128, 24)},
 }
