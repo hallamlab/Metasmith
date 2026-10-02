@@ -256,7 +256,8 @@ TABLE: list[T] = [
        ("rjson", "aspire::fastp_report_json"), ("rhtml", "aspire::fastp_report_html")],
       "meta", cpus=4, hours=2,
       note="Reads `parity` from the read_metadata JSON: `--interleaved_in` for a paired "
-           "sample, plain `-i` for a single-end one. Settings under `fastp:` in the params "
+           "sample, plain `-i` for a single-end one. A sample whose JSON sets "
+           "`primers_removed` skips the front trims. Settings under `fastp:` in the params "
            "file. The product is an aspire type on purpose, so the shipped "
            "kbase/clean_reads/fastp.py and bbduk cannot answer for this slot with their "
            "own trimming."),

@@ -12,6 +12,8 @@ Three studies, one driver:
     ab48      AB48's historical and seven lab cohorts, 200 samples
     purify    the purify bioreactor samples that carry primers, with the bioreactor's sensor
               readings as measurements
+    lab       every non-control sample of every cohort above plus the Nostoc and Anabaena
+              cultures, as one study and so one ASV table
 
 The reads were staged on sockeye by the asv_task project, one directory per sequencing run.
 The sheets come from capella and are pinned at data/aspire/hallam_16s_inputs. The AB48 MAGs
@@ -46,8 +48,12 @@ AB48_COHORTS = ["ab48_historical", "lab_19-05-01_to_23-05-01_Legacy", "lab_23-07
 # file trims a fixed length, so the study keeps the runs that carry primers. The 2025_10_20 run
 # repeats the 2025-06-02 run's s11 and s115 files under later dates; the first copy is kept.
 PURIFY_COHORTS = ["purify_2025-06-02_Enrichment", "purify_2025_10_20_Enrichment"]
+PURIFY_TRIMMED = ["purify_2026_03_30_Enrichment"]
+# mitacs_spirulina is staged too, but its files are byte-identical to purify_2026_03_30's.
+OTHER_COHORTS = ["nostoc_anabaena"]
 TAXA_LABELS = ["Type", "Strain", "Condition", "NaCl", "NaOH", "Stock", "Extraction"]
 PURIFY_LABELS = ["Condition", "Round", "Glycerol", "DMSO"]
+LAB_LABELS = list(dict.fromkeys(TAXA_LABELS + PURIFY_LABELS))
 # The bioreactor log columns averaged into each sample's measurements, and the window before
 # the sampling date they are averaged over. Setpoints and flows are configuration, not state.
 SENSORS = {"Temperature (°C)": "temperature_c", "pH": "ph", "CO2(Injections / 10 min)": "co2_injections",
@@ -65,6 +71,7 @@ TARGETS = {
     "ab48_e5": ANALYSES,
     "ab48": ANALYSES,
     "purify": ["aspire::counts_clean", "aspire::read_fate", "aspire::measurement_association_outputs"],
+    "lab": ANALYSES,
 }
 RESOURCE_OVERRIDES = {
     "sina_trim": Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=6)),
@@ -89,12 +96,13 @@ def _csv(path: Path) -> list[dict]:
 def staged_reads(cohort: str) -> dict[str, Sample]:
     base = f"{STAGED}/{cohort}/reads"
     empty = set(ssh_once(HOST, f"find {base} -size -100c -printf '%f\\n'").split())
+    trimmed = {r["cohort"]: r["primers_on"] == "False" for r in _tsv(SHEETS / "cohorts.tsv")}[cohort]
     out = {}
     for row in _tsv(SHEETS / "manifests" / f"{cohort}.tsv"):
         r1, r2 = row["forward-absolute-filepath"], row["reverse-absolute-filepath"]
         if r1 in empty or r2 in empty:
             continue
-        out[row["sample-id"]] = Sample(row["sample-id"], f"{base}/{r1}", f"{base}/{r2}")
+        out[row["sample-id"]] = Sample(row["sample-id"], f"{base}/{r1}", f"{base}/{r2}", primers_removed=trimmed)
     return out
 
 
@@ -171,21 +179,26 @@ def pbr_measurements(rows: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def purify_study():
+def purify_rows(cohorts: list[str]):
     meta = {r["ID"]: r for r in _csv(SHEETS / "Purify_Metadata.csv")}
     reads, rows = {}, []
-    for cohort in PURIFY_COHORTS:
+    for cohort in cohorts:
         for sid, s in staged_reads(cohort).items():
             reads.setdefault(sid, s)
     seen = set()
     for r in crosswalk():
         sid = r["asv_table_id"]
-        if r["cohort"] not in PURIFY_COHORTS or sid in seen or sid not in reads:
+        if r["cohort"] not in cohorts or sid in seen or sid not in reads:
             continue
         seen.add(sid)
         m = meta.get(r["display_label"], {})
         rows.append({"sample": sid, "date": m.get("Date", r["date"]),
                      **{c: _label(m.get(c, "")) for c in PURIFY_LABELS}})
+    return reads, rows
+
+
+def purify_study():
+    reads, rows = purify_rows(PURIFY_COHORTS)
     # Only the bioreactor samples have sensor readings. Upstream fills a missing measurement with
     # the column median, so a seed or lab sample would enter the ordination with readings it never
     # had. A label left with one level says nothing about five samples, so it is dropped.
@@ -193,6 +206,41 @@ def purify_study():
     labels = [c for c in PURIFY_LABELS if len({r[c] for r in rows}) > 1]
     samples = [reads[r["sample"]] for r in rows]
     return samples, sheet(rows, labels), pbr_measurements(rows)
+
+
+
+
+# The lab sheet joins the AB48 and purify sheets. Their Condition columns share a name and a
+# meaning, so they share a column. The Nostoc and Anabaena cultures appear in neither sheet.
+def lab_study():
+    ab_samples, _ = ab48_study(AB48_COHORTS)
+    taxa = _csv(SHEETS / "Taxa_Metadata.csv")
+    by_id = {r["ID"]: r for r in taxa}
+    by_id["_norm"] = [(_norm(r["ID"]), r) for r in taxa]
+    reads, rows = {s.sid: s for s in ab_samples}, []
+    for r in crosswalk():
+        if r["cohort"] in AB48_COHORTS and r["asv_table_id"] in reads:
+            meta = taxa_metadata(r, by_id)
+            rows.append({"sample": r["asv_table_id"], "project": "AB48", "cohort": r["cohort"],
+                         **{c: _label(meta.get(c, "")) for c in LAB_LABELS}})
+    p_reads, p_rows = purify_rows(PURIFY_COHORTS + PURIFY_TRIMMED)
+    purify_meta = {r["ID"]: r for r in _csv(SHEETS / "Purify_Metadata.csv")}
+    cohort_of = {}
+    for r in crosswalk():
+        cohort_of.setdefault(r["asv_table_id"], r)
+    for r in p_rows:
+        m = purify_meta.get(cohort_of[r["sample"]]["display_label"], {})
+        rows.append({"sample": r["sample"], "project": "Purify", "cohort": cohort_of[r["sample"]]["cohort"],
+                     **{c: _label(m.get(c, "")) for c in LAB_LABELS}})
+    reads.update(p_reads)
+    for cohort in OTHER_COHORTS:
+        for sid, s in staged_reads(cohort).items():
+            reads[sid] = s
+            rows.append({"sample": sid, "project": "Nostoc-Anabaena", "cohort": cohort,
+                         **{c: "" for c in LAB_LABELS}})
+    ids = [r["sample"] for r in rows]
+    assert len(ids) == len(set(ids)), "a sample id repeats across cohorts"
+    return [reads[i] for i in ids], sheet(rows, ["project", "cohort", *LAB_LABELS])
 
 
 def campaign(args) -> Campaign:
@@ -204,6 +252,11 @@ def campaign(args) -> Campaign:
         samples, study, measures = purify_study()
         return Campaign(name="purify_r1", root=f"{ROOT}/purify", samples=samples, study_sheet=study,
                         measurements=measures, **common)
+    if args.study == "lab":
+        samples, study = lab_study()
+        return Campaign(name="lab_r1", root=ROOT, samples=samples, study_sheet=study,
+                        switches_on={"spieceasi", "network_modules", "asv_mag_link", "graph_network"},
+                        mags=MagSet(f"{ROOT}/mags"), **common)
     cohorts = AB48_COHORTS if args.study == "ab48" else ["lab_25-07-23_Enrichment5"]
     samples, study = ab48_study(cohorts)
     return Campaign(name=f"{args.study}_r1", root=ROOT, samples=samples, study_sheet=study,

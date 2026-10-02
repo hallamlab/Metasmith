@@ -55,6 +55,7 @@ class Sample:
     sid: str
     r1: str
     r2: str
+    primers_removed: bool = False
 
 
 # A dedup run on the remote host: the assembly, the cluster table and the run's centroid bins
@@ -135,8 +136,8 @@ def build_inputs(c: Campaign):
         lib.AddValue("sample_measurements.tsv", c.measurements, "aspire::sample_measurements",
                      parents={study})
     for s in c.samples:
-        meta = lib.AddValue(f"{s.sid}.read_metadata.json", read_metadata(s.sid, "paired"),
-                            "sequences::read_metadata", parents={study})
+        record = read_metadata(s.sid, "paired") | ({"primers_removed": True} if s.primers_removed else {})
+        meta = lib.AddValue(f"{s.sid}.read_metadata.json", record, "sequences::read_metadata", parents={study})
         pair = lib.AddValue(f"{s.sid}.read_pair.txt", s.sid, "sequences::read_pair", parents={meta})
         for path, dtype in ((s.r1, "zipped_forward_short_reads"), (s.r2, "zipped_reverse_short_reads")):
             lib.AddItem(path, f"sequences::{dtype}", parents={pair})
