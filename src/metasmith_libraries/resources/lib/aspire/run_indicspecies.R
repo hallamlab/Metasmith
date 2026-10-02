@@ -7,6 +7,11 @@
 # both keyed on one study's column names. The helper functions, the output file names and
 # the per-label test are upstream's, unchanged. A label with fewer than two levels of
 # --min-n samples each is skipped, and the skip is recorded in skipped_labels.tsv.
+#
+# --max-order and --exhaustive-levels are new. duleg=FALSE tests every combination of a
+# label's levels, 2^k - 1 of them, so a label with many levels does not finish: 15 levels
+# over 189 samples outran a 12-hour task. Past --exhaustive-levels levels the combinations
+# stop at --max-order groups. Both unset keeps upstream's exhaustive test.
 suppressPackageStartupMessages({
   library(optparse)
   library(dplyr)
@@ -37,6 +42,10 @@ option_list <- list(
               help="FDR threshold for the significant flag [default: %default]"),
   make_option("--min-n",      type="integer",   default=2,
               help="Minimum samples per level; smaller levels are dropped [default: %default]"),
+  make_option("--max-order",  type="integer",   default=NA,
+              help="Largest combination of levels duleg=FALSE tests past --exhaustive-levels [default: all]"),
+  make_option("--exhaustive-levels", type="integer", default=NA,
+              help="Most levels a label may have and still be tested in every combination [default: any]"),
   make_option("--outdir",     type="character", help="Output directory")
 )
 
@@ -169,7 +178,8 @@ apply_matrix_transform <- function(mat, method = "none") {
   out
 }
 
-run_indics <- function(X_samples_by_features, grouping, perms = 9999, duleg = FALSE, patient_blocks = NULL) {
+run_indics <- function(X_samples_by_features, grouping, perms = 9999, duleg = FALSE, patient_blocks = NULL,
+                       max_order = NULL) {
   # indicspecies::multipatt expects samples in rows, species/features in columns
   # If patient_blocks provided, use blocked permutations (for within-patient comparisons)
   if (!is.null(patient_blocks)) {
@@ -179,7 +189,8 @@ run_indics <- function(X_samples_by_features, grouping, perms = 9999, duleg = FA
     ctrl <- how(nperm = perms)
   }
   suppressWarnings({
-    multipatt(x = X_samples_by_features, cluster = grouping, duleg = duleg, control = ctrl)
+    multipatt(x = X_samples_by_features, cluster = grouping, duleg = duleg, control = ctrl,
+              max.order = max_order)
   })
 }
 
@@ -268,8 +279,14 @@ for (gcol in group_specs) {
   }
   X <- apply_matrix_transform(X, opt$transform)
 
+  max_order <- NULL
+  if (!is.na(opt$`max-order`) && !is.na(opt$`exhaustive-levels`) && nlevels(grouping) > opt$`exhaustive-levels`) {
+    max_order <- opt$`max-order`
+    message("'", gcol, "' has ", nlevels(grouping), " levels; combinations stop at ", max_order, " groups")
+  }
   message("Running multipatt for '", gcol, "' (duleg=FALSE)")
-  fit1 <- run_indics(X, grouping, perms = opt$perms, duleg = FALSE, patient_blocks = blocks)
+  fit1 <- run_indics(X, grouping, perms = opt$perms, duleg = FALSE, patient_blocks = blocks,
+                     max_order = max_order)
   write_tables(as.data.frame(fit1$sign) %>% rownames_to_column("ASV"), summarize_multipatt(fit1),
                paste0(gcol_slug, "_indicator_species"))
 
