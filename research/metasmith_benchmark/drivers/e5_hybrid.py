@@ -123,13 +123,14 @@ def declare_givens(smith, by_study, cache_dir, ensure):
 
 
 # CAMI II's simulator scatters Q3 bases through every short read, so Pratama's `qtrim=rl trimq=20` keeps 14% of them.
+# CAUTION two views of one library stage into one directory, and the last view's type metadata wins.
 def build_transforms(corpus):
+    e5 = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5")
     assembly = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "assembly")
     if corpus == "cami":
-        qc = [assembly.AsView({Path("seqkit_reads.py"), Path("bbduk.py")})]
-    else:
-        qc = [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3").AsView({Path("bbduk_pratama.py")})]
-    return qc + [assembly.AsView({Path("megahit.py")}), TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5")]
+        return [assembly.AsView({Path("seqkit_reads.py"), Path("bbduk.py"), Path("megahit.py")}), e5]
+    qc = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3").AsView({Path("bbduk_pratama.py")})
+    return [qc, assembly.AsView({Path("megahit.py")}), e5]
 
 
 def build_targets(corpus, opera_only):
