@@ -86,9 +86,24 @@ def source_color(source):
     return LANES[0][2] if source in OLD_CODE else LANES[1][2]
 
 
+def memote_stats(df):
+    return df.groupby("source")[[c for c, _ in PANELS]].quantile([0.25, 0.5, 0.75]).unstack()
+
+
 def fig2():
-    df = pd.read_csv(E4 / "ablation_memote.tsv", sep="\t")
-    stats = df.groupby("source")[[c for c, _ in PANELS]].quantile([0.25, 0.5, 0.75]).unstack()
+    return ladder(pd.read_csv(E4 / "ablation_memote.tsv", sep="\t"))
+
+
+def fig2b():
+    built = pd.read_csv(E4 / "ablation_memote.tsv", sep="\t")
+    rewritten = pd.read_csv(E4 / "ablation_memote_rewritten.tsv", sep="\t")
+    common = pd.concat([rewritten, built[~built.source.isin(rewritten.source.unique())]])
+    return ladder(common, ghost=built[built.source.isin(rewritten.source.unique())])
+
+
+def ladder(df, ghost=None):
+    stats = memote_stats(df)
+    ghost_med = memote_stats(ghost) if ghost is not None else None
     fig = make_subplots(rows=2, cols=3, subplot_titles=[t for _, t in PANELS],
                         shared_xaxes=True, vertical_spacing=0.14, horizontal_spacing=0.06)
     colors = [source_color(s) for s in SOURCES]
@@ -105,6 +120,13 @@ def fig2():
             x=SOURCE_LABELS, y=med, mode="markers", showlegend=False, hoverinfo="skip",
             marker=dict(symbol="line-ew", size=14, line=dict(color=colors, width=2.5)),
         ), row=row, col=column)
+        if ghost_med is not None:
+            g = ghost_med[(col, 0.5)].reindex(SOURCES)
+            fig.add_trace(go.Scatter(
+                x=SOURCE_LABELS, y=g, mode="markers", showlegend=k == 0, name="as built",
+                hovertemplate="%{x} as built: %{y:.3f}<extra></extra>",
+                marker=dict(symbol="line-ew-open", size=14, color=INK, line=dict(color=INK, width=1.5)),
+            ), row=row, col=column)
     for name, color in [("metaGEM (published)", REFERENCE), ("CarveMe 1.2.2 code", LANES[0][2]),
                         ("CarveMe 1.6.6 code", LANES[1][2])]:
         fig.add_trace(go.Bar(x=[None], y=[None], name=name, marker_color=color))
@@ -123,7 +145,7 @@ def fig2():
     return fig
 
 
-FIGURES = {"fig1_reproduction": fig1, "fig2_ablation_memote": fig2}
+FIGURES = {"fig1_reproduction": fig1, "fig2_ablation_memote": fig2, "fig2b_ablation_memote_rewritten": fig2b}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or FIGURES:
