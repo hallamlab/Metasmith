@@ -147,10 +147,11 @@ value that fewer samples hold, so each analysis skips that level and keeps the s
 `diversity_analysis` and `diversity_mito` cannot colour a blank, so each of their per-label
 runs leaves out the samples that label leaves empty.
 
-**`indicspecies` caps the level combinations of a many-level label.** Upstream's `duleg=FALSE`
-test tries all 2^k - 1 combinations of a label's k levels. Past 8 levels the port stops at
-combinations of 3 groups, so its results for such a label differ from upstream's. AB48's
-15-level `Condition` label outran a 12-hour task under the exhaustive test.
+**`indicspecies` tests a many-level label one group at a time.** Upstream's `duleg=FALSE`
+test tries all 2^k - 1 combinations of a label's k levels. Past 8 levels the port runs only
+the single-group test of Dufrêne & Legendre (1997), linear in k, and writes it under both
+output names. Such a label finds no indicator of two groups together. AB48's 15-level
+`Condition` label outran a 12-hour task under the combination test.
 
 **CAUTION** Give `aspire::sample_measurements` only the samples that were measured.
 `measurement_association.py` fills a missing measurement with the column median, so an

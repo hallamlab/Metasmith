@@ -126,3 +126,11 @@ against all eight July cohorts.
   largest holds 7.
 - The MAG network accepts 18 ASV-MAG mappings. 29 module ASVs carry a MAG pair, and 30 ASVs
   in the master summary.
+
+## 2026-10-02 — indicspecies: single groups past 8 levels
+
+The combination cap still grows as k^3. A label with more than 8 levels now gets only the
+single-group test, `duleg=TRUE`, which is linear in its levels and which upstream already
+runs beside the combination test. On the full study the 8-level `cohort` label took 103 s
+for the combination test and 17 s for the single-group test. The pins above came from the
+cap. The analyses rerun under the new rule.

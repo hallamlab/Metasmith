@@ -98,8 +98,8 @@ types:
   # ASPIRE's scripts, from research/aspire/upstream/ASPIRE/processes (the tree rescued in
   # dd08319f). sankey_builder and plot_metadata lose only their lung-study examples and
   # column derivations, plot_metadata also names the index its taxonomy merge loses under
-  # pandas 2.2, and run_indicspecies.R keeps only its generic per-label path and can cap the
-  # level combinations a many-level label is tested in. graph_network sorts a label whose
+  # pandas 2.2, and run_indicspecies.R keeps only its generic per-label path and tests a
+  # many-level label one group at a time. graph_network sorts a label whose
   # levels mix numbers and words, where upstream's sort raises. curate, read_accounting,
   # upstream_layout and plot_indicators are new; each says what it replaces. Every other
   # script is upstream's, unmodified.

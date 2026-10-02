@@ -3,8 +3,8 @@
 # One multipatt run per label of the sample sheet, which is the survey node for an ASPIRE
 # study. The settings are upstream's code defaults: this row reads no params, so a count
 # table from outside ASPIRE can reach it. The one departure: a label with more than 8 levels
-# is tested in combinations of at most 3, De Caceres' advice for many-level factors, since
-# every combination of 15 levels over 189 samples outran a 12-hour task.
+# gets only the single-group test (Dufrene & Legendre 1997), linear in its levels, since every
+# combination of 15 levels over 189 samples outran a 12-hour task.
 
 from metasmith.python_api import *
 
@@ -21,7 +21,6 @@ plots   = model.AddProduct(lib.GetType("aspire::indicspecies_plots"))
 aligned = model.AddProduct(lib.GetType("aspire::indicspecies_aligned_plots"))
 
 EXHAUSTIVE_LEVELS = 8
-MAX_ORDER = 3
 
 
 def protocol(context: ExecutionContext):
@@ -39,7 +38,7 @@ def protocol(context: ExecutionContext):
             --data-wide {context.Input(counts).container} --data-long {context.Input(md).container} \
             --sample-col "{sid_col}" --group-cols "{','.join(labels)}" \
             --perms 9999 --seed 42 --q-threshold 0.05 --min-n 2 \
-            --max-order {MAX_ORDER} --exhaustive-levels {EXHAUSTIVE_LEVELS} --outdir all
+            --exhaustive-levels {EXHAUSTIVE_LEVELS} --outdir all
         cp all/*.tsv {itables.container}/
         cp all/skipped_labels.tsv {iresults.container}/
         for f in all/*_indicator_species_results.tsv all/*_indicator_species_summary.tsv; do
