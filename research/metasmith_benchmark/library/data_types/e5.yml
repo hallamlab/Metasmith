@@ -38,6 +38,11 @@ types:
       _: the study's CAMI source genomes as CAMI ships them, one gzipped tarball of FASTAs
       e5: source_genomes
       ext: tar.gz
+  sample_references:
+    properties:
+      _: the file stems of the study's source genomes present in one sample, by its gold-standard assembly mapping
+      e5: sample_references
+      ext: json
   metaquast_report:
     properties:
       _: metaQUAST's combined and per-reference tables for one sample's assemblies side by side, as a gzipped tarball

@@ -16,6 +16,7 @@ Subcommands: list, import --corpus C, run --corpus C [--dag] [--stage-only | --l
 """
 
 import argparse
+import csv
 import math
 import os
 import random
@@ -40,6 +41,8 @@ STUDIES = {
     "strain": (G / "cami2_challenge/strain/strmgCAMI2_genomes.tar.gz", [("strain_long", "PACBIO_CLR")]),
     "toy_humangut": (G / "cami3_toy_humangut/long/source_genomes.tar.gz", [("toy_humangut_long", "OXFORD_NANOPORE")]),
 }
+# Each CAMI sample's source genomes, by its gold-standard assembly mapping: results/e5_hybrid/sample_genomes.py.
+SAMPLE_GENOMES = HERE.parent / "results" / "e5_hybrid" / "sample_genomes.tsv"
 PRATAMA = "pratama2022"
 PRATAMA_PLATFORM = "OXFORD_NANOPORE_HQ"     # R9.4.1, basecalled with Guppy sup
 FRACTION = 0.1
@@ -48,9 +51,9 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in ("sequences.yml", "viromics.yml"
     [c.LIBRARY / "data_types" / t for t in ("e3.yml", "e5.yml")]
 # E3's first-attempt (cpus, GB, hours) for the two steps it shares.
 SCALED = {
-    # metaQUAST indexes the whole study's genomes once per assembly, in parallel: plant's fungi and
-    # toy_humangut's human genome put that past 64 GB.
-    "cami": {"bbduk": (4, 16, 2), "megahit": (16, 64, 12), "metaquast": (16, 128, 12)},
+    # metaQUAST indexes the sample's genomes once per assembly, in parallel: plant's fungi put that past
+    # 64 GB. Its per-reference QUAST runs go one per thread.
+    "cami": {"bbduk": (4, 16, 2), "megahit": (16, 64, 12), "metaquast": (32, 128, 12)},
     # Pratama's MinION runs hold 6.4 to 12.9 Gbp, against 1 to 3 for a CAMI long-read sample.
     "pratama": {"bbduk_pratama": (4, 16, 2), "megahit": (16, 64, 12), "flye": (16, 128, 24)},
 }
@@ -102,8 +105,18 @@ def draw(corpus):
     return cami if corpus == "cami" else draw_pratama(rng)
 
 
+def sample_references():
+    present = {}
+    with SAMPLE_GENOMES.open() as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            if r["reference"]:
+                present.setdefault(r["sample"], set()).add(r["reference"])
+    return {s: sorted(refs) for s, refs in present.items()}
+
+
 def declare_givens(smith, by_study, cache_dir, ensure):
     givens = smith.PoolGivens()
+    present = sample_references() if any(name in STUDIES for name in by_study) else {}
     for name, samples in by_study.items():
         study = c.add_value(givens, f"e5h/{name}/contig_study", {"logistics": "contig study", "study": name},
                             "viromics::contig_study", tags=["e5h", name])
@@ -119,6 +132,9 @@ def declare_givens(smith, by_study, cache_dir, ensure):
             c.add_file(givens, f"e5h/{sid}/nanopore", long_, "e3::nanopore_reads", parents=[pair], tags=tags)
             c.add_value(givens, f"e5h/{sid}/long_read_platform", {"platform": platform}, "e5::long_read_platform",
                         parents=[pair], tags=tags)
+            if name in STUDIES:
+                c.add_value(givens, f"e5h/{sid}/sample_references", {"references": present[sid]},
+                            "e5::sample_references", parents=[meta], tags=tags)
     return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
 
 
@@ -167,7 +183,8 @@ def solve(args):
     genomes = 0 if args.opera_only else sum(1 for s in by_study if s in STUDIES)
     c.check_plan(task, {"viromics::contig_study": len(by_study), "e5::source_genomes": genomes,
                         "sequences::read_metadata": n, "sequences::read_pair": n, "sequences::short_reads_pe": n,
-                        "e3::nanopore_reads": n, "e5::long_read_platform": 0 if args.opera_only else n})
+                        "e3::nanopore_reads": n, "e5::long_read_platform": 0 if args.opera_only else n,
+                        "e5::sample_references": 0 if args.opera_only or corpus != "cami" else n})
     c.print_plan(task)
     if args.dag:
         c.write_dag(task, "e5_hybrid" if corpus == "cami" else "e5_hybrid_pratama", cache_dir)
