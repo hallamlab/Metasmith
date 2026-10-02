@@ -290,6 +290,35 @@ def cmd_retrieve(c: Campaign, _):
     return 0
 
 
+def intermediate_key(dtype: str) -> str:
+    from metasmith.models.solver import Endpoint
+    lib = DataInstanceLibrary(Path(os.environ.get("TMPDIR", "/tmp")) / "aspire_types.xgdb")
+    lib.Purge()
+    for t in ("aspire.yml", "amplicon.yml", "sequences.yml", "binning_local.yml"):
+        lib.AddTypeLibrary(MLIB / "data_types" / t)
+    key = Endpoint(properties=set(lib.GetType(dtype).properties)).key
+    lib.Purge()
+    return key
+
+
+# A product the plan does not target never reaches the results directory. Its producer's
+# work directory holds the real file; every consumer's holds a symlink to it.
+def cmd_fetch_intermediates(c: Campaign, args):
+    smith = agent(c)
+    task = plan(c, smith)
+    work = f"{c.agent_home}/runs/{task.GetKey()}/nxf_work"
+    dest = c.work / "intermediates"
+    for dtype in args.dtypes:
+        key = intermediate_key(dtype)
+        hits = ssh_once(HOST, f"find {work} -mindepth 3 -maxdepth 3 -name '*-{key}*' ! -type l").split()
+        assert len(hits) == 1, f"[{dtype}] want one producer copy under {work}, found {hits}"
+        out = dest / dtype.replace("::", "-")
+        out.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["rsync", "-a", f"{HOST}:{hits[0]}", f"{out}/"], check=True)
+        print(f"{dtype}: {out / Path(hits[0]).name}")
+    return 0
+
+
 def cmd_dag(c: Campaign, _):
     task = plan(c, agent(c))
     reports = c.here / "reports"
@@ -304,6 +333,7 @@ def cmd_dag(c: Campaign, _):
 COMMON = {
     "side-load-images": cmd_side_load_images, "check-refs": cmd_check_refs, "run": cmd_run,
     "status": cmd_status, "retrieve": cmd_retrieve, "dag": cmd_dag,
+    "fetch-intermediates": cmd_fetch_intermediates,
 }
 
 
@@ -318,5 +348,7 @@ def main(doc: str, make_campaign, extra: dict | None = None, add_args=None):
         p = sub.add_parser(name)
         if name == "run":
             p.add_argument("--plan-only", action="store_true")
+        if name == "fetch-intermediates":
+            p.add_argument("dtypes", nargs="+", help="e.g. aspire::asv_filtered_seqs")
     args = ap.parse_args()
     return commands[args.cmd](make_campaign(args), args)
