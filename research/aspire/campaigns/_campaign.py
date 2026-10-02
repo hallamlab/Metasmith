@@ -282,12 +282,16 @@ def cmd_status(c: Campaign, _):
     return check_tasks(HOST, c.agent_home, task.GetKey(), attempt="latest")
 
 
-def cmd_retrieve(c: Campaign, _):
-    smith = agent(c)
-    task = plan(c, smith)
-    if check_tasks(HOST, c.agent_home, task.GetKey(), attempt="latest"):
+def cmd_retrieve(c: Campaign, args):
+    if args.key:
+        key, source = args.key, f"{c.agent_home}/runs/{args.key}/results"
+    else:
+        smith = agent(c)
+        task = plan(c, smith)
+        key, source = task.GetKey(), smith.GetResultSource(task).GetPath()
+    if check_tasks(HOST, c.agent_home, key, attempt="latest"):
         return 1
-    retrieve(HOST, smith.GetResultSource(task).GetPath(), c.local_results)
+    retrieve(HOST, source, c.local_results)
     return 0
 
 
@@ -341,6 +345,7 @@ def main(doc: str, make_campaign, extra: dict | None = None, add_args=None):
             p.add_argument("--plan-only", action="store_true")
         if name == "fetch-intermediates":
             p.add_argument("transforms", nargs="+", help="transform names, e.g. filter_table")
+        if name in ("fetch-intermediates", "retrieve"):
             p.add_argument("--key", help="a run planned from an earlier tree, instead of re-planning")
     args = ap.parse_args()
     return commands[args.cmd](make_campaign(args), args)

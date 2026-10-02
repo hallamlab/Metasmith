@@ -1,6 +1,6 @@
 outs:
-- md5: 2cfed32610f5198cba55e47ba528a820.dir
-  size: 120701112
-  nfiles: 18
+- md5: 2116e773c7b98d76a5c25dbbf2d188d3.dir
+  size: 120705223
+  nfiles: 20
   hash: md5
   path: hallam_16s_inputs

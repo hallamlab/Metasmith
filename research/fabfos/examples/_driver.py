@@ -294,10 +294,16 @@ def check_schedulable(host: str, account: str, overrides: dict, *,
 def check_tasks(host: str, agent_home: str, task_key: str, *, attempt: str = "*") -> int:
     # attempt="latest" reads only the newest launch, whose csv also lists every task it
     # served from the cache; the default unions every attempt, so any retried failure counts.
+    # Within one launch Nextflow's own retry gives a task a second row, so a failure counts
+    # only when no row of the same task name completed.
     csv_glob = f"{agent_home}/runs/{task_key}/_metasmith/logs.{attempt}/nxf_tasks.csv"
     out = ssh_once(host, f"cat {csv_glob} 2>/dev/null | sort -u")
     rows = [ln for ln in out.splitlines() if ln and not ln.startswith("task_id,")]
-    failed = [ln for ln in rows if "FAILED" in ln]
+    if attempt == "latest":
+        done = {r[3] for r in csv.reader(rows) if len(r) > 4 and r[4] == "COMPLETED"}
+        failed = [ln for ln, r in zip(rows, csv.reader(rows)) if "FAILED" in ln and r[3] not in done]
+    else:
+        failed = [ln for ln in rows if "FAILED" in ln]
     print(f"    nextflow tasks: {len(rows)} recorded, {len(failed)} FAILED")
     for ln in failed:
         print(f"      {ln}")

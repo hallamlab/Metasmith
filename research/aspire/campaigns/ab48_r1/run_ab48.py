@@ -50,7 +50,8 @@ AB48_COHORTS = ["ab48_historical", "lab_19-05-01_to_23-05-01_Legacy", "lab_23-07
 PURIFY_COHORTS = ["purify_2025-06-02_Enrichment", "purify_2025_10_20_Enrichment"]
 PURIFY_TRIMMED = ["purify_2026_03_30_Enrichment"]
 # mitacs_spirulina is staged too, but its files are byte-identical to purify_2026_03_30's.
-OTHER_COHORTS = ["nostoc_anabaena"]
+# nostoc_anabaena_2024_07 pools two MiSeq runs of the same 21 libraries, one file pair each.
+NOSTOC_COHORTS = ["nostoc_anabaena", "nostoc_anabaena_2024_07"]
 TAXA_LABELS = ["Type", "Strain", "Condition", "NaCl", "NaOH", "Stock", "Extraction"]
 PURIFY_LABELS = ["Condition", "Round", "Glycerol", "DMSO"]
 LAB_LABELS = list(dict.fromkeys(TAXA_LABELS + PURIFY_LABELS))
@@ -210,8 +211,9 @@ def purify_study():
 
 
 
-# The lab sheet joins the AB48 and purify sheets. Their Condition columns share a name and a
-# meaning, so they share a column. The Nostoc and Anabaena cultures appear in neither sheet.
+# The lab sheet joins the AB48, purify and Nostoc/Anabaena sheets. Their Condition columns share
+# a name and a meaning, so they share a column. The Nostoc sheet keys its 2024-07 libraries by
+# File_ID (Patrik1..21) and the earlier four by ID.
 def lab_study():
     ab_samples, _ = ab48_study(AB48_COHORTS)
     taxa = _csv(SHEETS / "Taxa_Metadata.csv")
@@ -233,11 +235,13 @@ def lab_study():
         rows.append({"sample": r["sample"], "project": "Purify", "cohort": cohort_of[r["sample"]]["cohort"],
                      **{c: _label(m.get(c, "")) for c in LAB_LABELS}})
     reads.update(p_reads)
-    for cohort in OTHER_COHORTS:
+    nostoc = {r["File_ID"]: r for r in _csv(SHEETS / "Nostoc_Anabaena_Metadata.csv")}
+    for cohort in NOSTOC_COHORTS:
         for sid, s in staged_reads(cohort).items():
             reads[sid] = s
+            m = nostoc.get(sid, {})
             rows.append({"sample": sid, "project": "Nostoc-Anabaena", "cohort": cohort,
-                         **{c: "" for c in LAB_LABELS}})
+                         **{c: _label(m.get(c, "")) for c in LAB_LABELS}})
     ids = [r["sample"] for r in rows]
     assert len(ids) == len(set(ids)), "a sample id repeats across cohorts"
     return [reads[i] for i in ids], sheet(rows, ["project", "cohort", *LAB_LABELS])
