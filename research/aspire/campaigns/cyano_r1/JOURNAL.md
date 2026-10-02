@@ -120,3 +120,25 @@ the Cc31JQoI run's SpiecEasi graphs from `external_graphs/`. It plans three step
 off arm, and all three succeed. The node features come out byte-identical to the file
 supplied. The module table is header-only. The graph output is an empty directory. The
 results were checked and deleted, not pinned.
+
+## 2026-10-01 — upstream ASPIRE on the same reads, then a rerun on its vsearch, key ESfbY38n
+
+Upstream ASPIRE ran locally over the same 18 read pairs, with this campaign's params, the
+same SILVA, mitochondrion and contaminant files, and every module after the general stats
+off (`../upstream_cyano.py config`). It took 17 minutes for 85 tasks. MitoMaster stayed on,
+since this host has internet.
+
+The curated tables already agreed: 57 ASVs, every count equal. The filtered tables did not.
+Upstream kept 227 ASVs and the port 301, the shared 223 equal in every count. The cause is
+the vsearch build. Upstream's conda resolves 2.32.0, and the port pinned 2.28.1. On
+upstream's own concatenated reads 2.32.0 keeps upstream's 301 non-chimeric sequences
+exactly, and 2.28.1 keeps 406. The order samples are concatenated in changes nothing. The
+extra sequences were all too rare to survive curation. Probes are in
+`cache/aspire/t14_upstream/exp/`.
+
+`env::vsearch.env` now pins 2.32.0. The rerun ends with 76 tasks succeeded, every criterion
+met, and the diff empty at every table: 227 filtered ASVs, 227 identical taxonomies, 57
+curated ASVs. Its results replace the earlier pin.
+
+MitoMaster flagged nothing. Upstream's mito checker reads MitoMaster's header row,
+`SampleId`, as an ASV, which changes no count.

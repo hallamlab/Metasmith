@@ -12,9 +12,9 @@ Line numbers refer to `research/aspire/upstream/ASPIRE/asv_pipeline.nf` unless a
 
 ## Tally
 
-31 rows: 18 `match`, 7 `fixed`, 6 `open`. The four lung-study analyses are not ported, so they have no row.
+34 rows: 21 `match`, 12 `fixed`, 1 `open`. The four lung-study analyses are not ported, so they have no row.
 
-## Read spine (rows 1-10)
+## Read spine
 
 Module 1 folds eighteen upstream processes into ten rows. A sample is a `sequences::read_metadata` under `aspire::study_metadata`, and its reads reach `sequences::short_reads` either through `logistics/interleave_zipped_short_reads` (paired) or as a given `short_reads_se` (single-end).
 
@@ -31,7 +31,7 @@ Module 1 folds eighteen upstream processes into ten rows. A sample is a `sequenc
 | read_accounting | GENERAL_STATS@3755 | per-sample fastp json and read counts, raw ASV table, clean and removed counts | `aspire::read_fate` | fixed | Upstream reads raw reads, fastp reads and filtered fasta by absolute path (757-773) behind a barrier (2651). The row is now a fan-in over the per-sample products. |
 | sankey | SANKEY@3687 | read fate, removed counts (2777-2783), `sankeyMetadataPath` (918, 3717) | read-fate renderings (948) | fixed | The five stats and count tables collapse into `read_fate` and `counts_removed`. The sample manifest (`--sample-manifest`, 3718) stays untyped. |
 
-## Metadata and analyses (rows 11-24)
+## Metadata and analyses
 
 Augmentation (GROUP_LABEL_AUGMENTATION@4986), batch correction (ASV_BATCH_CORRECTION@4101 + ASV_META_FROM_CORRECTED@4246), their two passthroughs and OUTLIER_CHECKER@4316 are not ported. Both stages default off and sit outside the reads-to-ASV pipeline, and the outlier checker reads only batch correction's CLR table.
 
@@ -41,16 +41,17 @@ Augmentation (GROUP_LABEL_AUGMENTATION@4986), batch correction (ASV_BATCH_CORREC
 |---|---|---|---|---|---|
 | plot_metadata | PLOT_METADATA@3793 | read fate, clean and removed counts, taxonomy (2663-2668), study metadata by path (980) | analysis metadata, ASV meta and counts, mito metadata and tables | fixed | With no augmentation or correction stage after it, this row emits the analysis tables directly. |
 | grouping_diagnostics | GROUPING_DIAGNOSTICS@4929 | analysis metadata (2860), analysis counts (2861) | diagnostics, soft assignments, validation, summary | match | The rebinding at 2915 comes after the call and is dead. |
-| plot_upset | PLOT_UPSET@3927 | the staged metadata is unused. By `--data-dir`: micro target and final ASV tables, pre-augmentation metadata, taxonomy, two `_raw` copies (3948-3953) | UpSet renderings | open | The one declared edge is only a barrier. The real inputs include `_raw` files with no type, and a domain switch with no token. |
+| plot_upset | PLOT_UPSET@3927 | the staged metadata is unused. By `--data-dir`: micro target and final ASV tables, pre-augmentation metadata, taxonomy, two `_raw` copies (3948-3953) | UpSet renderings | fixed | Requires `counts_clean` (the target table), `analysis_counts` (the final one) and the taxonomy, passed by path. The `_raw` pass reads tables from before control subtraction, which the port never makes, so it is not run. The domain stays `micro`. |
 | bubbleplotter | BUBBLEPLOTTER@4018 | analysis ASV meta (2938) | bubble plots | match | |
-| umap_clustering | UMAP_CLUSTERING@4055 | analysis ASV meta only (2941, 4077) | UMAP renderings | open | The r4 lift added an `amplicon::asv_table` requirement the process never reads. Dropping it revises a recorded lift decision. |
+| umap_clustering | UMAP_CLUSTERING@4055 | analysis ASV meta only (2941, 4077) | UMAP renderings | fixed | The r4 lift's `amplicon::asv_table` requirement, which the process never reads, is dropped. |
 | collectors_curve | COLLECTORS_CURVE@4364 | analysis counts (2844, 2908), analysis metadata (2875) | collector's curves | match | |
-| diversity_analysis | DIVERSITY_ANALYSIS@4399 | analysis metadata and counts (2956-2958). By path, when `run_mito` (default on, 1290): `mito/ASVs/ASV_target.mito.tsv` (1274) | diversity results | open | Adding `counts_removed` would tie the lifted row back to the ASPIRE lane, because only `curate` produces it. |
-| indicspecies | INDICSPECIES@4518 + INDICSPECIES_PLOTS@4608 + INDICSPECIES_ALIGNED_PLOTS@4792 | metadata, counts (2964-2967). The plot fold reads taxonomy by path if it exists (1609, 4780) | summaries, results, tables, plots | match | The taxonomy read is optional and guarded by a file-exists check, so it is not a requirement. |
+| diversity_analysis | DIVERSITY_ANALYSIS@4399 | analysis metadata and counts (2956-2958). By path, when `run_mito` (default on, 1290): `mito/ASVs/ASV_target.mito.tsv` (1274) | diversity results | fixed | The `run_mito` branch is its own row, so this one stays reachable from any count table. |
+| diversity_mito | DIVERSITY_ANALYSIS@4399, `run_mito` | `counts_removed`, whose mitochondrial rows are the table upstream reads (1274), analysis metadata | mitochondrial diversity results | match | |
+| indicspecies | INDICSPECIES@4518 + INDICSPECIES_PLOTS@4608 + INDICSPECIES_ALIGNED_PLOTS@4792 | metadata, counts (2964-2967). The plot fold reads taxonomy by path if it exists (1609, 4780) | summaries, results, tables, plots | match | The taxonomy read is optional and guarded by a file-exists check, so it is not a requirement. A label with more than 8 levels is tested in level combinations of at most 3. |
 | measurement_association | MEASUREMENT_ASSOCIATION@4875 | ASV meta, metadata, counts (2995-2999). By path: optional measurement table (1681, 4891) | association results | match | The measurement table is optional, so it is not a requirement. |
 | clustermaps | CLUSTERMAPS@5324 | ASV meta, metadata, indicspecies barrier (3002-3007), indicator summaries by glob (5381-5399). By path, `run_mito` default on (1851): `mito/ASVs/ASV_target.mito.tsv` (1824) | clustermaps, mito clustermaps | fixed | Requires `aspire::counts_removed`, whose mito rows are the table upstream reads. The `isa_file` override stays a runtime option. |
 
-## Networks and summary (rows 25-35)
+## Networks and summary
 
 | row | upstream | reads | writes | verdict | reason |
 |---|---|---|---|---|---|
@@ -58,13 +59,15 @@ Augmentation (GROUP_LABEL_AUGMENTATION@4986), batch correction (ASV_BATCH_CORREC
 | spieceasi_external | none (2707-2715) | three graph files by config path (1902-1904) | the same three channels | match | |
 | network_modules | NETWORK_MODULES@5522 | graph all, graph thresholded (2719-2722) | modules sub, all, summary, runs | match | |
 | network_modules_absent | none (2726-2729) | on-disk module files if present (2085-2086) | modules sub, all | match | |
-| asv_mag_link | ASV_MAG_LINK@5821 | filtered ASV fasta (2679-2681). By path: MAG master TSV, barrnap dir, genome FASTA and QC dirs (2115-2120, 5835-5847) | pairing table and link results | open | The MAG collection is a required input with no type. The linker exits without it (`asv_mag_barrnap_linker.py:1032`). |
+| collect_mags | none: upstream takes a genome QC pipeline's output directory | a dedup run's assembly, cluster table, quality bins and their barrnap GFFs | `aspire::mag_collection` | match | Lays the 95% centroid bins out as the linker's `--genome-qc-dir`. |
+| asv_mag_link | ASV_MAG_LINK@5821 | filtered ASV fasta (2679-2681). By path: MAG master TSV, barrnap dir, genome FASTA and QC dirs (2115-2120, 5835-5847) | pairing table and link results | fixed | Requires `aspire::mag_collection`, the `--genome-qc-dir` layout that `collect_mags` builds. |
 | asv_mag_link_absent | none (2735, 2751, 2764, 2791) | none | placeholder pairing and results | match | |
-| graph_network | GRAPH_NETWORK@5579 | three graph files, counts, metadata, taxonomy, indicator tables, module tables, link barrier (2736-2747). Pairing by path (5606) | network renderings, best-stats tables | match | |
+| graph_network | GRAPH_NETWORK@5579 | three graph files, counts, metadata, taxonomy, indicator tables, module tables, link barrier (2736-2747). Pairing by path (5606) | network renderings, best-stats tables | match | Upstream's natural sort raises on a label whose levels mix a leading number and a word. The port's copy tags each part. |
 | graph_network_absent | none (2763, 2789) | none | placeholder network outputs | match | |
 | asv_mag_network | ASV_MAG_NETWORK@5654 | graph, node features, taxonomy, counts, link barrier (2753-2759). By path under the link dir: pairing, genome summary, 16S reference catalog (5682-5686) | MAG-annotated network renderings | fixed | Added `aspire::asv_mag_outputs`, because the genome summary and reference catalog live in the link directory, not the pairing file. MAG abundance and functional annotations (2170, 5672-5673) stay untyped. |
-| module_mag_anchors | MODULE_MAG_ANCHORS@5705 | modules all, node features, taxonomy, counts, metadata, link and network barriers (2765-2773). By path: pairing (5741), best-stats (5746) | anchor tables, module scores, heatmaps | match | |
-| master_summary | MASTER_SUMMARY@5763 | ASV meta, counts, network, sankey and link barriers (2785-2800). Whitelisted rglob over clustermaps, indicspecies, SpiecEasi and link dirs (`build_master_asv_summary.py:219-240`) | five master tables | open | The sankey edge is a barrier the script never reads. The scan also reads indicator tables, clustermaps and module anchors, which are undeclared. Declaring clustermaps would force it to run, because it has no off-arm. |
+| module_mag_anchors | MODULE_MAG_ANCHORS@5705 | modules all, node features, taxonomy, counts, metadata, link and network barriers (2765-2773). By path: pairing (5741), best-stats (5746) | anchor tables, module scores, heatmaps | match | Gated on `asv_mag_link_on`. |
+| module_mag_anchors_absent | none (2791) | none | header-only anchor table | match | |
+| master_summary | MASTER_SUMMARY@5763 | ASV meta, counts, network, sankey and link barriers (2785-2800). Whitelisted rglob over clustermaps, indicspecies, SpiecEasi and link dirs (`build_master_asv_summary.py:219-240`) | five master tables | fixed | Requires the clustermap, indicator, network, anchor and link outputs the scan reads, and drops the sankey barrier. The whitelist names every label's indicator tables. |
 
 ## Module-1 thresholds
 
@@ -77,11 +80,6 @@ Questions for Ryan:
 1. `curate.abundance_threshold` is 0.5% in `set1-2`, 0.005% in the code default and the `si` config, and 0 in the mock config. The 100-fold spread looks like a percent-versus-fraction slip. Which one is intended?
 2. `table_filter.min_sample_sum` (5000 reads) runs before `curate` removes mito and contaminant reads. Should sample depth be checked again after decontamination?
 3. `set1-2` sets `min_asv_sum: 0`, which upstream silently runs as 0.01%. Is the 0.01% floor intended?
-
-## Cross-row findings left open
-
-- **Lifted rows read the raw ASV table.** `aspire::analysis_counts` does not carry `amplicon::asv_table`'s properties, so `umap_clustering`, `diversity_analysis`, `indicspecies`, `measurement_association`, `spieceasi` and `graph_network` bind `denoise`'s pre-filter table. The .nf feeds them the final micro counts (2845-2846). This is a type-graph decision, not a row edit.
-- **Off-arm lift is incomplete.** `spieceasi_external` and `graph_network_absent` stay on `aspire::study_metadata` while their on-arms moved to `amplicon::survey`.
 
 ## Mock dataset against the leaf givens
 

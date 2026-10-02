@@ -5,7 +5,10 @@ Real runs of this pipeline family on HPC.
 | | |
 |---|---|
 | `r1/` | GMCF_3495 — 34 lung metagenomes on the Alliance cluster **fir**: assembly, binning, functional annotation, taxonomy. Complete; published and mirrored. |
-| `cyano_r1/` | PRJNA801777 — 18 V4 16S libraries from cyanobacteria cultures on **sockeye**: the ASPIRE port's reads-to-counts lane and its first three analyses. Green; see its `README.md`. |
+| `cyano_r1/` | PRJNA801777 — 18 V4 16S libraries from cyanobacteria cultures on **sockeye**: every ASPIRE row but the MAG lane, and the comparison against upstream ASPIRE. Green; see its `README.md`. |
+| `ab48_r1/` | The Hallam lab's AB48 photobioreactor 16S time series and its MAGs, and the purify bioreactor's measured samples, on **sockeye**: the MAG lane and measurement association. See its `README.md`. |
+| `upstream_cyano.py` | Runs upstream ASPIRE locally on `cyano_r1`'s reads and diffs its tables against the port's by sequence |
+| `_campaign.py`, `local_run.py`, `local_mag_lane.py` | The drivers' shared sockeye plumbing, and local docker runs of single bodies and of the MAG lane |
 | `JOURNAL.md` | `r1`'s ten session debriefs, carried out of the project that held them |
 
 ## Where this came from
