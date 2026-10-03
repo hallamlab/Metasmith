@@ -20,7 +20,7 @@ Module 1 folds eighteen upstream processes into ten rows. A sample is a `sequenc
 
 | row | upstream | reads | writes | verdict | reason |
 |---|---|---|---|---|---|
-| fastp_qc | FASTP_QC@3121 | raw reads of either parity (472-480, 2607), params | QC reads, fastp json/html | match | The parity branch (3167-3175) moves to run time, read off `sequences::read_metadata`. |
+| fastp_qc | FASTP_QC@3121 | raw reads of either parity (472-480, 2607), params | QC reads, fastp json/html | match | The parity branch (3167-3175) moves to run time, read off `sequences::read_metadata`. A sample whose metadata sets `primers_removed` skips the front trims. |
 | merge_and_filter_reads | FILTER_READS@3221 + MERGE_READS@3179 | QC reads (2609-2610), params | filtered fasta, per-sample read counts | match | Single-end reads skip the merge. The count file replaces the absolute-path read in GENERAL_STATS (771-773). |
 | denoise | DENOISE@3367 + RELABEL_FILTERED@3248 + CONCAT_FASTAS@3274 + DEREPLICATE@3298 + CHIMERA_CHECK@3393 + CREATE_COUNT_MATRIX@3417 | every sample's filtered fasta (2612-2625), params | `amplicon::asv_table`, `amplicon::asv_seqs` | match | The study fan-in. The fold assumes `concat.relabel`, which defaults on (489). |
 | filter_table | FILTER_TABLE@3444 | ASV counts and fasta (2628), params | filtered counts and fasta | match | |

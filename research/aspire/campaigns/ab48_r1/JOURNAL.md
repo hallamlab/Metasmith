@@ -134,3 +134,31 @@ single-group test, `duleg=TRUE`, which is linear in its levels and which upstrea
 runs beside the combination test. On the full study the 8-level `cohort` label took 103 s
 for the combination test and 17 s for the single-group test. The pins above came from the
 cap. The analyses rerun under the new rule.
+
+## 2026-10-03 — lab: one ASV table over every V4–V5 sample, key eKhZC4ql
+
+The `lab` study joins the eight AB48 cohorts, the 2025 purify runs and the Nostoc and
+Anabaena cultures. The 21 Nostoc libraries of 2024-07-04 came from Globus. Each library was
+sequenced twice, and the two runs are pooled per library. 720 tasks succeeded, and
+`check_results.py --name lab_r1` passes. The results are pinned at `data/aspire/lab_r1.dvc`.
+
+- 220 of 231 samples pass the read floor. 1775 ASVs pass table filtering, and 240 survive
+  curation.
+- Over the 189 AB48 samples, all 10 most abundant ASVs match a July ASV. Lab-wide, Nostoc and
+  Arthrospira ASVs from the cultures the July lane never saw fill half the top 10.
+- 144 ASVs have a candidate MAG, and blastn agrees with every one. SpiecEasi keeps 194 nodes
+  in 32 modules of more than one node.
+- Round, Glycerol and DMSO hold one level among the samples that pass curation.
+  indicspecies records them as skipped.
+- clustermaps ran out of 16 GB at this size and gets 64 GB.
+
+The first attempt held 238 samples. The 2026 purify run's ASVs were 253 bp against 372 for
+every other run, and 81% of its reads fell in ASVs shorter than 300 bp. Its primers were
+515F/806R, a V4 product. It is now the `purify_v4` study, trimmed to V4 by SINA, pinned at
+`data/aspire/purify_v4_r1.dvc` (key zEBjRQO0, 7 samples, 19 curated ASVs). Arthrospira
+holds 61% of its reads.
+
+The reactor log now runs to 2026-10-01: 696,528 rows, rebuilt with `merge_reactor_logs.py`
+from the exported ReactorLogs folder. The rebuild reproduces the earlier merge row for row.
+
+The timeline page, built by `report_data.py`, is a private claude.ai artifact.
