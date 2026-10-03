@@ -91,6 +91,10 @@ SCALED = {
     "votu_cluster": (16, 128, 6),
 }
 COMEBIN_CPUS = 12
+# The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
+# Job arrays are off so that queueSize counts tasks, not arrays of an unknown weight. slurm.nf reads
+# `array` outside a closure, before the params file merges, so only a literal in the config turns it off.
+QUEUE_BUDGET = 840
 
 
 def _cami(study):
@@ -258,10 +262,13 @@ def solve(args, shape, by_study):
     if args.dag:
         c.write_dag(task, f"e5_{shape}", cache_dir)
     if remote:
+        no_arrays = cache_dir / "no_arrays.config"
+        no_arrays.write_text("process {\n    array = 0\n}\n")
         c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
-                        params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25)),
+                        params=dict(executor=dict(queueSize=args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape))),
+                                    process=dict(tries=4)),
                         scaled=SCALED, comebin_cpus=COMEBIN_CPUS, materialise=args.materialise,
-                        on_exist="clear" if args.clear else "update")
+                        on_exist="clear" if args.clear else "update", extra_config=no_arrays)
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
 
@@ -301,7 +308,7 @@ def main():
         p.add_argument("--batch", type=int, required=True, choices=sorted(BATCHES))
         p.add_argument("--shape", choices=list(SHAPES))
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False, clear=False)
+                       import_givens=False, clear=False, queue_size=None)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_<shape>.dag.svg")
             mode = p.add_mutually_exclusive_group()
@@ -309,6 +316,8 @@ def main():
             mode.add_argument("--launch", action="store_true")
             mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
             p.add_argument("--tag")
+            p.add_argument("--queue-size", type=int,
+                           help=f"tasks this run may queue; default {QUEUE_BUDGET} split across the batch's plans")
             p.add_argument("--clear", action="store_true",
                            help="restage from scratch, which a protocol-only transform edit needs; deletes the run's logs")
             p.add_argument("--import", dest="import_givens", action="store_true",

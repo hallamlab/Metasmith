@@ -7,7 +7,7 @@
 # none, before it is named here. findings/E5_RUN.md lists each one and its copy.
 # CAUTION the job name is fixed so --dependency=singleton runs one deletion at a time. Parallel
 # deletes load the Lustre metadata server for every other user of the account.
-#SBATCH --account=rpp-shallam
+#SBATCH --account=rrg-shallam-ab
 #SBATCH --job-name=e5_release
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G
