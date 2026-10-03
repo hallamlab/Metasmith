@@ -92,8 +92,8 @@ SCALED = {
 }
 COMEBIN_CPUS = 12
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
-# Job arrays are off so that queueSize counts tasks, not arrays of an unknown weight. slurm.nf reads
-# `array` outside a closure, before the params file merges, so only a literal in the config turns it off.
+# Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
+# so a plan's share must stay at or above slurm.nf's array width of 100.
 QUEUE_BUDGET = 840
 
 
@@ -262,13 +262,14 @@ def solve(args, shape, by_study):
     if args.dag:
         c.write_dag(task, f"e5_{shape}", cache_dir)
     if remote:
-        no_arrays = cache_dir / "no_arrays.config"
-        no_arrays.write_text("process {\n    array = 0\n}\n")
+        queue = args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape))
+        if queue < 100:
+            sys.exit(f"a queue of {queue} is narrower than a 100-wide job array")
         c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
-                        params=dict(executor=dict(queueSize=args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape))),
+                        params=dict(executor=dict(queueSize=queue),
                                     process=dict(tries=4)),
                         scaled=SCALED, comebin_cpus=COMEBIN_CPUS, materialise=args.materialise,
-                        on_exist="clear" if args.clear else "update", extra_config=no_arrays)
+                        on_exist="clear" if args.clear else "update")
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
 
