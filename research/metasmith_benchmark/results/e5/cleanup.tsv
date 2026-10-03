@@ -1,10 +1,10 @@
 path	copy	verified_by	job	status
-bench/checkout/* (34 dirs, all but a1c1b9d7)	git commits on origin or capella	git branch -r --contains, 34/34	62644882	submitted
-wave2_b3_nfcore/* (13 dirs, all but checkm2_db)	none needed: E1 nf-core test scratch	-	62644884	submitted
-cami_nfcore_split_reads	none needed: regenerable by e1_nfcore/stage_split_reads.py	-	62644885	submitted
-bench/e1ctl, bench/e1ctl2	chinook fir_bench_e1_e2/e1ctl*/ tars	tar manifests = out+reports+1; Globus checksum resync b511dac9	-	pending verify
-bench/e1_close	chinook fir_bench_e1_e2/e1/e1_close	Globus checksum resync b511dac9	-	pending verify
-bench/archive/{e1_long,e1_short_out,e1ctl*}.tar + manifests, bench/archive/e2	chinook fir_bench_e1_e2/{e1,e1ctl,e1ctl2,e2}	Globus checksum resync b511dac9	-	pending verify
+bench/checkout/* (34 dirs, all but a1c1b9d7)	git commits on origin or capella	git branch -r --contains, 34/34	62644882	deleted
+wave2_b3_nfcore/* (13 dirs, all but checkm2_db)	none needed: E1 nf-core test scratch	-	62644884	deleted
+cami_nfcore_split_reads	none needed: regenerable by e1_nfcore/stage_split_reads.py	-	62644885	deleted
+bench/e1ctl, bench/e1ctl2	chinook fir_bench_e1_e2/e1ctl*/ tars	tar manifests = out+reports+1; Globus checksum resync b511dac9 repaired 9 files added after the archive (e1_close scripts, tables, logs); second pass 7557290d	-	pending verify
+bench/e1_close	chinook fir_bench_e1_e2/e1/e1_close	Globus checksum resync b511dac9 repaired 9 files added after the archive (e1_close scripts, tables, logs); second pass 7557290d	-	pending verify
+bench/archive/{e1_long,e1_short_out,e1ctl*}.tar + manifests, bench/archive/e2	chinook fir_bench_e1_e2/{e1,e1ctl,e1ctl2,e2}	Globus checksum resync b511dac9 repaired 9 files added after the archive (e1_close scripts, tables, logs); second pass 7557290d	-	pending verify
 cami/metasmith (E2 home)	chinook fir_bench_e1_e2/e2_home/metasmith, minus nxf_work and results hardlinks	Globus b0e0d05a, then a zero-byte mtime resync	-	archiving
-pratama2026/metasmith (E3 home)	chinook fir_bench_e3/pratama2026/metasmith, five current runs added	Globus b27071b0, then a zero-byte mtime resync	-	archiving
-bench/e5_hybrid	chinook fir_bench_e5/e5_hybrid	Globus b3c5b43b, then a zero-byte mtime resync	-	archiving
+pratama2026/metasmith (E3 home)	chinook fir_bench_e3/pratama2026/metasmith, five current runs added	Globus b27071b0: 24,343 new files, 354.1 GB, 27,264 already archived. Resync af406114: 0 bytes, 51,607 skipped	62652022	deleted: 148,436 inodes, 2.42 TB
+bench/e5_hybrid	chinook fir_bench_e5/e5_hybrid	Globus b3c5b43b: 78,648 files, 65.3 GB. Resync e250b2b1: 0 bytes, 78,648 skipped. 2,499 symlinks listed in fir_bench_e5/e5_hybrid_symlinks.tsv	62650610	deleted: 88,070 inodes, 65.3 GB
