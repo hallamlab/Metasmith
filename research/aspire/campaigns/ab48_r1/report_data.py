@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the lab ASV timeline page from the pinned ASPIRE results and the bioreactor logs.
 
-    python research/aspire/campaigns/ab48_r1/report_data.py [--out PAGE] [--study lab_r1]
+    python research/aspire/campaigns/ab48_r1/report_data.py [--out PAGE] [--study lab_r1] [--v4-study purify_v4_r1]
 
 Reads the study's pinned results under data/aspire and the sheets and reactor log in
 data/aspire/hallam_16s_inputs, and fills report_template.html with the result.
@@ -86,24 +86,29 @@ def crosswalk() -> pd.DataFrame:
     return cw[cw.is_control == "False"]
 
 
-def purify_section(counts: pd.DataFrame, by_taxon: pd.DataFrame):
+# The 2026 purify run amplified V4 alone and is its own study, so its samples join the V4-V5
+# samples here, at the taxon level, and never by ASV.
+def purify_section(studies: list[tuple[str, pd.DataFrame, pd.DataFrame]]):
     cw = crosswalk().drop_duplicates("asv_table_id").set_index("asv_table_id")
     meta = pd.read_csv(SHEETS / "Purify_Metadata.csv", dtype=str).set_index("ID")
-    ids = [s for s in counts.columns if s in cw.index and cw.loc[s, "cohort"].startswith("purify")]
-    samples = []
-    for sid in ids:
-        row = cw.loc[sid]
-        label = row.display_label
-        m = meta.loc[label] if label in meta.index else None
-        samples.append({
-            "id": sid, "label": label.replace("_", " "),
-            "date": m["Date"] if m is not None else row.date,
-            "condition": row.condition, "washed": "Washed" in label,
-            "reads": int(counts[sid].sum()),
-        })
+    samples, frames, asvs = [], [], {}
+    for study, counts, by_taxon in studies:
+        ids = [s for s in counts.columns if s in cw.index and cw.loc[s, "cohort"].startswith("purify")]
+        for sid in ids:
+            row = cw.loc[sid]
+            label = row.display_label
+            m = meta.loc[label] if label in meta.index else None
+            samples.append({
+                "id": sid, "label": label.replace("_", " "),
+                "date": m["Date"] if m is not None else row.date,
+                "condition": row.condition, "washed": "Washed" in label,
+                "reads": int(counts[sid].sum()), "study": study,
+            })
+        frames.append(by_taxon[ids])
+        asvs[study] = int((counts[ids].sum(axis=1) > 0).sum())
     samples.sort(key=lambda x: (x["date"], x["washed"], x["label"]))
-    frame = by_taxon[[x["id"] for x in samples]]
-    return samples, frame[frame.sum(axis=1) > 0], int((counts[ids].sum(axis=1) > 0).sum())
+    frame = pd.concat(frames, axis=1).fillna(0.0)[[x["id"] for x in samples]]
+    return samples, frame[frame.sum(axis=1) > 0], asvs
 
 
 def gtdb_names() -> dict[str, str]:
@@ -201,17 +206,20 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=REPO / "cache" / "aspire" / "report" / "lab_asv_timeline.html")
     ap.add_argument("--study", default="lab_r1")
+    ap.add_argument("--v4-study", default="purify_v4_r1")
     args = ap.parse_args()
 
     counts, _, asv_taxon, by_taxon, phyla = study_tables(args.study)
-    p_samples, p_frame, p_asvs = purify_section(counts, by_taxon)
+    v4_counts, _, _, v4_by_taxon, v4_phyla = study_tables(args.v4_study)
+    phyla = {**v4_phyla, **phyla}
+    p_samples, p_frame, p_asvs = purify_section([(args.study, counts, by_taxon), (args.v4_study, v4_counts, v4_by_taxon)])
     a_groups, a_frame, mags, a_stats = ab48_section(args.study, counts, asv_taxon, by_taxon)
     p_bars, a_bars = rank_taxa(p_frame, BAR_TAXA), rank_taxa(a_frame, BAR_TAXA)
     p_slots, a_slots = assign_colors([(p_frame, p_bars), (a_frame, a_bars)])
     p_rows, a_rows = rank_taxa(p_frame, DOT_TAXA), rank_taxa(a_frame, DOT_TAXA)
 
     data = {
-        "study": {"name": args.study, "samples": int(counts.shape[1]), "asvs": int(len(counts))},
+        "study": {"name": args.study, "v4": args.v4_study, "samples": int(counts.shape[1]), "asvs": int(len(counts))},
         "phyla": {t: phyla.get(t, "") for t in set(p_rows + a_rows)},
         "purify": {"samples": p_samples, "slots": p_slots, "bars": p_bars, "rows": p_rows, "asvs": p_asvs,
                    "rel": frame_json(p_frame, sorted(set(p_rows + p_bars)))},

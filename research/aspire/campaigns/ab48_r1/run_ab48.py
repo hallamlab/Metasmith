@@ -12,8 +12,9 @@ Three studies, one driver:
     ab48      AB48's historical and seven lab cohorts, 200 samples
     purify    the purify bioreactor samples that carry primers, with the bioreactor's sensor
               readings as measurements
-    lab       every non-control sample of every cohort above plus the Nostoc and Anabaena
-              cultures, as one study and so one ASV table
+    lab       every non-control V4-V5 sample of the lab, AB48, purify and the Nostoc and
+              Anabaena cultures, as one study and so one ASV table
+    purify_v4 the 2026 purify run, which amplified V4 alone
 
 The reads were staged on sockeye by the asv_task project, one directory per sequencing run.
 The sheets come from capella and are pinned at data/aspire/hallam_16s_inputs. The AB48 MAGs
@@ -48,7 +49,10 @@ AB48_COHORTS = ["ab48_historical", "lab_19-05-01_to_23-05-01_Legacy", "lab_23-07
 # file trims a fixed length, so the study keeps the runs that carry primers. The 2025_10_20 run
 # repeats the 2025-06-02 run's s11 and s115 files under later dates; the first copy is kept.
 PURIFY_COHORTS = ["purify_2025-06-02_Enrichment", "purify_2025_10_20_Enrichment"]
-PURIFY_TRIMMED = ["purify_2026_03_30_Enrichment"]
+# The 2026 purify run arrived without primers and amplified V4 alone (515F/806R): its ASVs are
+# about 253 nt where every other run's are 372. A V4 ASV and a V4-V5 ASV of one organism are
+# different sequences, and the count step maps reads across the two, so it is its own study.
+PURIFY_V4 = ["purify_2026_03_30_Enrichment"]
 # mitacs_spirulina is staged too, but its files are byte-identical to purify_2026_03_30's.
 # nostoc_anabaena_2024_07 pools two MiSeq runs of the same 21 libraries, one file pair each.
 NOSTOC_COHORTS = ["nostoc_anabaena", "nostoc_anabaena_2024_07"]
@@ -73,12 +77,15 @@ TARGETS = {
     "ab48": ANALYSES,
     "purify": ["aspire::counts_clean", "aspire::read_fate", "aspire::measurement_association_outputs"],
     "lab": ANALYSES,
+    "purify_v4": ["aspire::counts_clean", "amplicon::asv_taxonomy", "aspire::read_fate"],
 }
 RESOURCE_OVERRIDES = {
     "sina_trim": Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=6)),
     "taxonomy": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=6)),
     "denoise": Resources(cpus=8, memory=Size.GB(32), duration=Duration(hours=12)),
     "spieceasi": Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=12)),
+    # 238 lab-wide samples took clustermaps past its 16 GB.
+    "clustermaps": Resources(cpus=4, memory=Size.GB(64), duration=Duration(hours=6)),
 }
 
 
@@ -225,7 +232,7 @@ def lab_study():
             meta = taxa_metadata(r, by_id)
             rows.append({"sample": r["asv_table_id"], "project": "AB48", "cohort": r["cohort"],
                          **{c: _label(meta.get(c, "")) for c in LAB_LABELS}})
-    p_reads, p_rows = purify_rows(PURIFY_COHORTS + PURIFY_TRIMMED)
+    p_reads, p_rows = purify_rows(PURIFY_COHORTS)
     purify_meta = {r["ID"]: r for r in _csv(SHEETS / "Purify_Metadata.csv")}
     cohort_of = {}
     for r in crosswalk():
@@ -247,6 +254,11 @@ def lab_study():
     return [reads[i] for i in ids], sheet(rows, ["project", "cohort", *LAB_LABELS])
 
 
+def v4_params(params: str) -> str:
+    out = re.sub(r"(?m)^  regions: .*$", "  regions: [V4]", params)
+    return re.sub(r"(?m)^  trim_to: .*$", "  trim_to: V4", out)
+
+
 def campaign(args) -> Campaign:
     common = dict(here=HERE, params=PRESET.read_text(), targets=TARGETS[args.study],
                   mito_reference=f"{REFS}/refseq_mitochondrion.fasta",
@@ -256,6 +268,10 @@ def campaign(args) -> Campaign:
         samples, study, measures = purify_study()
         return Campaign(name="purify_r1", root=f"{ROOT}/purify", samples=samples, study_sheet=study,
                         measurements=measures, **common)
+    if args.study == "purify_v4":
+        reads, rows = purify_rows(PURIFY_V4)
+        return Campaign(name="purify_v4_r1", root=f"{ROOT}/purify", samples=[reads[r["sample"]] for r in rows],
+                        study_sheet=sheet(rows, PURIFY_LABELS), **{**common, "params": v4_params(common["params"])})
     if args.study == "lab":
         samples, study = lab_study()
         return Campaign(name="lab_r1", root=ROOT, samples=samples, study_sheet=study,

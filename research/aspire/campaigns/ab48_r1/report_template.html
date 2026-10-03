@@ -109,7 +109,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 <header>
   <div class="eyebrow">Hallam Lab · 16S amplicons · ASPIRE on Sockeye</div>
   <h1>AB48 and Purify Spirulina communities over time</h1>
-  <p class="lede">The July report's two community timelines, rebuilt from one ASPIRE run over every lab 16S sample, so both lines share one ASV table. Each figure stacks a dot plot and taxonomic bars on one timeline. The Purify figure adds the photobioreactor's own log underneath, one line panel per sensor, so each reactor sample sits directly above the conditions that preceded it.</p>
+  <p class="lede">The July report's two community timelines, rebuilt from one ASPIRE run over every V4–V5 16S sample in the lab, so both lines share one ASV table. Each figure stacks a dot plot and taxonomic bars on one timeline. The Purify figure adds the photobioreactor's own log underneath, one line panel per sensor, so each reactor sample sits directly above the conditions that preceded it.</p>
   <div class="facts" id="facts"></div>
 </header>
 
@@ -135,7 +135,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 
 <section id="methods">
   <h2>How the tables were made</h2>
-  <p>One ASPIRE study holds every non-control lab sample: the eight AB48 cohorts, the three Purify sequencing runs and the Nostoc and Anabaena cultures. It ran on Sockeye as a Metasmith workflow. The July report ran DADA2 once per sequencing run and joined runs by sequence afterwards. ASPIRE denoises every run together, so one ASV identifier means one sequence across the whole lab.</p>
+  <p>One ASPIRE study holds every non-control V4–V5 sample in the lab: the eight AB48 cohorts, two of the three Purify sequencing runs and the Nostoc and Anabaena cultures. It ran on Sockeye as a Metasmith workflow. The July report ran DADA2 once per sequencing run and joined runs by sequence afterwards. ASPIRE denoises every run together, so one ASV identifier means one sequence across the whole lab.</p>
   <div class="steps">
     <div class="step"><h4>Read QC and merge</h4><p>fastp trims the 515F-Y and 926R primers by length. vsearch merges pairs and keeps merged reads of 245 bp or more at ≤1 expected error.</p></div>
     <div class="step"><h4>Denoise</h4><p>vsearch UNOISE3 (minimum size 3) and de novo UCHIME3 call ASVs over the pooled study. Reads map back at 99.9% identity.</p></div>
@@ -158,7 +158,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 </section>
 
 <footer>
-  <p>Built by <code>research/aspire/campaigns/ab48_r1/report_data.py</code> in metasmith's <code>aspire/dev</code> branch, from the pinned results <code>data/aspire/lab_r1</code> and the reactor log <code>hallam_16s_inputs/pbr_logs_merged.csv</code>. The log is binned to 3-hour means. The logger holds a dose or harvest value for the length of the event, so those two panels show each bin's largest value.</p>
+  <p>Built by <code>research/aspire/campaigns/ab48_r1/report_data.py</code> in metasmith's <code>aspire/dev</code> branch, from the pinned results <code>data/aspire/lab_r1</code> and <code>purify_v4_r1</code>, and the reactor log <code>hallam_16s_inputs/pbr_logs_merged.csv</code>. The log is binned to 3-hour means. The logger holds a dose or harvest value for the length of the event, so those two panels show each bin's largest value.</p>
 </footer>
 </div>
 
@@ -318,7 +318,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     });
     const cols = samples.map(s => ({
       short: s.label.replace(/^PBR /, "PBR ").replace("Original Community", "Original comm."),
-      tipName: `${s.label} · ${s.condition}${s.washed ? ", washed" : ""} · ${fmtDate(s.d)} · ${s.reads.toLocaleString()} reads`,
+      tipName: `${s.label} · ${s.condition}${s.washed ? ", washed" : ""} · ${fmtDate(s.d)} · ${s.reads.toLocaleString()} reads${s.study === DATA.study.v4 ? " · V4 run" : ""}`,
     }));
 
     const top = 34;
@@ -428,7 +428,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     legend("leg-purify", sec);
     const pbr = samples.filter(s => s.condition === "PBR").length;
     document.getElementById("cap-purify").innerHTML =
-      `<b>Figure 1.</b> ${samples.length} Purify culture samples (${pbr} from the PBR), ${sec.asvs} of the study's curated ASVs occur in them, pooled to taxa. ` +
+      `<b>Figure 1.</b> ${samples.length} Purify culture samples (${pbr} from the PBR) that pass the 5000-read floor, pooled to taxa. The ${samples.filter(s => s.study === DATA.study.v4).length} samples from 2026 come from the separate V4 study (${sec.asvs[DATA.study.v4]} curated ASVs); the rest hold ${sec.asvs[DATA.study.name]} of the lab table's curated ASVs. ` +
       `Top: dot area is a taxon's share of a sample's curated reads, for the ${sec.rows.length} taxa that reach the largest shares. ` +
       `Middle: the same shares stacked, with the ${sec.bars.length} leading taxa coloured and the rest grey. ` +
       `Bottom: every logged sensor, ${logs.rows.toLocaleString()} rows binned to 3 hours. Grey hairlines mark sampling dates, and the shaded margins have no log. ` +
@@ -472,12 +472,12 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     const items = [
       [DATA.study.samples, "lab samples in one study"], [DATA.study.asvs, "curated ASVs lab-wide"],
       [st.samples, "AB48 samples"], [st.asvs, "curated AB48 ASVs"], [st.paired_asvs, `of ${st.filtered_asvs.toLocaleString()} filtered AB48 ASVs pair with a MAG`],
-      [p.samples.length, "Purify samples"], [p.asvs, "curated Purify ASVs"],
+      [p.samples.length, "Purify samples"],
       [(DATA.logs.rows / 1000).toFixed(0) + "k", "reactor log rows"],
     ];
     document.getElementById("facts").innerHTML = items.map(([v, l]) => `<div><b>${v}</b>${l}</div>`).join("");
     document.getElementById("purify-method").textContent =
-      "The 2026 Purify sequencing run arrived with its primers already removed. Its samples are marked as such, so fastp trims nothing from the front of those reads, and their merged amplicons cover the same bases as every other run's. Their ASVs therefore join the rest of the lab's by sequence.";
+      "The 2026 Purify sequencing run is the exception. It arrived with its primers removed and amplified V4 alone (515F/806R, about 253 bp), where every other run covers V4–V5 (515F/926R, about 372 bp). A V4 sequence and a V4–V5 sequence of one organism are different ASVs, so that run is its own ASPIRE study, trimmed to V4, and Figure 1 joins it to the other Purify samples by taxon rather than by ASV.";
   }
 
   purifyFigure(); ab48Figure(); tables(); facts();
