@@ -54,3 +54,24 @@ def test_show_namespaces_off_strips_every_label(tmp_path):
     assert any(l.namespace for l in plan.BuildDAG().labels.values())
     labels = plan.BuildDAG(show_namespaces=False).labels.values()
     assert not any(l.namespace or "::" in l.full for l in labels)
+
+
+def test_a_library_local_env_is_hidden_with_the_env_namespace(tmp_path):
+    from tests.metasmith.cache._cache_harness import (
+        build_samples_library,
+        build_transform_library,
+        build_types_library,
+        build_workflow_task,
+        identity_transform_code,
+    )
+
+    types_path = build_types_library(tmp_path, ("tool.env", "out"))
+    samples = build_samples_library(tmp_path, types_path, count=1, input_type="tool.env")
+    tr_lib = build_transform_library(
+        tmp_path / "tr", types_path, {"tr": identity_transform_code("tr", "tool.env", "out")}
+    )
+    plan = build_workflow_task(
+        samples, tr_lib, sample_type="tool.env", target_specs=[("out_target", {"out"})]
+    ).plan
+    assert "tool.env" not in plan.BuildDAG().to_text()
+    assert "tool.env" in plan.BuildDAG(blacklist_namespaces={"lib"}).to_text()

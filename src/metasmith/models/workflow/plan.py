@@ -552,6 +552,10 @@ class WorkflowPlan:
                 return ns
             return name
 
+        # A library may declare its own environments (bench::checkm2.env), outside the env namespace.
+        def _hidden(name: str) -> bool:
+            return _get_ns(name) in blacklist_namespaces or ("env" in blacklist_namespaces and name.endswith(".env"))
+
         r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, blacklist=blacklist, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
         def _type_label(dtype_name: str) -> Label:
             if "::" in dtype_name:
@@ -566,7 +570,7 @@ class WorkflowPlan:
         given_inst_names: set[str] = set()
         k2names: dict[Endpoint, set[str]] = {}
         for x in self.given:
-            if _get_ns(x.dtype_name) in blacklist_namespaces: continue
+            if _hidden(x.dtype_name): continue
             k2names[x.dtype] = k2names.get(x.dtype, set()) | {x.dtype_name}
         parents: set[Endpoint] = set()
         for e in k2names:
@@ -576,10 +580,10 @@ class WorkflowPlan:
         for p in parents:
             if p not in k2names: continue
             for inst in k2names[p]:
-                if _get_ns(inst) in blacklist_namespaces: continue
+                if _hidden(inst): continue
                 shown_parents.add(inst)
         for e, insts_all in k2names.items():
-            insts = [i for i in insts_all if _get_ns(i) not in blacklist_namespaces]
+            insts = [i for i in insts_all if not _hidden(i)]
             if len(insts) == 0: continue
             for inst_name in insts:
                 for p in e.parents:
@@ -629,7 +633,7 @@ class WorkflowPlan:
                     insts = step.dependency_map[d]
                     nodes = {
                         _data_node(x) for x in insts
-                        if _get_ns(x.dtype_name) not in blacklist_namespaces
+                        if not _hidden(x.dtype_name)
                     }
                     if len(nodes) == 0: continue
                     acc += list(nodes)
@@ -655,7 +659,7 @@ class WorkflowPlan:
                             n = _lib.GetName(t)
                         except KeyError:
                             continue
-                        if n and _get_ns(n) not in blacklist_namespaces:
+                        if n and not _hidden(n):
                             out.append(n)
                             named[n] = t
                     return out
