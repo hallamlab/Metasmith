@@ -351,7 +351,7 @@ LARGE_MEMORY_STEPS = {
 }
 
 
-def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d"):
+def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d", comebin_gpu=None):
     """fir's Slurm preset plus process selectors.
 
     `scaled` maps a transform name to (cpus, GB, hours) for its first attempt, and each retry
@@ -366,6 +366,10 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     before submitting anything, and metasmith still reports the run complete. On node-local
     scratch their `ln -f` from the shard crosses devices and falls back to a copy, so a relaunch
     wrote every hit to Lustre again. In the work dir the link succeeds.
+
+    `comebin_gpu` names a MIG profile to train COMEBin on, billed to the GPU account while every other
+    step stays on SLURM_ACCOUNT. It is config only: the transform already runs its container with
+    `--nv`, so the plan key and the cache do not move.
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
@@ -378,6 +382,14 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     # deliberately; the point of that dict is that an exception is listed there on purpose, auditably,
     # and COMEBin never was.
     comebin_cap = LONG_RUNNING_STEPS.get("comebin", MAX_TASK_DURATION)
+    if comebin_gpu:
+        # The 12 h GPU band starts hours ahead of the 1 d band, and a slice trains a 180K-contig
+        # assembly well inside it; the second rung takes the full cap.
+        comebin_account, comebin_gres = SLURM_GPU_ACCOUNT, f" --gres=gpu:{comebin_gpu}:1"
+        comebin_time_line = f"        time = {{ [12.h * (2 ** (task.attempt - 1)), ('{comebin_cap}' as Duration)].min() }}"
+    else:
+        comebin_account, comebin_gres = SLURM_ACCOUNT, ""
+        comebin_time_line = f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}"
     # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
         "", "process {",
@@ -386,8 +398,8 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         "process {", "    withName: '.*__comebin' {",
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
-        f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}",
-        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
+        comebin_time_line,
+        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account} --exclude={FIR_BAD_NODES}{comebin_gres}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
     for name in IN_PLACE_STEPS:
@@ -420,8 +432,8 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     return out
 
 
-def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, comebin_cpus=48, materialise=False,
-                  gpus=None, on_exist="update", extra_config=None):
+def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, comebin_cpus=48, comebin_gpu=None,
+                  materialise=False, gpus=None, on_exist="update", extra_config=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
 
     CAUTION `on_exist="update"` re-sends context but KEEPS a transform bundle the run directory already
@@ -466,7 +478,7 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     # ignore path. Verify with `grep max <run>/workflow.params.yml` after staging, not by reading this.
     params = dict(params)
     params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
-    config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus)
+    config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus, comebin_gpu=comebin_gpu)
     if extra_config is not None:
         # Appended last, so its literals win. `array` and `submitRateLimit` read params outside a
         # closure in slurm.nf, and only a literal in the file reaches them.

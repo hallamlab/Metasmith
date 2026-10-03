@@ -91,6 +91,9 @@ SCALED = {
     "votu_cluster": (16, 128, 6),
 }
 COMEBIN_CPUS = 12
+# Batch 0 trained a 182K-contig Pratama hybrid assembly at 10 min an epoch on CPU, 35-40 h for 200 epochs
+# against the 24 h cap. A MIG slice runs the same image with --nv.
+COMEBIN_GPU = "nvidia_h100_80gb_hbm3_1g.10gb"
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
 # Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
 # so a plan's share must stay at or above slurm.nf's array width of 100.
@@ -268,7 +271,8 @@ def solve(args, shape, by_study):
         c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=queue),
                                     process=dict(tries=4)),
-                        scaled=SCALED, comebin_cpus=COMEBIN_CPUS, materialise=args.materialise,
+                        scaled=SCALED, comebin_cpus=COMEBIN_CPUS, comebin_gpu=COMEBIN_GPU,
+                        materialise=args.materialise,
                         on_exist="clear" if args.clear else "update")
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
