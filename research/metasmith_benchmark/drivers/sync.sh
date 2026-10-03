@@ -13,7 +13,7 @@ SHA="$(git -C "$REPO" rev-parse --short=8 HEAD)"
 DEST="/scratch/phyberos/bench/checkout/$SHA"
 # CAUTION a pushed overlay changes the engine code of any driver still running in that home.
 # Set SYNC_HOMES to the homes with no live driver, space-separated.
-read -r -a HOMES <<< "${SYNC_HOMES:-/scratch/phyberos/cami/metasmith /scratch/phyberos/pratama2026/metasmith /scratch/phyberos/metagem/metasmith}"
+read -r -a HOMES <<< "${SYNC_HOMES:-/scratch/phyberos/e5/metasmith}"
 PATHS=(
     src/metasmith
     src/metasmith_libraries

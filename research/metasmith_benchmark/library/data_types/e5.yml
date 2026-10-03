@@ -24,9 +24,19 @@ types:
       Data: nucleic acid sequence
       ext: fna
       origin: assembler
+  # A type fence. MEGAHIT's contigs in a hybrid sample are OPERA-MS's input, not the sample's assembly:
+  # without origin: assembler they satisfy no sequences::assembly requirement, so binners, ORF calling
+  # and the viral lane can bind only OPERA-MS's contigs.
+  megahit_draft:
+    properties:
+      _: MEGAHIT contigs that OPERA-MS scaffolds and gap-fills with the long reads
+      e5: megahit_draft
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
   opera_ms_assembly:
     properties:
-      _: OPERA-MS contigs, the MEGAHIT contigs scaffolded and gap-filled with the long reads, unpolished (short-read first)
+      _: OPERA-MS contigs, MEGAHIT's draft scaffolded and gap-filled with the long reads, unpolished (short-read first)
       e5: opera_ms_assembly
       Format: FASTA
       Data: nucleic acid sequence

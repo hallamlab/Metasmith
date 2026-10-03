@@ -9,10 +9,9 @@ lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("e5::opera_ms.env"))
 meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"))
-contigs = model.AddRequirement(lib.GetType("sequences::megahit_assembly"), parents={meta})
+contigs = model.AddRequirement(lib.GetType("e5::megahit_draft"), parents={meta})
 reads   = model.AddRequirement(lib.GetType("sequences::clean_short_reads"), parents={meta})
-pair    = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={meta})
-nano    = model.AddRequirement(lib.GetType("e3::nanopore_reads"), parents={pair})
+nano    = model.AddRequirement(lib.GetType("e3::nanopore_reads"), parents={meta})
 out     = model.AddProduct(lib.GetType("e5::opera_ms_assembly"))
 
 OPERA_MS = "/home/mambauser/operams/OPERA-MS.pl"

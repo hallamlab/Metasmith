@@ -58,6 +58,7 @@ HOMES = {
     "pratama": Path("/scratch/phyberos/pratama2026/metasmith"),
     "metagem": Path("/scratch/phyberos/metagem/metasmith"),
     "e4abl": Path("/scratch/phyberos/e4_ablation/metasmith"),
+    "e5": Path("/scratch/phyberos/e5/metasmith"),
 }
 
 # Each line runs twice: in the agent's persistent shell from the home, and in the run's
@@ -311,7 +312,7 @@ def write_dag(task, stem, cache_dir):
 # not here for the same reason: its product is ~3 GB, but in place its spades_ws left ~120 GB per
 # sample on Lustre, and ~50 GB more for each attempt that ran out of memory.
 IN_PLACE_STEPS = (
-    "fastp", "bbduk_pratama", "megahit",
+    "fastp", "bbduk_pratama", "megahit", "megahit_draft",
     "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
     "vcontact3_pratama",
 )
@@ -426,8 +427,8 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     return out
 
 
-def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False, gpus=None,
-                  on_exist="update", extra_config=None):
+def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, comebin_cpus=48, materialise=False,
+                  gpus=None, on_exist="update", extra_config=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
 
     CAUTION `on_exist="update"` re-sends context but KEEPS a transform bundle the run directory already
@@ -472,7 +473,7 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     # ignore path. Verify with `grep max <run>/workflow.params.yml` after staging, not by reading this.
     params = dict(params)
     params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
-    config = make_slurm_config(smith, cache_dir, scaled)
+    config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus)
     if extra_config is not None:
         # Appended last, so its literals win. `array` and `submitRateLimit` read params outside a
         # closure in slurm.nf, and only a literal in the file reaches them.

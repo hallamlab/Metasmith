@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
-"""E5: the three reproductions combined into one pipeline, one plan per corpus.
+"""E5: the combined E2 + E3 + E4 targets on every CAMI, Pratama 2026 and metaGEM run, one plan per read type.
 
-  E3  QC, the assemblies and the viral lane: bbduk and seqkit on Pratama's settings, MEGAHIT,
-      metaSPAdes and hybrid metaSPAdes, four callers pooled into one frozen set, CheckV curation
-      and host trimming, MMseqs2 vOTUs, and the island filter on the >=5 kb representatives
-  E2  the MAG lane on the MEGAHIT assembly: MetaBAT2, SemiBin2, COMEBin, DAS Tool, CheckM2
-  E4  the modern GEM lane on DAS Tool's MAGs: Prodigal, CarveMe 1.6.6 on SCIP, MEMOTE 0.17.0
+  E3  QC, the viral lane: four callers pooled per study, CheckV curation and host trimming,
+      MMseqs2 vOTUs, and the island filter on the >=5 kb representatives
+  E2  the MAG lane: MetaBAT2, SemiBin2, COMEBin, DAS Tool, with CheckM2 on DAS Tool's bins only
+  E4  the modern GEM lane on DAS Tool's MAGs: their assembly ORFs, CarveMe 1.6.6, MEMOTE 0.17.0
 
-Every tool here ran in a reproduction. Scoring (AMBER, vOTU recovery, GEM parity) runs after
-the plan, outside it. Each corpus declares study -> read_metadata -> read_pair -> reads, and the
-Pratama pilot takes 2022 runs with a MinION partner, so its plan carries the hybrid lane.
+A plan takes one read type, so each type renders its own DAG:
 
-Subcommands: list, run [--corpus cami|pratama|metagem|all] [--dag].
+  cami_pe            CAMI short reads, interleaved
+  cami_hybrid_ont    CAMI short + simulated Nanopore
+  cami_hybrid_pacbio CAMI short + simulated PacBio CLR
+  pratama_pe         Pratama short reads, interleaved
+  pratama_hybrid_ont Pratama short + real MinION
+  metagem_pe_split   metaGEM paired reads as two gzipped files
+  metagem_se         metaGEM single-end reads
+
+A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. Every other
+sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
+viral lane pools a study, and a batch holds whole studies.
+
+Subcommands: list [--batch N], import --batch N [--shape S],
+run --batch N [--shape S] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
 """
 
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -30,92 +41,177 @@ from metasmith.python_api import (  # noqa: E402
     DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
-STUDY = {"cami": "toy_mousegut", "pratama": "reads_2022", "metagem": "li2019"}
-PER_CORPUS = 3
-TYPE_LIBS = e3_pratama.TYPE_LIBS
-# The modern lane's CarveMe and MEMOTE come from the bench modelling library.
+TYPE_LIBS = e3_pratama.TYPE_LIBS + [c.LIBRARY / "data_types" / "e5.yml"]
+PILOT_SIZE = 3
+# The modern lane's CarveMe comes from the bench modelling library.
 GEM_MASK = {Path("carveme_from_orfs.py"), Path("memote_score.py"), Path("carveme_from_orfs_cplex.py")}
+# The hybrid pilot's comparison lanes and scorers.
+PILOT_ONLY = {Path("flye.py"), Path("polca.py"), Path("quast.py"), Path("metaquast.py")}
+
+# shape -> (corpus, read layout, hybrid). OPERA-MS takes no platform, so ONT and PacBio differ only in their reads.
+SHAPES = {
+    "cami_pe": ("cami", "pe", False),
+    "cami_hybrid_ont": ("cami", "pe", True),
+    "cami_hybrid_pacbio": ("cami", "pe", True),
+    "pratama_pe": ("pratama", "pe", False),
+    "pratama_hybrid_ont": ("pratama", "pe", True),
+    "metagem_pe_split": ("metagem", "split", False),
+    "metagem_se": ("metagem", "se", False),
+}
+
+# batch -> {shape: [study]}. Batch 0 is the pilot: the first PILOT_SIZE samples of each shape's first study.
+BATCHES = {
+    1: {"cami_pe": ["toy_mousegut", "toy_hmp_airskinurogenital", "toy_hmp_gastrooral"]},
+    2: {"cami_hybrid_ont": ["toy_humangut", "plant_associated"], "cami_hybrid_pacbio": ["marine", "strain"]},
+    3: {"pratama_pe": ["pratama_short"], "pratama_hybrid_ont": ["pratama_hybrid"]},
+    4: {"metagem_se": ["korem2015"], "metagem_pe_split": ["li2019", "bissett_base"]},
+    5: {"metagem_pe_split": ["karlsson2013"]},
+    6: {"metagem_pe_split": ["sunagawa2015"]},
+}
+BATCHES[0] = {shape: [studies[0]] for b in (2, 3, 4, 1) for shape, studies in BATCHES[b].items()}
+
+# CAMI's long-read set for each hybrid study.
+CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_associated_long_nano",
+             "marine": "marine_long", "strain": "strain_long"}
+
+# First-attempt (cpus, GB, hours), retries doubling memory and time. The viral sizes are E3's, measured
+# on its 65 runs (e3_pratama.SCALED). The MAG lane keeps E2's declarations, except COMEBin, which
+# runs at 12 cpus: E1 at 12 and E2 at 48 ran the same 208 samples at a median 1.83 h against 1.48 h.
+SCALED = {
+    "seqkit_reads": (2, 4, 1),
+    "bbduk": (4, 16, 2),
+    "megahit": (16, 64, 12),
+    "megahit_draft": (16, 64, 12),
+    "deepvirfinder": (8, 32, 6),
+    "vibrant": (8, 16, 4),
+    "virsorter2": (8, 16, 8),
+    "genomad": (8, 16, 6),
+    "votu_island_annotate": (8, 32, 6),
+    "viral_merge_calls": (4, 32, 4),
+    "votu_cluster": (16, 128, 6),
+}
+COMEBIN_CPUS = 12
 
 
-def samples_by_corpus():
-    """{corpus: [(sample id, reads, nanopore or None)]}, where reads is one interleaved path or a (fwd, rev) pair."""
-    cami = [(f"{r['dataset']}_{r['sample_id']}", Path(r["reads_path"]), None) for r in c.cami_rows()
-            if r["dataset"] == STUDY["cami"] and r["read_type"] == "short"]
+def _cami(study):
+    rows = c.cami_rows()
+    short = {r["sample_id"]: Path(r["reads_path"]) for r in rows if r["dataset"] == study and r["read_type"] == "short"}
+    order = lambda s: int(s.split("_")[1])  # noqa: E731
+    if study not in CAMI_LONG:
+        return [(f"{study}_{s}", short[s], None) for s in sorted(short, key=order)]
+    long_ = {r["sample_id"]: Path(r["reads_path"]) for r in rows
+             if r["dataset"] == CAMI_LONG[study] and r["read_type"] == "long"}
+    assert short.keys() == long_.keys(), f"{study}: short and long samples differ"
+    return [(f"{CAMI_LONG[study]}_{s}", short[s], long_[s]) for s in sorted(short, key=order)]
+
+
+def _pratama(hybrid):
     partners = e3_pratama.hybrid_partners()
-    pratama = [(run, reads, partners[run]) for run, dataset, reads in e3_pratama.enumerate_runs()
-               if dataset == STUDY["pratama"] and run in partners]
-    metagem = [(run, paths, None) for dataset, run, layout, paths in c.metagem_runs()
-               if dataset == STUDY["metagem"] and layout == "paired"]
-    return {"cami": cami[:PER_CORPUS], "pratama": pratama[:PER_CORPUS], "metagem": metagem[:PER_CORPUS]}
+    return [(run, reads, partners[run] if hybrid else None) for run, _, reads in e3_pratama.enumerate_runs()
+            if (run in partners) == hybrid]
 
 
-def declare_givens(smith, corpus, samples, ensure):
-    ns = f"e5/{corpus}"
+def _metagem(study):
+    return [(run, paths if layout == "paired" else paths[0], None) for ds, run, layout, paths in c.metagem_runs()
+            if ds == study]
+
+
+def samples_of(study):
+    if study == "pratama_short":
+        return _pratama(False)
+    if study == "pratama_hybrid":
+        return _pratama(True)
+    if study in {r["dataset"] for r in c.cami_rows()}:
+        return _cami(study)
+    return _metagem(study)
+
+
+def draw(batch, only=None):
+    """{shape: {study: [(sample id, reads, long reads or None)]}} for one batch."""
+    plans = {}
+    for shape, studies in BATCHES[batch].items():
+        if only and shape != only:
+            continue
+        plans[shape] = {s: samples_of(s)[:PILOT_SIZE] if batch == 0 else samples_of(s) for s in studies}
+        for study, samples in plans[shape].items():
+            assert samples, f"{shape}/{study}: no samples"
+    return plans
+
+
+def declare_givens(smith, shape, by_study, cache_dir, ensure):
+    layout = SHAPES[shape][1]
     givens = smith.PoolGivens()
-    study = c.add_value(givens, f"{ns}/contig_study", {"logistics": "contig study", "study": STUDY[corpus]},
-                        "viromics::contig_study", tags=["e5", corpus])
-    for sid, reads, nanopore in samples:
-        tags = ["e5", corpus, sid]
-        meta = c.add_value(givens, f"{ns}/{sid}/read_metadata", {"parity": "paired", "length_class": "short"},
-                           "sequences::read_metadata", parents=[study], tags=tags)
-        pair = c.add_value(givens, f"{ns}/{sid}/read_pair", sid, "sequences::read_pair", parents=[meta], tags=tags)
-        if isinstance(reads, tuple):
-            for dtype, path in zip(("zipped_forward_short_reads", "zipped_reverse_short_reads"), reads):
-                c.add_file(givens, f"{ns}/{sid}/{dtype}", path, f"sequences::{dtype}", parents=[pair], tags=tags)
-        else:
-            c.add_file(givens, f"{ns}/{sid}/reads", reads, "sequences::short_reads_pe", parents=[pair], tags=tags)
-        if nanopore is not None:
-            c.add_file(givens, f"{ns}/{sid}/nanopore", nanopore, "e3::nanopore_reads", parents=[pair], tags=tags)
-    return c.cite(givens, CACHE_DIR / corpus / "inputs.xgdb", TYPE_LIBS, ensure)
+    for study_name, samples in by_study.items():
+        study = c.add_value(givens, f"e5/{study_name}", {"study": study_name}, "sequences::study",
+                            tags=["e5", shape, study_name])
+        for sid, reads, long_ in samples:
+            tags = ["e5", shape, study_name, sid]
+            ns = f"e5/{study_name}/{sid}"
+            meta = c.add_value(givens, f"{ns}/read_metadata",
+                               {"sample": sid, "parity": "single" if layout == "se" else "paired",
+                                "length_class": "short"},
+                               "sequences::read_metadata", parents=[study], tags=tags)
+            if layout == "se":
+                c.add_file(givens, f"{ns}/reads", reads, "sequences::short_reads_se", parents=[meta], tags=tags)
+            elif layout == "split":
+                for dtype, path in zip(("zipped_forward_short_reads", "zipped_reverse_short_reads"), reads):
+                    c.add_file(givens, f"{ns}/{dtype}", path, f"sequences::{dtype}", parents=[meta], tags=tags)
+            else:
+                c.add_file(givens, f"{ns}/reads", reads, "sequences::short_reads_pe", parents=[meta], tags=tags)
+            if long_ is not None:
+                c.add_file(givens, f"{ns}/long_reads", long_, "e3::nanopore_reads", parents=[meta], tags=tags)
+    return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
 
 
-def expected_counts(samples):
-    n = len(samples)
-    expected = {"viromics::contig_study": 1, "sequences::read_metadata": n, "sequences::read_pair": n,
-                "e3::nanopore_reads": sum(1 for s in samples if s[2] is not None)}
-    if isinstance(samples[0][1], tuple):
-        expected.update({"sequences::zipped_forward_short_reads": n, "sequences::zipped_reverse_short_reads": n})
+def expected_counts(shape, by_study):
+    layout = SHAPES[shape][1]
+    n = sum(len(s) for s in by_study.values())
+    want = {"sequences::study": len(by_study), "sequences::read_metadata": n, "sequences::read_pair": 0}
+    if layout == "se":
+        want["sequences::short_reads_se"] = n
+    elif layout == "split":
+        want.update({"sequences::zipped_forward_short_reads": n, "sequences::zipped_reverse_short_reads": n})
     else:
-        expected["sequences::short_reads_pe"] = n
-    return expected
+        want["sequences::short_reads_pe"] = n
+    if SHAPES[shape][2]:
+        want["e3::nanopore_reads"] = n
+    return want
 
 
-def build_transforms():
-    # E3's masks, except that the standard assembly_stats answers instead of E3's copy: they differ
-    # only in E3's dropping the BAM, which the MAG lane's binners read.
-    replaced = {**e3_pratama.REPLACED, "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py"}}
+def build_transforms(hybrid):
+    # E5 owns its viral lane, the MAG ORF mapping and the hybrid pair. The standard libraries keep E3's
+    # masks, except assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every
+    # corpus. A hybrid sample's MEGAHIT writes a draft that only OPERA-MS reads.
+    replaced = {**e3_pratama.REPLACED, "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py", "bbduk.py"},
+                "logistics": {"interleave_zipped_short_reads.py"}}
+    if hybrid:
+        replaced["assembly"] = replaced["assembly"] | {"megahit.py"}
     std = [TransformInstanceLibrary.Load(c.MLIB / "transforms" / name).AsView(
                {Path(p) for p in replaced.get(name, ())}, invert=True)
            for name in ("logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics")]
-    e3 = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e3").AsView(
-        {Path("assembly_stats_pratama.py")}, invert=True)
+    own_masked = PILOT_ONLY if hybrid else PILOT_ONLY | {Path("megahit_draft.py"), Path("opera_ms.py")}
+    e5_lib = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)
     modelling = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
-    return [e3, TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench"), *std,
-            modelling.AsView(GEM_MASK, invert=True),
+    bench = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench").AsView({Path("deepvirfinder.py")}, invert=True)
+    return [e5_lib, bench, *std,
+            modelling.AsView(GEM_MASK | {Path("prodigal_from_bin.py")}, invert=True),
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling")]
 
 
 def build_targets(hybrid):
+    # The sample's assembly is OPERA-MS for a hybrid sample and MEGAHIT otherwise; every lane reads it.
+    # DAS Tool's bins are the MAG set: CheckM2, ORFs and models run on them alone.
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
+    asm = t.Add("e5::opera_ms_assembly" if hybrid else "sequences::megahit_assembly")
 
-    asm = t.Add("sequences::megahit_assembly")
-    t.Add("sequences::spades_assembly")
-    if hybrid:
-        t.Add("e3::hybrid_spades_assembly")
-
-    for b in ("metabat2", "semibin2", "comebin"):
-        bins = t.Add(f"sequences::{b}_bin_fasta", parents=[asm])
-        t.Add(f"binning::{b}_contig_to_bin_table", parents=[asm])
-        t.Add("bench::checkm2_quality", parents=[bins])
     mags = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
     t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
     t.Add("bench::checkm2_quality", parents=[mags])
-
     gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[mags])])
     t.Add("modelling::memote_score", parents=[gem])
 
-    frozen = t.Add("viromics::dereplicated_candidate_virus")
+    frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm])
     for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
                   "viromics::checkv_quality_summary"):
         t.Add(dtype, parents=[frozen])
@@ -125,51 +221,95 @@ def build_targets(hybrid):
     return t
 
 
-def solve(corpus, samples, args):
-    print(f"\n=== {corpus}: {STUDY[corpus]}, {len(samples)} samples ===")
-    smith = c.agent_for(corpus, False, CACHE_DIR / corpus / "dryrun_home")
-    inputs = declare_givens(smith, corpus, samples, ensure=True)
-    pratama_globals = c.pratama_globals(smith, CACHE_DIR / corpus, ensure=True)
-    gem_globals = e4_metagem.declare_globals(smith, "open", CACHE_DIR / corpus / "gem_globals.xgdb", True,
-                                             with_checkm2=True)
+def solve(args, shape, by_study):
+    n = sum(len(s) for s in by_study.values())
+    print(f"\n=== batch {args.batch} {shape}: {n} samples in {', '.join(f'{s} ({len(v)})' for s, v in by_study.items())}",
+          flush=True)
+    cache_dir = CACHE_DIR / f"batch{args.batch}" / shape
+    importing = args.cmd == "import"
+    remote = importing or args.stage_only or args.launch or args.materialise
+    smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
+    ensure = importing or args.import_givens or not remote
+    inputs = declare_givens(smith, shape, by_study, cache_dir, ensure)
+    pratama_globals = c.pratama_globals(smith, cache_dir, ensure)
+    gem_globals = e4_metagem.declare_globals(smith, "open", cache_dir / "gem_globals.xgdb", ensure, with_checkm2=True)
+    if importing:
+        print(f"the pool at {smith.home.GetPath()} holds the givens of {n} samples")
+        return
+
+    hybrid = SHAPES[shape][2]
+    t0 = time.time()
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
                    pratama_globals, gem_globals],
-        transforms=build_transforms(),
-        targets=build_targets(hybrid=any(s[2] is not None for s in samples)),
+        transforms=build_transforms(hybrid),
+        targets=build_targets(hybrid),
     )
-    c.check_plan(task, expected_counts(samples))
-    c.print_plan(task)
+    print(f"solved in {time.time() - t0:.1f}s", flush=True)
+    c.check_plan(task, expected_counts(shape, by_study))
+    c.print_plan(task, width=34)
     if args.dag:
-        c.write_dag(task, f"e5_{corpus}", CACHE_DIR / corpus)
+        c.write_dag(task, f"e5_{shape}", cache_dir)
+    if remote:
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
+                        params=dict(executor=dict(queueSize=500), process=dict(tries=4, array=25)),
+                        scaled=SCALED, comebin_cpus=COMEBIN_CPUS, materialise=args.materialise,
+                        on_exist="clear" if args.clear else "update")
+    else:
+        print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
 
 
 def cmd_list(args):
-    for corpus, samples in samples_by_corpus().items():
-        print(f"{corpus} ({STUDY[corpus]}): {', '.join(s[0] for s in samples)}")
+    for batch in ([args.batch] if args.batch is not None else sorted(BATCHES)):
+        total = 0
+        for shape, by_study in draw(batch).items():
+            for study, samples in by_study.items():
+                total += len(samples)
+                print(f"{batch}  {shape:20s} {study:26s} {len(samples):3d}  {samples[0][0]} ..")
+        print(f"batch {batch}: {total} samples\n")
     return 0
 
 
 def cmd_run(args):
-    by_corpus = samples_by_corpus()
-    for corpus in (list(STUDY) if args.corpus == "all" else [args.corpus]):
-        samples = by_corpus[corpus]
-        assert len(samples) == PER_CORPUS, f"{corpus} has {len(samples)} samples, expected {PER_CORPUS}"
-        solve(corpus, samples, args)
-    return 0
+    failed = []
+    for shape, by_study in draw(args.batch, args.shape).items():
+        try:
+            solve(args, shape, by_study)
+        except SystemExit as e:
+            failed.append((shape, e.code))
+            print(f"FAILED {shape}: {e.code}", file=sys.stderr, flush=True)
+    for shape, code in failed:
+        print(f"FAILED {shape}: {code}", file=sys.stderr)
+    return 1 if failed else 0
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("list").set_defaults(fn=cmd_list)
-    p = sub.add_parser("run")
-    p.add_argument("--corpus", default="all", choices=[*STUDY, "all"])
-    p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_<corpus>.dag.svg")
-    p.set_defaults(fn=cmd_run)
+    p = sub.add_parser("list")
+    p.add_argument("--batch", type=int, choices=sorted(BATCHES))
+    p.set_defaults(fn=cmd_list)
+    for name in ("import", "run"):
+        p = sub.add_parser(name)
+        p.add_argument("--batch", type=int, required=True, choices=sorted(BATCHES))
+        p.add_argument("--shape", choices=list(SHAPES))
+        p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
+                       import_givens=False, clear=False)
+        if name == "run":
+            p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_<shape>.dag.svg")
+            mode = p.add_mutually_exclusive_group()
+            mode.add_argument("--stage-only", action="store_true")
+            mode.add_argument("--launch", action="store_true")
+            mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
+            p.add_argument("--tag")
+            p.add_argument("--clear", action="store_true",
+                           help="restage from scratch, which a protocol-only transform edit needs; deletes the run's logs")
+            p.add_argument("--import", dest="import_givens", action="store_true",
+                           help="import what the pool lacks before planning, as `import` does")
     args = ap.parse_args()
     return args.fn(args)
 
