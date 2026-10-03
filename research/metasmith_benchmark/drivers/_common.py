@@ -352,10 +352,8 @@ LARGE_MEMORY_STEPS = {
 }
 
 
-COMEBIN_GPU_RUNGS = ((300, 3), (1000, 8), (None, 12))  # (assembly MB below, first-attempt hours)
-
-
-def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d", comebin_gpu=None):
+def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d", comebin_gpu=None,
+                      comebin_gpu_hours=12):
     """fir's Slurm preset plus process selectors.
 
     `scaled` maps a transform name to (cpus, GB, hours) for its first attempt, and each retry
@@ -389,17 +387,12 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     # and COMEBin never was.
     comebin_cap = LONG_RUNNING_STEPS.get("comebin", MAX_TASK_DURATION)
     if comebin_gpu:
-        # A shorter request backfills into the gaps between larger GPU jobs, so the first rung is
-        # sized from the assembly. `_02` is the step's assembly input, named by its position in the
-        # generated process. Batch 0 on 12 CPUs: under 300 MB took at most 2.4 h, 300-1000 MB took
-        # 7-18 h, and a 1.6 GB hybrid assembly trained on a slice at about 9 h.
+        # A literal per run, not a closure over the task's assembly: a job array's one Slurm header is
+        # rendered without any element's inputs, so such a closure always took its fallback.
         comebin_account, comebin_gres = SLURM_GPU_ACCOUNT, f" --gres=gpu:{comebin_gpu}:1"
         comebin_before = [f"        beforeScript = '{_GPU_BEFORE_SCRIPT}'"]
-        comebin_time_line = (
-            "        time = { def mb = 1000; try { mb = _02.size() / 1000000 } catch (e) {}; "
-            f"[(mb < {COMEBIN_GPU_RUNGS[0][0]} ? {COMEBIN_GPU_RUNGS[0][1]}.h : mb < {COMEBIN_GPU_RUNGS[1][0]} "
-            f"? {COMEBIN_GPU_RUNGS[1][1]}.h : {COMEBIN_GPU_RUNGS[2][1]}.h) * (2 ** (task.attempt - 1)), "
-            f"('{comebin_cap}' as Duration)].min() }}")
+        comebin_time_line = (f"        time = {{ [{comebin_gpu_hours}.h * (2 ** (task.attempt - 1)), "
+                             f"('{comebin_cap}' as Duration)].min() }}")
     else:
         comebin_account, comebin_gres, comebin_before = SLURM_ACCOUNT, "", []
         comebin_time_line = f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}"
@@ -447,6 +440,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
 
 
 def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, comebin_cpus=48, comebin_gpu=None,
+                  comebin_gpu_hours=12,
                   materialise=False, gpus=None, on_exist="update", extra_config=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
 
@@ -492,7 +486,8 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     # ignore path. Verify with `grep max <run>/workflow.params.yml` after staging, not by reading this.
     params = dict(params)
     params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
-    config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus, comebin_gpu=comebin_gpu)
+    config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus, comebin_gpu=comebin_gpu,
+                               comebin_gpu_hours=comebin_gpu_hours)
     if extra_config is not None:
         # Appended last, so its literals win. `array` and `submitRateLimit` read params outside a
         # closure in slurm.nf, and only a literal in the file reaches them.

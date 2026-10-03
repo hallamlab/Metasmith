@@ -94,6 +94,13 @@ COMEBIN_CPUS = 12
 # Batch 0 trained a 182K-contig Pratama hybrid assembly at 10 min an epoch on CPU, 35-40 h for 200 epochs
 # against the 24 h cap. A MIG slice runs the same image with --nv.
 COMEBIN_GPU = "nvidia_h100_80gb_hbm3_1g.10gb"
+# First-attempt GPU hours per shape; a retry doubles. A shorter request backfills into the gaps between
+# larger GPU jobs. About half batch 0's slowest CPU run: training is ~85% of it and runs 4.9x faster on a
+# slice. pratama_hybrid_ont was measured on a slice at ~9 h.
+COMEBIN_GPU_HOURS = {
+    "cami_pe": 2, "cami_hybrid_ont": 2, "cami_hybrid_pacbio": 5, "metagem_se": 1,
+    "metagem_pe_split": 12, "pratama_pe": 10, "pratama_hybrid_ont": 12,
+}
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
 # Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
 # so a plan's share must stay at or above slurm.nf's array width of 100.
@@ -272,7 +279,7 @@ def solve(args, shape, by_study):
                         params=dict(executor=dict(queueSize=queue),
                                     process=dict(tries=4)),
                         scaled=SCALED, comebin_cpus=COMEBIN_CPUS, comebin_gpu=COMEBIN_GPU,
-                        materialise=args.materialise,
+                        comebin_gpu_hours=COMEBIN_GPU_HOURS[shape], materialise=args.materialise,
                         on_exist="clear" if args.clear else "update")
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
