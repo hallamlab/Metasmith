@@ -352,6 +352,9 @@ LARGE_MEMORY_STEPS = {
 }
 
 
+COMEBIN_GPU_RUNGS = ((300, 3), (1000, 8), (None, 12))  # (assembly MB below, first-attempt hours)
+
+
 def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d", comebin_gpu=None):
     """fir's Slurm preset plus process selectors.
 
@@ -386,11 +389,17 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     # and COMEBin never was.
     comebin_cap = LONG_RUNNING_STEPS.get("comebin", MAX_TASK_DURATION)
     if comebin_gpu:
-        # The 12 h GPU band starts hours ahead of the 1 d band, and a slice trains a 180K-contig
-        # assembly well inside it; the second rung takes the full cap.
+        # A shorter request backfills into the gaps between larger GPU jobs, so the first rung is
+        # sized from the assembly. `_02` is the step's assembly input, named by its position in the
+        # generated process. Batch 0 on 12 CPUs: under 300 MB took at most 2.4 h, 300-1000 MB took
+        # 7-18 h, and a 1.6 GB hybrid assembly trained on a slice at about 9 h.
         comebin_account, comebin_gres = SLURM_GPU_ACCOUNT, f" --gres=gpu:{comebin_gpu}:1"
         comebin_before = [f"        beforeScript = '{_GPU_BEFORE_SCRIPT}'"]
-        comebin_time_line = f"        time = {{ [12.h * (2 ** (task.attempt - 1)), ('{comebin_cap}' as Duration)].min() }}"
+        comebin_time_line = (
+            "        time = { def mb = 1000; try { mb = _02.size() / 1000000 } catch (e) {}; "
+            f"[(mb < {COMEBIN_GPU_RUNGS[0][0]} ? {COMEBIN_GPU_RUNGS[0][1]}.h : mb < {COMEBIN_GPU_RUNGS[1][0]} "
+            f"? {COMEBIN_GPU_RUNGS[1][1]}.h : {COMEBIN_GPU_RUNGS[2][1]}.h) * (2 ** (task.attempt - 1)), "
+            f"('{comebin_cap}' as Duration)].min() }}")
     else:
         comebin_account, comebin_gres, comebin_before = SLURM_ACCOUNT, "", []
         comebin_time_line = f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}"
