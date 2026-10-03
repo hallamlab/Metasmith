@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from metasmith.python_api import Agent, Gpu, Size, Source, SshSource, Runtime, TransformInstanceLibrary
+from metasmith.agents.gpu import _GPU_BEFORE_SCRIPT
 
 HERE = Path(__file__).resolve().parent
 BENCH = HERE.parent
@@ -368,8 +369,10 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     wrote every hit to Lustre again. In the work dir the link succeeds.
 
     `comebin_gpu` names a MIG profile to train COMEBin on, billed to the GPU account while every other
-    step stays on SLURM_ACCOUNT. It is config only: the transform already runs its container with
-    `--nv`, so the plan key and the cache do not move.
+    step stays on SLURM_ACCOUNT. It is config only, so the plan key and the cache do not move. The
+    transform runs its container with `--nv` and forwards the agent's CUDA_VISIBLE_DEVICES, which the
+    agent has only if the engine's GPU beforeScript exported the slice's MIG handle. Without it the
+    container gets an empty value and torch trains on the CPU with nothing but a warning.
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
@@ -386,9 +389,10 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         # The 12 h GPU band starts hours ahead of the 1 d band, and a slice trains a 180K-contig
         # assembly well inside it; the second rung takes the full cap.
         comebin_account, comebin_gres = SLURM_GPU_ACCOUNT, f" --gres=gpu:{comebin_gpu}:1"
+        comebin_before = [f"        beforeScript = '{_GPU_BEFORE_SCRIPT}'"]
         comebin_time_line = f"        time = {{ [12.h * (2 ** (task.attempt - 1)), ('{comebin_cap}' as Duration)].min() }}"
     else:
-        comebin_account, comebin_gres = SLURM_ACCOUNT, ""
+        comebin_account, comebin_gres, comebin_before = SLURM_ACCOUNT, "", []
         comebin_time_line = f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}"
     # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
@@ -399,6 +403,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
         comebin_time_line,
+        *comebin_before,
         f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account} --exclude={FIR_BAD_NODES}{comebin_gres}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
