@@ -545,7 +545,7 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None, given_root: bool = False) -> DagRenderer:
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
@@ -565,7 +565,8 @@ class WorkflowPlan:
                 return Label(name=name, namespace=ns, full=dtype_name)
             return Label(name=dtype_name, full=dtype_name)
 
-        r.add_node(NodeKind.TRANSFORM, "given")
+        if given_root:
+            r.add_node(NodeKind.TRANSFORM, "given")
 
         given_inst_names: set[str] = set()
         k2names: dict[Endpoint, set[str]] = {}
@@ -592,7 +593,10 @@ class WorkflowPlan:
                     for pname in pinsts:
                         r.add_edge(pname, inst_name)
                 r.add_node(NodeKind.DATA, inst_name, _type_label(inst_name), dtype=e)
-                r.add_edge("given", inst_name)
+                if given_root:
+                    r.add_edge("given", inst_name)
+                else:
+                    r.mark_given(inst_name)
                 given_inst_names.add(inst_name)
 
         given_ids = {x.instance_id for x in self.given}
@@ -687,7 +691,7 @@ class WorkflowPlan:
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None, given_root: bool = False):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
@@ -704,4 +708,5 @@ class WorkflowPlan:
             monochrome=monochrome,
             colour_palette=colour_palette,
             colour_overrides=colour_overrides,
+            given_root=given_root,
         ).render(path_base, format)

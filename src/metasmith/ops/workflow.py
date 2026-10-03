@@ -122,6 +122,7 @@ _WIRE_KINDS = {
     "transform": NodeKind.TRANSFORM,
     "target": NodeKind.TARGET,
     "data": NodeKind.DATA,
+    "given": NodeKind.GIVEN,
 }
 
 

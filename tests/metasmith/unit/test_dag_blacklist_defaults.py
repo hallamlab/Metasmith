@@ -75,3 +75,15 @@ def test_a_library_local_env_is_hidden_with_the_env_namespace(tmp_path):
     ).plan
     assert "tool.env" not in plan.BuildDAG().to_text()
     assert "tool.env" in plan.BuildDAG(blacklist_namespaces={"lib"}).to_text()
+
+
+def test_a_plan_draws_its_inputs_without_a_given_step(tmp_path):
+    from metasmith.models.dag_renderer import NodeKind
+
+    plan = _one_step_plan(tmp_path)
+    nodes, _ = plan.BuildDAG()._graph()
+    assert "given" not in nodes
+    assert [k for n, k in nodes.items() if "seed" in n] == [NodeKind.GIVEN]
+    nodes, edges = plan.BuildDAG(given_root=True)._graph()
+    assert nodes["given"] is NodeKind.TRANSFORM
+    assert any(src == "given" and "seed" in dst for src, dst in edges)
