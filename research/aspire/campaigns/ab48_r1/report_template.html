@@ -146,9 +146,9 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
   <p id="purify-method"></p>
   <h3>Checks against the July lane</h3>
   <ul class="checks">
-    <li>All 10 most abundant AB48 ASVs match a July DADA2 ASV by sequence, and four of the five dominant genera agree.</li>
+    <li>Over the AB48 samples, all 10 most abundant ASVs match a July DADA2 ASV by sequence, and four of the five dominant genera agree.</li>
     <li>The dominant cyanobacterial ASV pairs only with bin 1-15, <i>Sodalinema yuhuli</i>, at 100% identity over its whole length. SILVA still calls this lineage <i>Geitlerinema</i> PCC-7105.</li>
-    <li>All 25 July ASVs that fall inside a binned 16S gene pair with that same bin here. An independent blastn agrees with every one of the 133 ASV–MAG candidates.</li>
+    <li>All 25 July ASVs that fall inside a binned 16S gene pair with that same bin here. An independent blastn agrees with every one of the <span id="cand-n"></span> ASV–MAG candidates.</li>
   </ul>
   <details>
     <summary>Table view: relative abundance per sample</summary>
@@ -470,12 +470,13 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
   function facts() {
     const st = DATA.ab48.stats, p = DATA.purify;
     const items = [
-      [DATA.study.samples, "lab samples in one study"], [DATA.study.asvs, "curated ASVs lab-wide"],
+      [DATA.study.samples, "lab samples pass the read floor"], [DATA.study.asvs, "curated ASVs lab-wide"],
       [st.samples, "AB48 samples"], [st.asvs, "curated AB48 ASVs"], [st.paired_asvs, `of ${st.filtered_asvs.toLocaleString()} filtered AB48 ASVs pair with a MAG`],
-      [p.samples.length, "Purify samples"],
+      [p.samples.length, "Purify samples"], [DATA.study.nostoc, "Nostoc and Anabaena samples"],
       [(DATA.logs.rows / 1000).toFixed(0) + "k", "reactor log rows"],
     ];
     document.getElementById("facts").innerHTML = items.map(([v, l]) => `<div><b>${v}</b>${l}</div>`).join("");
+    document.getElementById("cand-n").textContent = st.paired_asvs;
     document.getElementById("purify-method").textContent =
       "The 2026 Purify sequencing run is the exception. It arrived with its primers removed and amplified V4 alone (515F/806R, about 253 bp), where every other run covers V4–V5 (515F/926R, about 372 bp). A V4 sequence and a V4–V5 sequence of one organism are different ASVs, so that run is its own ASPIRE study, trimmed to V4, and Figure 1 joins it to the other Purify samples by taxon rather than by ASV.";
   }

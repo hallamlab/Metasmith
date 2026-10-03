@@ -179,7 +179,7 @@ def main():
     # 3. The July contig map agrees: an ASV whose sequence lies inside a binned 16S gene pairs
     # with that bin. A July hit outside every 16S locus is an off-target amplicon of genomic DNA,
     # which the linker rightly cannot pair, since it pairs through 16S genes only.
-    cohorts = AB48_COHORTS if args.name.startswith("ab48_r1") else ["lab_25-07-23_Enrichment5"]
+    cohorts = AB48_COHORTS if args.name.startswith(("ab48_r1", "lab_r1")) else ["lab_25-07-23_Enrichment5"]
     july, july_tot, july_tax, july_hits = load_july(args.july, cohorts)
     loci = rrna_loci(magl)
     july_bins: dict[str, set[str]] = {}
@@ -208,13 +208,18 @@ def main():
     if not checked:
         fails.append("no port ASV shares a sequence with a July ASV on a binned contig")
 
-    # 4. The dominant ASVs are the July lane's dominant ASVs, and the dominant genera agree.
+    # 4. The dominant ASVs are the July lane's dominant ASVs, and the dominant genera agree. The
+    # July lane covered the AB48 cohorts alone, so the lab study is compared over those samples.
+    cw = pd.read_csv(REPO / "data" / "aspire" / "hallam_16s_inputs" / "sample_crosswalk.tsv", sep="\t", dtype=str)
+    july_samples = [s for s in clean.columns if s in set(cw.loc[cw["cohort"].isin(cohorts), "asv_table_id"])]
+    print(f"July comparison over {len(july_samples)} samples of {len(cohorts)} cohorts")
+    totals = clean[july_samples].sum(axis=1).sort_values(ascending=False)
     july_top = [july[q] for q in july_tot.index[:3 * TOP] if q in july]
     unmatched = [a for a in totals.index[:TOP] if not any(related(seqs[a], j) for j in july_top)]
     print(f"top {TOP} ASVs: {TOP - len(unmatched)} match one of the July lane's top {3 * TOP} by sequence")
     if len(unmatched) > TOP // 5:
         fails.append(f"top ASVs with no July counterpart: {unmatched}")
-    port_genera = clean.groupby(taxon.map(genus)).sum().sum(axis=1).drop("unassigned", errors="ignore")
+    port_genera = clean[july_samples].groupby(taxon.map(genus)).sum().sum(axis=1).drop("unassigned", errors="ignore")
     july_genera = july_tot.groupby(july_tax.reindex(july_tot.index).fillna("").map(genus)).sum()
     july_genera = july_genera.drop("unassigned", errors="ignore")
     pg, jg = list(port_genera.nlargest(5).index), list(july_genera.nlargest(5).index)
@@ -234,9 +239,17 @@ def main():
 
     # 6. Indicator species ran for every label the study sheet carries.
     study = pd.read_csv(REPO / "cache" / "aspire" / args.name / "inputs.xgdb" / "study_metadata.tsv", sep="\t")
+    # A label can have two levels in the sheet and one among the samples that pass curation; the
+    # step then records it in skipped_labels.tsv with its reason.
     isa = product(results, "aspire::indicspecies_results")
+    skips = isa / "skipped_labels.tsv"
+    skipped = pd.read_csv(skips, sep="\t").set_index("label")["reason"] if skips.exists() else pd.Series(dtype=str)
     for label in study.columns[1:]:
-        if study[label].dropna().nunique() >= 2 and not (isa / f"{label}_indicator_species_results.tsv").exists():
+        if study[label].dropna().nunique() < 2 or (isa / f"{label}_indicator_species_results.tsv").exists():
+            continue
+        if label in skipped.index:
+            print(f"indicspecies: {label} skipped, {skipped[label]}")
+        else:
             fails.append(f"indicspecies: no results for label {label}")
 
     # 7. The MAG network, the anchors and the master summary carry real pairs.

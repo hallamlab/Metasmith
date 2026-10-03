@@ -219,7 +219,8 @@ def main():
     p_rows, a_rows = rank_taxa(p_frame, DOT_TAXA), rank_taxa(a_frame, DOT_TAXA)
 
     data = {
-        "study": {"name": args.study, "v4": args.v4_study, "samples": int(counts.shape[1]), "asvs": int(len(counts))},
+        "study": {"name": args.study, "v4": args.v4_study, "samples": int(counts.shape[1]), "asvs": int(len(counts)),
+                  "nostoc": int((~counts.columns.isin(crosswalk()["asv_table_id"])).sum())},
         "phyla": {t: phyla.get(t, "") for t in set(p_rows + a_rows)},
         "purify": {"samples": p_samples, "slots": p_slots, "bars": p_bars, "rows": p_rows, "asvs": p_asvs,
                    "rel": frame_json(p_frame, sorted(set(p_rows + p_bars)))},
