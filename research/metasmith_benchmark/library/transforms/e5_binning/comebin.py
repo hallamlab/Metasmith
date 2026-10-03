@@ -1,11 +1,13 @@
-# The standard COMEBin, except that an assembly COMEBin cannot bin yields an empty table instead of
-# a failed step. DAS Tool requires all three binners' tables, so one failed binner would end the
-# whole MAG lane for that sample. COMEBin crashes outright on small assemblies: korem2015's 0.5 GB
-# single-end runs give ~130 contigs of at least 1 kb, its training loader yields no batch, and it
-# dies on `UnboundLocalError: local variable 'logits'`. An OOM or a walltime kill still fails the
-# step, because it takes this protocol down with the container.
+# The standard COMEBin, except that an assembly COMEBin cannot bin yields an empty table instead of a
+# failed step. DAS Tool requires all three binners' tables, so one failed binner would end the whole
+# MAG lane for that sample. COMEBin crashes outright on small assemblies: korem2015's 0.5 GB
+# single-end runs give ~130 contigs of at least 1 kb, its training loader yields no batch, and it dies
+# on `UnboundLocalError: local variable 'logits'`. An OOM or a walltime kill still fails the step,
+# because it takes this protocol down with the container.
+#
+# It makes no bin FASTAs. DAS Tool reads only the table, and a nextflow output cannot be empty, so a
+# bin product would fail the very step this exists to keep.
 import os
-import glob
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -14,7 +16,6 @@ model       = Transform()
 image       = model.AddRequirement(lib.GetType("env::comebin.env"))
 asm         = model.AddRequirement(lib.GetType("sequences::assembly"))
 bam         = model.AddRequirement(lib.GetType("alignment::bam"), parents={asm})
-bin_fasta   = model.AddProduct(lib.GetType("sequences::comebin_bin_fasta"))
 table       = model.AddProduct(lib.GetType("binning::comebin_contig_to_bin_table"))
 
 
@@ -59,24 +60,13 @@ def protocol(context: ExecutionContext):
         )
 
     res = Path(f"{workdir}/comebin_res/comebin_res.tsv")
-    bin_files = sorted(glob.glob(f"{workdir}/comebin_res/comebin_res_bins/*.fa"))
-    if Path("comebin_exit").exists() or not res.exists() or not bin_files:
+    if Path("comebin_exit").exists() or not res.exists():
         code = Path("comebin_exit").read_text().strip() if Path("comebin_exit").exists() else "0"
         return _no_bins(context, f"exit {code} on {usable_contigs} contigs of at least 1 kb")
 
-    outputs = []
-    for i, bin_path in enumerate(bin_files):
-        out_bin = context.Output(bin_fasta, i=i)
-        context.LocalShell(f"cp {bin_path} {out_bin.local}")
-        outputs.append({bin_fasta: out_bin.local})
-
     otable = context.Output(table)
     context.LocalShell(f"cp {res} {otable.local}")
-
-    return ExecutionResult(
-        manifest=outputs + [{table: otable.local}],
-        success=otable.local.exists(),
-    )
+    return ExecutionResult(manifest=[{table: otable.local}], success=otable.local.exists())
 
 
 TransformInstance(
