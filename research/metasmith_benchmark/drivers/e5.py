@@ -82,7 +82,7 @@ SCALED = {
     "bbduk": (4, 16, 2),
     "megahit": (16, 64, 12),
     "megahit_draft": (16, 64, 12),
-    "deepvirfinder": (8, 32, 6),
+    "deepvirfinder": (8, 64, 6),   # batch 0: a CAMI hybrid contig batch OOMed at 32 GB after 6 h
     "vibrant": (8, 16, 4),
     "virsorter2": (8, 16, 8),
     "genomad": (8, 16, 6),
