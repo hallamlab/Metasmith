@@ -77,8 +77,7 @@ CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_ass
              "marine": "marine_long", "strain": "strain_long"}
 
 # First-attempt (cpus, GB, hours), retries doubling memory and time. The viral sizes are E3's, measured
-# on its 65 runs (e3_pratama.SCALED). The MAG lane keeps E2's declarations, except COMEBin, which
-# runs at 12 cpus: E1 at 12 and E2 at 48 ran the same 208 samples at a median 1.83 h against 1.48 h.
+# on its 65 runs (e3_pratama.SCALED). The MAG lane keeps E2's declarations, except COMEBin (COMEBIN below).
 SCALED = {
     "seqkit_reads": (2, 4, 1),
     "bbduk": (4, 16, 2),
@@ -92,17 +91,15 @@ SCALED = {
     "viral_merge_calls": (4, 32, 4),
     "votu_cluster": (16, 128, 6),
 }
-COMEBIN_CPUS = 12
-# Batch 0 trained a 182K-contig Pratama hybrid assembly at 10 min an epoch on CPU, 35-40 h for 200 epochs
-# against the 24 h cap. A MIG slice runs the same image with --nv.
-COMEBIN_GPU = "nvidia_h100_80gb_hbm3_1g.10gb"
-# First-attempt GPU hours per shape; a retry doubles. A shorter request backfills into the gaps between
-# larger GPU jobs. About half batch 0's slowest CPU run: training is ~85% of it and runs 4.9x faster on a
-# slice. pratama_hybrid_ont was measured on a slice at ~9 h. Wave 1's cami_pe ran 39-108 min (median 75) and
-# timed out at 2 h; 3 h still fits the shortest GPU partition, so the CAMI short and Nanopore shapes take it.
-COMEBIN_GPU_HOURS = {
-    "cami_pe": 3, "cami_hybrid_ont": 3, "cami_long_pacbio": 5, "metagem_se": 1,
-    "metagem_pe_split": 12, "pratama_pe": 10, "pratama_hybrid_ont": 12,
+# COMEBin's first-attempt (cpus, GB, hours) per shape, on the CPU account; a retry doubles memory and time.
+# The transform's CPU patch bins a CAMI short-read sample in 46 min at 12 cpus with a 3 GB peak, against
+# 53 min plus a 16 h queue on a MIG slice. A training step takes 1.23 s per 1,024-contig batch at 12 cpus,
+# 1.01 s at 24 and 0.79 s at 48, so the large shapes take 24 for most of the speed at half the queue. Hours
+# are 1.5 x (0.75 h + batches per epoch x 200 epochs x 1.0 s): ~10 h for Pratama short reads, 16 h for a
+# 180K-contig hybrid and for metaGEM's split pairs, whose MIG slice was budgeted the same 12 h.
+COMEBIN = {
+    "cami_pe": (12, 16, 3), "cami_hybrid_ont": (12, 16, 3), "cami_long_pacbio": (12, 16, 5), "metagem_se": (12, 16, 2),
+    "pratama_pe": (24, 32, 10), "pratama_hybrid_ont": (24, 32, 16), "metagem_pe_split": (24, 32, 16),
 }
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
 # Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
@@ -304,8 +301,8 @@ def solve(args, shape, by_study):
         c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=queue),
                                     process=dict(tries=4)),
-                        scaled=SCALED, comebin_cpus=COMEBIN_CPUS, comebin_gpu=COMEBIN_GPU,
-                        comebin_gpu_hours=COMEBIN_GPU_HOURS[shape], materialise=args.materialise,
+                        scaled=SCALED, comebin_cpus=COMEBIN[shape][0], comebin_memory_gb=COMEBIN[shape][1],
+                        comebin_hours=COMEBIN[shape][2], materialise=args.materialise,
                         on_exist="clear" if args.clear else "update")
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
