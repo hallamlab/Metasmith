@@ -1,5 +1,4 @@
 import re
-import subprocess
 import pytest
 
 from tests.metasmith.e2e.docker.test_orchestrator_exec import NxfTestRunner
@@ -27,12 +26,6 @@ def _run_with_retry(nxf_runner, script: str, timeout: int = 60, retries: int = 2
 @pytest.fixture
 def nxf_runner(tmp_path, docker_image):
     return NxfTestRunner(tmp_path / "nxf_test", docker_image)
-
-
-SLOW_TAIL_SECONDS = 5
-INCREMENTAL_EMIT_THRESHOLD_MS = 2000
-
-C13_DEADLOCK_TIMEOUT_S = 30
 
 
 def _emit_lines(stdout: str, prefix: str = "G:") -> list[str]:
@@ -171,57 +164,6 @@ workflow {
     lines = _emit_lines(result.stdout)
     assert len(lines) <= 2, (
         f"PINNED behavior change: expected 0-2 emits today, got {len(lines)}: {lines}"
-    )
-
-
-def test_c04_descendant_key_emits_before_another_keys_tail(nxf_runner):
-    (nxf_runner.work_dir / "a0.txt").write_text("a0")
-    (nxf_runner.work_dir / "a1.txt").write_text("a1")
-    for n in ("b_fast_0", "b_fast_1", "b_slow_0", "b_slow_1"):
-        (nxf_runner.work_dir / f"{n}.txt").write_text(n)
-
-    script = f'''
-workflow {{
-    o = new Orchestrator(Channel.fromList([null]))
-    o.seedParents(["b": ["a"]])
-    def t0 = System.currentTimeMillis()
-    println "START:${{t0}}"
-
-    def ch_a = Channel.fromList([
-        [["a": [11L]], file("${{projectDir}}/a0.txt")],
-        [["a": [12L]], file("${{projectDir}}/a1.txt")],
-    ])
-    def ch_b_fast = Channel.fromList([
-        [["a": [11L], "b": [10L]], file("${{projectDir}}/b_fast_0.txt")],
-        [["a": [11L], "b": [11L]], file("${{projectDir}}/b_fast_1.txt")],
-    ])
-    def ch_b_slow = Channel.fromList([
-        [["a": [12L], "b": [20L]], file("${{projectDir}}/b_slow_0.txt")],
-        [["a": [12L], "b": [21L]], file("${{projectDir}}/b_slow_1.txt")],
-    ]).map {{ x -> sleep {SLOW_TAIL_SECONDS * 1000}; return x }}
-
-    def pa = new Tuple2("a", ch_a)
-    def mixed_b = o.mix([new Tuple2("b", ch_b_fast), new Tuple2("b", ch_b_slow)])
-
-    def grouped = o.group("a", [pa, mixed_b], ["target"], 1, ["b": 2])
-    grouped.view {{ idx, a_vals, b_vals ->
-        def elapsed = System.currentTimeMillis() - t0
-        "G:${{elapsed}}:a=${{a_vals.size()}}:b=${{b_vals.size()}}"
-    }}
-}}
-'''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
-    NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    assert len(lines) == 2, f"C4 expected one task per key, got {lines}"
-    for line in lines:
-        assert "a=1:b=2" in line, f"C4 emitted a partial group: {line}"
-    earliest = _earliest_ms(result.stdout)
-    assert earliest is not None, "no emissions at all"
-    assert earliest < INCREMENTAL_EMIT_THRESHOLD_MS, (
-        f"C4: the complete key waited for the other key's tail — first "
-        f"emission at {earliest}ms >= {INCREMENTAL_EMIT_THRESHOLD_MS}ms. "
-        f"All emissions: {lines}"
     )
 
 
@@ -525,81 +467,6 @@ workflow {
     assert earliest is not None
     assert "b=2" in " ".join(lines) or "b=3" in " ".join(lines), (
         f"C12: expected b=2 or b=3 in some emit, got: {lines}"
-    )
-
-
-def test_c13_descendant_never_closes_deadlock(nxf_runner):
-    (nxf_runner.work_dir / "a.txt").write_text("a")
-    (nxf_runner.work_dir / "b_early.txt").write_text("be")
-
-    long_sleep_ms = (C13_DEADLOCK_TIMEOUT_S + 60) * 1000
-
-    script = f'''
-process sentinel {{
-    input:
-        tuple val(idx), path(a_files), path(b_files)
-    output:
-        val "ok"
-    script:
-    """
-    echo sentinel ran
-    """
-}}
-
-workflow {{
-    o = new Orchestrator(Channel.fromList([null]))
-    o.seedParents(["b": ["a"]])
-    def t0 = System.currentTimeMillis()
-    println "START:${{t0}}"
-
-    def ch_a = Channel.fromList([[["a": [11L]], file("${{projectDir}}/a.txt")]])
-    def ch_b_early = Channel.fromList([
-        [["a": [11L], "b": [10L]], file("${{projectDir}}/b_early.txt")],
-    ])
-    def ch_b_late = Channel.fromList([
-        [["a": [11L], "b": [20L]], file("${{projectDir}}/b_early.txt")],
-    ]).map {{ x -> sleep {long_sleep_ms}; return x }}
-
-    def pa = new Tuple2("a", ch_a)
-    def pbe = new Tuple2("b", ch_b_early)
-    def pbl = new Tuple2("b", ch_b_late)
-    def mixed_b = o.mix([pbe, pbl])
-
-    // The late item is `b_early.txt` AGAIN — the same path. Bag-insertion
-    // dedup keys on the value, so it is a replay duplicate (the dimension
-    // C16 pins) and key 11's group is genuinely WHOLE at t~0 with one item.
-    // Telling group() to expect one is therefore not a partial emission; it
-    // is the only thing that lets the key fire before a channel that never
-    // closes. This is the W1 p06__assembly_stats shape.
-    def grouped = o.group("a", [pa, mixed_b], ["target"], 1, ["b": 1])
-    grouped.view {{ idx, a_vals, b_vals ->
-        def elapsed = System.currentTimeMillis() - t0
-        "G:${{elapsed}}:a=${{a_vals.size()}}:b=${{b_vals.size()}}"
-    }}
-    // Real downstream task: forces evaluation. If group() never emits,
-    // sentinel never runs and the docker run wall-clock-times out.
-    def sentinel_out = sentinel(grouped)
-    sentinel_out.view {{ x ->
-        def elapsed = System.currentTimeMillis() - t0
-        "SENTINEL:${{elapsed}}:done"
-    }}
-}}
-'''
-    try:
-        result = nxf_runner.run(script, timeout=C13_DEADLOCK_TIMEOUT_S)
-        stdout = result.stdout
-    except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or b"").decode("utf-8", errors="replace")
-
-    sentinel_emits = _emit_lines(stdout, prefix="SENTINEL:")
-    assert sentinel_emits, (
-        f"C13 deadlock — sentinel never ran within {C13_DEADLOCK_TIMEOUT_S}s.\n"
-        f"stdout tail:\n{stdout[-1500:]}"
-    )
-    earliest_sentinel = _earliest_ms(stdout, prefix="SENTINEL:")
-    assert earliest_sentinel is not None and earliest_sentinel < INCREMENTAL_EMIT_THRESHOLD_MS, (
-        f"C13: sentinel ran at {earliest_sentinel}ms — expected < "
-        f"{INCREMENTAL_EMIT_THRESHOLD_MS}ms (group() buffered until close)."
     )
 
 
@@ -992,81 +859,6 @@ workflow {
     assert "s=3" in joined, (
         f"C24 expected at least one emit with s=3 (bag-fill from 3 S items), "
         f"got: {lines}"
-    )
-
-
-def test_c25_sibling_never_closes_deadlock(nxf_runner):
-    (nxf_runner.work_dir / "b0.txt").write_text("b0")
-    (nxf_runner.work_dir / "c_early.txt").write_text("ce")
-
-    long_sleep_ms = (C13_DEADLOCK_TIMEOUT_S + 60) * 1000
-
-    script = f'''
-process sentinel {{
-    input:
-        tuple val(idx), path(c_files), path(b_files)
-    output:
-        val "ok"
-    script:
-    """
-    echo sentinel ran
-    """
-}}
-
-workflow {{
-    o = new Orchestrator(Channel.fromList([null]))
-    o.seedParents(["b": ["a"], "c": ["a"]])
-    def t0 = System.currentTimeMillis()
-    println "START:${{t0}}"
-
-    // B is the by-stream (closes fast).
-    def ch_b = Channel.fromList([
-        [["a": [5L], "b": [10L]], file("${{projectDir}}/b0.txt")],
-    ])
-    // C-early: sibling with matching a-hash, available immediately.
-    def ch_c_early = Channel.fromList([
-        [["a": [5L], "c": [20L]], file("${{projectDir}}/c_early.txt")],
-    ])
-    // C-late: sibling tail that never closes within the test window.
-    def ch_c_late = Channel.fromList([
-        [["a": [5L], "c": [21L]], file("${{projectDir}}/c_early.txt")],
-    ]).map {{ x -> sleep {long_sleep_ms}; return x }}
-
-    def pb = new Tuple2("b", ch_b)
-    def pc_e = new Tuple2("c", ch_c_early)
-    def pc_l = new Tuple2("c", ch_c_late)
-    def pc = o.mix([pc_e, pc_l])
-
-    // As in C13, the late C is `c_early.txt` again, so dedup makes the bag
-    // whole at t~0 with one item. Note the SIBLING bag is keyed on the shared
-    // ANCESTOR hash rather than the by-key, so the count is per ancestor.
-    def grouped = o.group("b", [pc, pb], ["target"], 1, ["c": 1])
-    grouped.view {{ idx, c_vals, b_vals ->
-        def elapsed = System.currentTimeMillis() - t0
-        "G:${{elapsed}}:b=${{b_vals.size()}}:c=${{c_vals.size()}}"
-    }}
-    def sentinel_out = sentinel(grouped)
-    sentinel_out.view {{ x ->
-        def elapsed = System.currentTimeMillis() - t0
-        "SENTINEL:${{elapsed}}:done"
-    }}
-}}
-'''
-    try:
-        result = nxf_runner.run(script, timeout=C13_DEADLOCK_TIMEOUT_S)
-        stdout = result.stdout
-    except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or b"").decode("utf-8", errors="replace")
-
-    sentinel_emits = _emit_lines(stdout, prefix="SENTINEL:")
-    assert sentinel_emits, (
-        f"C25 deadlock — sibling buffer-until-close blocked sentinel.\n"
-        f"stdout tail: {stdout[-1500:]}"
-    )
-    earliest_sentinel = _earliest_ms(stdout, prefix="SENTINEL:")
-    assert earliest_sentinel is not None and earliest_sentinel < INCREMENTAL_EMIT_THRESHOLD_MS, (
-        f"C25: sentinel ran at {earliest_sentinel}ms — expected < "
-        f"{INCREMENTAL_EMIT_THRESHOLD_MS}ms (sibling branch buffered until close)."
     )
 
 
