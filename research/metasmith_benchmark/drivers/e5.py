@@ -43,7 +43,8 @@ from metasmith.python_api import (  # noqa: E402
 
 TYPE_LIBS = e3_pratama.TYPE_LIBS + [c.LIBRARY / "data_types" / "e5.yml"]
 PILOT_SIZE = 3
-# The modern lane's CarveMe comes from the bench modelling library.
+# The modern lane's CarveMe comes from e5_gem, split at its DIAMOND search, and MEMOTE from the bench
+# modelling library.
 GEM_MASK = {Path("carveme_from_orfs.py"), Path("memote_score.py"), Path("carveme_from_orfs_cplex.py")}
 # The hybrid pilot's comparison lanes and scorers.
 PILOT_ONLY = {Path("flye.py"), Path("polca.py"), Path("quast.py"), Path("metaquast.py")}
@@ -240,7 +241,9 @@ def build_transforms(mode, pre_e5_assembly=False):
     binning = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_binning")
     return [*own, binning, bench, *std,
             modelling.AsView(GEM_MASK | {Path("prodigal_from_bin.py")}, invert=True),
-            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling")]
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling").AsView(
+                {Path("carveme_from_orfs.py")}, invert=True),
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_gem")]
 
 
 def build_targets(mode):
