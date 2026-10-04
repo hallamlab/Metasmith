@@ -195,22 +195,25 @@ def expected_counts(shape, by_study):
 def build_transforms(hybrid):
     # E5 owns its viral lane, the MAG ORF mapping and the hybrid pair. e5_binning owns a COMEBin and DAS Tool
     # that survive an assembly too small for COMEBin. The standard libraries keep E3's masks, except
-    # assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every corpus. A hybrid
-    # sample's MEGAHIT writes a draft that only OPERA-MS reads.
-    replaced = {**e3_pratama.REPLACED, "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py", "bbduk.py"},
+    # assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every corpus.
+    # e5_assembly owns both MEGAHITs, which delete their workspace: the assembly for a short-read sample, and
+    # for a hybrid one a draft that only OPERA-MS reads. e5's own megahit_draft predates it and stays masked,
+    # since rebuilding e5 would fork the cache of every transform in it.
+    replaced = {**e3_pratama.REPLACED,
+                "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py", "bbduk.py"} | {"megahit.py"},
                 "metagenomics": e3_pratama.REPLACED["metagenomics"] | {"binning/comebin.py", "binning/das_tool.py"},
                 "logistics": {"interleave_zipped_short_reads.py"}}
-    if hybrid:
-        replaced["assembly"] = replaced["assembly"] | {"megahit.py"}
     std = [TransformInstanceLibrary.Load(c.MLIB / "transforms" / name).AsView(
                {Path(p) for p in replaced.get(name, ())}, invert=True)
            for name in ("logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics")]
-    own_masked = PILOT_ONLY if hybrid else PILOT_ONLY | {Path("megahit_draft.py"), Path("opera_ms.py")}
+    own_masked = PILOT_ONLY | {Path("megahit_draft.py")} | (set() if hybrid else {Path("opera_ms.py")})
     e5_lib = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)
+    assembly = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_assembly").AsView(
+        {Path("megahit.py" if hybrid else "megahit_draft.py")}, invert=True)
     modelling = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
     bench = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench").AsView({Path("deepvirfinder.py")}, invert=True)
     binning = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_binning")
-    return [e5_lib, binning, bench, *std,
+    return [e5_lib, assembly, binning, bench, *std,
             modelling.AsView(GEM_MASK | {Path("prodigal_from_bin.py")}, invert=True),
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling")]
 
