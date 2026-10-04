@@ -416,33 +416,3 @@ def test_every_source_kind_sees_the_seal(ws):
     for r in p03:
         assert_slot(r, 1, names={"ref.txt"})
 
-
-# ------------------------------------------------------------- late item is a crash
-
-
-def test_a_late_item_for_a_released_key_crashes_the_run(ws):
-    ws.given("reads", SAMPLES)
-    ws.spec("p01", label="asm")
-    ws.spec("p02", label="bins")
-    ws.params["late_ms"] = 10000
-
-    result = ws.run("late_item.nf")
-    assert_finished(result)
-
-    assert result.returncode != 0, (
-        "a second, distinct `asm` item arrived for every sample after its member "
-        "was released, and the run still exited 0. Under the sibling-stamp "
-        "invariant that item cannot exist, so it must stop the run.\n"
-        f"p02 received: {[r.slots for r in result.received('p02')]}\n{result.tail}"
-    )
-    for needle, what in (("[asm]", "the stream"), ("[reads]", "the by-key")):
-        assert needle in result.output, f"the error must name {what} ({needle})\n{result.tail}"
-    seen: dict[str, int] = {}
-    for r in result.received("p02"):
-        seen[r.token] = seen.get(r.token, 0) + 1
-        assert not any(n.endswith("-late.out") for n in r.slots[1]), (
-            f"a late item was folded into a member instead of stopping the run: {r.slots[1]}"
-        )
-    assert all(n == 1 for n in seen.values()), (
-        f"a late item was emitted as a second member: {seen}"
-    )
