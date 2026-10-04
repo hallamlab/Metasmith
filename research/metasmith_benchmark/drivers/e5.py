@@ -98,9 +98,10 @@ COMEBIN_CPUS = 12
 COMEBIN_GPU = "nvidia_h100_80gb_hbm3_1g.10gb"
 # First-attempt GPU hours per shape; a retry doubles. A shorter request backfills into the gaps between
 # larger GPU jobs. About half batch 0's slowest CPU run: training is ~85% of it and runs 4.9x faster on a
-# slice. pratama_hybrid_ont was measured on a slice at ~9 h.
+# slice. pratama_hybrid_ont was measured on a slice at ~9 h. Wave 1's cami_pe ran 39-108 min (median 75) and
+# timed out at 2 h; 3 h still fits the shortest GPU partition, so the CAMI short and Nanopore shapes take it.
 COMEBIN_GPU_HOURS = {
-    "cami_pe": 2, "cami_hybrid_ont": 2, "cami_long_pacbio": 5, "metagem_se": 1,
+    "cami_pe": 3, "cami_hybrid_ont": 3, "cami_long_pacbio": 5, "metagem_se": 1,
     "metagem_pe_split": 12, "pratama_pe": 10, "pratama_hybrid_ont": 12,
 }
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
