@@ -19,6 +19,7 @@ class NodeKind(Enum):
     TRANSFORM = auto()
     DATA      = auto()
     TARGET    = auto()
+    GIVEN     = auto()
 
 
 class DagMode(Enum):
@@ -63,7 +64,8 @@ def step_blocks(
 # one half of that -- the darker ink, the weight, the heavier stroke on one
 # side; the greyer ink and the lighter stroke on the other. Text takes exactly
 # two inks, the step's and the data's: a namespace is inked like its name, and
-# a target's label is data. Only a target's marker says it was asked for.
+# a target's label is data. Only the marker of a target, or of an input drawn
+# without a `given` step, says it is an end of the plan.
 STYLES: dict[NodeKind, Style] = {
     NodeKind.TRANSFORM: Style(
         marker="▽", ascii_marker="v",
@@ -92,6 +94,9 @@ STYLES: dict[NodeKind, Style] = {
     ),
 }
 
+STYLES[NodeKind.GIVEN] = STYLES[NodeKind.TARGET]
+
+
 @dataclass(frozen=True)
 class Theme:
     plate: Plate
@@ -117,6 +122,8 @@ DARK = Theme(
         ),
     },
 )
+
+DARK.styles[NodeKind.GIVEN] = DARK.styles[NodeKind.TARGET]
 
 THEMES: dict[str, Theme] = {"light": LIGHT, "dark": DARK}
 
@@ -175,6 +182,7 @@ class DagRenderer:
         self._edges: list[tuple[str, str]] = []
         self._seen_edges: set[tuple[str, str]] = set()
         self._declared: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {}
+        self._givens: set[str] = set()
 
     def add_node(
         self, kind: NodeKind, name: str, label: Label | None = None, dtype: Any = None,
@@ -188,6 +196,12 @@ class DagRenderer:
     def mark(self, kind: NodeKind, name: str) -> None:
         if name in self._nodes:
             self._nodes[name] = kind
+
+    def mark_given(self, name: str) -> None:
+        """Draw `name` as an input with no synthetic `given` step above it."""
+        self._givens.add(name)
+        if self._nodes.get(name) is NodeKind.DATA:
+            self._nodes[name] = NodeKind.GIVEN
 
     def add_edge(self, src: str, dst: str) -> None:
         key = (src, dst)
@@ -227,7 +241,35 @@ class DagRenderer:
 
     def layout(self, order: Sequence[str] | None = None) -> Layout:
         nodes, edges = self._graph()
-        return layout(nodes, edges, order, step_blocks(nodes, edges))
+        return layout(nodes, edges, order, step_blocks(nodes, edges) + self._given_blocks(nodes, edges))
+
+    def _given_blocks(
+        self, nodes: Mapping[str, NodeKind], edges: Iterable[tuple[str, str]],
+    ) -> list[list[str]]:
+        """Each lineage tree of inputs as one block, parents first, so an input
+        and the inputs registered under it enter the drawing together."""
+        givens = [n for n in nodes if n in self._givens]
+        inside = set(givens)
+        kids: dict[str, list[str]] = {n: [] for n in givens}
+        has_parent: set[str] = set()
+        for src, dst in edges:
+            if src in inside and dst in inside:
+                kids[src].append(dst)
+                has_parent.add(dst)
+        blocks, placed = [], set()
+        for root in givens:
+            if root in has_parent or root in placed:
+                continue
+            block, todo = [], [root]
+            while todo:
+                n = todo.pop(0)
+                if n in placed:
+                    continue
+                placed.add(n)
+                block.append(n)
+                todo.extend(kids[n])
+            blocks.append(block)
+        return blocks
 
     def _graph(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
         nodes, edges = self._cut()
@@ -265,7 +307,7 @@ class DagRenderer:
         return preds, succs
 
     def _is_data(self, name: str) -> bool:
-        return self._nodes.get(name) in (NodeKind.DATA, NodeKind.TARGET)
+        return self._nodes.get(name) in (NodeKind.DATA, NodeKind.TARGET, NodeKind.GIVEN)
 
     def _collapse(
         self, nodes: dict[str, NodeKind], edges: list[tuple[str, str]],
@@ -294,7 +336,7 @@ class DagRenderer:
                 drop.add(name)
             elif kind is NodeKind.TARGET:
                 continue
-            elif "given" not in preds[name]:
+            elif "given" not in preds[name] and name not in self._givens:
                 drop.add(name)                      # an intermediate product
 
         kept = {n: k for n, k in nodes.items() if n not in drop}

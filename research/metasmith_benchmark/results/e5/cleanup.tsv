@@ -1,0 +1,11 @@
+path	copy	verified_by	job	status
+bench/checkout/* (34 dirs, all but a1c1b9d7)	git commits on origin or capella	git branch -r --contains, 34/34	62644882	deleted
+wave2_b3_nfcore/* (13 dirs, all but checkm2_db)	none needed: E1 nf-core test scratch	-	62644884	deleted
+cami_nfcore_split_reads	none needed: regenerable by e1_nfcore/stage_split_reads.py	-	62644885	deleted
+bench/e1ctl, bench/e1ctl2	chinook fir_bench_e1_e2/e1ctl*/ tars	tar manifests = out+reports+1 (e1ctl*); Globus checksum resync b511dac9 repaired 9 files added to e1_close after its archive; second checksum pass 7557290d: 0 bytes, 3,583 skipped	62659737	deleted: 14,208 inodes, 23.0 GB
+bench/e1_close	chinook fir_bench_e1_e2/e1/e1_close	tar manifests = out+reports+1 (e1ctl*); Globus checksum resync b511dac9 repaired 9 files added to e1_close after its archive; second checksum pass 7557290d: 0 bytes, 3,583 skipped	62659737	deleted: 4,838 inodes, 707 GB
+bench/archive/{e1_long,e1_short_out,e1ctl_*,e1ctl2_*}.tar + manifests	chinook fir_bench_e1_e2/{e1,e1ctl,e1ctl2}	Globus checksum passes b511dac9 and 7557290d: 0 bytes on the second	rm on login node, 12 literal paths	deleted: 158 GB
+cami/metasmith (E2 home)	chinook fir_bench_e1_e2/e2_home/metasmith, minus nxf_work and results hardlinks	Globus b0e0d05a: 215,987 files, 2.32 TB. mtime resync 5bc5b3b9: 0 bytes, 215,987 skipped. No E5 path or link points into it	62671441	deleted: 336,724 inodes, 2.41 TB
+pratama2026/metasmith (E3 home)	chinook fir_bench_e3/pratama2026/metasmith, five current runs added	Globus b27071b0: 24,343 new files, 354.1 GB, 27,264 already archived. Resync af406114: 0 bytes, 51,607 skipped	62652022	deleted: 148,436 inodes, 2.42 TB
+bench/e5_hybrid	chinook fir_bench_e5/e5_hybrid	Globus b3c5b43b: 78,648 files, 65.3 GB. Resync e250b2b1: 0 bytes, 78,648 skipped. 2,499 symlinks listed in fir_bench_e5/e5_hybrid_symlinks.tsv	62650610	deleted: 88,070 inodes, 65.3 GB
+bench/archive/e2 (764 files, 1.6 TB of per-sample E2 product tars)	chinook fir_bench_e1_e2/e2	Globus checksum pass edffbb32: 0 bytes, 764 of 764 skipped. A head-truncated ls first showed only its manifest, and a delete queued on that was cancelled while pending	62668985	deleted: 1.6 TB

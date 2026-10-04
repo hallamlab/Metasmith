@@ -1,0 +1,57 @@
+sample	dataset	assembly	total_Mb	Mb_in_50kb	N50	NA50	mean_genome_fraction	mismatches_per_100kb	indels_per_100kb	misassemblies_per_Mb
+marine_long_sample_3	marine PacBio	megahit	342.08	19.74	1589.00	1554.00	21.08	1112.27	15.40	35.06
+marine_long_sample_3	marine PacBio	opera_ms	362.42	41.84	7527.00	7197.00	21.93	1453.73	604.13	30.00
+marine_long_sample_3	marine PacBio	flye	186.76	0.00	5037.00	4258.00	9.50	673.83	2250.67	0.43
+marine_long_sample_3	marine PacBio	flye_polca	185.92	0.00	5015.00	4241.00	9.51	649.08	1665.41	0.44
+marine_long_sample_3	marine PacBio	unaligned_raw	475.09	2.20	3105.00	2593.00	23.71	952.15	984.17	26.13
+marine_long_sample_3	marine PacBio	unaligned_polca	473.57	2.20	3092.00	2582.00	23.66	940.13	731.55	26.16
+marine_long_sample_3	marine PacBio	sub_raw	34.80	16.09	37436.00	33293.00	3.05	948.02	467.88	4.48
+marine_long_sample_3	marine PacBio	sub_polca	48.55	16.86	19001.00	17540.00	3.92	946.32	279.05	4.50
+plant_associated_long_nano_sample_10	plant Nanopore	megahit	139.33	28.83	3380.00	3309.00	10.88	950.74	20.85	21.92
+plant_associated_long_nano_sample_10	plant Nanopore	opera_ms	149.09	49.23	24135.00	20393.00	11.47	1644.61	685.05	20.45
+plant_associated_long_nano_sample_10	plant Nanopore	flye	93.92	65.45	97345.00	79427.00	10.09	1380.20	1327.17	4.35
+plant_associated_long_nano_sample_10	plant Nanopore	flye_polca	93.64	65.21	97403.00	79117.00	10.20	1324.99	674.71	4.53
+plant_associated_long_nano_sample_10	plant Nanopore	unaligned_raw	161.68	75.46	42018.00	35316.00	14.31	1327.13	842.96	19.54
+plant_associated_long_nano_sample_10	plant Nanopore	unaligned_polca	158.47	75.30	43905.00	37395.00	14.36	1287.46	442.76	19.58
+plant_associated_long_nano_sample_10	plant Nanopore	sub_raw	38.16	31.68	179726.00	118456.00	4.25	2895.10	974.75	9.37
+plant_associated_long_nano_sample_10	plant Nanopore	sub_polca	44.60	34.07	142735.00	91301.00	4.69	2796.09	817.96	11.04
+plant_associated_long_nano_sample_11	plant Nanopore	megahit	135.01	24.41	3417.00	3349.00	10.32	865.00	19.57	18.25
+plant_associated_long_nano_sample_11	plant Nanopore	opera_ms	140.80	49.44	23735.00	20010.00	10.81	1583.26	616.01	17.71
+plant_associated_long_nano_sample_11	plant Nanopore	flye	84.33	63.81	125119.00	104158.00	9.49	1176.85	1088.44	3.51
+plant_associated_long_nano_sample_11	plant Nanopore	flye_polca	84.10	63.48	125035.00	104445.00	9.58	1256.69	527.77	3.55
+plant_associated_long_nano_sample_11	plant Nanopore	unaligned_raw	149.40	72.52	46869.00	39554.00	13.45	1158.29	693.54	16.68
+plant_associated_long_nano_sample_11	plant Nanopore	unaligned_polca	146.59	72.18	48556.00	41536.00	13.48	1205.76	347.03	16.73
+plant_associated_long_nano_sample_11	plant Nanopore	sub_raw	40.38	33.81	176608.00	135949.00	4.28	2147.01	714.50	5.94
+plant_associated_long_nano_sample_11	plant Nanopore	sub_polca	44.17	34.04	156752.00	96776.00	4.63	2586.65	779.08	10.04
+plant_associated_long_pacbio_sample_14	plant PacBio	megahit	118.64	16.11	3246.00	3188.00	8.87	846.80	14.77	19.27
+plant_associated_long_pacbio_sample_14	plant PacBio	opera_ms	123.01	26.52	16988.00	16352.00	9.00	1066.40	458.35	16.35
+plant_associated_long_pacbio_sample_14	plant PacBio	flye	88.11	0.00	4880.00	4246.00	4.13	406.59	1755.76	0.47
+plant_associated_long_pacbio_sample_14	plant PacBio	flye_polca	87.79	0.00	4863.00	4230.00	4.11	395.53	1237.29	0.48
+plant_associated_long_pacbio_sample_14	plant PacBio	unaligned_raw	185.85	9.00	4383.00	3834.00	9.88	662.70	763.72	12.67
+plant_associated_long_pacbio_sample_14	plant PacBio	unaligned_polca	185.36	9.02	4369.00	3825.00	9.85	659.20	539.67	12.64
+plant_associated_long_pacbio_sample_14	plant PacBio	sub_raw	28.06	12.75	41496.00	37128.00	1.95	1135.49	511.06	6.39
+plant_associated_long_pacbio_sample_14	plant PacBio	sub_polca	33.92	13.93	31915.00	29185.00	2.38	1057.32	324.36	6.74
+plant_associated_long_pacbio_sample_18	plant PacBio	megahit	155.05	34.64	3726.00	3653.00	11.13	927.14	19.40	22.21
+plant_associated_long_pacbio_sample_18	plant PacBio	opera_ms	162.20	47.71	16424.00	15287.00	11.47	1222.61	506.45	19.78
+plant_associated_long_pacbio_sample_18	plant PacBio	flye	219.23	1.77	5260.00	4333.00	6.93	512.59	2236.13	0.14
+plant_associated_long_pacbio_sample_18	plant PacBio	flye_polca	218.89	1.77	5252.00	4325.00	6.94	520.99	2050.72	0.14
+plant_associated_long_pacbio_sample_18	plant PacBio	unaligned_raw	310.63	3.74	4753.00	3880.00	12.63	718.25	1611.81	11.60
+plant_associated_long_pacbio_sample_18	plant PacBio	unaligned_polca	309.90	3.74	4747.00	3875.00	12.61	722.31	1480.46	11.58
+plant_associated_long_pacbio_sample_18	plant PacBio	sub_raw	53.67	30.82	70144.00	55865.00	3.69	880.09	397.83	6.28
+plant_associated_long_pacbio_sample_18	plant PacBio	sub_polca	57.71	30.67	56998.00	48763.00	4.01	838.35	285.39	6.07
+toy_humangut_long_sample_14	toy humangut Nanopore	megahit	195.84	53.02	3595.00	3570.00	33.87	239.46	7.56	6.16
+toy_humangut_long_sample_14	toy humangut Nanopore	opera_ms	210.49	74.12	19860.00	19472.00	35.21	893.29	605.35	5.84
+toy_humangut_long_sample_14	toy humangut Nanopore	flye	152.08	74.43	48136.00	45535.00	27.20	1043.15	844.73	1.26
+toy_humangut_long_sample_14	toy humangut Nanopore	flye_polca	151.89	74.31	48092.00	45535.00	27.04	701.23	443.70	1.22
+toy_humangut_long_sample_14	toy humangut Nanopore	unaligned_raw	224.24	74.73	21388.00	20123.00	36.44	785.61	547.46	5.64
+toy_humangut_long_sample_14	toy humangut Nanopore	unaligned_polca	221.80	74.61	21920.00	20511.00	36.16	568.79	292.01	5.63
+toy_humangut_long_sample_14	toy humangut Nanopore	sub_raw	60.91	34.92	82054.00	76477.00	11.04	778.34	439.81	1.81
+toy_humangut_long_sample_14	toy humangut Nanopore	sub_polca	73.81	39.83	64479.00	61550.00	13.50	650.22	272.39	1.74
+toy_humangut_long_sample_5	toy humangut Nanopore	megahit	198.47	79.70	26645.00	26177.00	40.30	142.12	4.92	4.24
+toy_humangut_long_sample_5	toy humangut Nanopore	opera_ms	202.64	140.22	118774.00	112527.00	41.78	417.83	232.72	4.51
+toy_humangut_long_sample_5	toy humangut Nanopore	flye	186.34	129.07	99924.00	92890.00	35.41	667.38	474.06	1.50
+toy_humangut_long_sample_5	toy humangut Nanopore	flye_polca	186.19	128.97	99873.00	92541.00	35.44	431.93	180.46	1.51
+toy_humangut_long_sample_5	toy humangut Nanopore	unaligned_raw	214.43	129.43	76779.00	72078.00	43.80	604.49	411.55	4.51
+toy_humangut_long_sample_5	toy humangut Nanopore	unaligned_polca	213.31	129.32	77677.00	72477.00	43.81	402.02	158.12	4.50
+toy_humangut_long_sample_5	toy humangut Nanopore	sub_raw	93.00	61.43	101614.00	91465.00	17.79	708.50	317.63	2.10
+toy_humangut_long_sample_5	toy humangut Nanopore	sub_polca	103.73	68.83	98362.00	89692.00	19.40	550.55	161.76	1.87

@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from metasmith.python_api import Agent, Gpu, Size, Source, SshSource, Runtime, TransformInstanceLibrary
+from metasmith.agents.gpu import _GPU_BEFORE_SCRIPT
 
 HERE = Path(__file__).resolve().parent
 BENCH = HERE.parent
@@ -24,17 +25,10 @@ DAG_DIR = BENCH / "page" / "dags"
 MLIB = Path(os.environ.get("MSM_LIB", str(REPO / "src" / "metasmith_libraries")))
 
 HPC_HOST = os.environ.get("MSM_HPC_HOST", "fir")
-# Moved off rrg-shallam-ab on 2026-09-21 (Tony's call) because the RAC's fair share is spent. At the
-# account level rrg-shallam-ab_cpu reads EffectvUsage 1.000000 against 3,584,000 shares and LevelFS 3.31,
-# while rpp-shallam_cpu holds 495,000 shares against a RawUsage 245x smaller -- LevelFS 111.95, and
-# `sreport` finds ZERO cpu-hours on it in the eight days to 2026-09-21. This account is also already where
-# E4's CPLEX runtime lives (see e4_metagem.py's CPLEX_ROOT), so it is not a foreign allocation to this work.
-#
-# NOT MEASURED, and worth knowing before trusting it: `sbatch --test-only` for a single 2-cpu/1 h job
-# predicted the SAME start time under both accounts, because one small job finds backfill either way. The
-# throttle this is meant to lift is aggregate priority across a whole queue, which --test-only does not
-# model. The evidence is the fair-share arithmetic; the confirmation is watching real start latency.
-SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rpp-shallam")
+# The better account flips as each is spent, so read `sshare -l -A rrg-shallam-ab_cpu,rpp-shallam_cpu`
+# (account-row LevelFS) before a large launch. On 2026-10-03 rrg-shallam-ab_cpu read 8.69 and
+# rpp-shallam_cpu 1.14. E4's CPLEX runtime lives under rpp-shallam's project space, not its allocation.
+SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "rrg-shallam-ab")
 # CAUTION both RACs are CPU-only: a GPU step under rrg-shallam-ab or rpp-shallam is rejected, and there is
 # no rpp-shallam_gpu association at all, so GPU steps keep billing def-shallam_gpu.
 SLURM_GPU_ACCOUNT = os.environ.get("MSM_SLURM_GPU_ACCOUNT", "def-shallam_gpu")
@@ -58,6 +52,7 @@ HOMES = {
     "pratama": Path("/scratch/phyberos/pratama2026/metasmith"),
     "metagem": Path("/scratch/phyberos/metagem/metasmith"),
     "e4abl": Path("/scratch/phyberos/e4_ablation/metasmith"),
+    "e5": Path("/scratch/phyberos/e5/metasmith"),
 }
 
 # Each line runs twice: in the agent's persistent shell from the home, and in the run's
@@ -311,7 +306,7 @@ def write_dag(task, stem, cache_dir):
 # not here for the same reason: its product is ~3 GB, but in place its spades_ws left ~120 GB per
 # sample on Lustre, and ~50 GB more for each attempt that ran out of memory.
 IN_PLACE_STEPS = (
-    "fastp", "bbduk_pratama", "megahit",
+    "fastp", "bbduk_pratama", "megahit", "megahit_draft",
     "assembly_stats", "porechop_abi", "chopper", "minimap2_binning_bam",
     "vcontact3_pratama",
 )
@@ -357,7 +352,8 @@ LARGE_MEMORY_STEPS = {
 }
 
 
-def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d"):
+def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d", comebin_gpu=None,
+                      comebin_gpu_hours=12):
     """fir's Slurm preset plus process selectors.
 
     `scaled` maps a transform name to (cpus, GB, hours) for its first attempt, and each retry
@@ -372,6 +368,12 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     before submitting anything, and metasmith still reports the run complete. On node-local
     scratch their `ln -f` from the shard crosses devices and falls back to a copy, so a relaunch
     wrote every hit to Lustre again. In the work dir the link succeeds.
+
+    `comebin_gpu` names a MIG profile to train COMEBin on, billed to the GPU account while every other
+    step stays on SLURM_ACCOUNT. It is config only, so the plan key and the cache do not move. The
+    transform runs its container with `--nv` and forwards the agent's CUDA_VISIBLE_DEVICES, which the
+    agent has only if the engine's GPU beforeScript exported the slice's MIG handle. Without it the
+    container gets an empty value and torch trains on the CPU with nothing but a warning.
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
     mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
@@ -384,6 +386,16 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     # deliberately; the point of that dict is that an exception is listed there on purpose, auditably,
     # and COMEBin never was.
     comebin_cap = LONG_RUNNING_STEPS.get("comebin", MAX_TASK_DURATION)
+    if comebin_gpu:
+        # A literal per run, not a closure over the task's assembly: a job array's one Slurm header is
+        # rendered without any element's inputs, so such a closure always took its fallback.
+        comebin_account, comebin_gres = SLURM_GPU_ACCOUNT, f" --gres=gpu:{comebin_gpu}:1"
+        comebin_before = [f"        beforeScript = '{_GPU_BEFORE_SCRIPT}'"]
+        comebin_time_line = (f"        time = {{ [{comebin_gpu_hours}.h * (2 ** (task.attempt - 1)), "
+                             f"('{comebin_cap}' as Duration)].min() }}")
+    else:
+        comebin_account, comebin_gres, comebin_before = SLURM_ACCOUNT, "", []
+        comebin_time_line = f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}"
     # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
         "", "process {",
@@ -392,8 +404,9 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         "process {", "    withName: '.*__comebin' {",
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
-        f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}",
-        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
+        comebin_time_line,
+        *comebin_before,
+        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account} --exclude={FIR_BAD_NODES}{comebin_gres}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
     for name in IN_PLACE_STEPS:
@@ -426,8 +439,9 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     return out
 
 
-def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, materialise=False, gpus=None,
-                  on_exist="update", extra_config=None):
+def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, comebin_cpus=48, comebin_gpu=None,
+                  comebin_gpu_hours=12,
+                  materialise=False, gpus=None, on_exist="update", extra_config=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
 
     CAUTION `on_exist="update"` re-sends context but KEEPS a transform bundle the run directory already
@@ -472,7 +486,8 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     # ignore path. Verify with `grep max <run>/workflow.params.yml` after staging, not by reading this.
     params = dict(params)
     params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
-    config = make_slurm_config(smith, cache_dir, scaled)
+    config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus, comebin_gpu=comebin_gpu,
+                               comebin_gpu_hours=comebin_gpu_hours)
     if extra_config is not None:
         # Appended last, so its literals win. `array` and `submitRateLimit` read params outside a
         # closure in slurm.nf, and only a literal in the file reaches them.

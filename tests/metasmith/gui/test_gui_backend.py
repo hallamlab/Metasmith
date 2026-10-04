@@ -1312,7 +1312,7 @@ class TestDagTheme:
         ink = client.get("/api/dag/theme").get_json()
         assert set(ink) == {"light", "dark"}
         for theme in ink.values():
-            assert set(theme["styles"]) == {"transform", "data", "target"}
+            assert set(theme["styles"]) == {"transform", "data", "target", "given"}
             assert theme["plate"]["background"] and theme["plate"]["edge"]
 
     def test_a_style_carries_what_a_browser_has_to_draw_with(self, client):
@@ -1320,7 +1320,7 @@ class TestDagTheme:
         st = ink["light"]["styles"]
         assert st["transform"]["shape"] == "triangle_down"
         assert st["data"]["shape"] == "circle" and not st["data"]["solid"]
-        assert st["target"]["solid"]
+        assert st["target"]["solid"] and st["given"] == st["target"]
 
     def test_only_the_colours_differ_between_the_two(self, client):
         ink = client.get("/api/dag/theme").get_json()

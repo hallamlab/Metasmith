@@ -214,6 +214,14 @@ types:
       arity: 1
       ext: txt
 
+  # A set of samples. Each sample's read_metadata hangs under it, so the study is the one
+  # instance a step that pools samples groups by, and every sample in it plans as one case.
+  study:
+    properties:
+      _: a set of samples pooled by study-level steps
+      grouping: study
+      ext: json
+
   read_metadata:
     properties:
       _: read metadata
