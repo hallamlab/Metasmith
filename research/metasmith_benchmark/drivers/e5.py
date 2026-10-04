@@ -168,7 +168,9 @@ def declare_givens(smith, shape, by_study, cache_dir, ensure):
                                    {"sample": sid, "parity": "single", "length_class": "long",
                                     "platform": PLATFORM[shape]},
                                    "sequences::read_metadata", parents=[study], tags=tags)
-                c.add_file(givens, f"{ns}/long_reads", long_, "sequences::long_reads", parents=[meta], tags=tags)
+                # CAUTION not `long_reads`: a given's name hashes its path but not its type, so that name cites
+                # the hybrid pilot's import of the same file as e3::nanopore_reads.
+                c.add_file(givens, f"{ns}/long_only_reads", long_, "sequences::long_reads", parents=[meta], tags=tags)
                 continue
             meta = c.add_value(givens, f"{ns}/read_metadata",
                                {"sample": sid, "parity": "single" if layout == "se" else "paired",
