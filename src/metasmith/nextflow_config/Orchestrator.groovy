@@ -346,6 +346,7 @@ class Orchestrator {
 
         // True when this item completes h.
         synchronized boolean add(h, item, String item_hash, List stamp) {
+            if (this.seen.get(h)?.contains(item_hash)) return false
             if (this.complete.contains(h)) {
                 throw new LineageViolation(
                     "stream [${this.stream}] delivered ${item[-1]} for [${this.key}] "
@@ -355,7 +356,7 @@ class Orchestrator {
                     + "downstream. Something upstream delivered one member twice."
                 )
             }
-            if (!this.seen.computeIfAbsent(h, x -> new HashSet()).add(item_hash)) return false
+            this.seen.computeIfAbsent(h, x -> new HashSet()).add(item_hash)
             this.items.computeIfAbsent(h, x -> []).add(item)
             if (this.poisoned.contains(h)) return false
             if (stamp == null) {
@@ -424,15 +425,42 @@ class Orchestrator {
         return result
     }
 
-    // The shared ancestor a SIBLING join keys on: one no other shared
-    // ancestor descends from, ties broken by name. A higher ancestor groups
-    // too coarsely (every sample under one project), and set iteration order
-    // made the old pick differ between runs. Null when there is none.
-    private String _nearestSharedAncestor(String a, String b) {
-        if (a == b) return null
-        def common = this._collectAncestors(a).intersect(this._collectAncestors(b))
-        def nearest = common.findAll(c -> !common.any(d -> d != c && this.isParent(c, d)))
-        return nearest.isEmpty() ? null : nearest.sort()[0]
+    private Set _sharedAncestors(String a, String b) {
+        if (a == b) return [] as Set
+        return this._collectAncestors(a).intersect(this._collectAncestors(b))
+    }
+
+    // The shared ancestors no other shared ancestor descends from, sorted.
+    // There can be several: a reference every sample was built against is as
+    // near as the samples themselves.
+    private List _nearestSharedAncestors(String a, String b) {
+        def common = this._sharedAncestors(a, b)
+        return common.findAll(c -> !common.any(d -> d != c && this.isParent(c, d))).sort()
+    }
+
+    // The ancestor a SIBLING join buckets on. Any shared ancestor gives a
+    // correct join, because the member is then filtered on every nearest one.
+    // The bucket only decides which items wait together, so prefer the key
+    // the stream's producer was grouped by: that is the key its sibling
+    // stamps name, and the only one it can be released early on. The raw
+    // registry read is safe at body time, because codegen emits a producer's
+    // group before any consumer's, and a stale answer only costs the early
+    // release.
+    private String _siblingJoinKey(String name, String by_name) {
+        def hint = this.group_by_of.get(name)
+        if (hint != null && hint in this._sharedAncestors(name, by_name)) return hint
+        def nearest = this._nearestSharedAncestors(name, by_name)
+        return nearest.isEmpty() ? null : nearest[0]
+    }
+
+    // Whether S item `x` shares a hash with by-item `b` on every nearest
+    // shared ancestor both carry.
+    private static boolean _agreesOn(List keys, Map x, Map b) {
+        return keys.every((k) -> {
+            def xs = x[k]
+            def bs = b[k]
+            return !(xs instanceof List) || !(bs instanceof List) || xs.any(h -> h in bs)
+        })
     }
 
     // Classify a non-by stream's lineage relationship to the by-stream. Each
@@ -441,7 +469,7 @@ class Orchestrator {
     private String classify(String name, String by_name) {
         if (this.isParent(name, by_name)) return "PARENT_OF_BY"
         if (this.isParent(by_name, name)) return "DESCENDANT_OF_BY"
-        if (this._nearestSharedAncestor(name, by_name) != null) return "SIBLING"
+        if (!this._sharedAncestors(name, by_name).isEmpty()) return "SIBLING"
         return "WILDCARD"
     }
 
@@ -592,14 +620,22 @@ class Orchestrator {
                 // complete by the sibling stamps, otherwise at close. The key
                 // it leaves under is its own hash, which the fold below
                 // matches against by_parsed.
-                def anc_key = this._nearestSharedAncestor(name as String, by_name as String)
+                //
+                // A bucket can hold items of other samples: under a shared
+                // reference every item lands in one bucket. The member keeps
+                // only the items agreeing with the by-item on every nearest
+                // shared ancestor, which is what makes the bucket choice free.
+                def anc_key = this._siblingJoinKey(name as String, by_name as String)
+                def agree_keys = this._nearestSharedAncestors(name as String, by_name as String)
                 def _name = name
                 def bags = new ReleaseBags(_name as String, anc_key)
                 def waiting = []
                 def waiting_on = [:]
                 def member = (Map b) -> {
                     def union = [:]
-                    b.hashes.each((h) -> bags.bag(h).each((x) -> union.putIfAbsent("${x[-1]}".md5(), x)))
+                    b.hashes.each((h) -> bags.bag(h).each((x) -> {
+                        if (_agreesOn(agree_keys, x[0], b.index)) union.putIfAbsent("${x[-1]}".md5(), x)
+                    }))
                     return new ArrayList(union.values())
                 }
                 def release = (List candidates) -> {
@@ -607,7 +643,8 @@ class Orchestrator {
                     candidates.each((b) -> {
                         if (b.done || !b.hashes.every((h) -> bags.isComplete(h))) return
                         b.done = true
-                        out.add([new Tuple3(b.key, _name, member(b))])
+                        def items = member(b)
+                        if (items.size() > 0) out.add([new Tuple3(b.key, _name, items)])
                     })
                     return out
                 }
@@ -627,14 +664,14 @@ class Orchestrator {
                     def anc_hashes = _index[anc_key]
                     if (side == "B") {
                         if (anc_hashes == null || anc_hashes.size() == 0) return []
-                        def b = [key: _index[by], hashes: new ArrayList(anc_hashes), done: false]
+                        def b = [key: _index[by], index: _index, hashes: new ArrayList(anc_hashes), done: false]
                         waiting.add(b)
                         anc_hashes.each((h) -> waiting_on.computeIfAbsent(h, (x) -> []).add(b))
                         return release([b])
                     }
                     // Logged, not thrown, unlike DESCENDANT_OF_BY above: an
                     // item can relate to the by-stream through a shared
-                    // ancestor other than the nearest one keyed on here. The
+                    // ancestor other than the one keyed on here. The
                     // drop is still worth seeing, because a stream that drops
                     // every item is the same truncated DAG wearing a weaker
                     // relation.
@@ -894,7 +931,16 @@ class Orchestrator {
                 def batches = bag.groupBy(path -> {
                     return (path.name.split('-', 2)[0] as Integer) - 1
                 })
-                // println("${bag.collect(x -> x.name)}")
+                // Groovy reads a negative index from the end, so an unchecked
+                // `0-` prefix would hand one member's files to another.
+                batches.each((i, group) -> {
+                    if (i < 0 || i >= indexes.size()) {
+                        throw new IllegalStateException(
+                            "batched output ${group.collect(p -> p.name)} names "
+                            + "member ${i + 1} of a batch of ${indexes.size()}"
+                        )
+                    }
+                })
                 return batches.collect((i, group) -> {
                     return new Tuple2(indexes[i], group)
                 })

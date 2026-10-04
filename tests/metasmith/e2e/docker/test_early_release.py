@@ -531,7 +531,7 @@ def test_coassembly_sibling_join_emits_one_whole_member(ws, root, order):
     # `cfg` has no lineage relation to the reads, so `reads` is the ONLY
     # ancestor the clean reads and the coassembly share. `proj` is a real
     # parent of the reads, so both it and `reads` are shared and the join
-    # key is whichever _firstSharedAncestor happens to pick.
+    # join must hold whichever of them it buckets on.
     ws.given(root, ["c"])
     ws.given("reads", order, parents={"proj": "c"} if root == "proj" else None)
     ws.spec("p01", label="clean")
@@ -552,6 +552,38 @@ def test_coassembly_sibling_join_emits_one_whole_member(ws, root, order):
     )
     assert_slot(p03[0], 0, names={_product("c", "coasm")})
     assert_slot(p03[0], 1, names={_product(r, "clean") for r in order})
+
+
+def test_a_shared_reference_does_not_mix_samples_in_a_sibling_join(ws):
+    # Every assembly and every stats file descend from both their sample and
+    # the one reference, so `reads` and `aref` are equally near shared
+    # ancestors. The stats are released per sample on their `reads` stamps.
+    # The metadata given carries no stamp, so its join has no producer key to
+    # prefer and must still keep each sample to its own file.
+    ws.given("reads", SAMPLES)
+    ws.given("aref", ["r"])
+    ws.child2parent["meta"] = {"reads", "aref"}
+    meta = []
+    for s in SAMPLES:
+        p = ws.root / "inputs" / f"meta_{s}.txt"
+        p.write_text(s)
+        meta.append({"id": f"m-{s}", "reads": s, "aref": "r", "path": f"/ws/inputs/{p.name}"})
+    ws.params["meta"] = meta
+    ws.spec("p01", label="asm")
+    ws.spec("p02", label="stats", slow={SLOW: SLOW_S})
+    ws.spec("p03", label="qc")
+
+    result = ws.run("shared_reference.nf")
+    assert_ok(result)
+
+    p03 = result.members("p03", set(SAMPLES))
+    for s in SAMPLES:
+        assert_slot(p03[s], 0, names={_product(s, "asm")})
+        assert_slot(p03[s], 1, names={_product(s, "stats")})
+        assert_slot(p03[s], 2, names={f"meta_{s}.txt"})
+    assert_slow_task_was_slow(result, "p02", SLOW)
+    for s in FAST:
+        assert_started_before(result, ("p03", s), ("p02", SLOW))
 
 
 # --------------------------------------------------------------------------- seal

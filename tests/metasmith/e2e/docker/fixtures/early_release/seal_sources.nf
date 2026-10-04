@@ -1,8 +1,12 @@
 // Every channel source kind the generated workflow uses, under one seal:
 // the `one_null` sentinel handed to the constructor, a given read through
 // fromPath + splitCsv, a given built with Channel.fromList, a reference
-// handed over as Channel.value, and process outputs. Data flows only after
-// the body finishes evaluating, so each operator must see the sealed state.
+// handed over as Channel.value, and process outputs. Process outputs flow
+// only after the body finishes evaluating, so every registry read sees the
+// sealed state. The Channel.value is already bound and can flow during the
+// body. It passes because a given carries no sibling stamp and so never
+// reads the registry. An `o.post` over a bound channel would read it early
+// and throw, which codegen never emits.
 include { given; mock1 as p01; mock3 as p02; mock2 as p03 } from './mocks.nf'
 
 workflow {
