@@ -10,14 +10,14 @@ A plan takes one read type, so each type renders its own DAG:
 
   cami_pe            CAMI short reads, interleaved
   cami_hybrid_ont    CAMI short + simulated Nanopore
-  cami_hybrid_pacbio CAMI short + simulated PacBio CLR
+  cami_long_pacbio   CAMI simulated PacBio CLR alone
   pratama_pe         Pratama short reads, interleaved
   pratama_hybrid_ont Pratama short + real MinION
   metagem_pe_split   metaGEM paired reads as two gzipped files
   metagem_se         metaGEM single-end reads
 
-A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. Every other
-sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
+A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. A PacBio
+sample's is Flye on its long reads alone, after Filtlong. Every other sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
 viral lane pools a study, and a batch holds whole studies.
 
 Subcommands: list [--batch N], import --batch N [--shape S],
@@ -48,21 +48,23 @@ GEM_MASK = {Path("carveme_from_orfs.py"), Path("memote_score.py"), Path("carveme
 # The hybrid pilot's comparison lanes and scorers.
 PILOT_ONLY = {Path("flye.py"), Path("polca.py"), Path("quast.py"), Path("metaquast.py")}
 
-# shape -> (corpus, read layout, hybrid). OPERA-MS takes no platform, so ONT and PacBio differ only in their reads.
+# shape -> (corpus, read layout, assembly: short, hybrid or long).
 SHAPES = {
-    "cami_pe": ("cami", "pe", False),
-    "cami_hybrid_ont": ("cami", "pe", True),
-    "cami_hybrid_pacbio": ("cami", "pe", True),
-    "pratama_pe": ("pratama", "pe", False),
-    "pratama_hybrid_ont": ("pratama", "pe", True),
-    "metagem_pe_split": ("metagem", "split", False),
-    "metagem_se": ("metagem", "se", False),
+    "cami_pe": ("cami", "pe", "short"),
+    "cami_hybrid_ont": ("cami", "pe", "hybrid"),
+    "cami_long_pacbio": ("cami", "long", "long"),
+    "pratama_pe": ("pratama", "pe", "short"),
+    "pratama_hybrid_ont": ("pratama", "pe", "hybrid"),
+    "metagem_pe_split": ("metagem", "split", "short"),
+    "metagem_se": ("metagem", "se", "short"),
 }
+# A long-read-only sample's platform, which picks Flye's mode and minimap2's preset.
+PLATFORM = {"cami_long_pacbio": "PACBIO_CLR"}
 
 # batch -> {shape: [study]}. Batch 0 is the pilot: the first PILOT_SIZE samples of each shape's first study.
 BATCHES = {
     1: {"cami_pe": ["toy_mousegut", "toy_hmp_airskinurogenital", "toy_hmp_gastrooral"]},
-    2: {"cami_hybrid_ont": ["toy_humangut", "plant_associated"], "cami_hybrid_pacbio": ["marine", "strain"]},
+    2: {"cami_hybrid_ont": ["toy_humangut", "plant_associated"], "cami_long_pacbio": ["marine", "strain"]},
     3: {"pratama_pe": ["pratama_short"], "pratama_hybrid_ont": ["pratama_hybrid"]},
     4: {"metagem_se": ["korem2015"], "metagem_pe_split": ["li2019", "bissett_base"]},
     5: {"metagem_pe_split": ["karlsson2013"]},
@@ -98,7 +100,7 @@ COMEBIN_GPU = "nvidia_h100_80gb_hbm3_1g.10gb"
 # larger GPU jobs. About half batch 0's slowest CPU run: training is ~85% of it and runs 4.9x faster on a
 # slice. pratama_hybrid_ont was measured on a slice at ~9 h.
 COMEBIN_GPU_HOURS = {
-    "cami_pe": 2, "cami_hybrid_ont": 2, "cami_hybrid_pacbio": 5, "metagem_se": 1,
+    "cami_pe": 2, "cami_hybrid_ont": 2, "cami_long_pacbio": 5, "metagem_se": 1,
     "metagem_pe_split": 12, "pratama_pe": 10, "pratama_hybrid_ont": 12,
 }
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
@@ -161,6 +163,13 @@ def declare_givens(smith, shape, by_study, cache_dir, ensure):
         for sid, reads, long_ in samples:
             tags = ["e5", shape, study_name, sid]
             ns = f"e5/{study_name}/{sid}"
+            if layout == "long":
+                meta = c.add_value(givens, f"{ns}/read_metadata",
+                                   {"sample": sid, "parity": "single", "length_class": "long",
+                                    "platform": PLATFORM[shape]},
+                                   "sequences::read_metadata", parents=[study], tags=tags)
+                c.add_file(givens, f"{ns}/long_reads", long_, "sequences::long_reads", parents=[meta], tags=tags)
+                continue
             meta = c.add_value(givens, f"{ns}/read_metadata",
                                {"sample": sid, "parity": "single" if layout == "se" else "paired",
                                 "length_class": "short"},
@@ -181,49 +190,60 @@ def expected_counts(shape, by_study):
     layout = SHAPES[shape][1]
     n = sum(len(s) for s in by_study.values())
     want = {"sequences::study": len(by_study), "sequences::read_metadata": n, "sequences::read_pair": 0}
-    if layout == "se":
+    if layout == "long":
+        want["sequences::long_reads"] = n
+    elif layout == "se":
         want["sequences::short_reads_se"] = n
     elif layout == "split":
         want.update({"sequences::zipped_forward_short_reads": n, "sequences::zipped_reverse_short_reads": n})
     else:
         want["sequences::short_reads_pe"] = n
-    if SHAPES[shape][2]:
+    if SHAPES[shape][2] == "hybrid":
         want["e3::nanopore_reads"] = n
     return want
 
 
-def build_transforms(hybrid):
+def build_transforms(mode):
     # E5 owns its viral lane, the MAG ORF mapping and the hybrid pair. e5_binning owns a COMEBin and DAS Tool
     # that survive an assembly too small for COMEBin. The standard libraries keep E3's masks, except
     # assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every corpus.
     # e5_assembly owns both MEGAHITs, which delete their workspace: the assembly for a short-read sample, and
     # for a hybrid one a draft that only OPERA-MS reads. e5's own megahit_draft predates it and stays masked,
-    # since rebuilding e5 would fork the cache of every transform in it.
+    # since rebuilding e5 would fork the cache of every transform in it. A long-read-only sample takes its
+    # Flye, read mapping and binners from e5_long instead.
     replaced = {**e3_pratama.REPLACED,
                 "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py", "bbduk.py"} | {"megahit.py"},
                 "metagenomics": e3_pratama.REPLACED["metagenomics"] | {"binning/comebin.py", "binning/das_tool.py"},
                 "logistics": {"interleave_zipped_short_reads.py"}}
+    hybrid = mode == "hybrid"
+    own_masked = PILOT_ONLY | {Path("megahit_draft.py")} | (set() if hybrid else {Path("opera_ms.py")})
+    own = [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)]
+    if mode == "long":
+        replaced["assembly"] = replaced["assembly"] | {"assembly_stats.py", "flye.py", "flye_raw.py"}
+        replaced["metagenomics"] = replaced["metagenomics"] | {"binning/semibin2.py", "binning/metabat2.py"}
+        own.append(TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_long"))
+    else:
+        own.append(TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_assembly").AsView(
+            {Path("megahit.py" if hybrid else "megahit_draft.py")}, invert=True))
     std = [TransformInstanceLibrary.Load(c.MLIB / "transforms" / name).AsView(
                {Path(p) for p in replaced.get(name, ())}, invert=True)
            for name in ("logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics")]
-    own_masked = PILOT_ONLY | {Path("megahit_draft.py")} | (set() if hybrid else {Path("opera_ms.py")})
-    e5_lib = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)
-    assembly = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_assembly").AsView(
-        {Path("megahit.py" if hybrid else "megahit_draft.py")}, invert=True)
     modelling = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
     bench = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench").AsView({Path("deepvirfinder.py")}, invert=True)
     binning = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_binning")
-    return [e5_lib, assembly, binning, bench, *std,
+    return [*own, binning, bench, *std,
             modelling.AsView(GEM_MASK | {Path("prodigal_from_bin.py")}, invert=True),
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling")]
 
 
-def build_targets(hybrid):
-    # The sample's assembly is OPERA-MS for a hybrid sample and MEGAHIT otherwise; every lane reads it.
+def build_targets(mode):
+    # The sample's assembly is OPERA-MS for a hybrid sample, Flye for a long-read-only one and MEGAHIT
+    # otherwise; every lane reads it.
     # DAS Tool's bins are the MAG set: CheckM2, ORFs and models run on them alone.
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
-    asm = t.Add("e5::opera_ms_assembly" if hybrid else "sequences::megahit_assembly")
+    asm = t.Add({"hybrid": "e5::opera_ms_assembly", "long": "sequences::flye_assembly",
+                 "short": "sequences::megahit_assembly"}[mode])
 
     mags = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
     t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
@@ -257,7 +277,7 @@ def solve(args, shape, by_study):
         print(f"the pool at {smith.home.GetPath()} holds the givens of {n} samples")
         return
 
-    hybrid = SHAPES[shape][2]
+    mode = SHAPES[shape][2]
     t0 = time.time()
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
@@ -266,8 +286,8 @@ def solve(args, shape, by_study):
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
                    pratama_globals, gem_globals],
-        transforms=build_transforms(hybrid),
-        targets=build_targets(hybrid),
+        transforms=build_transforms(mode),
+        targets=build_targets(mode),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
     c.check_plan(task, expected_counts(shape, by_study))
