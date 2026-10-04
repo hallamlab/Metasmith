@@ -14,6 +14,7 @@ from metasmith.python_api import *
 lib         = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model       = Transform()
 image       = model.AddRequirement(lib.GetType("env::comebin.env"))
+cpu_patch   = model.AddRequirement(lib.GetType("lib::comebin_cpu"))
 asm         = model.AddRequirement(lib.GetType("sequences::assembly"))
 bam         = model.AddRequirement(lib.GetType("alignment::bam"), parents={asm})
 table       = model.AddProduct(lib.GetType("binning::comebin_contig_to_bin_table"))
@@ -26,9 +27,21 @@ def _no_bins(context, why):
     return ExecutionResult(manifest=[{table: otable.local}], success=True)
 
 
+# Without a GPU, COMEBin's training uses one core of many. The patch's sitecustomize spreads it across them,
+# and its dropout pool needs OpenMP's idle workers parked rather than spinning on the same cores: at 48
+# threads a step took 1.26 s spinning and 0.79 s parked.
+def _cpu_training(icpu_patch):
+    if os.environ.get("CUDA_VISIBLE_DEVICES", ""):
+        return ""
+    return f"""
+            export PYTHONPATH={icpu_patch.container}${{PYTHONPATH:+:$PYTHONPATH}}
+            export OMP_WAIT_POLICY=PASSIVE"""
+
+
 def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     ibam = context.Input(bam)
+    icpu_patch = context.Input(cpu_patch)
 
     threads = context.params.get('cpus', 8)
     workdir = "comebin_out"
@@ -43,7 +56,7 @@ def protocol(context: ExecutionContext):
         return _no_bins(context, f"{usable_contigs} contigs of at least 1 kb")
     batch_size = min(usable_contigs, 1024)
 
-    _cmd = f"""
+    _cmd = f"""{_cpu_training(icpu_patch)}
             mkdir -p {bam_dir}
             cp -L {ibam.container} {bam_dir}/
             mkdir -p {workdir}
