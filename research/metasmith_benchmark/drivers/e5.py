@@ -71,6 +71,9 @@ BATCHES = {
     6: {"metagem_pe_split": ["sunagawa2015"]},
 }
 BATCHES[0] = {shape: [studies[0]] for b in (2, 3, 4, 1) for shape, studies in BATCHES[b].items()}
+# Batches whose assemblies came from the standard MEGAHIT and e5's own megahit_draft, before e5_assembly.
+# They keep those transforms so a relaunch serves its assemblies, and everything after them, from the cache.
+PRE_E5_ASSEMBLY = {1, 3, 4}
 
 # CAMI's long-read set for each hybrid study.
 CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_associated_long_nano",
@@ -206,7 +209,7 @@ def expected_counts(shape, by_study):
     return want
 
 
-def build_transforms(mode):
+def build_transforms(mode, pre_e5_assembly=False):
     # E5 owns its viral lane, the MAG ORF mapping and the hybrid pair. e5_binning owns a COMEBin and DAS Tool
     # that survive an assembly too small for COMEBin. The standard libraries keep E3's masks, except
     # assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every corpus.
@@ -219,13 +222,17 @@ def build_transforms(mode):
                 "metagenomics": e3_pratama.REPLACED["metagenomics"] | {"binning/comebin.py", "binning/das_tool.py"},
                 "logistics": {"interleave_zipped_short_reads.py"}}
     hybrid = mode == "hybrid"
-    own_masked = PILOT_ONLY | {Path("megahit_draft.py")} | (set() if hybrid else {Path("opera_ms.py")})
+    legacy = pre_e5_assembly and mode != "long"
+    if legacy and not hybrid:
+        replaced["assembly"] = replaced["assembly"] - {"megahit.py"}
+    own_masked = PILOT_ONLY | (set() if hybrid else {Path("opera_ms.py")}) | (
+        set() if legacy and hybrid else {Path("megahit_draft.py")})
     own = [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)]
     if mode == "long":
         replaced["assembly"] = replaced["assembly"] | {"assembly_stats.py", "flye.py", "flye_raw.py"}
         replaced["metagenomics"] = replaced["metagenomics"] | {"binning/semibin2.py", "binning/metabat2.py"}
         own.append(TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_long"))
-    else:
+    elif not legacy:
         own.append(TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_assembly").AsView(
             {Path("megahit.py" if hybrid else "megahit_draft.py")}, invert=True))
     std = [TransformInstanceLibrary.Load(c.MLIB / "transforms" / name).AsView(
@@ -289,7 +296,7 @@ def solve(args, shape, by_study):
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
                    pratama_globals, gem_globals],
-        transforms=build_transforms(mode),
+        transforms=build_transforms(mode, pre_e5_assembly=args.batch in PRE_E5_ASSEMBLY),
         targets=build_targets(mode),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
