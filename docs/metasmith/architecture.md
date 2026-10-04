@@ -179,27 +179,34 @@ already whole and the group ships with one item.
 
 **A group leaves early only on counts the data carries, never on a count from the plan.** The
 plan cannot know how many files a member delivers: a glob output yields however many files the
-tool wrote, and an optional branch yields none. `_post` therefore stamps each item with the
-reserved key `SIBS = [by, n, i]`: the producer's `group_by` key, the number of files its member
-delivered into that slot, and the item's ordinal. A key leaves once its ordinals are exactly `0..n-1`, and only when all three hold:
+tool wrote, and an optional branch yields none. `_post` therefore appends one level
+`[stream, post, by, n, i]` to each item's reserved `SIBS` chain: the post that delivered it, the
+producing member's `group_by` key, the number of files that member delivered into the slot, and
+the item's ordinal. A member inherits its by-item's chain, so the chain records every fan-out
+between a group key and the item, through any number of steps and merged producers. A key
+leaves once its items cover the whole tree below it:
 
-1. The stamp names the join key, so the producing member is the one member for that key.
-2. The item carries exactly one hash of the join key.
-3. The stream has one producing post and no `o.mix`.
+1. Every post on the routes from the stream back to the key delivered.
+2. Each post's level carries one `n`.
+3. The ordinals at every level are exactly `0..n-1`.
 
-Every other key waits for its stream to close. The close flush is unconditional, because
-`errorStrategy 'ignore'` drops a task whose stamps then never complete. `SIBS` is stripped
-before PROV and publish, so it never reaches a member key or a manifest. A cache hit needs no
-special case: the `_cached` twin posts through the same `_post` after `mixOuts`, and a member
-runs in exactly one of the two.
+A route that crosses a post with no `group_by`, such as a given or a step with no inputs, has no
+count to check, so its keys wait for the stream to close. The close flush is unconditional,
+because `errorStrategy 'ignore'` drops a task whose chain then never completes. `SIBS` is
+stripped before PROV and publish, so it never reaches a member key or a manifest. A cache hit
+needs no special case: the `_cached` twin posts through the same `_post` after `mixOuts`, and a
+member runs in exactly one of the two. `tests/metasmith/e2e/nextflow/test_release_spec.py`
+states this contract black-box on host Nextflow. Change a rule there first.
 
-**An item for a key that already left is a crash, not a late member.** The stamps promised the
-key was whole, so the item is missing from a group already downstream. `ReleaseBags` throws
-`LineageViolation` naming the stream and the key. An exact duplicate is dropped, since it adds
-nothing.
+**A second file where the data promised one is a crash, not a late member.** A chain level and
+a parent item's hash each name exactly one file. `LineageViolation` names the stream when a
+second distinct file arrives under one release path or one parent hash, and when an item
+arrives for a key that already left. An exact duplicate is dropped, since it adds nothing. A
+file's identity includes its member's cache key, so no workflow codegen emits reaches these
+states. They are assertions, and no test drives them.
 
-**The registries the stamps are checked against are complete only after `o.seal()`.** The
-workflow body writes `group_by_of` and `producers_of`, and data flow reads them. Nextflow
+**The registries the routes are read from are complete only after `o.seal()`.** The
+workflow body writes `group_by_of` and `posts_of`, and data flow reads them. Nextflow
 starts data flow only after the body returns, through the igniters in
 `Session.fireDataflowNetwork`. Codegen therefore ends the body with `o.seal()`. A read before
 the seal throws, and so does a write after it. **CAUTION** An already-bound channel such as
@@ -233,8 +240,9 @@ Nextflow that stops sharing announces itself there instead of leaving this parag
 false. The copy is shallow on purpose: value lists stay shared by reference across descendant
 indexes, and no production path mutates one.
 
-**A stream declared `DESCENDANT_OF_BY` must carry the by-key, and `group()` raises when one does
-not.** Absent and empty-list are the same defect; the empty list is the worse one, because the
+**A joined item must carry the key it is declared to descend from, and `group()` raises when one
+does not.** Under `DESCENDANT_OF_BY` that is the by-key on the stream. Under `PARENT_OF_BY` it is
+the parent's key on the by-stream. Absent and empty-list are the same defect; the empty list is the worse one, because the
 loop over it iterates zero times and used to leave no trace at all. The alternative to raising is
 invisible: a dropped item makes the join emit nothing, an empty channel is not an error in
 Nextflow, and the DAG simply ends early with every submitted task at exit 0 — a task that is
@@ -253,6 +261,12 @@ correct. The bucket prefers the stream producer's `group_by` key, because that i
 stamps name and so the only one it can leave early on. A by-item is matched once, over the
 union of its bucket hashes, so a coassembly that carries every sample's hash yields one member
 rather than one partial member per sample.
+
+**A `PARENT_OF_BY` join gives each member every parent item its by-item names.** A per-sample
+product names one sample, and a coassembly names every sample it was built from. The join
+therefore matches each hash in the by-item's list, never the list as a whole: a coassembly's
+whole list equals no single parent's, and a join on it emitted nothing. A parent item's hash is
+its identity, so the member leaves once every hash it names arrived, with no chain to check.
 
 **Two grouped slots are paired by ancestry, never by position.** A collecting step receives
 each slot as an independently accumulated, independently deduped list in task-arrival order, so
