@@ -70,8 +70,12 @@ class LinPayload:
     # The member's cache key, stamped by `Orchestrator._route` before the
     # task is submitted; "-" for a member that cannot be keyed.
     KEY_KEY: ClassVar[str] = "KEY"
+    # The sibling stamp `Orchestrator._post` puts on every produced item for
+    # early release. Stripped before PROV and publish, so a payload never
+    # carries it; reserved here so one that did would not read it as lineage.
+    SIBS_KEY: ClassVar[str] = "SIBS"
 
-    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY"})
+    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY", "SIBS"})
 
     def Pack(self) -> dict:
         return {"v": self.v, "entries": [dict(m) for m in self.entries]}

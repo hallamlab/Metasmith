@@ -376,6 +376,22 @@ def test_fan_out_member_holds_every_file(ws):
         assert_slot(p02[s], 1, names={_product(s, "asm", item=i + 1) for i in range(n)})
 
 
+def test_a_fanned_out_member_runs_ahead_once_its_last_file_arrives(ws):
+    fan = "s1"
+    ws.given("reads", SAMPLES)
+    ws.spec("p01", label="asm", slow={SLOW: SLOW_S}, fan={fan: 3})
+    ws.spec("p02", label="bins")
+    ws.spec("p03", label="qc")
+
+    result = ws.run("linear_chain.nf")
+    assert_ok(result)
+
+    assert_slow_task_was_slow(result, "p01", SLOW)
+    assert_started_before(result, ("p02", fan), ("p01", SLOW))
+    p02 = result.members("p02", set(SAMPLES))
+    assert_slot(p02[fan], 1, names={_product(fan, "asm", item=i + 1) for i in range(3)})
+
+
 def test_collector_gets_one_whole_member(ws):
     ws.given("proj", ["p"])
     ws.given("reads", SAMPLES, parents={"proj": "p"})

@@ -275,39 +275,37 @@ workflow {
 
 def test_c08_sibling_multi_bs1_set_overlap(nxf_runner):
     (nxf_runner.work_dir / "b.txt").write_text("b")
-    (nxf_runner.work_dir / "c.txt").write_text("c")
+    (nxf_runner.work_dir / "c1.txt").write_text("c1")
+    (nxf_runner.work_dir / "c2.txt").write_text("c2")
 
     script = '''
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
     o.seedParents(["b": ["a"], "c": ["a"]])
 
-    // Synthesize b with [a:[1,2]] and c with [a:[2,3]] directly.
-    def ch_b = Channel.fromList([[["a": [1L, 2L], "b": [10L]], file("${projectDir}/b.txt")]])
-    def ch_c = Channel.fromList([[["a": [2L, 3L], "c": [20L]], file("${projectDir}/c.txt")]])
+    // b descends from a=1 and a=2, like a coassembly of two samples. c1
+    // shares a=1 with it and c2 shares a=2, so b's one member holds both.
+    def ch_b = Channel.fromList([[["a": [1L, 2L]], file("${projectDir}/b.txt")]])
+    def ch_c = Channel.fromList([
+        [["a": [1L]], file("${projectDir}/c1.txt")],
+        [["a": [2L, 3L]], file("${projectDir}/c2.txt")],
+    ])
+    def pb = (o.postIn([ch_b], ["b"]))[0]
+    def pc = (o.postIn([ch_c], ["c"]))[0]
 
-    // These are pre-indexed; use _post(streams, names, true) to register
-    // index history without re-hashing. We mimic postIn but with fixed indexes.
-    def (pbName, pbStream) = new Tuple2("b", ch_b)
-    def (pcName, pcStream) = new Tuple2("c", ch_c)
-
-    // Run through a no-op postIn that preserves the existing idx fields
-    // but adds a `b`/`c` key based on hash. That's fine — the by-key
-    // match here is on `a` not `b`/`c`.
-    def pb = (o.postIn([ch_b], ["bx"]))[0]
-    def pc = (o.postIn([ch_c], ["cx"]))[0]
-
-    def grouped = o.group("bx", [pc, pb], ["target"], 1)
+    def grouped = o.group("b", [pc, pb], ["target"], 1)
     grouped.view { idx, c_vals, b_vals ->
-        "G:0:b=${b_vals.size()}:c=${c_vals.size()}:akeys=${idx["a"]?.size() ?: 0}"
+        def cs = c_vals.collect { it.name }.sort().join("+")
+        "G:0:b=${b_vals.size()}:c=${cs}"
     }
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    assert len(lines) >= 1, (
-        f"C8: set-overlap pair did not form. Got {len(lines)}: {lines}"
+    assert lines == ["G:0:b=1:c=c1.txt+c2.txt"], (
+        f"C8: one by-item must yield ONE member holding every sibling that "
+        f"shares any of its ancestor hashes. Got {lines}"
     )
 
 
@@ -454,6 +452,7 @@ workflow {
         def elapsed = System.currentTimeMillis() - t0
         "G:${elapsed}:a=${a_vals.size()}:b=${b_vals.size()}"
     }
+    o.seal()
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=90)

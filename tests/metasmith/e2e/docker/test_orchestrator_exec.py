@@ -89,6 +89,7 @@ workflow {
     def out = (o.post([ch], ["result"]))[0]
     def (name, stream) = out
     stream.view { idx, item -> "POST: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
+    o.seal()
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -143,6 +144,7 @@ workflow {
         def hash_val = idx["x"][0]
         "HASH: ${hash_val} type=${hash_val.getClass().name}"
     }
+    o.seal()
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -168,6 +170,7 @@ workflow {
     def out = (o.post([ch], ["x"], ["deadbeef"]))[0]
     def (name, stream) = out
     stream.view { idx, item -> "HASH: ${idx["x"][0]}" }
+    o.seal()
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -311,6 +314,7 @@ workflow {{
         def per_member = indexes.collect {{ m -> m.FILES[1].collect {{ p -> p.split("/")[-1] }} }}
         "TASK: " + groovy.json.JsonOutput.toJson(per_member)
     }}
+    o.seal()
 }}
 ''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
@@ -386,6 +390,7 @@ workflow {{
         ]
         "PROV: " + groovy.json.JsonOutput.toJson(payload)
     }}
+    o.seal()
 }}
 ''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
@@ -537,6 +542,7 @@ workflow {
     p01_result.view { "P01: ${it[1].name}" }
     p02_result.view { "P02: ${it[1].name}" }
     p03_result.view { "P03: ${it[1].name}" }
+    o.seal()
 }
 ''', timeout=120)
         p03_lines = [l for l in result.stdout.split("\n") if l.startswith("P03:")]
@@ -646,6 +652,7 @@ workflow {{
 
     k2 = ["out2"]
     step2(o.group("out1", [_out1], k2, {batch_size}))
+    o.seal()
 }}
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -788,6 +795,7 @@ workflow {{
     def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1))[0]
 
     step2(o.group("out1", [_out1], ["out2"], {n}))
+    o.seal()
 }}
 ''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
@@ -937,6 +945,7 @@ workflow {{
     workflow.onComplete {{
         println "DISPATCH:" + groovy.json.JsonOutput.toJson(o.getDispatchLog())
     }}
+    o.seal()
 }}
 '''
 
@@ -1119,14 +1128,15 @@ workflow {
     def _g = (o.postIn([ch], ["g"]))[0]
 
     def k = ["A", "B"]
-    def (_A, _B) = o.post(o.asStreams(two_out(o.group("g", [_g], k, 1, [:]))), k, ["sA", "sB"])
+    def (_A, _B) = o.post(o.asStreams(two_out(o.group("g", [_g], k, 1))), k, ["sA", "sB"])
 
     _A[1].view { idx, item -> "IDX_A:" + groovy.json.JsonOutput.toJson(idx) }
     _B[1].view { idx, item -> "IDX_B:" + groovy.json.JsonOutput.toJson(idx) }
 
     k = ["M"]
-    def _M = (o.post(o.asStreams(merge_both(o.group("g", [_g, _A, _B], k, 1, [:]))), k, ["sM"]))[0]
+    def _M = (o.post(o.asStreams(merge_both(o.group("g", [_g, _A, _B], k, 1))), k, ["sM"]))[0]
     _M[1].view { idx, item -> "OUT_M:" + item.name }
+    o.seal()
 }
 '''
 
@@ -1138,13 +1148,14 @@ workflow {
     def _g = (o.postIn([ch], ["g"]))[0]
 
     def k = ["A", "B"]
-    def raw = o.asStreams(two_out(o.group("g", [_g], k, 1, [:])))
+    def raw = o.asStreams(two_out(o.group("g", [_g], k, 1)))
     raw[0].view { idx, item -> Ownership.tag("RAW_A", idx) }
     raw[1].view { idx, item -> Ownership.tag("RAW_B", idx) }
 
     def (_A, _B) = o.post(raw, k, ["sA", "sB"])
     _A[1].view { idx, item -> Ownership.tag("POST_A", idx) }
     _B[1].view { idx, item -> Ownership.tag("POST_B", idx) }
+    o.seal()
 }
 '''
 
