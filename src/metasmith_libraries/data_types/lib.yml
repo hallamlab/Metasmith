@@ -106,3 +106,8 @@ types:
     properties:
       src: aspire
       usage: command line
+  # On PYTHONPATH it makes COMEBin's `main.py train` parallelise on a CPU; with CUDA it does nothing.
+  comebin_cpu:
+    properties:
+      src: comebin_cpu
+      usage: library
