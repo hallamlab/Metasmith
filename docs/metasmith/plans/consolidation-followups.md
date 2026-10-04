@@ -106,9 +106,12 @@ it failed to resolve.
 to the bare version, while the published image carries the hash suffix. Pass `container=`
 explicitly when driving from a source tree; conda installs bake the hash in.
 
-**`Orchestrator.group()` barriers non-parent streams until the upstream channel closes**,
-so a terminal aggregation deadlocks when upstream uses `errorStrategy='ignore'` or retries
-that never reach a terminal state.
+**A step grouped by a coassembly that also takes the raw per-sample stream forms no member.**
+The `PARENT_OF_BY` branch of `Orchestrator._grouped` joins on the whole list `idx[parent]`, and
+a coassembly's list holds every sample's hash, so it equals no single parent item's list. The
+join emits nothing and raises nothing, which is the silent truncation `DESCENDANT_OF_BY` raises
+on. `test_c03` in `test_group_cases.py` pins the current behaviour. The first move is to decide
+what such a member holds, then match each hash in the by-item's list.
 
 **The generated `stub:` block sorts a shared index value list in place.** Groovy's
 `List.sort()` mutates, and index value lists are shared by reference across the DAG — this is

@@ -175,18 +175,37 @@ Dependency is created once with its Transform and never changes.
 `step.dependency_map[dep]` carries *one* instance standing for however many the fan-out above
 produces; only `group_by_instances` counts keys. Anything reading a slot's length as "how many
 items this key receives" is wrong in the direction that hurts — it tells the runtime a key is
-already whole and the group ships with one item. `grouping.expected_per_key` therefore answers
-`None` for a one-instance slot, degrading everything downstream to the channel-close flush,
-which is always safe.
+already whole and the group ships with one item.
 
-**A cache hit must put the same lineage on the wire that a real run does.** The synthetic
-channel replays each shard file with the index its producing task carried, captured at promote
-time into the manifest's `index` field — compile time cannot reconstruct it, since which inputs
-an output descends from is decided inside the task. A shard that cannot supply an index for
-every matched file is demoted to a miss rather than replayed, and an index present but **empty**
-counts as absent on both sides of that exchange: it renders to Groovy's `[:]`, which `_post`
-stamps the produced key onto, so the replayed file reaches a downstream `o.group` carrying
-exactly one key — its own — and is refused.
+**A group leaves early only on counts the data carries, never on a count from the plan.** The
+plan cannot know how many files a member delivers: a glob output yields however many files the
+tool wrote, and an optional branch yields none. `_post` therefore stamps each item with the
+reserved key `SIBS = [by, n, i]`: the producer's `group_by` key, the number of files its member
+delivered into that slot, and the item's ordinal. A key leaves once its ordinals are exactly `0..n-1`, and only when all three hold:
+
+1. The stamp names the join key, so the producing member is the one member for that key.
+2. The item carries exactly one hash of the join key.
+3. The stream has one producing post and no `o.mix`.
+
+Every other key waits for its stream to close. The close flush is unconditional, because
+`errorStrategy 'ignore'` drops a task whose stamps then never complete. `SIBS` is stripped
+before PROV and publish, so it never reaches a member key or a manifest. A cache hit needs no
+special case: the `_cached` twin posts through the same `_post` after `mixOuts`, and a member
+runs in exactly one of the two.
+
+**An item for a key that already left is a crash, not a late member.** The stamps promised the
+key was whole, so the item is missing from a group already downstream. `ReleaseBags` throws
+`LineageViolation` naming the stream and the key. An exact duplicate is dropped, since it adds
+nothing.
+
+**The registries the stamps are checked against are complete only after `o.seal()`.** The
+workflow body writes `group_by_of` and `producers_of`, and data flow reads them. Nextflow
+starts data flow only after the body returns, through the igniters in
+`Session.fireDataflowNetwork`. Codegen therefore ends the body with `o.seal()`. A read before
+the seal throws, and so does a write after it. **CAUTION** An already-bound channel such as
+`Channel.value` can flow during the body. A given carries no stamp and never reads the
+registries, but an `o.post` over a bound channel would read them early and throw. Codegen emits
+no such post.
 
 **That index is captured from a file beside the outputs, which survives only if it is copied
 back.** Each task appends its lineage to `.command.metadata` in the current directory and
@@ -221,11 +240,19 @@ invisible: a dropped item makes the join emit nothing, an empty channel is not a
 Nextflow, and the DAG simply ends early with every submitted task at exit 0 — a task that is
 never created cannot fail, so no `errorStrategy` and no failure count can see it. Two production
 runs lost days to exactly that, one truncating a nine-step workflow after seven, and in both the
-only record was a dispatch-log row nothing reads. The producer-side guards each close one route
-(the cache-hit index above, `promote._collect_output_indexes` for a replayed output); this is the
-one that does not have to be re-derived for the next producer. `SIBLING` only logs, because
-`_firstSharedAncestor` picks an arbitrary member of the ancestor intersection and an item may
-legitimately relate through a different one.
+only record was a dispatch-log row nothing reads. A guard at a producer closes only that
+producer's route, and this one does not have to be re-derived for the next producer. `SIBLING`
+only logs, because an item may legitimately relate to the by-stream through a shared ancestor
+other than the one the join buckets on.
+
+**A `SIBLING` join buckets on one shared ancestor and filters on every nearest one.** A
+reference every sample was built against is as near a shared ancestor as the sample itself, so
+a join on the reference alone hands each member every sample's items. The member keeps only the items
+that share a hash with the by-item on every nearest shared ancestor, which makes any bucket
+correct. The bucket prefers the stream producer's `group_by` key, because that is the key its
+stamps name and so the only one it can leave early on. A by-item is matched once, over the
+union of its bucket hashes, so a coassembly that carries every sample's hash yields one member
+rather than one partial member per sample.
 
 **Two grouped slots are paired by ancestry, never by position.** A collecting step receives
 each slot as an independently accumulated, independently deduped list in task-arrival order, so
