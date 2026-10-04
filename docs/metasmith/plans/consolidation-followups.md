@@ -106,10 +106,6 @@ it failed to resolve.
 to the bare version, while the published image carries the hash suffix. Pass `container=`
 explicitly when driving from a source tree; conda installs bake the hash in.
 
-**`Orchestrator.group()` barriers non-parent streams until the upstream channel closes**,
-so a terminal aggregation deadlocks when upstream uses `errorStrategy='ignore'` or retries
-that never reach a terminal state.
-
 **The generated `stub:` block sorts a shared index value list in place.** Groovy's
 `List.sort()` mutates, and index value lists are shared by reference across the DAG — this is
 the one known writer, and it sits in generated code where the audit of `Orchestrator.groovy`

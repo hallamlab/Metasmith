@@ -66,6 +66,7 @@ workflow {
     // Step 2 — batched: o.group(..., batch_size=__BATCH_SIZE__) over step1 outputs.
     k2 = ['out2']
     (_out2) = o.post([*step2_batched(o.group('out1', [_out1], k2, __BATCH_SIZE__))], k2)
+    o.seal()
 }
 '''
 

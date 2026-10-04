@@ -19,7 +19,6 @@ from ..libraries import DataInstance, GPU_LABEL, ResolveEnvImage
 from ..lineage import LinPayload
 from ..paths import PathMap
 from ..solver import Endpoint
-from .grouping import expected_per_key
 from .steps import WorkflowStep
 
 
@@ -727,26 +726,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
             _inst = _inst[0]
             gb = _inst.dtype.key
             using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-            _expected: dict[str, int] = {}
-            for dep in step.transform.model.requires:
-                dep_insts = step.dependency_map.get(dep, [])
-                if not dep_insts:
-                    continue
-                sname = dep_insts[0].dtype.key
-                if sname == gb:
-                    continue
-                n = expected_per_key(list(dep_insts), list(step.group_by_instances))
-                if n is not None and n > 0:
-                    _expected[sname] = n
-            expected_literal = (
-                "["
-                + (
-                    ", ".join(f"'{k}': {v}" for k, v in sorted(_expected.items()))
-                    if _expected
-                    else ":"
-                )
-                + "]"
-            )
             slk_literal = "[" + ", ".join(f"'{x.dtype.key}'" for x in used_archetypes) + "]"
             cacheable = bool(decision and decision.get("cacheable"))
             cache_literal = (
@@ -764,7 +743,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             out_var = f"__out_{step.order}"
             wf_main.append(
                 f"({miss_var}, {hit_var}) = o.group('{gb}', [{using_symbols}], k, "
-                f"{step.transform.batch_size}, {expected_literal}, {cache_literal})"
+                f"{step.transform.batch_size}, {cache_literal})"
             )
             wf_main.append(
                 f"{out_var} = o.mixOuts(o.asStreams({process_name}({miss_var})), "
@@ -863,6 +842,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
     ] + [
         line for line in wf_main
     ] + [
+        "o.seal()",
         "",
         "publish:",
     ] + [

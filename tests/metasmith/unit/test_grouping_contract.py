@@ -1,24 +1,9 @@
 from __future__ import annotations
 
-
-def test_a_single_archetype_slot_gets_no_expected_count():
-    from metasmith.models.workflow.grouping import expected_per_key
-
-    class _Inst:
-        def __init__(self, path):
-            self.path = path
-
-    keys = [_Inst("k0"), _Inst("k1")]
-    assert expected_per_key([_Inst("archetype")], keys) is None
-    assert expected_per_key([], keys) is None
-    assert expected_per_key([_Inst("a")], []) is None
+import re
 
 
-def test_a_collecting_step_emits_no_expectation_for_its_archetype_slot(
-    tmp_path,
-):
-    import re
-
+def _emit(tmp_path):
     from metasmith.constants import AgentPaths
     from metasmith.env import Runtime
     from metasmith.models.workflow import NextflowGenContext
@@ -36,18 +21,27 @@ def test_a_collecting_step_emits_no_expectation_for_its_archetype_slot(
         runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     ))
+    return (ws / "workflow.nf").read_text()
 
-    # `o.group(by, [streams], k, batch_size, expected, [cache])`: the
-    # expectation is the map just before the cache map.
-    calls = re.findall(
-        r"o\.group\('\w+', \[([^\]]*)\], k, \d+, (\[[^\]]*\]), \[tk:",
-        (ws / "workflow.nf").read_text(),
-    )
+
+def test_group_is_called_without_a_plan_time_count(tmp_path):
+    # The count comes from the sibling stamps at run time; the plan cannot
+    # know it, because outputs are globs and optional branches emit nothing.
+    body = _emit(tmp_path)
+    calls = [l for l in body.splitlines() if "o.group(" in l]
     assert calls, "no o.group call was emitted"
-    collecting = [(streams, exp) for streams, exp in calls if "," in streams]
-    assert collecting, f"no collecting o.group among {calls}"
-    for call, expected in collecting:
-        assert expected == "[:]", (
-            "a collecting step told group() how many items its key expects, "
-            f"which it cannot know from one archetype: {call}"
+    for call in calls:
+        assert re.search(r"o\.group\('\w+', \[[^\]]*\], k, \d+, \[tk:", call), (
+            f"o.group must take (by, streams, k, batch_size, cache) and nothing else: {call}"
         )
+
+
+def test_the_seal_is_the_last_statement_of_the_workflow_body(tmp_path):
+    body = _emit(tmp_path)
+    main = body[body.index("main:"):body.index("publish:")]
+    statements = [l.strip() for l in main.splitlines()[1:] if l.strip()]
+    assert statements[-1] == "o.seal()", (
+        f"the workflow body must end with o.seal(), so no release decision "
+        f"reads a registry the body is still writing; it ends with {statements[-1]!r}"
+    )
+    assert sum(s == "o.seal()" for s in statements) == 1

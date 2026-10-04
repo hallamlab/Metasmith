@@ -38,8 +38,10 @@ the import to some other checkout.
 generated `workflow.nf`.** Per batch it runs `consumed_of`, `member_key`, `probe` and
 `promote_members` from `caching/`, so a cache test there exercises the same decision the task
 makes. What it cannot see is the Groovy: `Orchestrator._route`, the `_cached` twin, publish and
-the trace TSV only run in the docker lane. Anything about the *emitted text* has to be pinned at
-codegen level.
+the trace TSV run only under real Nextflow. Anything about the *emitted text* has to be pinned at
+codegen level. Grouping and release order run in `e2e/nextflow` on the host's Nextflow, with no
+image. Its fixtures are hand-written in codegen's shape, so a codegen change that alters that
+shape needs the fixtures changed with it.
 
 **The deploy axis's source-pattern tests read `Agent.Deploy`'s text rather than running it**,
 slicing from the method to the next one. `Deploy` is the last method in its module, so that
