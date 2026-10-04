@@ -21,12 +21,16 @@ class Orchestrator {
     // read by the task to name and promote its products. Kept in lockstep
     // with LinPayload.KEY_KEY.
     public static final String KEY_KEY = "KEY"
-    // SIBS is the sibling stamp [by, n, i] _post puts on every produced item:
-    // the producing member was grouped by `by` and delivered n items into
-    // this slot, of which this is ordinal i. It is the only count early
+    // SIBS is the sibling chain _post extends on every produced item: one
+    // level [stream, post, by, n, i] per hop, saying the item was posted into
+    // `stream` by post number `post`, whose member was grouped by `by` and
+    // delivered n items into this slot, of which this is ordinal i. A member
+    // inherits its by-item's chain, so the chain records how the item fanned
+    // out below every member it descends through. It is the only count early
     // release trusts, because no plan-time count exists: outputs are globs
-    // and optional branches can emit nothing. Stripped from PROV and publish
-    // so no cache key or manifest ever sees it. Kept in lockstep with
+    // and optional branches can emit nothing. It rides the member index into
+    // the task and back out, and is stripped from PROV and publish so no
+    // cache key or manifest ever sees it. Kept in lockstep with
     // LinPayload.SIBS_KEY.
     public static final String SIBS_KEY = "SIBS"
     public static final List RESERVED_KEYS = [FILES_KEY, PROV_KEY, KEY_KEY, SIBS_KEY]
@@ -79,11 +83,18 @@ class Orchestrator {
     // That ordering rests on Nextflow starting data flow only after the body
     // returns, which is an implementation invariant and not a documented
     // contract, so a read before the seal throws instead of trusting it.
+    //
+    // posts_of[name] lists every post into `name` as [post, by]. A post takes
+    // the group_by of the group() into `name` it follows, which codegen always
+    // emits immediately before it; a postIn, or a post with no group, has
+    // none. routes caches _routes.
     private Map group_by_of
-    private Map producers_of
-    private Set mixed_streams
+    private Map pending_by
+    private Map posts_of
+    private Map routes
     private volatile boolean sealed = false
     private static final String GROUP_BY_CONFLICT = "\u0000conflict"
+    private static final Map NO_ROUTE = [:]
 
     Orchestrator(one_null) {
         this.index_history = new java.util.concurrent.ConcurrentHashMap()
@@ -91,8 +102,9 @@ class Orchestrator {
         this.one_null = one_null
         this._dispatchLog = Collections.synchronizedList(new ArrayList())
         this.group_by_of = new java.util.concurrent.ConcurrentHashMap()
-        this.producers_of = new java.util.concurrent.ConcurrentHashMap()
-        this.mixed_streams = java.util.concurrent.ConcurrentHashMap.newKeySet()
+        this.pending_by = new java.util.concurrent.ConcurrentHashMap()
+        this.posts_of = new java.util.concurrent.ConcurrentHashMap()
+        this.routes = new java.util.concurrent.ConcurrentHashMap()
     }
 
     // The last statement of the workflow body.
@@ -119,45 +131,113 @@ class Orchestrator {
         }
     }
 
-    private void _countProducer(String name) {
+    private synchronized List _countPost(String name, String by) {
         this._assertUnsealed("post of [${name}]")
-        this.producers_of.merge(name, 1, (a, b) -> a + b)
+        def posts = this.posts_of.computeIfAbsent(name, (x) -> Collections.synchronizedList(new ArrayList()))
+        def post = [posts.size() + 1, by]
+        posts.add(post)
+        return post
     }
 
-    private void _recordGroupBy(String target, String by) {
+    private synchronized String _takeGroupBy(String name) {
+        def queue = this.pending_by.get(name)
+        return (queue == null || queue.isEmpty()) ? null : queue.remove(0)
+    }
+
+    private synchronized void _recordGroupBy(String target, String by) {
         this._assertUnsealed("group into [${target}]")
         def prev = this.group_by_of.putIfAbsent(target, by)
         if (prev != null && prev != by) this.group_by_of[target] = GROUP_BY_CONFLICT
+        this.pending_by.computeIfAbsent(target, (x) -> []).add(by)
     }
 
-    private String _groupByOf(String name) {
-        this._assertSealed("the group_by of [${name}]")
-        def by = this.group_by_of.get(name)
-        return (by == GROUP_BY_CONFLICT) ? null : by
+    // Which posts a key's items of `stream` can arrive through, as
+    // {by-stream: ["<stream>#<post>", ...]}: the posts that consume each
+    // by-stream on the way down from `key`. Every post of `stream` is a route,
+    // and so is every post of each stream one of them was grouped by, up to
+    // the posts grouped by `key`. A post grouped by nothing (a given, or a
+    // post with no group) is a route nothing can count, so the stream has no
+    // route and only flushes at close.
+    private Map _routes(String stream, String key) {
+        this._assertSealed("the routes of [${stream}] under [${key}]")
+        def cached = this.routes.computeIfAbsent("${stream}\u0000${key}" as String, (x) -> {
+            def expected = [:]
+            def visited = new HashSet()
+            def todo = [stream]
+            while (!todo.isEmpty()) {
+                def m = todo.remove(todo.size() - 1)
+                if (!visited.add(m)) continue
+                def posts = this.posts_of.get(m)
+                if (m == key || posts == null || posts.isEmpty()) return NO_ROUTE
+                for (p : new ArrayList(posts)) {
+                    def by = p[1]
+                    if (by == null) return NO_ROUTE
+                    expected.computeIfAbsent(by, (y) -> new HashSet()).add("${m}#${p[0]}" as String)
+                    if (by != key) todo.add(by)
+                }
+            }
+            return expected
+        })
+        return cached.is(NO_ROUTE) ? null : cached
     }
 
-    private boolean _soleProducer(String name) {
-        this._assertSealed("the producer count of [${name}]")
-        return this.producers_of.getOrDefault(name, 0) == 1 && !this.mixed_streams.contains(name)
-    }
-
-    // The stamp an item may be released on for join key `key`, or null when
-    // it may only flush at close. All three conditions are needed:
-    //   - the producing member was grouped by `key`, so it is THE member for
-    //     one key value and not one of several feeding it;
-    //   - the item carries exactly one `key` hash, so no other member's items
-    //     carry it too (a member that pulled in another key's item stamps
-    //     every output with both hashes, which fails this test on both sides);
-    //   - the stream has one producing post, so one member is all there is.
-    // The registry is read last, so an unstamped item (a given, which may
-    // flow during the body) never reads it.
-    private List _releaseStamp(String name, String key, Map index) {
-        def stamp = index[SIBS_KEY]
-        if (!(stamp instanceof List) || stamp.size() != 3 || stamp[0] != key) return null
+    // The path an item may be released on for join key `key`: its chain from
+    // the last level grouped by `key`, or null when it may only flush at
+    // close. The member at that level is the one member for the key value
+    // (one per route); every later level is a fan-out below it. The item must
+    // also carry exactly one `key` hash: a member that pulled in another key's
+    // item stamps every output with both hashes, which fails this on both
+    // sides. The registry is read last, so an unstamped item (a given, which
+    // may flow during the body) never reads it.
+    private List _releasePath(String name, String key, Map index) {
+        def chain = index[SIBS_KEY]
+        if (!(chain instanceof List) || chain.isEmpty()) return null
         def hashes = index[key]
         if (!(hashes instanceof List) || hashes.size() != 1) return null
-        if (!this._soleProducer(name)) return null
-        return stamp
+        def root = chain.findLastIndexOf((l) -> l instanceof List && l.size() == 5 && l[2] == key)
+        if (root < 0) return null
+        def path = new ArrayList(chain.subList(root, chain.size()))
+        if (path[-1][0] != name) return null
+        def expected = this._routes(name, key)
+        if (expected == null) return null
+        def wired = path.withIndex().every((l, j) -> {
+            if (!(l instanceof List) || l.size() != 5) return false
+            if (j > 0 && l[2] != path[j - 1][0]) return false
+            if (!(l[3] instanceof Integer) || !(l[4] instanceof Integer) || l[4] < 0 || l[4] >= l[3]) return false
+            return expected.get(l[2])?.contains("${l[0]}#${l[1]}" as String) ?: false
+        })
+        return wired ? path : null
+    }
+
+    // Whether `paths`, every one sharing its first `depth` levels, enumerate
+    // everything the routes promise below a node of stream `parent`: each post
+    // that consumes `parent`, each with one n, ordinals exactly 0..n-1, and
+    // each of those whole in turn until the levels reach `stream`.
+    private static boolean _whole(List paths, int depth, String parent, String stream, Map expected) {
+        def want = expected.get(parent)
+        if (want == null) return false
+        def by_post = paths.groupBy((p) -> "${p[depth][0]}#${p[depth][1]}" as String)
+        if (by_post.keySet() != want) return false
+        return by_post.every((post, ps) -> {
+            def ns = ps.collect((p) -> p[depth][3]).unique()
+            if (ns.size() != 1) return false
+            def n = ns[0] as int
+            def by_ord = ps.groupBy((p) -> p[depth][4])
+            if (by_ord.size() != n) return false
+            def name = ps[0][depth][0]
+            return by_ord.every((i, qs) -> {
+                if (name == stream) return qs.size() == 1 && qs[0].size() == depth + 1
+                if (qs.any((q) -> q.size() <= depth + 1)) return false
+                return _whole(qs, depth + 1, name as String, stream, expected)
+            })
+        })
+    }
+
+    private Closure _wholeFor(String stream, String key) {
+        return (List paths) -> {
+            def expected = this._routes(stream, key)
+            return expected != null && _whole(paths, 0, key, stream, expected)
+        }
     }
 
     public List getDispatchLog() {
@@ -205,21 +285,23 @@ class Orchestrator {
         // deterministic and per-file for direct/test callers.
         //
         // One incoming tuple is one member's whole delivery into this slot,
-        // so its size is the sibling count the stamp carries. Nextflow emits
-        // a task's outputs once, on success, and a member runs in exactly one
-        // of a process and its `_cached` twin, so no second tuple for the
-        // same member can follow.
-        names.each { n -> this._countProducer(n as String) }
-        return [names, streams, slot_ids].transpose().collect((name, stream, slot_id) -> {
+        // so its size is the sibling count the new chain level carries.
+        // Nextflow emits a task's outputs once, on success, and a member runs
+        // in exactly one of a process and its `_cached` twin, so no second
+        // tuple for the same member can follow.
+        def posts = names.collect { n -> this._countPost(n as String, this._takeGroupBy(n as String)) }
+        return [names, streams, slot_ids, posts].transpose().collect((name, stream, slot_id, post) -> {
             def sid = (slot_id == null || slot_id == "") ? name : slot_id
+            def (post_id, by) = post
             return new Tuple2(
                 name,
                 stream.flatMap((index, group) -> {
+                    this._assertSealed("the post of [${name}]")
                     if (!(group instanceof List)) {
                         group = [group]
                     }
-                    def stamp_by = this._groupByOf(name as String)
                     def n = group.size()
+                    def chain = index[SIBS_KEY]
                     return (0..<n).collect((i) -> {
                         def item = group[i]
                         // The batch position is where the member sat in the
@@ -230,7 +312,10 @@ class Orchestrator {
                         def out = [:] + index
                         out[name] = [v]
                         out.remove(SIBS_KEY)
-                        if (stamp_by != null) out[SIBS_KEY] = [stamp_by, n, i]
+                        if (by != null) {
+                            def prior = (chain instanceof List) ? chain : []
+                            out[SIBS_KEY] = prior + [[name, post_id, by, n, i]]
+                        }
                         this.registerIndexHistory(name, out)
                         return [out, item]
                     })
@@ -251,7 +336,7 @@ class Orchestrator {
         // the off-channel instance_id (single point of provenance). Direct/test
         // callers that pass no seed fall back to the full-path md5 so the id
         // stays deterministic and per-file.
-        names.each { n -> this._countProducer(n as String) }
+        names.each { n -> this._countPost(n as String, null) }
         return [names, streams].transpose().collect((name, stream) -> {
             return new Tuple2(
                 name,
@@ -319,33 +404,36 @@ class Orchestrator {
 
     // One stream's bags inside one group() call, keyed by the join key's
     // hash, and the early-release bookkeeping over them. A key completes when
-    // its stamped ordinals are exactly 0..n-1; anything that could make that
-    // count wrong (an unstamped item, a second n, an ordinal out of range or
-    // repeated by another file) poisons the key, and a poisoned key waits for
-    // the close-flush. Counting ordinals rather than bag size means a
-    // duplicate cannot stand in for a missing file.
+    // its items' release paths fill every route (`whole`); an item with no
+    // path poisons the key, and a poisoned key waits for the close-flush.
+    // Counting ordinals rather than bag size means a duplicate cannot stand
+    // in for a missing file.
     //
-    // A completed key takes no further item. One that arrives anyway was
-    // missing from a group already sent downstream, so it throws: the stamp
-    // made a promise the data broke, and continuing would be a quietly wrong
-    // result.
+    // A path names one file: one member made it, as ordinal i of its
+    // delivery, below one chain of members each grouped by one item. So two
+    // distinct files on one path, or any file for a key already released,
+    // means a member was delivered twice. Both throw, whatever the timing:
+    // the stamp made a promise the data broke, and continuing would be a
+    // quietly wrong result.
     static class ReleaseBags {
         final String stream
         final String key
+        private final Closure whole
         private final Map items = [:]
         private final Map seen = [:]
-        private final Map ordinals = [:]
-        private final Map sizes = [:]
+        private final Map paths = [:]
+        private final Map owner = [:]
         private final Set poisoned = new HashSet()
         private final Set complete = new HashSet()
 
-        ReleaseBags(String stream, String key) {
+        ReleaseBags(String stream, String key, Closure whole) {
             this.stream = stream
             this.key = key
+            this.whole = whole
         }
 
         // True when this item completes h.
-        synchronized boolean add(h, item, String item_hash, List stamp) {
+        synchronized boolean add(h, item, String item_hash, List path) {
             if (this.seen.get(h)?.contains(item_hash)) return false
             if (this.complete.contains(h)) {
                 throw new LineageViolation(
@@ -356,26 +444,27 @@ class Orchestrator {
                     + "downstream. Something upstream delivered one member twice."
                 )
             }
+            if (path != null) {
+                def holder = this.owner.computeIfAbsent(h, x -> [:]).putIfAbsent(path, item)
+                if (holder != null) {
+                    throw new LineageViolation(
+                        "stream [${this.stream}] delivered ${item[-1]} and ${holder[-1]} "
+                        + "for [${this.key}] ${h} with one sibling stamp ${path}. A "
+                        + "stamp names one file, so something upstream delivered one "
+                        + "member twice."
+                    )
+                }
+            }
             this.seen.computeIfAbsent(h, x -> new HashSet()).add(item_hash)
             this.items.computeIfAbsent(h, x -> []).add(item)
             if (this.poisoned.contains(h)) return false
-            if (stamp == null) {
+            if (path == null) {
                 this.poisoned.add(h)
                 return false
             }
-            def n = stamp[1]
-            def i = stamp[2]
-            if (!(n instanceof Integer) || !(i instanceof Integer) || i < 0 || i >= n) {
-                this.poisoned.add(h)
-                return false
-            }
-            def prev_n = this.sizes.putIfAbsent(h, n)
-            def ords = this.ordinals.computeIfAbsent(h, x -> new HashSet())
-            if ((prev_n != null && prev_n != n) || !ords.add(i)) {
-                this.poisoned.add(h)
-                return false
-            }
-            if (ords.size() == n) {
+            def ps = this.paths.computeIfAbsent(h, x -> [])
+            ps.add(path)
+            if (this.whole.call(ps)) {
                 this.complete.add(h)
                 return true
             }
@@ -474,7 +563,7 @@ class Orchestrator {
     }
 
     // A key leaves the moment it is provably whole, by the sibling stamps
-    // (see ReleaseBags and _releaseStamp), and otherwise when its stream
+    // (see ReleaseBags and _releasePath), and otherwise when its stream
     // closes. The close-flush through the `one_null` sentinel is
     // unconditional, and it has to be: `errorStrategy 'ignore'` is
     // process-wide (local.nf, slurm.nf), so a dropped task means a key whose
@@ -524,21 +613,87 @@ class Orchestrator {
             this._logDispatch(name, relation, null, null)
 
             if (relation == "PARENT_OF_BY") {
-                // PARENT branch (unchanged): combine(by:0) on the parent's own
-                // hash, which by-items carry as idx[parent_name].
-                return _stream.map((item) -> {
+                // PARENT branch: a by-item names in idx[name] every parent
+                // item it descends from -- one for a per-sample product, every
+                // sample's for a coassembly -- and its member holds each of
+                // them. A combine(by:0) on the whole list matched no single
+                // parent item of a coassembly and emitted nothing.
+                //
+                // A parent item's own hash is its identity, so a by-item is
+                // whole once every hash it names has arrived, and leaves then
+                // without waiting on a stamp. A second, distinct item under
+                // one hash breaks that identity and throws, whenever it
+                // arrives; the close-flush sends whatever a by-item has when
+                // a parent task was dropped.
+                def _name = name
+                def arrived = [:]
+                def seen = [:]
+                def waiting = []
+                def waiting_on = [:]
+                def member = (Map b) -> {
+                    def union = [:]
+                    b.hashes.each((h) -> arrived.getOrDefault(h, []).each((x) -> union.putIfAbsent("${x[-1]}".md5(), x)))
+                    return new ArrayList(union.values())
+                }
+                def release = (List candidates) -> {
+                    def out = []
+                    candidates.each((b) -> {
+                        if (b.done || !b.hashes.every((h) -> arrived.containsKey(h))) return
+                        b.done = true
+                        out.add([new Tuple3(b.key, _name, member(b))])
+                    })
+                    return out
+                }
+                return _stream.map((x) -> ["P", x])
+                .mix(by_stream.map((x) -> ["B", x]))
+                .concat(this.one_null)
+                .flatMap((msg) -> {
+                    if (msg == null) {
+                        return waiting
+                        .findAll((b) -> !b.done)
+                        .collect((b) -> new Tuple2(b, member(b)))
+                        .findAll((bm) -> bm[1].size() > 0)
+                        .collect((bm) -> [new Tuple3(bm[0].key, _name, bm[1])])
+                    }
+                    def (side, item) = msg
                     def (_index, _value) = item
-                    def k = _index[name]
-                    return new Tuple2(k, item)
-                })
-                .combine(by_stream.map((item) -> {
-                    def (_index, _value) = item
-                    def k = _index[name]
-                    return new Tuple2(k, _index[by]) // pass through the "by index"
-                }), by: 0)
-                .map((combined) -> {
-                    def (_, item, key) = combined
-                    return [new Tuple3(key, name, [item])]
+                    def hashes = _index[_name]
+                    if (hashes == null || hashes.size() == 0) {
+                        this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
+                        def from = (side == "B") ? by_name : _name
+                        throw new LineageViolation(
+                            "stream [${from}] delivered [${_value}] with "
+                            + "${_renderLineage(_index)}, but [${by_name}] is a declared "
+                            + "descendant of [${_name}], so every item of both must carry "
+                            + "[${_name}]. Grouping it would drop it, and a dropped item "
+                            + "silently truncates the DAG."
+                        )
+                    }
+                    if (side == "B") {
+                        def b = [key: _index[by], hashes: new ArrayList(hashes), done: false]
+                        waiting.add(b)
+                        hashes.each((h) -> waiting_on.computeIfAbsent(h, (x) -> []).add(b))
+                        return release([b])
+                    }
+                    def item_hash = "$_value".md5()
+                    def fresh = []
+                    hashes.each((h) -> {
+                        def ids = seen.computeIfAbsent(h, (x) -> new HashSet())
+                        if (ids.contains(item_hash)) return
+                        if (!ids.isEmpty()) {
+                            throw new LineageViolation(
+                                "stream [${_name}] delivered ${_value} as [${_name}] ${h}, "
+                                + "but another item already holds that hash. A parent "
+                                + "item's hash is its identity, so two distinct items "
+                                + "cannot share one, and a member of [${by_name}] cannot "
+                                + "tell which of them it descends from."
+                            )
+                        }
+                        ids.add(item_hash)
+                        fresh.add(h)
+                    })
+                    fresh.each((h) -> arrived.computeIfAbsent(h, (x) -> []).add(item))
+                    return release(fresh.collectMany((h) -> waiting_on.getOrDefault(h, [])))
                 })
             }
 
@@ -556,7 +711,7 @@ class Orchestrator {
                 // reassemble the group afterwards, which is what shattered a
                 // collecting transform's input into singletons.
                 def _name = name
-                def bags = new ReleaseBags(_name as String, by_name as String)
+                def bags = new ReleaseBags(_name as String, by_name as String, this._wholeFor(_name as String, by_name as String))
                 return _stream.concat(this.one_null)
                 .flatMap((item) -> {
                     if (item == null) {
@@ -584,7 +739,7 @@ class Orchestrator {
                         )
                     }
                     def item_hash = "$_value".md5()
-                    def stamp = this._releaseStamp(_name as String, by_name as String, _index)
+                    def stamp = this._releasePath(_name as String, by_name as String, _index)
                     def ready = []
                     by_hashes.each((h) -> {
                         if (bags.add(h, item, item_hash, stamp)) {
@@ -628,7 +783,7 @@ class Orchestrator {
                 def anc_key = this._siblingJoinKey(name as String, by_name as String)
                 def agree_keys = this._nearestSharedAncestors(name as String, by_name as String)
                 def _name = name
-                def bags = new ReleaseBags(_name as String, anc_key)
+                def bags = new ReleaseBags(_name as String, anc_key, this._wholeFor(_name as String, anc_key))
                 def waiting = []
                 def waiting_on = [:]
                 def member = (Map b) -> {
@@ -680,7 +835,7 @@ class Orchestrator {
                         return []
                     }
                     def item_hash = "$_value".md5()
-                    def stamp = this._releaseStamp(_name as String, anc_key, _index)
+                    def stamp = this._releasePath(_name as String, anc_key, _index)
                     def completed = anc_hashes.findAll((h) -> bags.add(h, item, item_hash, stamp))
                     return release(completed.collectMany((h) -> waiting_on.getOrDefault(h, [])))
                 })
@@ -767,6 +922,8 @@ class Orchestrator {
             def common_index = this.combineIndexes(per_item.flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
             common_index[PROV_KEY] = per_item
+            def by_chain = _result.find((xx) -> xx[1] == by_name)?.getAt(2)?.getAt(0)?.getAt(0)?.get(SIBS_KEY)
+            if (by_chain instanceof List) common_index[SIBS_KEY] = by_chain
             return [common_index, *values]
         })
     }
@@ -847,7 +1004,7 @@ class Orchestrator {
         f.parentFile?.mkdirs()
         f << JsonOutput.toJson([
             step: cache.step, step_name: cache.step_name, key: key, shard: shard,
-            entry: index.findAll((k, v) -> k != FILES_KEY),
+            entry: index.findAll((k, v) -> k != FILES_KEY && k != SIBS_KEY),
         ]) << "\n"
     }
 
@@ -922,7 +1079,7 @@ class Orchestrator {
                 // while index is a list of indexes
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
-                indexes = indexes.collect(index -> Orchestrator.stripReserved(index))
+                indexes = indexes.collect(index -> Orchestrator.stripReserved(index) + (index[SIBS_KEY] == null ? [:] : [(SIBS_KEY): index[SIBS_KEY]]))
                 bag = (bag instanceof List)? bag : [bag]
                 if (!is_batched) {
                     // Non-batched: return the single item directly without numeric-prefix parsing
@@ -948,12 +1105,11 @@ class Orchestrator {
         })
     }
 
-    // The mixed stream carries the first stream's name but every stream's
-    // items, so that name's producer count no longer describes it.
+    // The mixed stream carries the first stream's name. Release still counts
+    // every producer, because each item's chain names the post that made it.
     public def mix(streams) {
         def (name, _) = streams[0]
         this._assertUnsealed("mix into [${name}]")
-        if (streams.size() > 1) this.mixed_streams.add(name as String)
         return new Tuple2(
             name,
             streams

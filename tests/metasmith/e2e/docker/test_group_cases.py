@@ -155,15 +155,16 @@ workflow {
 
     def grouped = o.group("b", [pa, agg_b], ["target"], 1)
     grouped.view { idx, a_vals, b_vals ->
-        "G:0:a=${a_vals.size()}:b=${b_vals.size()}:akeys=${idx["a"].size()}"
+        "G:0:a=${a_vals.size()}:b=${b_vals.size()}:akeys=${idx[0]["a"].size()}"
     }
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    assert len(lines) <= 2, (
-        f"PINNED behavior change: expected 0-2 emits today, got {len(lines)}: {lines}"
+    assert lines == ["G:0:a=2:b=1:akeys=2"], (
+        f"C3: an aggregated b naming both a-hashes must yield ONE member holding "
+        f"both a items. Got {lines}"
     )
 
 
@@ -737,16 +738,16 @@ workflow {
 
     def grouped = o.group("b", [pa, agg_b], ["target"], 3)
     grouped.view { idx, a_vals, b_vals ->
-        "G:0:a=${a_vals.size()}:b=${b_vals.size()}:akeys=${idx["a"].size()}"
+        "G:0:a=${a_vals.size()}:b=${b_vals.size()}:akeys=${idx[0]["a"].size()}"
     }
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    assert len(lines) <= 2, (
-        f"C21 PINNED behavior change: expected 0-2 emits today, "
-        f"got {len(lines)}: {lines}"
+    assert lines == ["G:0:a=3:b=1:akeys=3"], (
+        f"C21: one aggregated b naming three a-hashes is one member holding all "
+        f"three, alone in its batch. Got {lines}"
     )
 
 
