@@ -246,7 +246,7 @@ def build_transforms(mode, pre_e5_assembly=False):
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_gem")]
 
 
-def build_targets(mode):
+def build_targets(mode, mags=True):
     # The sample's assembly is OPERA-MS for a hybrid sample, Flye for a long-read-only one and MEGAHIT
     # otherwise; every lane reads it.
     # DAS Tool's bins are the MAG set: CheckM2, ORFs and models run on them alone.
@@ -255,11 +255,12 @@ def build_targets(mode):
     asm = t.Add({"hybrid": "e5::opera_ms_assembly", "long": "sequences::flye_assembly",
                  "short": "sequences::megahit_assembly"}[mode])
 
-    mags = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
-    t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
-    t.Add("bench::checkm2_quality", parents=[mags])
-    gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[mags])])
-    t.Add("modelling::memote_score", parents=[gem])
+    if mags:
+        bins = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
+        t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
+        t.Add("bench::checkm2_quality", parents=[bins])
+        gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[bins])])
+        t.Add("modelling::memote_score", parents=[gem])
 
     frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm])
     for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
@@ -297,7 +298,7 @@ def solve(args, shape, by_study):
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
                    pratama_globals, gem_globals],
         transforms=build_transforms(mode, pre_e5_assembly=args.batch in PRE_E5_ASSEMBLY),
-        targets=build_targets(mode),
+        targets=build_targets(mode, mags=not args.no_mags),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
     c.check_plan(task, expected_counts(shape, by_study))
@@ -353,7 +354,7 @@ def main():
         p.add_argument("--batch", type=int, required=True, choices=sorted(BATCHES))
         p.add_argument("--shape", choices=list(SHAPES))
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False, clear=False, queue_size=None)
+                       import_givens=False, clear=False, queue_size=None, no_mags=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_<shape>.dag.svg")
             mode = p.add_mutually_exclusive_group()
@@ -367,6 +368,8 @@ def main():
                            help="restage from scratch, which a protocol-only transform edit needs; deletes the run's logs")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")
+            p.add_argument("--no-mags", action="store_true",
+                           help="leave out the MAG lane (binners, DAS Tool, CheckM2, GEMs); a later full run adds it from the cache")
     args = ap.parse_args()
     return args.fn(args)
 
