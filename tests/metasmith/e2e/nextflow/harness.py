@@ -300,11 +300,8 @@ class Workspace:
         rows = []
         for line in lines[1:]:
             d = dict(zip(header, line.split("\t")))
-            rows.append(Task(
-                process=d["process"], tag=d["tag"], status=d["status"], exit=d["exit"],
-                attempt=int(d["attempt"] or 0),
-                submit=int(d["submit"] or 0), start=int(d["start"] or 0), complete=int(d["complete"] or 0),
-            ))
+            n = {k: int(d[k]) if d[k] not in ("", "-") else 0 for k in ("attempt", "submit", "start", "complete")}
+            rows.append(Task(process=d["process"], tag=d["tag"], status=d["status"], exit=d["exit"], **n))
         return rows
 
     def _read_recv(self) -> list[Recv]:
