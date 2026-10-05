@@ -27,6 +27,9 @@ class WorkflowStep:
     produces: list[list[DataInstance]] = field(default_factory=list)
     _raw_dependency_map: dict|None = None
     _raw_instances: dict[str, DataInstance]|None = None
+    # Given instance ids of the samples this step does not run for. Packed only
+    # when non-empty, so a plan whose steps serve every sample keys as before.
+    excluded_given: list[str] = field(default_factory=list)
 
     def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
         self._dependency_map: dict[Dependency, list[DataInstance]] = {}
@@ -64,13 +67,16 @@ class WorkflowStep:
         for lst in self.dependency_map.values():
             for inst in lst:
                 all_instances[inst.instance_id] = inst
-        return dict(
+        packed = dict(
             order=self.order,
             schema="v2",
             instances={k:v.Pack() for k, v in all_instances.items()},
             dependency_map={k.key:[v.instance_id for v in lst] for k, lst in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform._path}",
         )
+        if self.excluded_given:
+            packed["excluded_given"] = list(self.excluded_given)
+        return packed
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
@@ -96,8 +102,9 @@ class WorkflowStep:
             _raw_instances=raw_instances,
             transform=tr,
             transform_library=lib,
+            excluded_given=list(raw.get("excluded_given", [])),
         )
-    
+
     def _resolve_dependency_map(self):
         assert self._raw_dependency_map is not None
         if self._raw_instances is not None:

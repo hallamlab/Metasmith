@@ -94,6 +94,16 @@ def _refuse_unminted_givens(instances: list[DataInstance]) -> None:
     ))
 
 
+@dataclass
+class CaseIndex:
+    group_case: list[int] = field(default_factory=list)
+    group_label: list[str] = field(default_factory=list)
+    inst_cases: dict[str, set[int]] = field(default_factory=dict)
+
+    def samples_of(self, cases: set[int]) -> list[str]:
+        return [lbl for c, lbl in zip(self.group_case, self.group_label) if c in cases]
+
+
 def CollectSolverInputs(
     given: list[list[DataInstanceLibraryView]],
     transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
@@ -102,40 +112,60 @@ def CollectSolverInputs(
     list[set[Endpoint]],
     dict[Transform, TransformInstance],
     dict[TransformInstance, TransformInstanceLibrary],
+    CaseIndex,
 ]:
     given_map: dict[Endpoint, list[DataInstance]] = {}
-    _seen_instances: set[tuple] = set()
+    _key2inst: dict[tuple, DataInstance] = {}
     _view_eps_cache: dict[int, set[Endpoint]] = {}
+    _view_keys_cache: dict[int, list[tuple]] = {}
     given_endpoints: list[set[Endpoint]] = []
-    _seen_group_keys: set[tuple] = set()
+    _seen_group_keys: dict[tuple, tuple[int, str]] = {}
+    cases = CaseIndex()
     for group in given:
         group_key = tuple((id(lib._original), lib._mask_key) for lib in group)
         if group_key in _seen_group_keys:
+            case, label = _seen_group_keys[group_key]
+            cases.group_case.append(case)
+            cases.group_label.append(label)
             continue
-        _seen_group_keys.add(group_key)
 
         eps = set()
+        group_keys: list[tuple] = []
         for lib in group:
             view_id = id(lib)
             if view_id in _view_eps_cache:
                 eps.update(_view_eps_cache[view_id])
+                group_keys += _view_keys_cache[view_id]
                 continue
             lib_eps = set()
+            lib_keys = []
             for path, ep_name, ep in lib.Iterate():
                 dedup_key = (path, ep)
-                if dedup_key not in _seen_instances:
-                    _seen_instances.add(dedup_key)
-                    given_map.setdefault(ep, []).append(DataInstance(
+                if dedup_key not in _key2inst:
+                    inst = DataInstance(
                         path=path,
                         dtype=ep,
                         dtype_name=ep_name,
                         parent_lib=lib._original,
-                    ))
+                    )
+                    _key2inst[dedup_key] = inst
+                    given_map.setdefault(ep, []).append(inst)
                 lib_eps.add(ep)
+                lib_keys.append(dedup_key)
             _view_eps_cache[view_id] = lib_eps
+            _view_keys_cache[view_id] = lib_keys
             eps.update(lib_eps)
-        if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
-        given_endpoints.append(eps)
+            group_keys += lib_keys
+        case = next((i for i, g in enumerate(given_endpoints) if g==eps), None)
+        if case is None:
+            given_endpoints.append(eps)
+            case = len(given_endpoints)-1
+        label = ", ".join(sorted({str(path) for path, _ in group_keys}))
+        _seen_group_keys[group_key] = case, label
+        cases.group_case.append(case)
+        cases.group_label.append(label)
+        for k in group_keys:
+            cases.inst_cases.setdefault(_key2inst[k].instance_id, set()).add(case)
 
     _refuse_unminted_givens(
         [inst for insts in given_map.values() for inst in insts]
@@ -152,7 +182,113 @@ def CollectSolverInputs(
                 continue
             transform2inst[model] = tr
             inst2trlib[tr] = base
-    return given_map, given_endpoints, transform2inst, inst2trlib
+    return given_map, given_endpoints, transform2inst, inst2trlib, cases
+
+
+def _is_target(a: Application) -> bool:
+    return len(a.used) > 0 and sum(len(g) for g in a.produced) == 0
+
+
+def _products(a: Application) -> list[Endpoint]:
+    return [e for g in a.produced for e in g.values()]
+
+
+def _nested(given_endpoints: list[set[Endpoint]]) -> bool:
+    smallest = min(given_endpoints, key=len)
+    return all(smallest <= g for g in given_endpoints)
+
+
+def _route(given: set[Endpoint], plan: list[Application]) -> list[Application]|None:
+    # The steps of `plan` that `given` alone drives to the target. A step whose
+    # every product is already at hand is skipped, so a given intermediate is
+    # used and never remade.
+    have = set(given)
+    fired: list[Application] = []
+    pending = [a for a in plan if a.used]
+    progressed = True
+    while progressed:
+        progressed = False
+        for a in list(pending):
+            if not all(e in have for e in a.used.values()):
+                continue
+            pending.remove(a)
+            products = _products(a)
+            if products and all(e in have for e in products):
+                continue
+            fired.append(a)
+            progressed = True
+            if not products:
+                return fired
+            have.update(products)
+    return None
+
+
+def _union_of_routes(routes: list[list[Application]]) -> tuple[list[Application], dict[int, set[int]]]:
+    # One step per distinct application across the cases' routes: the same
+    # transform object bound to equal endpoints, counted per occurrence. Each
+    # step is scoped to the cases whose route contains it.
+    keyed: dict[tuple, Application] = {}
+    scope: dict[int, set[int]] = {}
+    rank: dict[int, tuple[int, int]] = {}
+    for c, route in enumerate(routes):
+        seen: dict[tuple, int] = {}
+        for pos, a in enumerate(route):
+            sig = (id(a.transform), a.Signature())
+            n = seen.get(sig, 0)
+            seen[sig] = n+1
+            u = keyed.setdefault((*sig, n), a)
+            scope.setdefault(id(u), set()).add(c)
+            rank.setdefault(id(u), (c, pos))
+    apps = list({id(a): a for a in keyed.values()}.values())
+    producers: dict[Endpoint, list[Application]] = {}
+    for a in apps:
+        for e in _products(a):
+            producers.setdefault(e, []).append(a)
+    preds: dict[int, set[int]] = {
+        id(a): {id(p) for e in a.used.values() for p in producers.get(e, []) if p is not a}
+        for a in apps
+    }
+    order: list[Application] = []
+    done: set[int] = set()
+    while len(order) < len(apps):
+        ready = [a for a in apps if id(a) not in done and preds[id(a)] <= done]
+        assert ready, "the cases' routes do not order into one plan"
+        nxt = min(ready, key=lambda a: rank[id(a)])
+        order.append(nxt)
+        done.add(id(nxt))
+    return order, scope
+
+
+def _route_problems(
+    apps: list[Application], given: set[Endpoint], transform2inst: dict[Transform, TransformInstance],
+) -> list[str]:
+    # Drive one case's givens through the steps that run for it. The case is
+    # covered when a target step fires, and every slot a fired step reads has
+    # exactly one source: the case's own given or one fired producer.
+    have = set(given)
+    fired: list[Application] = []
+    pending = [a for a in apps if a.used]
+    progressed = True
+    while progressed:
+        progressed = False
+        for a in list(pending):
+            if all(e in have for e in a.used.values()):
+                pending.remove(a)
+                fired.append(a)
+                have.update(_products(a))
+                progressed = True
+    if not any(_is_target(a) for a in fired):
+        return ["no step reaches the target"]
+    problems = []
+    for a in fired:
+        name = transform2inst[a.transform].name if a.transform in transform2inst else "target"
+        if any(e in given for e in _products(a)):
+            problems.append(f"[{name}] remakes a given")
+        for d, e in a.used.items():
+            n = int(e in given) + sum(1 for p in fired if p is not a and e in _products(p))
+            if n != 1:
+                problems.append(f"[{name}] reads [{d.key}] from {n} sources")
+    return problems
 
 
 @dataclass
@@ -163,6 +299,7 @@ class WorkflowPlan:
     _solver_result: SolverResult|None=None
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
     dropped_targets: list[str] = field(default_factory=list)
+    dropped_samples: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
     # A run publishes its targets and nothing else. The per-step outputs stay in
     # the work dir and the cache store, so what a collect copies back is what was
@@ -308,13 +445,24 @@ class WorkflowPlan:
         target_model: Transform,
         max_iter: int=256, max_refine: int|None=None, seed: int=42,
     ):
-        given_map, given_endpoints, transform2inst, inst2trlib = CollectSolverInputs(
+        given_map, given_endpoints, transform2inst, inst2trlib, cases = CollectSolverInputs(
             given, transforms,
         )
 
         _pl1 = "" if len(given)==1 else "s"
         _pl2 = "" if len(given_endpoints)==1 else "s"
         Log.Info(f"solving plan for [{len(given)}] sample{_pl1} as [{len(given_endpoints)}] unique case{_pl2}")
+
+        solver_inputs = (given_endpoints, list(transform2inst.keys()), target_model)
+        common = dict(
+            solver_inputs=solver_inputs, given_map=given_map, transform2inst=transform2inst,
+            transforms=transforms, target_names=target_names, target_model=target_model,
+        )
+        if len(given_endpoints) > 1 and _nested(given_endpoints):
+            return cls._AssembleCases(
+                given_endpoints=given_endpoints, cases=cases, inst2trlib=inst2trlib,
+                max_iter=max_iter, max_refine=max_refine, seed=seed, **common,
+            )
 
         result = solve_by_mcts(
             given=given_endpoints,
@@ -324,15 +472,114 @@ class WorkflowPlan:
             max_refine=max_refine,
             seed=seed,
         )
+        if len(given_endpoints) > 1 and result.complete and result.dependency_plan:
+            # The joint solve shares one frontier blacklist across the cases'
+            # timelines (`frontier_sigs`, mcts.rs), so it can starve a case
+            # and still report complete.
+            failed: dict[int, list[str]] = {}
+            for c, g in enumerate(given_endpoints):
+                have = set(g) | {e for e, me in result.merged_endpoints.items() if any(x in g for x in me)}
+                problems = _route_problems(result.dependency_plan, have, transform2inst)
+                if problems:
+                    failed[c] = problems
+            if failed:
+                return cls._Refuse(result=result, failed=failed, cases=cases, **common)
+        return cls._Assemble(result=result, inst2trlib=inst2trlib, **common)
+
+    @classmethod
+    def _AssembleCases(
+        cls, given_endpoints: list[set[Endpoint]], cases: CaseIndex,
+        inst2trlib: dict[TransformInstance, TransformInstanceLibrary],
+        max_iter: int, max_refine: int|None, seed: int, **common,
+    ):
+        # Nested cases: one case's givens are contained in every other's, as
+        # when some samples carry an intermediate the rest must make. Each case
+        # is solved alone, on one timeline, and the routes are unioned with
+        # every step scoped to the cases it serves.
+        transform2inst = common["transform2inst"]
+        results = [
+            solve_by_mcts(
+                given=[g], target=common["target_model"], transforms=transform2inst.keys(),
+                max_iter=max_iter, max_refine=max_refine, seed=seed,
+            )
+            for g in given_endpoints
+        ]
+        solved = [h for h, r in enumerate(results) if r.complete and r.dependency_plan]
+        routes: list[list[Application]|None] = []
+        for c, g in enumerate(given_endpoints):
+            # A case with no route of its own may still follow another case's
+            # plan, skipping the steps whose products it was given.
+            candidates = ([c] if c in solved else []) + [h for h in solved if h != c]
+            routes.append(next(
+                (r for r in (_route(g, results[h].dependency_plan) for h in candidates) if r is not None),
+                None,
+            ))
+        failed = {c: ["no step reaches the target"] for c, r in enumerate(routes) if r is None}
+        if failed:
+            return cls._Refuse(result=results[min(failed)], failed=failed, cases=cases, **common)
+
+        order, scope = _union_of_routes(routes)  # type: ignore # none are None
+        for c, g in enumerate(given_endpoints):
+            problems = _route_problems([a for a in order if c in scope[id(a)]], g, transform2inst)
+            if problems:
+                failed[c] = problems
+        if failed:
+            return cls._Refuse(result=results[min(failed)], failed=failed, cases=cases, **common)
+
+        merged: dict[Endpoint, set[Endpoint]] = {}
+        for r in results:
+            for e, me in r.merged_endpoints.items():
+                merged.setdefault(e, set()).update(me)
+        given_steps = [r.dependency_plan[0] for r in results if r.dependency_plan and not r.dependency_plan[0].used]
+        combined = SolverResult(
+            complete=True,
+            dependency_plan=given_steps[:1] + order,
+            merged_endpoints=merged,
+            _iterations=sum(r._iterations for r in results),
+            _refiner_iterations=[x for r in results for x in r._refiner_iterations],
+            _relavent_transforms=list({id(t): t for r in results for t in r._relavent_transforms}.values()),
+        )
         return cls._Assemble(
-            result=result,
-            solver_inputs=(given_endpoints, list(transform2inst.keys()), target_model),
+            result=combined, inst2trlib=inst2trlib,
+            scope=scope, cases=cases, n_cases=len(given_endpoints), given_steps=given_steps,
+            **common,
+        )
+
+    @classmethod
+    def _Refuse(
+        cls, result, failed: dict[int, list[str]], cases: CaseIndex,
+        solver_inputs: tuple,
+        given_map: dict[Endpoint, list[DataInstance]],
+        transform2inst: dict[Transform, TransformInstance],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
+        target_names: list[str],
+        target_model: Transform,
+    ):
+        names = cases.samples_of(set(failed))
+        lines = [
+            f"  [{lbl}]: {'; '.join(failed[c])}"
+            for c in sorted(failed) for lbl in cases.samples_of({c})
+        ]
+        msg = f"no plan carries [{len(names)}] sample(s) to {target_names}:\n" + "\n".join(lines)
+        Log.Error(msg)
+        hints = [PlanHint(kind="dropped_samples", target=",".join(target_names), message=msg)]
+        hints += _diagnose_plan_failure(
+            target_model=target_model,
+            target_names=target_names,
             given_map=given_map,
             transform2inst=transform2inst,
-            inst2trlib=inst2trlib,
-            transforms=transforms,
-            target_names=target_names,
-            target_model=target_model,
+            solver_result=result,
+            type_lookups=list(transforms),
+        )
+        return cls(
+            given=[],
+            targets=[],
+            steps=[],
+            _solver_result=result,
+            _solver_inputs=solver_inputs,
+            dropped_targets=list(target_names),
+            dropped_samples=names,
+            hints=hints,
         )
 
     @classmethod
@@ -346,6 +593,10 @@ class WorkflowPlan:
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         target_names: list[str],
         target_model: Transform,
+        scope: dict[int, set[int]]|None = None,
+        cases: CaseIndex|None = None,
+        n_cases: int = 1,
+        given_steps: list[Application]|None = None,
     ):
         def _dedupe_instances(instances: list[DataInstance]):
             out = []
@@ -385,18 +636,18 @@ class WorkflowPlan:
                 hints=failure_hints,
             )
 
-        result_given = result.dependency_plan[0]
-        for pgroup in result_given.produced:
-            for d in pgroup:
-                e = pgroup[d]
-                if e in given_map:
-                    current = set(given_map[e])
-                    given_map[e] += [x for x in given_map.get(d, []) if x not in current] # type: ignore
-                else:
-                    for ge in list(given_map):
-                        if not e.properties==ge.properties: continue
-                        given_map[e] = given_map[ge]
-                        break
+        for result_given in (given_steps or [result.dependency_plan[0]]):
+            for pgroup in result_given.produced:
+                for d in pgroup:
+                    e = pgroup[d]
+                    if e in given_map:
+                        current = set(given_map[e])
+                        given_map[e] += [x for x in given_map.get(d, []) if x not in current] # type: ignore
+                    else:
+                        for ge in list(given_map):
+                            if not e.properties==ge.properties: continue
+                            given_map[e] = given_map[ge]
+                            break
 
         for e, me in result.merged_endpoints.items():
             if len(me)<2: continue
@@ -463,12 +714,19 @@ class WorkflowPlan:
                     _instance = canonical.get_or_create(instance_key, lambda: _instance)
                     instance_map[e] = _dedupe_instances(instance_map.get(e, []) + [_instance])
                     _insts[(j, d, e)] = _instance
+                    if scope is not None:
+                        cases.inst_cases.setdefault(_instance.instance_id, set()).update(scope[id(appl)])
 
 
             used_endpoints |= {e for e in appl.used.values()}
+            if scope is None:
+                _serves = lambda inst: True
+            else:
+                _sc = scope[id(appl)]
+                _serves = lambda inst, _sc=_sc: bool(cases.inst_cases.get(inst.instance_id, set()) & _sc)
             step = WorkflowStep(
                 order=i+1,
-                dependency_map={d:list(instance_map[e]) for d, e in itertools.chain(appl.used.items(), [(d, e) for pgroup in appl.produced for d, e in pgroup.items()])},
+                dependency_map={d:[x for x in instance_map[e] if _serves(x)] for d, e in itertools.chain(appl.used.items(), [(d, e) for pgroup in appl.produced for d, e in pgroup.items()])},
                 transform=tr,
                 transform_library=_lib,
             )
@@ -516,6 +774,14 @@ class WorkflowPlan:
                     continue
                 _seen_given.add(inst.instance_id)
                 _given.append(inst)
+        if scope is not None:
+            for appl, step in steps.items():
+                _sc = scope[id(appl)]
+                if len(_sc) == n_cases: continue
+                step.excluded_given = sorted({
+                    inst.instance_id for inst in _given
+                    if not (cases.inst_cases.get(inst.instance_id, set()) & _sc)
+                })
         dropped_targets = []
         for d, nm in dep_to_name.items():
             if d not in resolved_deps:

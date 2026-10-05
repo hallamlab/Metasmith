@@ -1138,6 +1138,17 @@ class Orchestrator {
         )
     }
 
+    // The stream without every item descended from one of `ids`: a step that
+    // runs for some samples only reads its inputs through this.
+    public def exclude(stream, List ids) {
+        def (name, _stream) = stream
+        this._assertUnsealed("exclude from [${name}]")
+        def drop = new HashSet(ids)
+        return new Tuple2(name, _stream.filter((index, item) -> {
+            return !stripReserved(index).any((k, v) -> v instanceof List && v.any((h) -> h in drop))
+        }))
+    }
+
     // public def unify(streams) {
     //     return streams
     //     .collect((stream) -> { // map
