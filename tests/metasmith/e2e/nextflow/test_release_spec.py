@@ -266,6 +266,46 @@ def test_a_sample_starts_once_its_whole_subtree_is_done(ws, rng, depth, slow_hop
         assert_slot(pc[s], 1, count=prod(fans[s]))
 
 
+# Q5, for an input grouped by an ancestor of the consumer's key: E5's
+# assembly_stats, grouped by the read set but consuming the assembly, feeding
+# binners grouped by the assembly.
+def test_a_sample_starts_when_its_input_was_grouped_by_an_ancestor_key(ws):
+    ws.given("reads", SAMPLES)
+    ws.spec("p01", label="asm")
+    ws.spec("p02", label="stats", slow={SLOW: SLOW_S})
+    ws.spec("p03", label="bins")
+
+    result = ws.run("upstream_key_input.nf")
+    assert_ok(result)
+
+    slow = result.completed("p02", SLOW)
+    assert_slow_task_was_slow(result, "p02", SLOW, SLOW_S)
+    for s in FAST:
+        assert_runs_ahead(result, result.completed("p03", s), slow)
+    p03 = result.members("p03", set(SAMPLES))
+    for s in SAMPLES:
+        assert_slot(p03[s], 0, names={product(s, "asm")})
+        assert_slot(p03[s], 1, names={product(s, "stats")})
+
+
+# The same shape over a coassembly: every read set's member yields a stats item
+# of the one coassembly, so its consumer holds all of them, however they arrive.
+def test_a_coassembly_consumer_holds_every_read_sets_input_grouped_by_reads(ws):
+    ws.given("cfg", ["c"])
+    ws.given("reads", SAMPLES)
+    ws.spec("p01", label="coasm", by="cfg")
+    ws.spec("p02", label="stats", slow={SLOW: SLOW_S})
+    ws.spec("p03", label="bins", by="cfg")
+
+    result = ws.run("upstream_key_coassembly.nf")
+    assert_ok(result)
+
+    assert_slow_task_was_slow(result, "p02", SLOW, SLOW_S)
+    p03 = result.members("p03", {"c"})
+    assert_slot(p03["c"], 0, names={product("c", "coasm")})
+    assert_slot(p03["c"], 1, names={product(s, "stats") for s in SAMPLES})
+
+
 # ------------------------------------------------------------------- batching
 
 

@@ -190,6 +190,14 @@ leaves once its items cover the whole tree below it:
 2. Each post's level carries one `n`.
 3. The ordinals at every level are exactly `0..n-1`.
 
+A route also ends at a post grouped by an ancestor of the key. An example is assembly stats
+grouped by the read set, joined on the assembly. Such an item must carry exactly one hash of
+that ancestor. A key value carries every ancestor hash it descends from, and so does every item
+made from it. So a key value that reached two ancestor members, as a coassembly reaches one
+member per read set, marks each of their items with both hashes. Those items wait for close.
+Without that check, the first read set's item would release the coassembly, and the next one
+would arrive for a key that already left.
+
 A route that crosses a post with no `group_by`, such as a given or a step with no inputs, has no
 count to check, so its keys wait for the stream to close. The close flush is unconditional,
 because `errorStrategy 'ignore'` drops a task whose chain then never completes. `SIBS` is

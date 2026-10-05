@@ -152,54 +152,72 @@ class Orchestrator {
     }
 
     // Which posts a key's items of `stream` can arrive through, as
-    // {by-stream: ["<stream>#<post>", ...]}: the posts that consume each
-    // by-stream on the way down from `key`. Every post of `stream` is a route,
-    // and so is every post of each stream one of them was grouped by, up to
-    // the posts grouped by `key`. A post grouped by nothing (a given, or a
-    // post with no group) is a route nothing can count, so the stream has no
-    // route and only flushes at close.
+    // [root: <stream>, expected: {by-stream: ["<stream>#<post>", ...]}]: the
+    // posts that consume each by-stream on the way down from the root. Every
+    // post of `stream` is a route, and so is every post of each stream one of
+    // them was grouped by, up to the posts grouped by `key` or by an ancestor
+    // of it, whichever comes first; that stream is the root, and there must be
+    // exactly one. A post grouped by nothing (a given, or a post with no
+    // group) is a route nothing can count, so the stream has no route and
+    // only flushes at close.
     private Map _routes(String stream, String key) {
         this._assertSealed("the routes of [${stream}] under [${key}]")
         def cached = this.routes.computeIfAbsent("${stream}\u0000${key}" as String, (x) -> {
             def expected = [:]
+            def roots = new HashSet()
             def visited = new HashSet()
             def todo = [stream]
             while (!todo.isEmpty()) {
                 def m = todo.remove(todo.size() - 1)
                 if (!visited.add(m)) continue
                 def posts = this.posts_of.get(m)
-                if (m == key || posts == null || posts.isEmpty()) return NO_ROUTE
+                if (m == key || this.isParent(m as String, key) || posts == null || posts.isEmpty()) return NO_ROUTE
                 for (p : new ArrayList(posts)) {
                     def by = p[1]
                     if (by == null) return NO_ROUTE
                     expected.computeIfAbsent(by, (y) -> new HashSet()).add("${m}#${p[0]}" as String)
-                    if (by != key) todo.add(by)
+                    if (by == key || this.isParent(by as String, key)) roots.add(by)
+                    else todo.add(by)
                 }
             }
-            return expected
+            return roots.size() == 1 ? [root: roots.first(), expected: expected] : NO_ROUTE
         })
         return cached.is(NO_ROUTE) ? null : cached
     }
 
     // The path an item may be released on for join key `key`: its chain from
-    // the last level grouped by `key`, or null when it may only flush at
-    // close. The member at that level is the one member for the key value
-    // (one per route); every later level is a fan-out below it. The item must
-    // also carry exactly one `key` hash: a member that pulled in another key's
-    // item stamps every output with both hashes, which fails this on both
-    // sides. The registry is read last, so an unstamped item (a given, which
-    // may flow during the body) never reads it.
+    // the last level grouped by the route's root, or null when it may only
+    // flush at close. The member at that level is the one member for the key
+    // value (one per route); every later level is a fan-out below it. The item
+    // must also carry exactly one `key` hash: a member that pulled in another
+    // key's item stamps every output with both hashes, which fails this on
+    // both sides.
+    //
+    // A root above `key` (assembly stats grouped by the read set, joined on
+    // the assembly) also needs exactly one root hash. A key value carries
+    // every root hash it descends from, and so does every item made from it,
+    // so a key value that reached two root members marks each of their items
+    // with both. One root hash therefore means one root member.
+    //
+    // The registry is read after the item checks, so an unstamped item (a
+    // given, which may flow during the body) never reads it.
     private List _releasePath(String name, String key, Map index) {
         def chain = index[SIBS_KEY]
         if (!(chain instanceof List) || chain.isEmpty()) return null
         def hashes = index[key]
         if (!(hashes instanceof List) || hashes.size() != 1) return null
-        def root = chain.findLastIndexOf((l) -> l instanceof List && l.size() == 5 && l[2] == key)
+        def route = this._routes(name, key)
+        if (route == null) return null
+        def root_by = route.root
+        if (root_by != key) {
+            def root_hashes = index[root_by]
+            if (!(root_hashes instanceof List) || root_hashes.size() != 1) return null
+        }
+        def root = chain.findLastIndexOf((l) -> l instanceof List && l.size() == 5 && l[2] == root_by)
         if (root < 0) return null
         def path = new ArrayList(chain.subList(root, chain.size()))
         if (path[-1][0] != name) return null
-        def expected = this._routes(name, key)
-        if (expected == null) return null
+        def expected = route.expected
         def wired = path.withIndex().every((l, j) -> {
             if (!(l instanceof List) || l.size() != 5) return false
             if (j > 0 && l[2] != path[j - 1][0]) return false
@@ -235,8 +253,8 @@ class Orchestrator {
 
     private Closure _wholeFor(String stream, String key) {
         return (List paths) -> {
-            def expected = this._routes(stream, key)
-            return expected != null && _whole(paths, 0, key, stream, expected)
+            def route = this._routes(stream, key)
+            return route != null && _whole(paths, 0, route.root as String, stream, route.expected)
         }
     }
 
