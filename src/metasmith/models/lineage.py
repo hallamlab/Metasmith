@@ -251,6 +251,7 @@ class InvocationEvent:
     step_order: Optional[int] = None
     step_name: Optional[str] = None
     cache_key: Optional[str] = None
+    cases: Optional[list[str]] = None
     schema_version: int = INVOCATION_EVENT_SCHEMA_VERSION
 
     def to_dict(self) -> dict:
@@ -276,6 +277,7 @@ class InvocationEvent:
             "step_order",
             "step_name",
             "cache_key",
+            "cases",
         ):
             v = getattr(self, k)
             if v is None:
@@ -318,6 +320,7 @@ class InvocationEvent:
             step_order=raw.get("step_order"),
             step_name=raw.get("step_name"),
             cache_key=raw.get("cache_key"),
+            cases=raw.get("cases"),
             schema_version=raw["schema_version"],
         )
 

@@ -7,6 +7,9 @@
 # A member's token is its by-hash and its cases (mocks.nf), so every assertion
 # on a token is also an assertion on the tag the member carries.
 
+import json
+from pathlib import Path
+
 from tests.metasmith.e2e.nextflow.harness import assert_ok, assert_slot, product, reads
 
 HEAD = [
@@ -129,3 +132,28 @@ def test_a_shared_read_set_runs_each_lane_once_and_keeps_the_lanes_apart(ws):
         assert_slot(p08[token], 0, names={product(token, lane)})
         assert_slot(p08[token], 1, names={product("r~A+B", "st")})
     assert p07
+
+
+# A hit never runs its task, so the hit log is the only record of its cases.
+def test_a_cache_hit_logs_the_cases_of_its_member(ws):
+    _study(ws, "rA", "rB")
+    ws.shard("rB", product("rB~B", "vc"))
+    ws.params["helper"] = ["python3", ws.path("helpers", "cache_helper.py"), ws.path("shards"), "rB"]
+    vc_line = next(i for i, ln in enumerate(HEAD) if ln.startswith("_vc = "))
+    head = [ln.replace(" } from", "; mock_cached as p03_cached } from") for ln in HEAD[:vc_line]] + [
+        "(__miss_3, __hit_3) = o.group('asm', [_asm], k, 1, [",
+        "    tk: 'tk-vc', sig: 'sig-vc', slk: ['asm'],",
+        f"    cache_root: \"{ws.path('shards')}\", cacheable: true,",
+        f"    helper: params.helper, hits_log: \"{ws.path('hits.jsonl')}\",",
+        "    step: 3, step_name: 'vc',",
+        "])",
+        "_vc = (o.post(o.mixOuts(o.asStreams(p03(__miss_3)), o.asStreams(p03_cached(__hit_3))), k, ['slot-vc']))[0]",
+    ] + HEAD[vc_line + 1:]
+    result = ws.run(script="\n".join(head + TAIL) + "\n")
+    assert_ok(result)
+
+    result.members("p03", {"rA~A"})
+    result.members("p03_cached", {"rB"})
+    (hit,) = [json.loads(ln) for ln in Path(ws.path("hits.jsonl")).read_text().splitlines()]
+    assert hit["cases"] == ["B"]
+    assert "CASES" not in hit["entry"]

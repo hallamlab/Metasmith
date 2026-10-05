@@ -265,3 +265,48 @@ def test_a_slot_with_no_name_promotes_anyway(tmp_path):
     assert records[0]["status"] == "promoted"
     manifest = read_manifest(shard_dir(cache_root, KEY))
     assert [f["dtype_name"] for f in manifest["files"]] == [""]
+
+
+def test_a_members_cases_reach_its_record_and_trace_but_never_its_shard_or_key(tmp_path):
+    import json
+
+    from metasmith.caching.invocation import consumed_of, read_manifest
+    from metasmith.caching.promote import CACHE_HITS_LOG, record_run
+    from metasmith.models.workflow.payload import member_token
+    from metasmith.telemetry import TraceIndex
+
+    tagged = {**_entry(), LinPayload.CASES_KEY: ["A", "B"]}
+    assert consumed_of(tagged, META.channels) == consumed_of(_entry(), META.channels)
+    assert member_token(tagged) == member_token(_entry())
+    assert member_token({**tagged, LinPayload.KEY_KEY: "-"}) == member_token({**_entry(), LinPayload.KEY_KEY: "-"})
+
+    ws = tmp_path / "ws"
+    (ws / "nxf_work").mkdir(parents=True)
+    cache_root = tmp_path / "task_cache"
+    (record,) = promote_members(
+        cwd=_task_dir(ws / "nxf_work", "t1"), entries=[tagged], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+    assert record["status"] == "promoted" and record["cases"] == ["A", "B"]
+    assert LinPayload.CASES_KEY not in record["lineage"]
+    manifest = read_manifest(shard_dir(cache_root, KEY))
+    assert "cases" not in manifest and LinPayload.CASES_KEY not in (manifest.get("lineage") or {})
+
+    (ws / CACHE_HITS_LOG).parent.mkdir(parents=True, exist_ok=True)
+    (ws / CACHE_HITS_LOG).write_text(json.dumps(
+        {"step": 1, "step_name": "trA", "key": KEY, "shard": "", "entry": {}, "cases": ["B"]}
+    ) + "\n")
+    record_run(workspace=ws, cache_root=cache_root)
+    events = TraceIndex.read(ws / "_metasmith" / "trace.jsonl").events
+    assert sorted((e.status, e.cases) for e in events) == [("hit", ["B"]), ("promoted", ["A", "B"])]
+
+
+def test_an_untagged_member_records_no_cases(tmp_path):
+    from metasmith.models.lineage import InvocationEvent
+
+    (record,) = promote_members(
+        cwd=_task_dir(tmp_path, "t1"), entries=[_entry()], meta=META,
+        cache_root=tmp_path / "task_cache", successes=[True],
+    )
+    assert "cases" not in record
+    assert "cases" not in InvocationEvent(task_hash="h", transform_key="t", status="miss").to_dict()

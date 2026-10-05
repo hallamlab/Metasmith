@@ -224,6 +224,10 @@ def promote_members(
                 k: v for k, v in entry.items() if k not in LinPayload.RESERVED_KEYS
             },
         }
+        # The cases belong to this run, not to the product: they go on the
+        # record and never into the shard, which another run may hit.
+        if isinstance(entry.get(LinPayload.CASES_KEY), list):
+            record["cases"] = list(entry[LinPayload.CASES_KEY])
         if key_hex == "-" or not meta.cacheable:
             record["status"] = "uncacheable"
         elif not ok:
@@ -438,6 +442,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                         step_name=rec.get("step_name") or (meta.step_name if meta else ""),
                         cache_key=key_hex if key_hex != "-" else None,
                         work_dir=str(rec_file.parent),
+                        cases=rec.get("cases"),
                     ))
                 except Exception as e:
                     log.append(("warn", f"record {n} in {rec_file} not indexed: {e}"))
@@ -484,6 +489,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                         step_order=int(hit.get("step", 0)) or None,
                         step_name=hit.get("step_name") or (meta.step_name if meta else ""),
                         cache_key=key_hex,
+                        cases=hit.get("cases"),
                     ))
                 except Exception as e:
                     log.append(("warn", f"hit {key_hex[:8]} not indexed: {e}"))

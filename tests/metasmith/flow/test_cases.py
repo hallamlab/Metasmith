@@ -94,7 +94,8 @@ class Study:
     def stage(self, plan: WorkflowPlan, name: str) -> tuple[str, dict]:
         at = self.tmp_path / name
         at.mkdir()
-        BuiltPlan(plan=plan, data_library=self.lib, transform_libraries=[self.tr]).as_task().PrepareNextflow(
+        self.task = BuiltPlan(plan=plan, data_library=self.lib, transform_libraries=[self.tr]).as_task()
+        self.task.PrepareNextflow(
             NextflowGenContext(
                 workflow_file=AgentPaths.NXF_WORKFLOW, work_dir=at, external_work=at,
                 home_dir=at / "home", external_home=at / "home",
@@ -239,6 +240,70 @@ def test_a_single_case_stages_no_case_machinery(tmp_path):
     body, lineage = st.stage(plan, "ws")
     assert not re.search(r"o\.cases\(|__cases_|seedCases|'CASES'", body)
     assert "cases" not in lineage
+
+
+def _collect(st: Study, plan: WorkflowPlan, events: list[tuple[str, list[str] | None, list[str]]]) -> tuple[DataInstanceLibrary, dict]:
+    from metasmith.agents.collect import CollectResults
+    from metasmith.models.lineage import InvocationEvent, ProducedFile, append_invocation_event
+
+    st.stage(plan, "ws")
+    at = st.tmp_path / "ws"
+    trace = at / "_metasmith" / "trace.jsonl"
+    trace.parent.mkdir(exist_ok=True)
+    fids = {}
+    for name, cases, parents in events:
+        (step,) = steps_of(plan, name)
+        out = step.produces[0][0]
+        fids[name] = f"f-{name}"
+        append_invocation_event(trace, InvocationEvent(
+            task_hash=f"h-{name}", transform_key=name, status="miss",
+            produces=[ProducedFile(
+                file_instance_id=fids[name], slot_id=out.instance_id, path=f"{name}.out",
+                dtype_key=out.dtype.key, parents=[fids.get(p) or p for p in parents],
+            )],
+            step_order=plan.steps.index(step) + 1, cases=cases,
+        ))
+    output = CollectResults(task=st.task, output_path=at / "results", inputs_dir=at / "inputs")
+    return output, fids
+
+
+def test_results_record_the_cases_of_every_item(tmp_path):
+    st = Study(tmp_path, _ab_items(shared_reads=False))
+    plan = st.plan(VIROMICS, [
+        case("A", [st.sample("studyX.json", "a/short.fq")], *VOTU_ONLY),
+        case("B", [st.sample("studyX.json", "b/short.fq", "b/long.fq")], *HYBRID_VOTU_CHECKV),
+    ])
+    given = {str(x.path): x.instance_id for x in plan.given}
+    output, _ = _collect(st, plan, [
+        ("megahit", ["A"], [given["a/short.fq"]]),
+        ("votu", ["A", "B"], [given["studyX.json"], "megahit"]),
+    ])
+
+    def cases_of(lib: DataInstanceLibrary, name: str) -> list[str]:
+        (path,) = [p for p in lib.manifest if p.name == name]
+        return lib.cases[path]
+
+    reloaded = DataInstanceLibrary.Load(output.location)
+    for lib in (output, reloaded):
+        assert cases_of(lib, "megahit.out") == ["A"]
+        assert cases_of(lib, "votu.out") == ["A", "B"]
+        assert cases_of(lib, "short.fq") == ["A"]
+        assert cases_of(lib, "studyX.json") == ["A", "B"]
+
+    rows = (output.location / "given.csv").read_text().splitlines()
+    assert rows[0] == "instance_id,dtype_key,path,origin,cases"
+    by_path = {r.split(",")[2].split("samples.xgdb/")[-1]: r.split(",")[-1] for r in rows[1:]}
+    assert by_path == {"studyX.json": "A;B", "a/short.fq": "A", "b/short.fq": "B", "b/long.fq": "B"}
+
+
+def test_a_single_case_run_records_no_cases(tmp_path):
+    st = Study(tmp_path, _ab_items(shared_reads=False))
+    plan = st.plan(VIROMICS, [case("A", [st.sample("studyX.json", "a/short.fq")], *VOTU_ONLY)])
+    given = {str(x.path): x.instance_id for x in plan.given}
+    output, _ = _collect(st, plan, [("megahit", None, [given["a/short.fq"]])])
+    assert output.cases == {}
+    assert "cases" not in (output.location / "_metadata" / "index.yml").read_text()
+    assert (output.location / "given.csv").read_text().splitlines()[0] == "instance_id,dtype_key,path,origin"
 
 
 def test_each_case_is_valid_alone_and_matches_its_merged_plan(tmp_path):

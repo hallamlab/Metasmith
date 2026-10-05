@@ -1145,10 +1145,12 @@ class Orchestrator {
         if (cache.hits_log == null) return
         def f = new File(cache.hits_log as String)
         f.parentFile?.mkdirs()
-        f << JsonOutput.toJson([
+        def line = [
             step: cache.step, step_name: cache.step_name, key: key, shard: shard,
             entry: index.findAll((k, v) -> k != FILES_KEY && k != SIBS_KEY && k != CASES_KEY),
-        ]) << "\n"
+        ]
+        if (index[CASES_KEY] instanceof List) line.cases = index[CASES_KEY]
+        f << JsonOutput.toJson(line) << "\n"
     }
 
     private def _collateHits(rows) {
