@@ -87,6 +87,7 @@ CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_ass
 SCALED = {
     "seqkit_reads": (2, 4, 1),
     "bbduk": (4, 16, 2),
+    "assembly_stats": (16, 64, 24),  # two deep Pratama 2022 samples ran 36 h at 4 cpus, CPU-bound in minimap2
     "megahit": (16, 64, 12),
     "megahit_draft": (16, 64, 12),
     "deepvirfinder": (8, 64, 6),   # batch 0: a CAMI hybrid contig batch OOMed at 32 GB after 6 h
