@@ -96,14 +96,12 @@ SCALED = {
     "votu_cluster": (16, 128, 6),
 }
 # COMEBin's first-attempt (cpus, GB, hours) per shape, on the CPU account; a retry doubles memory and time.
-# The transform's CPU patch bins a CAMI short-read sample in 46 min at 12 cpus with a 3 GB peak, against
-# 53 min plus a 16 h queue on a MIG slice. A training step takes 1.23 s per 1,024-contig batch at 12 cpus,
-# 1.01 s at 24 and 0.79 s at 48, so the large shapes take 24 for most of the speed at half the queue. Hours
-# are 1.5 x (0.75 h + batches per epoch x 200 epochs x 1.0 s): ~10 h for Pratama short reads, 16 h for a
-# 180K-contig hybrid and for metaGEM's split pairs, whose MIG slice was budgeted the same 12 h.
+# The transform's CPU patch trains a ~97K-contig Pratama sample at 27.7 s/epoch on 24 cpus and 25.8 s on 48,
+# so every shape takes 24. That sample runs all 200 epochs in ~2 h with a 5.6 GB peak; a CAMI sample takes
+# ~17 min at 12 cpus. Hours are about 2x the measured run, 3x for the shapes with ~180K-contig assemblies.
 COMEBIN = {
-    "cami_pe": (12, 16, 3), "cami_hybrid_ont": (12, 16, 3), "cami_long_pacbio": (12, 16, 5), "metagem_se": (12, 16, 2),
-    "pratama_pe": (24, 32, 10), "pratama_hybrid_ont": (24, 32, 16), "metagem_pe_split": (24, 32, 16),
+    "cami_pe": (24, 16, 2), "cami_hybrid_ont": (24, 16, 2), "cami_long_pacbio": (24, 16, 3), "metagem_se": (24, 16, 2),
+    "pratama_pe": (24, 32, 4), "pratama_hybrid_ont": (24, 32, 6), "metagem_pe_split": (24, 32, 6),
 }
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
 # Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
