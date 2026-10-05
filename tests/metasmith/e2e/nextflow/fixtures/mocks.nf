@@ -17,6 +17,8 @@
 //   empty    [sample, ...]       emit zero files on branch 2 (mock1_2 only)
 // A "sample" is the member's `reads` hashes joined with '+', which the
 // fixtures seed as readable ids, so a collector member reads "s0+s1+s2".
+// A member's token is its `by` hashes, then `~` and its cases when it has
+// any, so two members of one by-item that serve different cases differ.
 //
 // Every task appends one line to `params.recv_log`:
 //   RECV|<alias>|<attempt>|<member tokens>|<slot 1 names>;<slot 2 names>;...
@@ -62,7 +64,7 @@ def mock_script(task, index, slots, branches) {
     def samples = samples_of(index)
     def by = spec.by ?: 'reads'
     def label = spec.label ?: task.process
-    def tokens = members.collect { m -> by_hashes(m, by) }
+    def tokens = members.collect { m -> by_hashes(m, by) + ((m.CASES instanceof List) ? '~' + m.CASES.join('+') : '') }
     def staged = slots.collect { s -> [s].flatten().collect { it.name }.sort() }
     def lines = [
         "echo 'RECV|${task.process}|${task.attempt}|${tokens.join(',')}|${staged.collect { it.join(',') }.join(';')}' >> ${params.recv_log}",

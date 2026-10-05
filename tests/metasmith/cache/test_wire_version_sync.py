@@ -65,7 +65,7 @@ def test_cache_epoch_and_wire_version_are_independent():
 
 
 _GROOVY_KEY_RE = re.compile(
-    r"public\s+static\s+final\s+String\s+(FILES_KEY|PROV_KEY|KEY_KEY|SIBS_KEY)\s*=\s*\"([^\"]+)\""
+    r"public\s+static\s+final\s+String\s+(FILES_KEY|PROV_KEY|KEY_KEY|SIBS_KEY|CASES_KEY)\s*=\s*\"([^\"]+)\""
 )
 
 
@@ -82,6 +82,7 @@ def test_groovy_reserved_keys_match_the_parser():
         "PROV_KEY": LinPayload.PROV_KEY,
         "KEY_KEY": LinPayload.KEY_KEY,
         "SIBS_KEY": LinPayload.SIBS_KEY,
+        "CASES_KEY": LinPayload.CASES_KEY,
     }, (
         f"Orchestrator.groovy declares {found}, but the parser expects "
         f"FILES_KEY={LinPayload.FILES_KEY!r} PROV_KEY={LinPayload.PROV_KEY!r} "
@@ -95,7 +96,7 @@ def test_groovy_reserved_keys_match_the_parser():
 def test_reserved_keys_are_the_set_lineage_index_filters():
     assert LinPayload.RESERVED_KEYS == {
         LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY,
-        LinPayload.SIBS_KEY,
+        LinPayload.SIBS_KEY, LinPayload.CASES_KEY,
     }
 
 
@@ -112,5 +113,5 @@ def test_the_orchestrator_strips_every_reserved_key_on_the_way_out():
         "propagate into every downstream index and into promoted shards"
     )
     reserved = src.split("public static final List RESERVED_KEYS = [")[1].split("]")[0]
-    for key in ("FILES_KEY", "PROV_KEY", "KEY_KEY", "SIBS_KEY"):
+    for key in ("FILES_KEY", "PROV_KEY", "KEY_KEY", "SIBS_KEY", "CASES_KEY"):
         assert key in reserved, f"RESERVED_KEYS does not list {key}"

@@ -3,12 +3,14 @@
 # plan the solver returns: givens posted parents first, each given row
 # carrying its whole ancestor closure, and `child2parent` holding the edges.
 #
-# The solver's Derived clause makes a product's lineage exactly what its step
-# consumed plus those endpoints' own parents, and an Endpoint's signature folds
-# that lineage in. So two steps codegen merges with o.mix always share one
+# Within one case, the solver's Derived clause makes a product's lineage exactly
+# what its step consumed plus those endpoints' own parents, and an Endpoint's
+# signature folds that lineage in. So two producers of one endpoint share one
 # ancestor closure, whatever each consumed directly. The mix tests below hold
-# that invariant and vary only what it leaves free: which streams each producer
-# read, what it was grouped by, and whether a member ran from the cache.
+# that and vary only what it leaves free: which streams each producer read,
+# what it was grouped by, and whether a member ran from the cache. A stream
+# that merges cases mixes producers of different lineage, which
+# tests/metasmith/e2e/nextflow/test_cases.py covers.
 
 import pytest
 

@@ -202,6 +202,7 @@ class Workspace:
         self.mount = "/ws" if image else str(root)
         self.lineage: dict[str, list[dict]] = {}
         self.child2parent: dict[str, set[str]] = {}
+        self.cases: dict[str, list[str]] = {}
         self.params: dict = {"spec": {}}
         root.mkdir(parents=True, exist_ok=True)
         (root / "lib").mkdir(exist_ok=True)
@@ -215,7 +216,11 @@ class Workspace:
     def path(self, *parts: str) -> str:
         return "/".join([self.mount, *parts])
 
-    def given(self, name: str, ids: list[str], parents: dict[str, str] | None = None) -> None:
+    def given(
+        self, name: str, ids: list[str], parents: dict[str, str] | None = None,
+        cases: dict[str, list[str]] | None = None,
+    ) -> None:
+        self.cases.update(cases or {})
         rows = []
         paths = []
         for i in ids:
@@ -248,6 +253,7 @@ class Workspace:
         (self.root / "workflow.lineage_of_given.json").write_text(json.dumps({
             "lineage": self.lineage,
             "child2parent": {k: sorted(v) for k, v in self.child2parent.items()},
+            **({"cases": self.cases} if self.cases else {}),
         }))
         params = {"recv_log": self.path("recv.log"), "late_dir": self.path("late"), **self.params}
         (self.root / "params.json").write_text(json.dumps(params))

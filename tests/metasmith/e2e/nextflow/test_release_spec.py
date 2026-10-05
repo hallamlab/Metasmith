@@ -447,3 +447,115 @@ def test_rerunning_after_the_fix_forms_the_dropped_group(ws):
 
     p03 = second.members("p03", set(SAMPLES))
     assert_slot(p03["s1"], 1, names={product("s1", "bins")})
+
+
+# ----------------------------------------------------- several cases in a run
+
+# s1 and s2 are case A, short reads alone. s0 is case B, short and long reads.
+# Each case has its own assembler, both posting into one assembly stream, and
+# p03 bins every assembly. p04 serves both cases and p05 serves A alone.
+CASES_HEAD = [
+    "include { given; mock1 as p01; mock2 as p02; mock1 as p03; mock2 as p04; mock2 as p05 } from './mocks.nf'",
+    "",
+    "workflow {",
+    "main:",
+    "o = new Orchestrator(Channel.fromList([null]))",
+    '_lf = new groovy.json.JsonSlurper().parseText(file("workflow.lineage_of_given.json").text)',
+    "l = _lf.lineage",
+    "o.seedParents(_lf.child2parent)",
+    "o.seedCases(_lf.cases)",
+]
+LANES_SCRIPT = "\n".join(CASES_HEAD + [
+    "_reads = (o.postIn([given(\"inputs/reads\", l)], [\"reads\"], ['A', 'B']))[0]",
+    "_long = (o.postIn([given(\"inputs/long\", l)], [\"long\"], ['B']))[0]",
+    "k = ['asm']",
+    "__cases_1 = ['A']",
+    "_asm_1 = (o.post(o.asStreams(p01(o.group('reads', [o.cases(_reads, __cases_1)], k, 1))), k, ['slot-asm-1']))[0]",
+    "k = ['asm']",
+    "__cases_2 = ['B']",
+    "_asm_2 = (o.post(o.asStreams(p02(o.group('reads', [o.cases(_reads, __cases_2), o.cases(_long, __cases_2)], k, 1))), k, ['slot-asm-2']))[0]",
+    "_asm = o.mix([_asm_1, _asm_2])",
+    "k = ['bins']",
+    "_bins = (o.post(o.asStreams(p03(o.group('asm', [_asm], k, 1))), k, ['slot-bins']))[0]",
+    "k = ['qc']",
+    "_qc = (o.post(o.asStreams(p04(o.group('reads', [_reads, _bins], k, 1))), k, ['slot-qc']))[0]",
+    "k = ['aq']",
+    "__cases_5 = ['A']",
+    "_aq = (o.post(o.asStreams(p05(o.group('reads', [o.cases(_reads, __cases_5), o.cases(_bins, __cases_5)], k, 1))), k, ['slot-aq']))[0]",
+    "o.seal()",
+    "}",
+]) + "\n"
+
+
+def _two_lanes(ws):
+    ws.given("reads", SAMPLES, cases={"s0": ["B"], "s1": ["A"], "s2": ["A"]})
+    ws.given("long", ["l0"], parents={"reads": "s0"}, cases={"l0": ["B"]})
+    ws.spec("p01", label="megahit")
+    ws.spec("p02", label="hybrid", slow={SLOW: SLOW_S})
+    ws.spec("p03", label="bins")
+    ws.spec("p04", label="qc")
+    ws.spec("p05", label="aq")
+    result = ws.run(script=LANES_SCRIPT)
+    assert_ok(result)
+    assert_slow_task_was_slow(result, "p02", SLOW, SLOW_S)
+    return result
+
+
+# B17. A step two cases share, below a stream each case fills from its own
+# assembler, starts a sample once that sample's own lane is done. The other
+# case's assembler never delivers for it, so it must not be waited on.
+def test_a_merged_step_starts_a_sample_once_its_own_lane_is_done(ws):
+    result = _two_lanes(ws)
+    slow = result.completed("p02", SLOW)
+    for s in FAST:
+        assert_runs_ahead(result, result.completed("p04", s), slow)
+    p04 = result.members("p04", {"s0~B", "s1~A", "s2~A"})
+    assert_slot(p04["s0~B"], 1, names={product("s0~B", "bins")})
+    for s in FAST:
+        assert_slot(p04[f"{s}~A"], 1, names={product(f"{s}~A", "bins")})
+
+
+# B18. A step for one case reads through `o.cases` and starts as early as a
+# step for every case.
+def test_a_case_filtered_step_starts_a_sample_once_its_own_lane_is_done(ws):
+    result = _two_lanes(ws)
+    slow = result.completed("p02", SLOW)
+    for s in FAST:
+        assert_runs_ahead(result, result.completed("p05", s), slow)
+    p05 = result.members("p05", {"s1~A", "s2~A"})
+    for s in FAST:
+        assert_slot(p05[f"{s}~A"], 1, names={product(f"{s}~A", "bins")})
+
+
+# B19. s0 arrives with an assembly and is its own case, so the given post into
+# the assembly stream serves only that case. The aligner starts every other
+# sample as soon as that sample's assembly is done.
+GIVEN_MIX_SCRIPT = "\n".join(CASES_HEAD + [
+    "_reads = (o.postIn([given(\"inputs/reads\", l)], [\"reads\"], ['G', 'R']))[0]",
+    "_asm_1 = (o.postIn([given(\"inputs/asm\", l)], [\"asm\"], ['G']))[0]",
+    "k = ['asm']",
+    "__cases_1 = ['R']",
+    "_asm_2 = (o.post(o.asStreams(p01(o.group('reads', [o.cases(_reads, __cases_1)], k, 1))), k, ['slot-asm']))[0]",
+    "_asm = o.mix([_asm_1, _asm_2])",
+    "k = ['bam']",
+    "_bam = (o.post(o.asStreams(p02(o.group('reads', [_reads, _asm], k, 1))), k, ['slot-bam']))[0]",
+    "o.seal()",
+    "}",
+]) + "\n"
+
+
+def test_a_given_post_into_a_mixed_stream_does_not_hold_other_cases_back(ws):
+    ws.given("reads", SAMPLES, cases={"s0": ["G"], "s1": ["R"], "s2": ["R"]})
+    ws.given("asm", ["a0"], parents={"reads": "s0"}, cases={"a0": ["G"]})
+    ws.spec("p01", label="asm", slow={"s1": SLOW_S})
+    ws.spec("p02", label="bam")
+    result = ws.run(script=GIVEN_MIX_SCRIPT)
+    assert_ok(result)
+
+    slow = result.completed("p01", "s1")
+    assert_slow_task_was_slow(result, "p01", "s1", SLOW_S)
+    assert_runs_ahead(result, result.completed("p02", "s2"), slow)
+    p02 = result.members("p02", {"s0~G", "s1~R", "s2~R"})
+    assert_slot(p02["s0~G"], 1, names={"asm_a0.txt"})
+    for s in ("s1", "s2"):
+        assert_slot(p02[f"{s}~R"], 1, names={product(f"{s}~R", "asm")})

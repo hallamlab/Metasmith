@@ -33,7 +33,13 @@ class Orchestrator {
     // cache key or manifest ever sees it. Kept in lockstep with
     // LinPayload.SIBS_KEY.
     public static final String SIBS_KEY = "SIBS"
-    public static final List RESERVED_KEYS = [FILES_KEY, PROV_KEY, KEY_KEY, SIBS_KEY]
+    // CASES is the list of cases an item serves, in a run of more than one
+    // case. postIn seeds it from the given-lineage file, a member takes it from
+    // its items (_caseMembers), and _post copies it onto every product. An
+    // item without it serves every case. Kept in lockstep with
+    // LinPayload.CASES_KEY.
+    public static final String CASES_KEY = "CASES"
+    public static final List RESERVED_KEYS = [FILES_KEY, PROV_KEY, KEY_KEY, SIBS_KEY, CASES_KEY]
 
     // Raised when a stream `classify()` proved to be a descendant of the
     // by-stream delivers an item whose index does not carry the by-key.
@@ -75,6 +81,16 @@ class Orchestrator {
     private Map child2parent
     private def one_null
     private List _dispatchLog
+    private Map cases_of = [:]
+    private List all_cases = []
+    // The cases each item hash serves, written as items are posted, so early
+    // release can read the cases of a join key's root item. A descendant
+    // arrives only after its root was posted, so the read always finds it.
+    private Map hash_cases
+    // The cases each post serves, as "<stream>#<post>", for a post whose step
+    // serves some cases only. A post missing here serves every case.
+    private Map post_cases
+    private List served_now = null
 
     // The release registries. Written only by the workflow body (group, post,
     // postIn, mix), read only by operator closures, and the seal between the
@@ -105,6 +121,8 @@ class Orchestrator {
         this.pending_by = new java.util.concurrent.ConcurrentHashMap()
         this.posts_of = new java.util.concurrent.ConcurrentHashMap()
         this.routes = new java.util.concurrent.ConcurrentHashMap()
+        this.hash_cases = new java.util.concurrent.ConcurrentHashMap()
+        this.post_cases = new java.util.concurrent.ConcurrentHashMap()
     }
 
     // The last statement of the workflow body.
@@ -131,24 +149,26 @@ class Orchestrator {
         }
     }
 
-    private synchronized List _countPost(String name, String by) {
+    private synchronized List _countPost(String name, String by, List served = null) {
         this._assertUnsealed("post of [${name}]")
         def posts = this.posts_of.computeIfAbsent(name, (x) -> Collections.synchronizedList(new ArrayList()))
         def post = [posts.size() + 1, by]
         posts.add(post)
+        if (served != null) this.post_cases["${name}#${post[0]}" as String] = served
         return post
     }
 
-    private synchronized String _takeGroupBy(String name) {
+    // [by, served] of the group() into `name` the next post follows.
+    private synchronized List _takeGroupBy(String name) {
         def queue = this.pending_by.get(name)
-        return (queue == null || queue.isEmpty()) ? null : queue.remove(0)
+        return (queue == null || queue.isEmpty()) ? [null, null] : queue.remove(0)
     }
 
-    private synchronized void _recordGroupBy(String target, String by) {
+    private synchronized void _recordGroupBy(String target, String by, List served) {
         this._assertUnsealed("group into [${target}]")
         def prev = this.group_by_of.putIfAbsent(target, by)
         if (prev != null && prev != by) this.group_by_of[target] = GROUP_BY_CONFLICT
-        this.pending_by.computeIfAbsent(target, (x) -> []).add(by)
+        this.pending_by.computeIfAbsent(target, (x) -> []).add([by, served])
     }
 
     // Which posts a key's items of `stream` can arrive through, as
@@ -159,11 +179,13 @@ class Orchestrator {
     // of it, whichever comes first; that stream is the root, and there must be
     // exactly one. A post grouped by nothing (a given, or a post with no
     // group) is a route nothing can count, so the stream has no route and
-    // only flushes at close.
+    // only flushes at close. In a run of several cases such a post is listed
+    // in `givens` instead, and blocks only the keys whose cases it serves.
     private Map _routes(String stream, String key) {
         this._assertSealed("the routes of [${stream}] under [${key}]")
         def cached = this.routes.computeIfAbsent("${stream}\u0000${key}" as String, (x) -> {
             def expected = [:]
+            def givens = []
             def roots = new HashSet()
             def visited = new HashSet()
             def todo = [stream]
@@ -174,15 +196,40 @@ class Orchestrator {
                 if (m == key || this.isParent(m as String, key) || posts == null || posts.isEmpty()) return NO_ROUTE
                 for (p : new ArrayList(posts)) {
                     def by = p[1]
-                    if (by == null) return NO_ROUTE
+                    if (by == null) {
+                        if (this.all_cases.isEmpty()) return NO_ROUTE
+                        givens.add("${m}#${p[0]}" as String)
+                        continue
+                    }
                     expected.computeIfAbsent(by, (y) -> new HashSet()).add("${m}#${p[0]}" as String)
                     if (by == key || this.isParent(by as String, key)) roots.add(by)
                     else todo.add(by)
                 }
             }
-            return roots.size() == 1 ? [root: roots.first(), expected: expected] : NO_ROUTE
+            return roots.size() == 1 ? [root: roots.first(), expected: expected, givens: givens] : NO_ROUTE
         })
         return cached.is(NO_ROUTE) ? null : cached
+    }
+
+    // A level is [stream, post, by, n, i], plus the member's cases in a run
+    // of more than one case.
+    private static boolean _isLevel(l) {
+        return l instanceof List && (l.size() == 5 || l.size() == 6)
+    }
+
+    private boolean _serves(String post, List cases) {
+        if (this.all_cases.isEmpty()) return true
+        def served = this.post_cases.get(post)
+        return served == null || served.any((c) -> c in cases)
+    }
+
+    // The cases of the root item an item of `name` is released under for
+    // `key`. Every case when the run has one, or the root is untagged.
+    private List _rootCases(String name, String key, Map index) {
+        def route = this._routes(name, key)
+        def hashes = (route == null) ? null : index[route.root]
+        def tag = (hashes instanceof List && hashes.size() == 1) ? this.hash_cases.get(hashes[0]) : null
+        return (tag == null) ? this.all_cases : tag
     }
 
     // The path an item may be released on for join key `key`: its chain from
@@ -213,13 +260,13 @@ class Orchestrator {
             def root_hashes = index[root_by]
             if (!(root_hashes instanceof List) || root_hashes.size() != 1) return null
         }
-        def root = chain.findLastIndexOf((l) -> l instanceof List && l.size() == 5 && l[2] == root_by)
+        def root = chain.findLastIndexOf((l) -> _isLevel(l) && l[2] == root_by)
         if (root < 0) return null
         def path = new ArrayList(chain.subList(root, chain.size()))
         if (path[-1][0] != name) return null
         def expected = route.expected
         def wired = path.withIndex().every((l, j) -> {
-            if (!(l instanceof List) || l.size() != 5) return false
+            if (!_isLevel(l)) return false
             if (j > 0 && l[2] != path[j - 1][0]) return false
             if (!(l[3] instanceof Integer) || !(l[4] instanceof Integer) || l[4] < 0 || l[4] >= l[3]) return false
             return expected.get(l[2])?.contains("${l[0]}#${l[1]}" as String) ?: false
@@ -231,30 +278,47 @@ class Orchestrator {
     // everything the routes promise below a node of stream `parent`: each post
     // that consumes `parent`, each with one n, ordinals exactly 0..n-1, and
     // each of those whole in turn until the levels reach `stream`.
-    private static boolean _whole(List paths, int depth, String parent, String stream, Map expected) {
-        def want = expected.get(parent)
+    //
+    // In a run of several cases, `cases` are those of the node below which
+    // the paths run. Only the posts serving one of them consume it, and one
+    // node can make a member per case set (_caseMembers). So each post must
+    // deliver members whose case sets split exactly the cases it owes the
+    // node, and each member must be whole on its own.
+    private boolean _whole(List paths, int depth, String parent, String stream, Map expected, List cases) {
+        def want = expected.get(parent)?.findAll((p) -> this._serves(p as String, cases)) as Set
         if (want == null) return false
         def by_post = paths.groupBy((p) -> "${p[depth][0]}#${p[depth][1]}" as String)
         if (by_post.keySet() != want) return false
         return by_post.every((post, ps) -> {
-            def ns = ps.collect((p) -> p[depth][3]).unique()
-            if (ns.size() != 1) return false
-            def n = ns[0] as int
-            def by_ord = ps.groupBy((p) -> p[depth][4])
-            if (by_ord.size() != n) return false
-            def name = ps[0][depth][0]
-            return by_ord.every((i, qs) -> {
-                if (name == stream) return qs.size() == 1 && qs[0].size() == depth + 1
-                if (qs.any((q) -> q.size() <= depth + 1)) return false
-                return _whole(qs, depth + 1, name as String, stream, expected)
+            def by_member = ps.groupBy((p) -> p[depth].size() > 5 ? p[depth][5] : null)
+            if (!this.all_cases.isEmpty()) {
+                def served = this.post_cases.get(post)
+                def owed = cases.findAll((c) -> served == null || c in served) as Set
+                def got = by_member.keySet().collectMany((cs) -> cs ?: [])
+                if (got.size() != (got as Set).size() || (got as Set) != owed) return false
+            }
+            return by_member.every((member_cases, mps) -> {
+                def ns = mps.collect((p) -> p[depth][3]).unique()
+                if (ns.size() != 1) return false
+                def n = ns[0] as int
+                def by_ord = mps.groupBy((p) -> p[depth][4])
+                if (by_ord.size() != n) return false
+                def name = mps[0][depth][0]
+                return by_ord.every((i, qs) -> {
+                    if (name == stream) return qs.size() == 1 && qs[0].size() == depth + 1
+                    if (qs.any((q) -> q.size() <= depth + 1)) return false
+                    return this._whole(qs, depth + 1, name as String, stream, expected, member_cases ?: cases)
+                })
             })
         })
     }
 
     private Closure _wholeFor(String stream, String key) {
-        return (List paths) -> {
+        return (List paths, List cases) -> {
             def route = this._routes(stream, key)
-            return route != null && _whole(paths, 0, route.root as String, stream, route.expected)
+            return route != null
+                && route.givens.every((g) -> !this._serves(g as String, cases))
+                && this._whole(paths, 0, route.root as String, stream, route.expected, cases)
         }
     }
 
@@ -283,12 +347,24 @@ class Orchestrator {
         }
     }
 
+    // Called once, before any postIn, so its maps are never written while
+    // an operator reads them.
+    public void seedCases(Map data) {
+        this.cases_of = new HashMap(data)
+        this.all_cases = data.values().flatten().unique().sort()
+    }
+
+    private List _casesOf(Map index) {
+        def tag = index[CASES_KEY]
+        return (tag instanceof List) ? tag : this.all_cases
+    }
+
     private synchronized def registerIndexHistory(String name, Map index) {
         def hist = this.index_history.get(name, Collections.synchronizedList(new ArrayList())) // sets if $name not in index_history
         hist.add(index)
     }
 
-    public List _post(streams, names, slot_ids) {
+    public List _post(streams, names, slot_ids, List cases = null) {
         // streams is a list of each of the channels produced:
         // output:
         //      tuple val(index),path("*i") <- stream 1
@@ -307,7 +383,10 @@ class Orchestrator {
         // Nextflow emits a task's outputs once, on success, and a member runs
         // in exactly one of a process and its `_cached` twin, so no second
         // tuple for the same member can follow.
-        def posts = names.collect { n -> this._countPost(n as String, this._takeGroupBy(n as String)) }
+        def posts = names.collect { n ->
+            def (by, served) = this._takeGroupBy(n as String)
+            return this._countPost(n as String, by as String, (served ?: cases) as List)
+        }
         return [names, streams, slot_ids, posts].transpose().collect((name, stream, slot_id, post) -> {
             def sid = (slot_id == null || slot_id == "") ? name : slot_id
             def (post_id, by) = post
@@ -330,10 +409,16 @@ class Orchestrator {
                         def out = [:] + index
                         out[name] = [v]
                         out.remove(SIBS_KEY)
+                        if (cases != null && !(out[CASES_KEY] instanceof List)) out[CASES_KEY] = cases
                         if (by != null) {
                             def prior = (chain instanceof List) ? chain : []
-                            out[SIBS_KEY] = prior + [[name, post_id, by, n, i]]
+                            // One by-item can make a member per case set
+                            // (_caseMembers), so the level names the set.
+                            def level = [name, post_id, by, n, i]
+                            if (out[CASES_KEY] instanceof List) level = level + [out[CASES_KEY]]
+                            out[SIBS_KEY] = prior + [level]
                         }
+                        if (out[CASES_KEY] instanceof List) this.hash_cases[v] = out[CASES_KEY]
                         this.registerIndexHistory(name, out)
                         return [out, item]
                     })
@@ -342,19 +427,20 @@ class Orchestrator {
         })
     }
 
-    public List post(streams, names, slot_ids = null) {
+    public List post(streams, names, slot_ids = null, List cases = null) {
         def sids = (slot_ids == null) ? names.collect { null } : slot_ids
-        return this._post(_debatch(streams), names, sids)
+        return this._post(_debatch(streams), names, sids, cases)
     }
 
-    public List postIn(streams, names) {
+    // `served`, in a run of several cases, is every case the given items serve.
+    public List postIn(streams, names, List served = null) {
         // Leaves (given inputs). The per-file identity is the leaf's canonical
         // instance_id, threaded in from the Python given-lineage seed under
         // SELF_ID_KEY and relocated here to index[name] — byte-identical to
         // the off-channel instance_id (single point of provenance). Direct/test
         // callers that pass no seed fall back to the full-path md5 so the id
         // stays deterministic and per-file.
-        names.each { n -> this._countPost(n as String, null) }
+        names.each { n -> this._countPost(n as String, null, served) }
         return [names, streams].transpose().collect((name, stream) -> {
             return new Tuple2(
                 name,
@@ -367,6 +453,11 @@ class Orchestrator {
                         index.remove(SIBS_KEY)
                         def self_id = index.remove(SELF_ID_KEY)
                         index[name] = (self_id != null) ? self_id : ["$item".md5()]
+                        def tag = (self_id instanceof List && self_id.size() == 1) ? this.cases_of[self_id[0]] : null
+                        if (tag != null) {
+                            index[CASES_KEY] = tag
+                            this.hash_cases[self_id[0]] = tag
+                        }
                         this.registerIndexHistory(name, index)
                         return [index, item]
                     })
@@ -450,8 +541,8 @@ class Orchestrator {
             this.whole = whole
         }
 
-        // True when this item completes h.
-        synchronized boolean add(h, item, String item_hash, List path) {
+        // True when this item completes h. `cases` are those of h's root item.
+        synchronized boolean add(h, item, String item_hash, List path, List cases) {
             if (this.seen.get(h)?.contains(item_hash)) return false
             if (this.complete.contains(h)) {
                 throw new LineageViolation(
@@ -482,7 +573,7 @@ class Orchestrator {
             }
             def ps = this.paths.computeIfAbsent(h, x -> [])
             ps.add(path)
-            if (this.whole.call(ps)) {
+            if (this.whole.call(ps, cases)) {
                 this.complete.add(h)
                 return true
             }
@@ -587,13 +678,16 @@ class Orchestrator {
     // process-wide (local.nf, slurm.nf), so a dropped task means a key whose
     // stamps never complete, and that must degrade to a late flush rather
     // than a hang.
-    private def _grouped(by, streams, targets) {
+    private def _grouped(by, streams, targets, List lanes = []) {
         def parents = streams.collect((k, s) -> k) as Set
+        // The o.cases calls among this group's arguments ran just before it.
+        def served = this.served_now
+        this.served_now = null
         for (t : targets) {
             def existing = this.child2parent.get(t, java.util.concurrent.ConcurrentHashMap.newKeySet())
             existing.addAll(parents)
             this.child2parent[t] = existing
-            this._recordGroupBy(t as String, by as String)
+            this._recordGroupBy(t as String, by as String, served)
         }
 
         def original_order = streams.collect(s -> s[0]).withIndex().collectEntries((item, i) -> [item, i])
@@ -758,9 +852,10 @@ class Orchestrator {
                     }
                     def item_hash = "$_value".md5()
                     def stamp = this._releasePath(_name as String, by_name as String, _index)
+                    def root_cases = (stamp == null) ? null : this._rootCases(_name as String, by_name as String, _index)
                     def ready = []
                     by_hashes.each((h) -> {
-                        if (bags.add(h, item, item_hash, stamp)) {
+                        if (bags.add(h, item, item_hash, stamp, root_cases)) {
                             ready.add(new Tuple2([h], bags.bag(h)))
                         }
                     })
@@ -854,7 +949,8 @@ class Orchestrator {
                     }
                     def item_hash = "$_value".md5()
                     def stamp = this._releasePath(_name as String, anc_key, _index)
-                    def completed = anc_hashes.findAll((h) -> bags.add(h, item, item_hash, stamp))
+                    def root_cases = (stamp == null) ? null : this._rootCases(_name as String, anc_key, _index)
+                    def completed = anc_hashes.findAll((h) -> bags.add(h, item, item_hash, stamp, root_cases))
                     return release(completed.collectMany((h) -> waiting_on.getOrDefault(h, [])))
                 })
             }
@@ -915,35 +1011,63 @@ class Orchestrator {
             })
         })
         // .view(v -> by_name=='b'? "^ $v" : null)
-        .map((_result) -> { // we are a channel now, so we can map()
+        .flatMap((_result) -> { // we are a channel now
             // each channel is [key, name, group]
             _result = _result.sort((a, b) -> { // back to original order
                 return original_order[a[1]] <=> original_order[b[1]]
             })
-            def groups = _result.collect(channel -> channel[-1]) 
-            groups.collect(channel -> channel.collect(xx -> {
-                def (key, name, gg) = xx
-                // println(" . $by_name // $key // $name // $gg")
-            }))
-            // Per-item indexes, kept UN-flattened. combineIndexes unions and
-            // uniques these into one map, which is the right answer for the
-            // task's own lineage and destroys the only record of which item
-            // came from where. Built from the same `groups` in the same
-            // closure as `values` below, so PROV[s][i] describes values[s][i]
-            // by construction rather than by an ordering to maintain.
-            // Defensive copy: these maps are the ones _post handed out and are
-            // also held by index_history, and the task serialises them -- the
-            // shared-collection race the .view/formatMap trap is made of.
-            // stripReserved makes the copy and drops the sibling stamp, which
-            // the cache member key reads PROV for and must never see.
-            def per_item = groups.collect(channel -> channel.collect(group -> stripReserved(group[0])))
-            def common_index = this.combineIndexes(per_item.flatten())
-            def values = groups.collect(channel -> channel.collect(group -> group[-1]))
-            common_index[PROV_KEY] = per_item
-            def by_chain = _result.find((xx) -> xx[1] == by_name)?.getAt(2)?.getAt(0)?.getAt(0)?.get(SIBS_KEY)
-            if (by_chain instanceof List) common_index[SIBS_KEY] = by_chain
-            return [common_index, *values]
+            return this._caseMembers(_result, by_name as String, lanes).collect((member) -> {
+                def (parts, tag) = member
+                def groups = parts.collect(channel -> channel[-1])
+                // Per-item indexes, kept UN-flattened. combineIndexes unions and
+                // uniques these into one map, which is the right answer for the
+                // task's own lineage and destroys the only record of which item
+                // came from where. Built from the same `groups` in the same
+                // closure as `values` below, so PROV[s][i] describes values[s][i]
+                // by construction rather than by an ordering to maintain.
+                // Defensive copy: these maps are the ones _post handed out and are
+                // also held by index_history, and the task serialises them -- the
+                // shared-collection race the .view/formatMap trap is made of.
+                // stripReserved makes the copy and drops the sibling stamp, which
+                // the cache member key reads PROV for and must never see.
+                def per_item = groups.collect(channel -> channel.collect(group -> stripReserved(group[0])))
+                def common_index = this.combineIndexes(per_item.flatten())
+                def values = groups.collect(channel -> channel.collect(group -> group[-1]))
+                common_index[PROV_KEY] = per_item
+                def by_chain = parts.find((xx) -> xx[1] == by_name)?.getAt(2)?.getAt(0)?.getAt(0)?.get(SIBS_KEY)
+                if (by_chain instanceof List) common_index[SIBS_KEY] = by_chain
+                if (tag != null) common_index[CASES_KEY] = tag
+                return [common_index, *values]
+            })
         })
+    }
+
+    // The members one by-item makes, each as [parts, cases]. A single-case
+    // run makes one, untagged. Otherwise a slot keeps the items that serve a
+    // case of the by-item, and a member serves the cases every slot still
+    // serves. A lane slot is one each case reads from its own producer, so it
+    // is read per case: cases that see the same lane items share a member,
+    // and a by-item two cases share never pools both lanes into one task.
+    // Every other slot pools what the by-item's cases bring, which is how one
+    // study-wide step serves several cases at once.
+    private List _caseMembers(List parts, String by_name, List lanes) {
+        if (this.all_cases.isEmpty()) return [[parts, null]]
+        def by_cases = this._casesOf(parts.find((xx) -> xx[1] == by_name)[2][0][0] as Map)
+        def serving = (List items, List cs) -> items.findAll((x) -> this._casesOf(x[0] as Map).any((c) -> c in cs))
+        def kept = parts.collect((xx) -> xx[1] == by_name ? xx : [xx[0], xx[1], serving(xx[2], by_cases)])
+        def views = [:]
+        by_cases.each((c) -> {
+            def view = kept.collect((xx) -> (xx[1] in lanes) ? [xx[0], xx[1], serving(xx[2], [c])] : xx)
+            def seen = view.collect((xx) -> xx[2].collect((x) -> "${x[-1]}".md5()).sort())
+            views.computeIfAbsent(seen, (k) -> [view, []])[1].add(c)
+        })
+        return views.values()
+            .findAll((vc) -> vc[0].every((xx) -> !xx[2].isEmpty()))
+            .collect((vc) -> {
+                def (view, cs) = vc
+                return [view, cs.findAll((c) -> view.every((xx) -> !serving(xx[2], [c]).isEmpty()))]
+            })
+            .findAll((vc) -> !vc[1].isEmpty())
     }
 
     public def group(by, streams, targets, batch_size) {
@@ -962,8 +1086,9 @@ class Orchestrator {
     // emits. A miss batch feeds the real process; a hit batch feeds its
     // `_cached` twin as [indexes, sources], where each source is
     // [position, shard file, name without its position].
-    public def group(by, streams, targets, batch_size, Map cache) {
-        return this._route(batch_size, this._grouped(by, streams, targets), cache)
+    // `lanes` names the slots _caseMembers reads per case.
+    public def group(by, streams, targets, batch_size, Map cache, List lanes = []) {
+        return this._route(batch_size, this._grouped(by, streams, targets, lanes), cache)
     }
 
     // One helper call per batch decides every member of it. The Python side
@@ -1022,7 +1147,7 @@ class Orchestrator {
         f.parentFile?.mkdirs()
         f << JsonOutput.toJson([
             step: cache.step, step_name: cache.step_name, key: key, shard: shard,
-            entry: index.findAll((k, v) -> k != FILES_KEY && k != SIBS_KEY),
+            entry: index.findAll((k, v) -> k != FILES_KEY && k != SIBS_KEY && k != CASES_KEY),
         ]) << "\n"
     }
 
@@ -1097,7 +1222,7 @@ class Orchestrator {
                 // while index is a list of indexes
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
-                indexes = indexes.collect(index -> Orchestrator.stripReserved(index) + (index[SIBS_KEY] == null ? [:] : [(SIBS_KEY): index[SIBS_KEY]]))
+                indexes = indexes.collect(index -> Orchestrator.stripReserved(index) + index.subMap([SIBS_KEY, CASES_KEY]).findAll((k, v) -> v != null))
                 bag = (bag instanceof List)? bag : [bag]
                 if (!is_batched) {
                     // Non-batched: return the single item directly without numeric-prefix parsing
@@ -1138,14 +1263,20 @@ class Orchestrator {
         )
     }
 
-    // The stream without every item descended from one of `ids`: a step that
-    // runs for some samples only reads its inputs through this.
-    public def exclude(stream, List ids) {
+    // The items of `stream` that serve one of `wanted`, each tagged with only
+    // those cases: a step that serves some cases reads every input through
+    // this, so its members and products serve no other case. The group() it
+    // feeds records `wanted` as the cases its posts serve.
+    public def cases(stream, List wanted) {
         def (name, _stream) = stream
-        this._assertUnsealed("exclude from [${name}]")
-        def drop = new HashSet(ids)
-        return new Tuple2(name, _stream.filter((index, item) -> {
-            return !stripReserved(index).any((k, v) -> v instanceof List && v.any((h) -> h in drop))
+        this._assertUnsealed("cases of [${name}]")
+        this.served_now = wanted
+        return new Tuple2(name, _stream.flatMap((index, item) -> {
+            def tag = this._casesOf(index as Map).findAll((c) -> c in wanted)
+            if (tag.isEmpty()) return []
+            def out = [:] + index
+            out[CASES_KEY] = tag
+            return [[out, item]]
         }))
     }
 
@@ -1192,9 +1323,12 @@ class Orchestrator {
         return JsonOutput.toJson(map).replace(/"/,"\\\"")    
     }
 
-    public def publish(stream) {
+    // `wanted` limits a target stream to the items of the cases that asked for
+    // it, when another case also posts into that stream.
+    public def publish(stream, List wanted = null) {
         def (name, _stream) = stream
-        return _stream.map((index, item) -> {
+        def kept = (wanted == null) ? _stream : _stream.filter((index, item) -> this._casesOf(index as Map).any((c) -> c in wanted))
+        return kept.map((index, item) -> {
             return new Tuple2(JsonOutput.toJson(stripReserved(index)), item)
         })
     }
