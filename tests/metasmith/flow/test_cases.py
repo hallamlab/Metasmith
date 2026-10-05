@@ -5,17 +5,21 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
 
+from metasmith.constants import AgentPaths
+from metasmith.env import Runtime
 from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView, DataTypeLibrary
 from metasmith.models.solver import Endpoint, Transform
-from metasmith.models.workflow import Case, WorkflowPlan
+from metasmith.models.workflow import Case, NextflowGenContext, WorkflowPlan
 from metasmith.testing import mock_transforms as mt
 from metasmith.testing.pool_fixtures import pool_backed
 
-from .conftest import _build_transform_lib, _write_input
+from .conftest import BuiltPlan, _build_transform_lib, _write_input
 
 TYPES = {
     "study": {"study"},
@@ -55,6 +59,9 @@ LONG_STATS = mt.step_transform("long_stats", {"r": ("mock::long_reads", [])}, "m
 ANNOTATE = mt.step_transform(
     "annotate", {"asm": ("mock::assembly", []), "db": ("mock::refdb", [])}, "mock::annotation", "asm",
 )
+ALIGN = mt.step_transform(
+    "align", {"r": ("mock::short_reads", []), "asm": ("mock::assembly", ["r"])}, "mock::bam", "r",
+)
 VIROMICS = {**MEGAHIT, **HYBRID, **VIRAL_ID, **VOTU, **CHECKV}
 
 
@@ -81,8 +88,21 @@ class Study:
         return [DataInstanceLibraryView(original=self.lib, mask={Path(r) for r in rels})]
 
     def plan(self, transforms: dict[str, str], cases: list[Case]) -> WorkflowPlan:
-        tr = _build_transform_lib(self.tmp_path / "tr", self.types_path, transforms)
-        return WorkflowPlan.Generate(cases=cases, transforms=[tr])
+        self.tr = _build_transform_lib(self.tmp_path / "tr", self.types_path, transforms)
+        return WorkflowPlan.Generate(cases=cases, transforms=[self.tr])
+
+    def stage(self, plan: WorkflowPlan, name: str) -> tuple[str, dict]:
+        at = self.tmp_path / name
+        at.mkdir()
+        BuiltPlan(plan=plan, data_library=self.lib, transform_libraries=[self.tr]).as_task().PrepareNextflow(
+            NextflowGenContext(
+                workflow_file=AgentPaths.NXF_WORKFLOW, work_dir=at, external_work=at,
+                home_dir=at / "home", external_home=at / "home",
+                runtime=Runtime.DOCKER, resources_file=AgentPaths.NXF_RES,
+            )
+        )
+        lineage = json.loads((at / "workflow.lineage_of_given.json").read_text())
+        return (at / AgentPaths.NXF_WORKFLOW).read_text(), lineage
 
 
 def target(*spec: tuple[str, list[str]]) -> tuple[Transform, list[str]]:
@@ -150,6 +170,75 @@ def test_a_short_read_case_and_a_hybrid_case_share_viral_id_and_the_votu_table(t
     assert {(t.name, t.case) for t in plan.targets} == {
         ("votu_table", "A"), ("hybrid_assembly", "B"), ("votu_table", "B"), ("checkv_report", "B"),
     }
+
+
+def test_the_staged_workflow_unions_the_assemblies_and_filters_by_case(tmp_path):
+    st = Study(tmp_path, _ab_items(shared_reads=False))
+    plan = st.plan(VIROMICS, [
+        case("A", [st.sample("studyX.json", "a/short.fq")], *VOTU_ONLY),
+        case("B", [st.sample("studyX.json", "b/short.fq", "b/long.fq")], *HYBRID_VOTU_CHECKV),
+    ])
+    body, lineage = st.stage(plan, "ws")
+
+    def stream(e) -> str:
+        return plan.streams.get(e.key, e.key)
+
+    (megahit,), (hybrid,), (viral_id,), (checkv,) = (steps_of(plan, n) for n in ("megahit", "hybrid", "viral_id", "checkv"))
+    asm = stream(viral_id.uses[0].dtype)
+    assert stream(megahit.produces[0][0].dtype) == stream(hybrid.produces[0][0].dtype) == asm
+    assert f"_{asm} = o.mix([_{asm}_1, _{asm}_2])" in body
+    assert f"o.group('{asm}', [_{asm}]," in body
+
+    assert f"__cases_{megahit.order} = ['A']" in body
+    assert f"__cases_{hybrid.order} = ['B']" in body
+    assert f"__cases_{checkv.order} = ['B']" in body
+    assert f"__cases_{viral_id.order} =" not in body
+    vt = stream(checkv.uses[0].dtype)
+    assert f"o.group('{vt}', [o.cases(_{vt}, __cases_{checkv.order})]," in body
+
+    assert f"_{asm} = o.publish(_{asm}, ['B'])" in body
+    study = stream(next(x for x in plan.given if str(x.path).endswith("studyX.json")).dtype)
+    assert f'["{study}"], [\'A\', \'B\']))[0]' in body
+    long = stream(next(x for x in plan.given if str(x.path).endswith("long.fq")).dtype)
+    assert f'["{long}"], [\'B\']))[0]' in body
+    votu_out = stream(steps_of(plan, "votu")[0].produces[0][0].dtype)
+    assert f"_{votu_out} = o.publish(_{votu_out})" in body
+
+    assert "o.seedCases(_lf.cases)" in body
+    assert "'CASES'" in body
+    study_id = next(x.instance_id for x in plan.given if str(x.path).endswith("studyX.json"))
+    assert lineage["cases"][study_id] == ["A", "B"]
+    assert all(set(v) <= {"A", "B"} and v for v in lineage["cases"].values())
+    assert not any("cases" in row for rows in lineage["lineage"].values() for row in rows)
+
+
+def test_a_slot_each_case_reads_from_its_own_lane_is_staged_as_a_lane(tmp_path):
+    st = Study(tmp_path, _ab_items(shared_reads=True))
+    plan = st.plan({**MEGAHIT, **HYBRID, **ALIGN}, [
+        case("A", [st.sample("studyX.json", "b/short.fq")], ("bam", [])),
+        case("B", [st.sample("studyX.json", "b/short.fq", "b/long.fq")], ("hybrid_assembly", []), ("bam", ["hybrid_assembly"])),
+    ])
+    assert served(plan, "align") == [{"A", "B"}]
+    (align,) = steps_of(plan, "align")
+    assert producers(plan, align, "assembly") == {"megahit", "hybrid"}
+    body, _ = st.stage(plan, "ws")
+    reads, asm = (
+        plan.streams.get(e.key, e.key)
+        for e in (align.dependency_map[d][0].dtype for d in align.transform.model.requires)
+    )
+    groups = [ln for ln in body.splitlines() if "o.group(" in ln]
+    (line,) = [ln for ln in groups if f"step: {align.order}," in ln]
+    assert line.startswith(f"(__miss_{align.order}, __hit_{align.order}) = o.group('{reads}', [_{reads}, _{asm}],")
+    assert [ln for ln in groups if re.search(r"'\], \[[^\]]*\]\)$", ln)] == [line]
+    assert line.endswith(f"'], ['{asm}'])")
+
+
+def test_a_single_case_stages_no_case_machinery(tmp_path):
+    st = Study(tmp_path, _ab_items(shared_reads=False))
+    plan = st.plan(VIROMICS, [case("B", [st.sample("studyX.json", "b/short.fq", "b/long.fq")], *HYBRID_VOTU_CHECKV)])
+    body, lineage = st.stage(plan, "ws")
+    assert not re.search(r"o\.cases\(|__cases_|seedCases|'CASES'", body)
+    assert "cases" not in lineage
 
 
 def test_each_case_is_valid_alone_and_matches_its_merged_plan(tmp_path):

@@ -74,8 +74,10 @@ class LinPayload:
     # early release. Stripped before PROV and publish, so a payload never
     # carries it; reserved here so one that did would not read it as lineage.
     SIBS_KEY: ClassVar[str] = "SIBS"
+    # The cases an item serves, set only in a run of more than one case.
+    CASES_KEY: ClassVar[str] = "CASES"
 
-    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY", "SIBS"})
+    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY", "SIBS", "CASES"})
 
     def Pack(self) -> dict:
         return {"v": self.v, "entries": [dict(m) for m in self.entries]}
