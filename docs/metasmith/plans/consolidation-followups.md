@@ -229,6 +229,27 @@ no plan ever references. Harmless and confusing. The first move is a `pool=False
 pipelines' `build_inputs`, so a driver that owns its identities says so before the write rather
 than after it.
 
+**A study whose sample cases do not nest fails planning instead of planning.** Samples with
+reads plus an assembly beside samples with reads plus metadata form two cases where neither given
+set contains the other. Those keep the joint solve, whose shared `frontier_sigs` (`mcts.rs`) starves
+one case. `_route_problems` now refuses the result and names the samples, where it used to
+plan without them. The first move is to make the search honest: a reply is `complete` only when
+every case's timeline, or a merge that contains it, reaches the target. Merging such cases is a
+separate design question that was shelved, because for some shapes two separate plans are cleaner.
+
+**`merge_states` rewrites produced slots with no conformance check.** The `to_add_from_alt` loop
+in `mcts.rs` maps a carried-over step's *produced* slots through `swapped`. `substitute()` guards
+consumers only and skips the alt step itself. Traced: a flye assembly slot was rewritten to the
+megahit endpoint, and the witness refused the merged plan as `emission`. So the plan is never
+wrong, but the merge silently loses that arm. The first move is to check the produced side for
+conformance before the swap, so the merge refuses by name.
+
+**A step that runs for some samples only waits for the stream to close.** Codegen wraps such a
+step's inputs in `o.exclude`, and the mixed stream of a given and a produced intermediate goes
+through `o.mix`. Neither was checked against the early-release rules in `test_release_spec.py`.
+The M2 run completes correctly, but when its keys leave was not measured. The first move is a
+release-spec case for an excluded stream and for a mixed given-and-produced stream.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat

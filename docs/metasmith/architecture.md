@@ -328,6 +328,19 @@ into one view, while an item beside the index that nothing links to lands in no 
 the planner never sees it though it is still staged. `ops.samples.validate` refuses the first;
 `shared_input_paths` is the way out of the second.
 
+**Samples of different shapes are separate cases, and one joint solve cannot be trusted to cover
+them.** `CollectSolverInputs` dedups samples into unique cases by their given endpoint sets. The
+solver forks one timeline per case, but its frontier blacklist (`frontier_sigs`, `mcts.rs`) is one
+set across all timelines. So a case can starve while the reply still says `complete`. Today that
+is fixed only for nested cases, where the smallest given set is a subset of every other: reads
+alone beside reads plus an assembly. Each nested case is solved alone, and the plans are merged
+by transform, signature and occurrence. A step that serves only some cases reads its inputs
+through `o.exclude`, which drops items descended from the other cases' givens. Every multi-case
+plan then passes `_route_problems`, which fires each case's steps from its givens and requires
+the target to fire and every used slot to have exactly one source. A plan that fails is refused
+with the samples named in `dropped_samples`. A non-nested study keeps the joint solve and gains
+only that check, so its silent drop became a loud one rather than a covered plan.
+
 **Planning is not reentrant, and the lock lives at the mutation.** `TransformInstance.Load`
 imports by bare module name, mutates `sys.path`, calls `importlib.reload` and returns through a
 *class* attribute — all process-global — so it takes a class-level lock and inserts/removes its
@@ -611,7 +624,7 @@ library already held rather than inventing one, and an invalidate has already re
 it could not stat.
 
 **A slot id is structural. It joins a consumer to a producer and carries no inputs.** The
-solver folds a multi-sample run into one *unique case*, so a step has one plan instance whatever
+solver folds the samples of one shape into one *unique case*, so a step has one plan instance whatever
 the sample count and the per-sample fan-out happens on the channel at run time. A produced slot's
 id therefore hashes the transform key, the signature, the slot, the branch, and the slot ids
 upstream of it (`given:<dtype>` for a given). It never folds a leaf id or the step's order. Two
