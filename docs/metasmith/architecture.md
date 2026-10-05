@@ -328,18 +328,50 @@ into one view, while an item beside the index that nothing links to lands in no 
 the planner never sees it though it is still staged. `ops.samples.validate` refuses the first;
 `shared_input_paths` is the way out of the second.
 
-**Samples of different shapes are separate cases, and one joint solve cannot be trusted to cover
-them.** `CollectSolverInputs` dedups samples into unique cases by their given endpoint sets. The
-solver forks one timeline per case, but its frontier blacklist (`frontier_sigs`, `mcts.rs`) is one
-set across all timelines. So a case can starve while the reply still says `complete`. Today that
-is fixed only for nested cases, where the smallest given set is a subset of every other: reads
-alone beside reads plus an assembly. Each nested case is solved alone, and the plans are merged
-by transform, signature and occurrence. A step that serves only some cases reads its inputs
-through `o.exclude`, which drops items descended from the other cases' givens. Every multi-case
-plan then passes `_route_problems`, which fires each case's steps from its givens and requires
-the target to fire and every used slot to have exactly one source. A plan that fails is refused
-with the samples named in `dropped_samples`. A non-nested study keeps the joint solve and gains
-only that check, so its silent drop became a loud one rather than a covered plan.
+**Each case is solved alone, because one joint solve cannot be trusted to cover several.** A
+`Case` is a group of samples of one given shape with its own target. The solver forks one
+timeline per case, but its frontier blacklist (`frontier_sigs`, `mcts.rs`) is one set across all
+timelines, so a joint solve can starve a case while the reply still says `complete`.
+`case_merge.PlanCases` therefore runs one solve per case, and the witness checks each one. The
+merged plan has no witness. Its only guard is `_Merge.problems`, which requires every slot a case
+reads to have exactly one source for that case, and a plan that fails it is refused with the
+samples named in `dropped_samples`.
+
+**A case's step joins an existing step only while every case keeps one source per slot.** The
+merge walks the cases in declared order and each plan in step order. A step joins the first node
+with the same transform and slots that does not serve its case yet, and an exact stream match
+wins over a node whose slots merely hold the same types. A join unions each slot's sources into
+one *stream class*, which is how a short-read assembler and a hybrid assembler feed one viral-ID
+step. The merge undoes a join that gives a case two sources in one class, or that pools
+different per-case givens into a slot unrelated to the group-by input. **CAUTION** Declared case
+order is the tie-break, so reordering the cases can change which steps pool.
+
+**Codegen and `plan.streams` must name a stream the same way.** Codegen names every stream by its
+class representative, the earliest member. Two producers of one class post under `_<s>_1` and
+`_<s>_2` and meet in `o.mix`, and each keeps its own dtype for its output globs. The step meta's
+`slot_channels` holds the stream name too, because the member key reads it. A single-case plan
+has no classes and stages byte-identical text, which `cache/test_template_golden.py` pins.
+
+**Every item carries the cases it serves under the reserved `CASES` key, and an untagged item
+serves every case.** `postIn` tags a given from the `cases` map in the given-lineage file.
+`o.cases(stream, S)` keeps the items of a step's cases S and narrows their tags. A member serves
+the cases that every one of its slots still serves. Only a *lane slot*, one that the served cases
+read from different producers, splits a member per case. Splitting every slot would split the
+pooled vOTU table into one table per case. A lane split is why a read set two cases share runs
+each assembler's lane once and never hands a step both assemblies.
+
+**Early release counts only the posts that serve a key's cases.** `_countPost` records the cases
+of each post, and `_whole` skips a post that serves none of the key's cases. The member case sets
+of each remaining post must partition the cases it owes the key exactly. A chain level carries
+the member's cases as a sixth element, so two members made from one by-item stay apart in the
+release registry. A given post into a mixed stream blocks only the keys of its own cases.
+`test_release_spec.py` pins these rules with B17 to B19.
+
+**A run's cases stay out of the cache.** A shard serves every later run that hits it, and those
+runs may group the same product under other cases. So the promote record, the trace event and
+the hit-log line carry a member's cases, and the shard and the member key never do.
+`CollectResults` copies them into the results library's per-item `cases` map, and `given.csv`
+gains a `cases` column for multi-case runs only.
 
 **Planning is not reentrant, and the lock lives at the mutation.** `TransformInstance.Load`
 imports by bare module name, mutates `sys.path`, calls `importlib.reload` and returns through a

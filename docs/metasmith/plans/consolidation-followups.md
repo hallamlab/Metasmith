@@ -229,14 +229,6 @@ no plan ever references. Harmless and confusing. The first move is a `pool=False
 pipelines' `build_inputs`, so a driver that owns its identities says so before the write rather
 than after it.
 
-**A study whose sample cases do not nest fails planning instead of planning.** Samples with
-reads plus an assembly beside samples with reads plus metadata form two cases where neither given
-set contains the other. Those keep the joint solve, whose shared `frontier_sigs` (`mcts.rs`) starves
-one case. `_route_problems` now refuses the result and names the samples, where it used to
-plan without them. The first move is to make the search honest: a reply is `complete` only when
-every case's timeline, or a merge that contains it, reaches the target. Merging such cases is a
-separate design question that was shelved, because for some shapes two separate plans are cleaner.
-
 **`merge_states` rewrites produced slots with no conformance check.** The `to_add_from_alt` loop
 in `mcts.rs` maps a carried-over step's *produced* slots through `swapped`. `substitute()` guards
 consumers only and skips the alt step itself. Traced: a flye assembly slot was rewritten to the
@@ -244,11 +236,12 @@ megahit endpoint, and the witness refused the merged plan as `emission`. So the 
 wrong, but the merge silently loses that arm. The first move is to check the produced side for
 conformance before the swap, so the merge refuses by name.
 
-**A step that runs for some samples only waits for the stream to close.** Codegen wraps such a
-step's inputs in `o.exclude`, and the mixed stream of a given and a produced intermediate goes
-through `o.mix`. Neither was checked against the early-release rules in `test_release_spec.py`.
-The M2 run completes correctly, but when its keys leave was not measured. The first move is a
-release-spec case for an excluded stream and for a mixed given-and-produced stream.
+**Three multi-case shapes still release only at close.** A key whose given post serves the key's
+own cases waits, as `s0` does in release-spec B19. A step grouped by a read set two cases share
+waits for both assembler lanes before it splits per case, so the aligner on shared reads waits
+for the slower assembler. A source step posts its products untagged, so its key reads every case
+and waits for every lane. Each run completes correctly. The first move is a release-spec case per
+shape in `test_release_spec.py`.
 
 ## Accepted risks
 
@@ -275,6 +268,15 @@ carries an assigned identity, so a `dvc checkout` under a reference tree no long
 the run that follows is warm. What remains stat-keyed is a transform's own outputs and a library
 the agent staged, where `restat_leaf_ids` still runs — and pinning a library is still the
 mitigation there, because it skips pinned libraries by design.
+
+**The merged multi-case plan is never witnessed.** The witness checks each case's own solve, and
+the merge across cases runs after it. `_Merge.problems` is the only guard on the merged plan: one
+source per slot per case, and no cycle. A merge bug that passes that check reaches the runtime.
+
+**Separate case solves can pick different interchangeable tools, and then nothing merges.** Two
+cases that could share one assembler may each solve to a different one, so the merge finds no
+common step. The run is correct and computes twice. The first move is to bias each later case's
+solve toward the transforms an earlier case already chose.
 
 **A mutable container tag can produce a false cache hit.** A container's leaf id addresses the
 docker URL string, not the resolved image digest, so a pinned tag busts the cache on a version
@@ -334,6 +336,13 @@ relayed run.
 
 **Deploy-and-run end to end on the HPC hosts was red at the last check** and has not been
 re-verified since the bind failure was made fail-fast.
+
+**No test joins on a parent that only one lane of a stream union carries.** `child2parent` is
+keyed by stream, so a union's stream holds the parents of every producer in its class, and
+`classify` picks the join class from that union. A short-read assembly item never carries the
+long-read hash a hybrid assembly item does. Today `o.cases` drops the short-read items before any
+step that reads the long reads. No e2e case drives a join where both lanes survive the filter,
+so whether `group()` raises on the item that lacks the parent is unknown.
 
 **No test stages one data library under two task keys**, in either the virtual runtime or the
 `-stub` docker lane. 0.22.1 stopped a staged leaf's id depending on the task key, so this is a
