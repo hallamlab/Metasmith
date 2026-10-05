@@ -18,7 +18,7 @@ A plan takes one read type, so each type renders its own DAG:
 
 A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. A PacBio
 sample's is Flye on its long reads alone, after Filtlong. Every other sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
-viral lane pools a study, and a batch holds whole studies.
+viral lane (opt-in with --viral) pools a study, and a batch holds whole studies.
 
 Subcommands: list [--batch N], import --batch N [--shape S],
 run --batch N [--shape S] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
@@ -59,6 +59,8 @@ SHAPES = {
     "metagem_pe_split": ("metagem", "split", "short"),
     "metagem_se": ("metagem", "se", "short"),
 }
+# Run only when named with --shape: their assembler waits on the Pratama assembler ablation.
+HELD_SHAPES = {"cami_hybrid_ont", "pratama_hybrid_ont"}
 # A long-read-only sample's platform, which picks Flye's mode and minimap2's preset.
 PLATFORM = {"cami_long_pacbio": "PACBIO_CLR"}
 
@@ -244,10 +246,12 @@ def build_transforms(mode, pre_e5_assembly=False):
             TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_gem")]
 
 
-def build_targets(mode, mags=True):
+def build_targets(mode, mags=True, viral=False):
     # The sample's assembly is OPERA-MS for a hybrid sample, Flye for a long-read-only one and MEGAHIT
     # otherwise; every lane reads it.
     # DAS Tool's bins are the MAG set: CheckM2, ORFs and models run on them alone.
+    # The viral lane is opt-in: a study-pooled catalogue is not comparable to Pratama's, which pools
+    # short and hybrid samples together, so the pooled Pratama ablation owns vOTUs.
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
     asm = t.Add({"hybrid": "e5::opera_ms_assembly", "long": "sequences::flye_assembly",
@@ -260,6 +264,8 @@ def build_targets(mode, mags=True):
         gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[bins])])
         t.Add("modelling::memote_score", parents=[gem])
 
+    if not viral:
+        return t
     frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm])
     for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
                   "viromics::checkv_quality_summary"):
@@ -296,7 +302,7 @@ def solve(args, shape, by_study):
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
                    pratama_globals, gem_globals],
         transforms=build_transforms(mode, pre_e5_assembly=args.batch in PRE_E5_ASSEMBLY),
-        targets=build_targets(mode, mags=not args.no_mags),
+        targets=build_targets(mode, mags=not args.no_mags, viral=args.viral),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
     c.check_plan(task, expected_counts(shape, by_study))
@@ -331,6 +337,9 @@ def cmd_list(args):
 def cmd_run(args):
     failed = []
     for shape, by_study in draw(args.batch, args.shape).items():
+        if shape in HELD_SHAPES and args.shape != shape:
+            print(f"skipping {shape}: held until the Pratama assembler ablation reports; name it with --shape to run it")
+            continue
         try:
             solve(args, shape, by_study)
         except SystemExit as e:
@@ -352,7 +361,7 @@ def main():
         p.add_argument("--batch", type=int, required=True, choices=sorted(BATCHES))
         p.add_argument("--shape", choices=list(SHAPES))
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False, clear=False, queue_size=None, no_mags=False)
+                       import_givens=False, clear=False, queue_size=None, no_mags=False, viral=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_<shape>.dag.svg")
             mode = p.add_mutually_exclusive_group()
@@ -368,6 +377,8 @@ def main():
                            help="import what the pool lacks before planning, as `import` does")
             p.add_argument("--no-mags", action="store_true",
                            help="leave out the MAG lane (binners, DAS Tool, CheckM2, GEMs); a later full run adds it from the cache")
+            p.add_argument("--viral", action="store_true",
+                           help="add the viral lane, pooled per study; off by default")
     args = ap.parse_args()
     return args.fn(args)
 
