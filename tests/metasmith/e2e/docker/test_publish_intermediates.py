@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -30,10 +31,8 @@ def _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates: boo
     target_names = ["metabat2_bins", "maxbin2_bins", "concoct_bins"]
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
         transforms=[tr_lib],
-        target_names=target_names,
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan)
     plan.publish_intermediates = publish_intermediates

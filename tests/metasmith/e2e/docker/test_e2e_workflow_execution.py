@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import pytest
 import shutil
 import yaml
@@ -85,10 +86,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_names = ["metabat2_bins", "maxbin2_bins", "concoct_bins"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan), f"Expected WorkflowPlan, got {type(plan)}"
@@ -136,10 +135,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -194,10 +191,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -246,10 +241,8 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
         target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -329,10 +322,8 @@ class TestBranchingBehavior:
         target_names = ["branch_a"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -416,10 +407,8 @@ TransformInstance(protocol=protocol, model=model, group_by=dep_a)
         target_names = ["merged"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -528,10 +517,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan), "Workflow should complete"
@@ -641,10 +628,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -687,10 +672,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         plans = []
         for seed in [42, 42, 42]:
             plan = WorkflowPlan.Generate(
-                given=given,
+                cases=Case.ByShape(given, target=target_model, target_names=target_names),
                 transforms=[tr_lib],
-                target_names=target_names,
-                target_model=target_model,
                 seed=seed,
             )
             plans.append(plan)
@@ -761,10 +744,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_names = ["metabat2_bins"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib1, tr_lib2],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)

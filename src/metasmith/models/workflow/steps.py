@@ -27,9 +27,9 @@ class WorkflowStep:
     produces: list[list[DataInstance]] = field(default_factory=list)
     _raw_dependency_map: dict|None = None
     _raw_instances: dict[str, DataInstance]|None = None
-    # Given instance ids of the samples this step does not run for. Packed only
-    # when non-empty, so a plan whose steps serve every sample keys as before.
-    excluded_given: list[str] = field(default_factory=list)
+    # The names of the cases this step serves. A plan of one case does not pack
+    # them, so its steps key as before.
+    cases: list[str] = field(default_factory=list)
 
     def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
         self._dependency_map: dict[Dependency, list[DataInstance]] = {}
@@ -74,8 +74,8 @@ class WorkflowStep:
             dependency_map={k.key:[v.instance_id for v in lst] for k, lst in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform._path}",
         )
-        if self.excluded_given:
-            packed["excluded_given"] = list(self.excluded_given)
+        if self.cases:
+            packed["cases"] = list(self.cases)
         return packed
 
     @classmethod
@@ -102,7 +102,7 @@ class WorkflowStep:
             _raw_instances=raw_instances,
             transform=tr,
             transform_library=lib,
-            excluded_given=list(raw.get("excluded_given", [])),
+            cases=list(raw.get("cases", [])),
         )
 
     def _resolve_dependency_map(self):
@@ -140,13 +140,17 @@ class WorkflowTarget:
     name: str
     instance: DataInstance
     producing_step: WorkflowStep
+    case: str|None = None
 
     def Pack(self):
-        return dict(
+        packed = dict(
             name=self.name,
             instance=self.instance.Pack(),
             producing_step=dict(order=self.producing_step.order, name=self.producing_step.transform.name),
         )
+        if self.case is not None:
+            packed["case"] = self.case
+        return packed
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary], given: dict[str, DataInstance], steps: dict[int, WorkflowStep]):
@@ -156,4 +160,5 @@ class WorkflowTarget:
             name=raw["name"],
             instance=inst,
             producing_step=producing_step,
+            case=raw.get("case"),
         )

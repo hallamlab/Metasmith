@@ -593,3 +593,39 @@ TransformInstance(
 )
 '''
     }
+
+
+# One step of any shape. `requires` maps a variable name to its type and the names of the
+# requirements it descends from, in declaration order.
+def step_transform(
+    name: str, requires: dict[str, tuple[str, list[str]]], product: str, group_by: str,
+) -> dict[str, str]:
+    reqs = "\n".join(
+        f'{var} = model.AddRequirement(lib.GetType("{dtype}")'
+        + (f", parents={{{', '.join(parents)}}})" if parents else ")")
+        for var, (dtype, parents) in requires.items()
+    )
+    return {
+        name: f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+{reqs}
+out = model.AddProduct(lib.GetType("{product}"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("{name}.out")
+    out_path.write_text("{name}")
+    return ExecutionResult(manifest=[{{out: out_path}}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by={group_by})
+'''
+    }

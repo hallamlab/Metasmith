@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import shutil
 import yaml
 from pathlib import Path
@@ -74,10 +75,8 @@ def _generate(inputs: DataInstanceLibrary, transforms: TransformInstanceLibrary,
     target_ep = transforms.GetType(target_type)
     target_model.AddRequirement(target_ep)
     return WorkflowPlan.Generate(
-        given=[[sv] for sv in samples],
+        cases=Case.ByShape([[sv] for sv in samples], target=target_model, target_names=[target_type]),
         transforms=[transforms],
-        target_names=[target_type],
-        target_model=target_model,
     )
 
 

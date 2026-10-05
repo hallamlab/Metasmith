@@ -14,6 +14,7 @@ plan's shape moves.
 
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -68,10 +69,8 @@ def _plan(agent, types_path, tr_lib, location) -> WorkflowPlan:
         types={"mock": DataTypeLibrary.Load(types_path)},
     )
     plan = WorkflowPlan.Generate(
-        given=[[DataInstanceLibraryView(given)]],
+        cases=Case.ByShape([[DataInstanceLibraryView(given)]], target=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]), target_names=["bam"]),
         transforms=[tr_lib],
-        target_names=["bam"],
-        target_model=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]),
     )
     assert isinstance(plan, WorkflowPlan), f"planner did not converge: {plan!r}"
     return plan
@@ -118,10 +117,8 @@ def test_a_second_import_is_a_second_given_and_a_different_key(rig):
         types={"mock": DataTypeLibrary.Load(types_path)},
     )
     second = WorkflowPlan.Generate(
-        given=[[DataInstanceLibraryView(given)]],
+        cases=Case.ByShape([[DataInstanceLibraryView(given)]], target=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]), target_names=["bam"]),
         transforms=[tr_lib],
-        target_names=["bam"],
-        target_model=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]),
     )
     assert first._key != second._key
 
@@ -176,10 +173,8 @@ class TestTheDriverFacingForm:
         agent, types_path, tr_lib, _imported, tmp_path = rig
         given = self._declared(agent, tmp_path, types_path, tmp_path / "g1")
         plan = WorkflowPlan.Generate(
-            given=[[DataInstanceLibraryView(given)]],
+            cases=Case.ByShape([[DataInstanceLibraryView(given)]], target=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]), target_names=["bam"]),
             transforms=[tr_lib],
-            target_names=["bam"],
-            target_model=_make_target_model([_MOCK_TYPE_PROPERTIES["bam"]]),
         )
         assert isinstance(plan, WorkflowPlan)
         assert all(inst.origin == "imported" for inst in plan.given)

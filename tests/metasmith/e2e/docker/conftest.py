@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import pytest
 import subprocess
 import shutil
@@ -202,10 +203,8 @@ def simple_workflow_task(mock_samples, mock_types, temp_dir):
     target_names = ["bam"]
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
         transforms=[tr_lib],
-        target_names=target_names,
-        target_model=target_model,
     )
 
     assert isinstance(plan, WorkflowPlan)

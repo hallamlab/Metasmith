@@ -725,10 +725,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
             _inst = _inst[0]
             gb = _inst.dtype.key
             using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-            if step.excluded_given:
-                excl_var = f"__excl_{step.order}"
-                wf_main.append(f"{excl_var} = [" + ", ".join(f"'{x}'" for x in step.excluded_given) + "]")
-                using_symbols = ", ".join(f"o.exclude(_{x.dtype.key}, {excl_var})" for x in used_archetypes)
             slk_literal = "[" + ", ".join(f"'{x.dtype.key}'" for x in used_archetypes) + "]"
             cacheable = bool(decision and decision.get("cacheable"))
             cache_literal = (

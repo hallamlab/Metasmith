@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import pytest
 from pathlib import Path
 
@@ -34,10 +35,8 @@ def _make_task(mock_samples, mock_types, temp_dir, transforms, target_props, tar
     target_names = [target_name]
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
         transforms=[tr_lib],
-        target_names=target_names,
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan)
     return WorkflowTask(
@@ -262,10 +261,8 @@ class TestHarnessBranching:
         target_names = ["merged"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
         assert isinstance(plan, WorkflowPlan)
         assert len(plan.steps) == 3

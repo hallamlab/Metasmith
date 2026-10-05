@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import shutil
 import textwrap
 from dataclasses import dataclass
@@ -193,10 +194,8 @@ def _generate_plan(
     given = [[sv] for sv in samples.AsSamples(f"{namespace}::{sample_dtype}")]
     target_model = _make_target_model(target_props)
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
         transforms=[transforms_lib],
-        target_names=target_names,
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), f"planner did not converge: {plan!r}"
     return plan

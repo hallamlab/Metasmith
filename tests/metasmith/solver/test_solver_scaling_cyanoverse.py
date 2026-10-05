@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import time
 import shutil
 import tempfile
@@ -76,10 +77,8 @@ class TestSolverScalingCyanoverse:
 
         start = time.time()
         plan = WorkflowPlan.Generate(
-            given=[[sv] + res_views for sv in samples],
+            cases=Case.ByShape([[sv] + res_views for sv in samples], target=target_model, target_names=target_names),
             transforms=transforms,
-            target_names=target_names,
-            target_model=target_model,
         )
         elapsed = time.time() - start
 

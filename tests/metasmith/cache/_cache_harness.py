@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import hashlib
 import shutil
 import textwrap
@@ -244,10 +245,8 @@ def build_workflow_task(
         target_model.AddRequirement(properties=props)
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=[name for name, _ in target_specs]),
         transforms=[tr_lib],
-        target_names=[name for name, _ in target_specs],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), f"planner did not converge: {plan!r}"
 

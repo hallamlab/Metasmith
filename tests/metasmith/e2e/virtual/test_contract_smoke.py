@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -87,10 +88,8 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
     target_model = Transform()
     target_model.AddRequirement(properties={"final"})
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["final_target"]),
         transforms=[tr_lib],
-        target_names=["final_target"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), f"planner did not converge: {plan!r}"
     assert len(plan.steps) == 2
