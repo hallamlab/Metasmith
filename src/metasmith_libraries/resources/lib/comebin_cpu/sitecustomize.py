@@ -21,12 +21,15 @@ def _reexec_with_mkl_vendor_override():
 
 _subcommand = sys.argv[1:2] if os.path.basename(sys.argv[0]) == "main.py" else []
 
-# The bin step's Leiden sweep forks its worker pool after k-means and hnswlib have started threads. A worker
-# forked while one of them held a lock waits on it forever, so the sweep hangs at random with no output.
 if _subcommand == ["bin"]:
-    import multiprocessing
+    import comebin_leiden_sweep
 
-    multiprocessing.set_start_method("spawn")
+    comebin_leiden_sweep.apply_to_bin()
+
+if _subcommand == ["get_result"]:
+    import comebin_leiden_sweep
+
+    comebin_leiden_sweep.require_finished_sweep()
 
 if _subcommand == ["train"] and not os.environ.get("CUDA_VISIBLE_DEVICES"):
     _reexec_with_mkl_vendor_override()

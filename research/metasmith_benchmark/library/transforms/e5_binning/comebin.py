@@ -2,8 +2,9 @@
 # failed step. DAS Tool requires all three binners' tables, so one failed binner would end the whole
 # MAG lane for that sample. COMEBin crashes outright on small assemblies: korem2015's 0.5 GB
 # single-end runs give ~130 contigs of at least 1 kb, its training loader yields no batch, and it dies
-# on `UnboundLocalError: local variable 'logits'`. An OOM or a walltime kill still fails the step,
-# because it takes this protocol down with the container.
+# on `UnboundLocalError: local variable 'logits'`. An OOM or a walltime kill still fails the step: one
+# that takes the container down takes this protocol with it, and one that kills only the bin step leaves
+# the patch's sweep state at "running".
 #
 # It makes no bin FASTAs. DAS Tool reads only the table, and a nextflow output cannot be empty, so a
 # bin product would fail the very step this exists to keep.
@@ -72,6 +73,11 @@ def protocol(context: ExecutionContext):
             ],
             cmd=_cmd,
         )
+
+    sweep = Path(f"{workdir}/comebin_res/leiden_sweep.state")
+    if sweep.exists() and sweep.read_text().strip() == "running":
+        Log.Error("COMEBin's bin step died mid-sweep, most likely out of memory; failing the step so a retry gets more")
+        return ExecutionResult(manifest=[], success=False)
 
     res = Path(f"{workdir}/comebin_res/comebin_res.tsv")
     if Path("comebin_exit").exists() or not res.exists():
