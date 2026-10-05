@@ -19,7 +19,16 @@ def _reexec_with_mkl_vendor_override():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
-if os.path.basename(sys.argv[0]) == "main.py" and sys.argv[1:2] == ["train"]:
+_subcommand = sys.argv[1:2] if os.path.basename(sys.argv[0]) == "main.py" else []
+
+# The bin step's Leiden sweep forks its worker pool after k-means and hnswlib have started threads. A worker
+# forked while one of them held a lock waits on it forever, so the sweep hangs at random with no output.
+if _subcommand == ["bin"]:
+    import multiprocessing
+
+    multiprocessing.set_start_method("spawn")
+
+if _subcommand == ["train"] and not os.environ.get("CUDA_VISIBLE_DEVICES"):
     _reexec_with_mkl_vendor_override()
     import torch
 

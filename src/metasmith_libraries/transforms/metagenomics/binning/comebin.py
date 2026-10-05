@@ -13,14 +13,15 @@ bin_fasta   = model.AddProduct(lib.GetType("sequences::comebin_bin_fasta"))
 table       = model.AddProduct(lib.GetType("binning::comebin_contig_to_bin_table"))
 
 
-# Without a GPU, COMEBin's training uses one core of many. The patch's sitecustomize spreads it across them,
-# and its dropout pool needs OpenMP's idle workers parked rather than spinning on the same cores: at 48
-# threads a step took 1.26 s spinning and 0.79 s parked.
-def _cpu_training(icpu_patch):
+# The patch's sitecustomize keeps the bin step's Leiden sweep from hanging on any device. Without a GPU it also
+# spreads training, which uses one core of many, across them, and its dropout pool needs OpenMP's idle workers
+# parked rather than spinning on the same cores: at 48 threads a step took 1.26 s spinning and 0.79 s parked.
+def _comebin_patch(icpu_patch):
+    env = f"""
+            export PYTHONPATH={icpu_patch.container}${{PYTHONPATH:+:$PYTHONPATH}}"""
     if os.environ.get("CUDA_VISIBLE_DEVICES", ""):
-        return ""
-    return f"""
-            export PYTHONPATH={icpu_patch.container}${{PYTHONPATH:+:$PYTHONPATH}}
+        return env
+    return env + """
             export OMP_WAIT_POLICY=PASSIVE"""
 
 
@@ -42,7 +43,7 @@ def protocol(context: ExecutionContext):
         return ExecutionResult(manifest=[], success=False)
     batch_size = min(usable_contigs, 1024)
 
-    _cmd = f"""{_cpu_training(icpu_patch)}
+    _cmd = f"""{_comebin_patch(icpu_patch)}
             mkdir -p {bam_dir}
             cp -L {ibam.container} {bam_dir}/
             mkdir -p {workdir}
