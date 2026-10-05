@@ -676,7 +676,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
     target_endpoints = {x.instance.dtype for x in the_plan.targets}
     src_process = []
     wf_main = []
-    wf_publish = set()       
     published_channels: dict[str, tuple[int, DataInstance]] = {}
     resources = {}
     gpu_requirements: dict[str, dict] = {}
@@ -779,7 +778,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
             to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
         for inst in to_pubish:
             k = inst.dtype.key
-            wf_publish.add(k)
             published_channels[k] = (step.order, inst)
 
     with open(context.work_dir/context.resources_file, "w") as f:
@@ -851,7 +849,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         "publish:",
     ] + [
         f"_{k} = o.publish(_{k})"
-        for k in wf_publish
+        for k in published_channels
     ] + [
         "}",
         "",
