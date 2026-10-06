@@ -800,132 +800,106 @@ theorem same_slots_spec (a b : Slice Std.Usize) (nn : Std.Usize)
   exact decide_eq_decide.mpr hkey
 
 
-/-! ## `groups_match` -- one product group against one declared group -/
+/-! ## `matches_declared` -- the step's one product group against each declared group -/
 
-theorem groups_match_loop_spec (p : types.Problem) (q : types.Plan) (si nn t : Std.Usize)
-    (hsi : si.val < q.steps.val.length)
-    (prod : List (List (Nat × Nat)))
-    (hprod : SolverSpec.pairLists (q.steps.val[si.val]'hsi).produced = prod)
+theorem matches_declared_loop_spec (p : types.Problem) (nn t : Std.Usize)
+    (got : alloc.vec.Vec Std.Usize) (G : SolverSpec.Ids)
+    (hG : got.val.map (fun x => x.val) = G)
     (decl : List SolverSpec.Ids)
     (hdecl : SolverSpec.producesOf p t.val = decl)
-    (hlen : prod.length = decl.length) :
-    ∀ (k : Nat) (ok1 : Bool) (i : Std.Usize), prod.length - i.val ≤ k →
-      clauses.groups_match_loop p q.endpoints q.givens q.steps si nn t ok1 i ⦃ r =>
-        r = (ok1 && decide (∀ gd ∈ (prod.drop i.val).zip (decl.drop i.val),
-                SameSetLt nn.val (SolverSpec.slotsOf gd.1) gd.2)) ⦄ := by
-  have hpl : prod.length = (q.steps.val[si.val]'hsi).produced.val.length := by
-    rw [← hprod]; exact pairLists_length _
+    (ng : Std.Usize) (hng : ng.val = decl.length) :
+    ∀ (k : Nat) (hit : Bool) (g : Std.Usize), decl.length - g.val ≤ k →
+      clauses.matches_declared_loop p nn t got ng hit g ⦃ r =>
+        r = (hit || decide (∃ d ∈ decl.drop g.val, SameSetLt nn.val G d)) ⦄ := by
   intro k
   induction k with
   | zero =>
-    intro ok1 i hk
-    rw [clauses.groups_match_loop.eq_def]
+    intro hit g hk
+    rw [clauses.matches_declared_loop.eq_def]
     dsimp only
     split
+    · next hh => exact ok_post (by rw [hh]; simp)
     · next hh =>
-      rw [index_eq q.steps si hsi]
-      simp only [bind_tc_ok]
+      have hf : hit = false := by simpa using hh
       split
       · exfalso; scalar_tac
-      · have hnil : prod.drop i.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_post (by rw [hh, hnil]; simp)
-    · next hh =>
-      have hf : ok1 = false := by simpa using hh
-      exact ok_post (by rw [hf]; simp)
+      · have hnil : decl.drop g.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
+        exact ok_post (by rw [hf, hnil]; simp)
   | succ k ih =>
-    intro ok1 i hk
-    rw [clauses.groups_match_loop.eq_def]
+    intro hit g hk
+    rw [clauses.matches_declared_loop.eq_def]
     dsimp only
     split
+    · next hh => exact ok_post (by rw [hh]; simp)
     · next hh =>
-      rw [index_eq q.steps si hsi]
-      simp only [bind_tc_ok]
+      have hf : hit = false := by simpa using hh
       split
       · next hlt =>
-        have hgi : i.val < (q.steps.val[si.val]'hsi).produced.val.length := by scalar_tac
-        have hip : i.val < prod.length := by omega
-        have hid : i.val < decl.length := by omega
-        have hbnd : i.val + 1 ≤ Usize.max := by scalar_tac
-        have hpcons : prod.drop i.val
-            = SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[i.val]'hgi)
-              :: prod.drop (i.val + 1) := by
-          rw [← hprod]; exact pairLists_drop_cons _ i.val hgi
-        have hdcons : decl.drop i.val = decl[i.val]! :: decl.drop (i.val + 1) :=
-          drop_cons_getElem! decl i.val hid
-        have hdv : ((SolverSpec.producesOf p t.val)[i.val]?).getD [] = decl[i.val]! := by
-          rw [hdecl, List.getElem?_eq_getElem hid, getElem!_pos decl i.val hid]
+        have hgd : g.val < decl.length := by scalar_tac
+        have hbnd : g.val + 1 ≤ Usize.max := by scalar_tac
+        have hdcons : decl.drop g.val = decl[g.val]! :: decl.drop (g.val + 1) :=
+          drop_cons_getElem! decl g.val hgd
+        have hdv : ((SolverSpec.producesOf p t.val)[g.val]?).getD [] = decl[g.val]! := by
+          rw [hdecl, List.getElem?_eq_getElem hgd, getElem!_pos decl g.val hgd]
           rfl
-        step with produced_slots_spec q si i hsi hgi as ⟨ v3, hv3 ⟩
-        step with declared_slots_spec p t i as ⟨ v4, hv4 ⟩
-        step with same_slots_spec (alloc.vec.Vec.deref v3) (alloc.vec.Vec.deref v4) nn
-            (SolverSpec.slotsOf
-              (SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[i.val]'hgi)))
-            decl[i.val]! hv3 (by rw [← hdv]; exact hv4) as ⟨ b, hb ⟩
-        have hzip : (prod.drop i.val).zip (decl.drop i.val)
-            = (SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[i.val]'hgi),
-                decl[i.val]!) :: (prod.drop (i.val + 1)).zip (decl.drop (i.val + 1)) := by
-          rw [hpcons, hdcons, List.zip_cons_cons]
+        step with declared_slots_spec p t g as ⟨ v, hv ⟩
+        step with same_slots_spec (alloc.vec.Vec.deref got) (alloc.vec.Vec.deref v) nn
+            G decl[g.val]! hG (by rw [← hdv]; exact hv) as ⟨ b, hb ⟩
         split
         · next hbt =>
-          have hP : SameSetLt nn.val
-              (SolverSpec.slotsOf
-                (SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[i.val]'hgi)))
-              decl[i.val]! := of_decide_eq_true (by rw [← hb]; exact hbt)
+          have hP : SameSetLt nn.val G decl[g.val]! :=
+            of_decide_eq_true (by rw [← hb]; exact hbt)
           simp only [bind_tc_ok]
-          step as ⟨ i2, hi2 ⟩
-          have hi2' : i2.val = i.val + 1 := by scalar_tac
-          refine WP.spec_mono (ih true i2 (by scalar_tac)) ?_
+          step as ⟨ g1, hg1 ⟩
+          refine WP.spec_mono (ih true g1 (by scalar_tac)) ?_
           intro r hr
-          rw [hr, hh, hi2']
-          simp only [Bool.true_and]
+          rw [hr, hf]
+          simp only [Bool.true_or, Bool.false_or]
+          refine (decide_eq_true ?_).symm
+          rw [hdcons]
+          exact ⟨decl[g.val]!, List.mem_cons_self, hP⟩
+        · next hbf =>
+          have hnP : ¬ SameSetLt nn.val G decl[g.val]! :=
+            of_decide_eq_false (by rw [← hb]; simpa using hbf)
+          simp only [bind_tc_ok]
+          step as ⟨ g1, hg1 ⟩
+          have hg1' : g1.val = g.val + 1 := by scalar_tac
+          refine WP.spec_mono (ih false g1 (by scalar_tac)) ?_
+          intro r hr
+          rw [hr, hf, hg1']
+          simp only [Bool.false_or]
           refine Bool.eq_iff_iff.mpr ?_
           simp only [decide_eq_true_eq]
-          rw [hzip]
+          rw [hdcons]
           constructor
-          · intro h gd hgd
-            rcases List.mem_cons.mp hgd with h' | h'
-            · rw [h']; exact hP
-            · exact h gd h'
-          · intro h gd hgd
-            exact h gd (List.mem_cons_of_mem _ hgd)
-        · next hbf =>
-          have hnP : ¬ SameSetLt nn.val
-              (SolverSpec.slotsOf
-                (SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[i.val]'hgi)))
-              decl[i.val]! := of_decide_eq_false (by rw [← hb]; simpa using hbf)
-          have hnot : ¬ (∀ gd ∈ (prod.drop i.val).zip (decl.drop i.val),
-              SameSetLt nn.val (SolverSpec.slotsOf gd.1) gd.2) := by
-            intro hc
-            refine hnP (hc (SolverSpec.idPairs
-              ((q.steps.val[si.val]'hsi).produced.val[i.val]'hgi), decl[i.val]!) ?_)
-            rw [hzip]
-            exact List.mem_cons_self
-          simp only [bind_tc_ok]
-          step as ⟨ i2, hi2 ⟩
-          refine WP.spec_mono (ih false i2 (by scalar_tac)) ?_
-          intro r hr
-          rw [hr, hh]
-          simp only [Bool.false_and, Bool.true_and]
-          exact (decide_eq_false hnot).symm
-      · have hnil : prod.drop i.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
-        exact ok_post (by rw [hh, hnil]; simp)
-    · next hh =>
-      have hf : ok1 = false := by simpa using hh
-      exact ok_post (by rw [hf]; simp)
+          · rintro ⟨d, hd, hdP⟩
+            exact ⟨d, List.mem_cons_of_mem _ hd, hdP⟩
+          · rintro ⟨d, hd, hdP⟩
+            rcases List.mem_cons.mp hd with h' | h'
+            · rw [h'] at hdP; exact absurd hdP hnP
+            · exact ⟨d, h', hdP⟩
+      · have hnil : decl.drop g.val = [] := List.drop_eq_nil_iff.mpr (by scalar_tac)
+        exact ok_post (by rw [hf, hnil]; simp)
 
-theorem groups_match_spec (p : types.Problem) (q : types.Plan) (si nn : Std.Usize)
+/-- `matches_declared` reads the step's group `0` only; `shape_at` calls it once
+the step is known to carry exactly one. -/
+theorem matches_declared_spec (p : types.Problem) (q : types.Plan) (si nn : Std.Usize)
     (hsi : si.val < q.steps.val.length)
-    (prod : List (List (Nat × Nat)))
-    (hprod : SolverSpec.pairLists (q.steps.val[si.val]'hsi).produced = prod)
+    (hg0 : 0 < (q.steps.val[si.val]'hsi).produced.val.length)
+    (G : SolverSpec.Ids)
+    (hG : SolverSpec.slotsOf
+      (SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[0]'hg0)) = G)
     (decl : List SolverSpec.Ids)
-    (hdecl : SolverSpec.producesOf p (q.steps.val[si.val]'hsi).transform.val = decl)
-    (hlen : prod.length = decl.length) :
-    clauses.groups_match p q si nn ⦃ r =>
-      r = decide (∀ gd ∈ prod.zip decl, SameSetLt nn.val (SolverSpec.slotsOf gd.1) gd.2) ⦄ := by
-  rw [clauses.groups_match.eq_def, index_eq q.steps si hsi]
+    (hdecl : SolverSpec.producesOf p (q.steps.val[si.val]'hsi).transform.val = decl) :
+    clauses.matches_declared p q si nn ⦃ r =>
+      r = decide (∃ d ∈ decl, SameSetLt nn.val G d) ⦄ := by
+  rw [clauses.matches_declared.eq_def, index_eq q.steps si hsi]
   simp only [bind_tc_ok]
-  refine WP.spec_mono (groups_match_loop_spec p q si nn (q.steps.val[si.val]'hsi).transform
-    hsi prod hprod decl hdecl hlen prod.length true 0#usize (by scalar_tac)) ?_
+  step with produced_slots_spec q si 0#usize hsi hg0 as ⟨ got, hgot ⟩
+  step as ⟨ ng, hng ⟩
+  refine WP.spec_mono (matches_declared_loop_spec p nn (q.steps.val[si.val]'hsi).transform
+    got G (by rw [hgot]; exact hG) decl hdecl ng (by rw [hng, hdecl])
+    decl.length false 0#usize (by scalar_tac)) ?_
   intro r hr
   rw [hr]
   simp
@@ -969,26 +943,38 @@ theorem shape_at_spec (p : types.Problem) (q : types.Plan) (si : Std.Usize)
             (SolverSpec.requiresOf p sv.transform) := by
           rw [← hnn]
           exact of_decide_eq_true (by rw [← hb1]; exact hb1t)
-        step as ⟨ ng, hng ⟩
         split
         · next heq =>
-          have hlen : sv.produced.length = (SolverSpec.producesOf p sv.transform).length := by
-            rw [hpl, htr, ← hng]; scalar_tac
-          refine WP.spec_mono (groups_match_spec p q si nn hsi sv.produced (by rw [← hsv]; rfl)
-            (SolverSpec.producesOf p sv.transform) htr.symm hlen) ?_
+          have hlen1 : sv.produced.length = 1 := by rw [hpl]; scalar_tac
+          have hg0 : 0 < (q.steps.val[si.val]'hsi).produced.val.length := by omega
+          have hsv1 : sv.produced
+              = [SolverSpec.idPairs ((q.steps.val[si.val]'hsi).produced.val[0]'hg0)] := by
+            have hp : sv.produced = SolverSpec.pairLists (q.steps.val[si.val]'hsi).produced := by
+              rw [← hsv]; rfl
+            have h1 := pairLists_drop_cons (q.steps.val[si.val]'hsi).produced 0 hg0
+            rw [List.drop_zero, ← hp] at h1
+            rw [h1, List.drop_eq_nil_iff.mpr (by omega)]
+          refine WP.spec_mono (matches_declared_spec p q si nn hsi hg0 _ rfl
+            (SolverSpec.producesOf p sv.transform) htr.symm) ?_
           intro r hr
           rw [hr]
           refine Bool.eq_iff_iff.mpr ?_
           simp only [decide_eq_true_eq]
           rw [hnn]
-          exact ⟨fun h => ⟨hnd, hss, hlen, h⟩, fun h => h.2.2.2⟩
+          constructor
+          · intro h
+            refine ⟨hnd, hss, hlen1, ?_⟩
+            rw [hsv1]
+            intro g hg
+            rw [List.mem_singleton.mp hg]
+            exact h
+          · intro h
+            exact h.2.2.2 _ (by rw [hsv1]; exact List.mem_singleton_self _)
         · next hne =>
-          have hveq : (alloc.vec.Vec.len (q.steps.val[si.val]'hsi).produced).val = ng.val →
-              False := fun hc => hne (usize_eq_of_val hc)
-          have hnlen : sv.produced.length ≠ (SolverSpec.producesOf p sv.transform).length := by
-            rw [hpl, htr, ← hng]
+          have hnlen : sv.produced.length ≠ 1 := by
+            rw [hpl]
             intro hc
-            exact hveq (by scalar_tac)
+            exact hne (usize_eq_of_val (by scalar_tac))
           exact ok_post (decide_eq_false (fun hc => hnlen hc.2.2.1)).symm
       · next hb1f =>
         have hns : ¬ SameSetLt (SolverSpec.nNodes p) (SolverSpec.slotsOf sv.used)
@@ -1697,7 +1683,7 @@ theorem cl_derived_spec (p : types.Problem) (q : types.Plan)
 #print axioms SolverProof.declared_slots_spec
 #print axioms SolverProof.no_repeat_spec
 #print axioms SolverProof.same_slots_spec
-#print axioms SolverProof.groups_match_spec
+#print axioms SolverProof.matches_declared_spec
 #print axioms SolverProof.shape_at_spec
 #print axioms SolverProof.cl_shape_raw_spec
 #print axioms SolverProof.shapeR_not_shape
