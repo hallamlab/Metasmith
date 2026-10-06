@@ -256,7 +256,7 @@ pub fn generate_applications(
         if blacklist.contains(&sig) { return Ok(Vec::new()); }
         let a = ar.new_appl(p, timeline, tr, used);
         // No inputs, so no lineage: these endpoints have no parents at all.
-        let groups = p.transforms[tr as usize].produces.clone();
+        let groups = p.outcome(tr).to_vec();
         let produced = groups
             .iter()
             .map(|g| {
@@ -324,9 +324,8 @@ pub fn generate_applications(
             lin.extend_from_slice(&inputs);
             let lin = ar.ep_set(lin);
             let produced: Vec<Group> = if mint_from_transform {
-                p.transforms[tr as usize]
-                    .produces
-                    .clone()
+                p.outcome(tr)
+                    .to_vec()
                     .iter()
                     .map(|g| {
                         g.iter()

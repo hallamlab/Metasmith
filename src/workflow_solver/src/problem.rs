@@ -53,6 +53,14 @@ pub struct EncodedProblem {
     /// Endpoint ids per given group, positionally matched to
     /// `transforms[given_index].produces`.
     pub given: Vec<Vec<u32>>,
+    /// `(transform, group)`: the outcome this solve is for, per fork. A fork not
+    /// named here takes its first group.
+    #[serde(default)]
+    pub fork_groups: Vec<(TransformId, u32)>,
+    /// Transform indices from a plan already solved for a sibling case, replayed
+    /// in order before the search starts.
+    #[serde(default)]
+    pub guide: Vec<TransformId>,
 }
 
 /// Everything derived from the payload, and immutable from then on.
@@ -72,6 +80,11 @@ pub struct Problem {
     pub seed: u64,
     pub max_iter: u32,
     pub max_refine: u32,
+    pub guide: Vec<TransformId>,
+    /// The group each fork's applications produce. Every table derived below
+    /// still reads all of a fork's groups, so a problem whose fork the search
+    /// never applies searches exactly as it would without the choice.
+    pub fork_group: Map<TransformId, u32>,
 
     /// Given, then the caller's sequence, then target.
     pub iter_order: Vec<TransformId>,
@@ -156,6 +169,25 @@ impl Problem {
                 sig,
             });
         }
+        // A fork's groups are alternative outcomes, and one solve plans for one
+        // of them. The given transform's groups are samples, not outcomes.
+        let mut fork_group: Map<TransformId, u32> = det::map();
+        for (t, tr) in transforms.iter().enumerate() {
+            let t = t as TransformId;
+            if t != enc.given_index && tr.produces.len() > 1 { fork_group.insert(t, 0); }
+        }
+        for &(t, g) in &enc.fork_groups {
+            let n = transforms.get(t as usize).map(|x| x.produces.len()).unwrap_or(0);
+            if !fork_group.contains_key(&t) || g as usize >= n {
+                return Err(format!("fork group {g} of transform {t} does not exist"));
+            }
+            fork_group.insert(t, g);
+        }
+        for &t in &enc.guide {
+            if t as usize >= transforms.len() {
+                return Err(format!("guide names transform {t}, which does not exist"));
+            }
+        }
 
         let mut iter_order = Vec::with_capacity(enc.caller_transforms.len() + 2);
         iter_order.push(enc.given_index);
@@ -218,6 +250,8 @@ impl Problem {
             seed: enc.seed,
             max_iter: enc.max_iter,
             max_refine: enc.max_refine,
+            guide: enc.guide.clone(),
+            fork_group,
             iter_order,
             dep_rank,
             dep_parents_ranked,
@@ -239,6 +273,15 @@ impl Problem {
     }
 
     #[inline]
+    /// The groups one application of `t` produces: a fork's chosen group, or all.
+    pub fn outcome(&self, t: TransformId) -> &[Vec<DepId>] {
+        let groups = &self.transforms[t as usize].produces;
+        match self.fork_group.get(&t) {
+            Some(&g) => std::slice::from_ref(&groups[g as usize]),
+            None => groups,
+        }
+    }
+
     pub fn dep_is_a(&self, x: DepId, y: DepId) -> bool {
         self.types.is_a(self.deps.ty(x), self.deps.ty(y))
     }

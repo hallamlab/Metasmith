@@ -67,6 +67,8 @@ def encode_problem(
     max_iter: int,
     max_refine: int,
     wire_version: int,
+    fork_groups: Sequence[tuple[Transform, int]] = (),
+    guide: Sequence[Transform] = (),
 ) -> EncodedProblem:
     given_tr, given_appl, groups = build_given_transform(given)
     caller_transforms = list(transforms)
@@ -98,8 +100,17 @@ def encode_problem(
         for tr in ordered_transforms
     ]
 
+    # By identity, like `_rank`: a guide or a choice naming a transform this
+    # problem does not carry has nothing to say about it.
+    payload_forks = [[rank[id(tr)], g] for tr, g in fork_groups if id(tr) in rank]
+    payload_guide = [rank[id(tr)] for tr in guide if id(tr) in rank]
+    extra: dict = {}
+    if payload_forks: extra["fork_groups"] = payload_forks
+    if payload_guide: extra["guide"] = payload_guide
+
     return EncodedProblem(
         payload={
+            **extra,
             "wire_version": wire_version,
             "seed": seed,
             "max_iter": max_iter,
@@ -139,15 +150,23 @@ def decode_plan(encoded: EncodedProblem, reply: dict) -> Solution:
         assert d is not None, f"node {i} is a plan slot but was never a dependency"
         return d
 
-    steps = [
-        Application(
+    def _group(tr: Transform, produced: list[dict]) -> int|None:
+        if tr is encoded.given_transform or len(tr.produces) < 2: return None
+        assert len(produced) == 1, f"a fork step carries {len(produced)} groups"
+        got = set(produced[0])
+        return next(i for i, g in enumerate(tr.produces) if set(g) == got)
+
+    steps = []
+    for st in reply["steps"]:
+        tr = encoded.transforms[st["transform"]]
+        produced = [{_slot(d): eps[e] for d, e in g} for g in st["produced"]]
+        steps.append(Application(
             initial_timeline=st["timeline"],
-            transform=encoded.transforms[st["transform"]],
+            transform=tr,
             used={_slot(d): eps[e] for d, e in st["used"]},
-            produced=[{_slot(d): eps[e] for d, e in g} for g in st["produced"]],
-        )
-        for st in reply["steps"]
-    ]
+            produced=produced,
+            group=_group(tr, produced),
+        ))
 
     return Solution(
         complete=reply["complete"],
@@ -167,6 +186,8 @@ def solve_via_engine(
     seed: int,
     max_iter: int,
     max_refine: int,
+    fork_groups: Sequence[tuple[Transform, int]] = (),
+    guide: Sequence[Transform] = (),
 ) -> Solution:
     from .solver_engine import SOLVER_WIRE_VERSION, CallEngine
 
@@ -174,5 +195,6 @@ def solve_via_engine(
         given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
         wire_version=SOLVER_WIRE_VERSION,
+        fork_groups=fork_groups, guide=guide,
     )
     return decode_plan(encoded, CallEngine(info, "solve", encoded.payload))

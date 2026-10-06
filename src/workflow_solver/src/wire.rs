@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 /// op variant is an envelope change like any other: an older engine handed one
 /// fails to deserialize the request rather than answering it, and "fails rather
 /// than answers" is only a good outcome if the handshake caught it first.
-pub const WIRE_VERSION: u32 = 2;
+pub const WIRE_VERSION: u32 = 3;
 
 /// What this binary can actually be asked to do. The Python side falls back to
 /// its own implementation for anything not advertised here, which is how the

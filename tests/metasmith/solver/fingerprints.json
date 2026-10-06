@@ -21,9 +21,9 @@
       "steps": 6
     },
     "gen/kitchen-sink": {
-      "fingerprint": "a44b191f5c77351aeacf5a4f",
+      "fingerprint": "fb465cf592ee4363cde2daef",
       "ok": true,
-      "steps": 7
+      "steps": 8
     },
     "gen/lineage": {
       "fingerprint": "fab360fe0ec936eaef8b1aaa",
@@ -36,9 +36,9 @@
       "steps": 4
     },
     "gen/product-groups": {
-      "fingerprint": "caf290ef70401ba0e009a6f9",
+      "fingerprint": "0c6cf009e72696c70a93cde5",
       "ok": true,
-      "steps": 7
+      "steps": 8
     }
   }
 }

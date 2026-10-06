@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, Sequence
 import json
 import re
 from pathlib import Path
@@ -223,6 +223,8 @@ class Application:
     used: dict[Dependency, Endpoint]
     produced: list[dict[Dependency, Endpoint]]
     score: list[float] = field(default_factory=list)
+    # The index into `transform.produces` of the one group a fork step carries.
+    group: int|None = None
     _iteration: int = -1
     _sig: str|None = None
     _hash: int|None = None
@@ -317,6 +319,8 @@ def solve_by_mcts(
     seed: int=42,
     max_iter: int=256,
     max_refine: int|None=None,
+    fork_groups: Sequence[tuple[Transform, int]]=(),
+    guide: Sequence[Transform]=(),
 ) -> Solution:
     # Resolved here and nowhere else. Every layer above forwards `None`, so the
     # shipped budget cannot be pinned to a stale value by a signature default --
@@ -328,5 +332,6 @@ def solve_by_mcts(
     return solve_with_engine(
         given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
+        fork_groups=fork_groups, guide=guide,
     )
 
