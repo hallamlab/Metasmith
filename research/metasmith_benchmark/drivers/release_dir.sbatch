@@ -18,10 +18,10 @@ set -euo pipefail
 S=/scratch/phyberos
 KEEP=(
     "$S/refs" "$S/viromics_refs" "$S/databases" "$S/staging" "$S/cache" "$S/apptainer_cache"
-    "$S/metagem" "$S/e5" "$S/wave2_b3_nfcore/checkm2_db" "$S/bench/e1" "$S/bench/checkout/a1c1b9d7"
-    "$S/cami/work" "$S/cami/cami2_challenge" "$S/cami/cami3_toy_humangut"
-    "$S/pratama2026/interleaved" "$S/pratama2026/reads_2019" "$S/pratama2026/reads_2022"
-    "$S/pratama2026/hybrid_pairs" "$S/pratama2026/zenodo_17897233" "$S/pratama2026/zenodo_17897233_unpacked"
+    "$S/metagem" "$S/e5" "$S/wave2_b3_nfcore/checkm2_db" "$S/bench/e1"
+    "$S/bench/checkout/6afbe544" "$S/bench/checkout/99943bab" "$S/bench/checkout/19c4637a" "$S/bench/checkout/7459e529"
+    "$S/bench/e3_restore" "$S/bench/logs" "$S/bench/_tars"
+    "$S/cami/work" "$S/cami/cami2_challenge" "$S/cami/cami3_toy_humangut" "$S/pratama2026"
 )
 quota() { lfs quota -p 83115734 /scratch | tail -1 | awk '{printf "%.3f TiB, %s inodes\n", $2/2^30, $6}'; }
 
