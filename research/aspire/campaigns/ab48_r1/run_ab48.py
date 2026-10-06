@@ -6,7 +6,7 @@
     python research/aspire/campaigns/ab48_r1/run_ab48.py --study ab48_e5 status
     python research/aspire/campaigns/ab48_r1/run_ab48.py --study ab48_e5 retrieve
 
-Three studies, one driver:
+Seven studies, one driver:
 
     ab48_e5   the 2025-07-23 Enrichment5 run alone, 96 samples on one instrument
     ab48      AB48's historical and seven lab cohorts, 200 samples
@@ -15,6 +15,10 @@ Three studies, one driver:
     lab       every non-control V4-V5 sample of the lab, AB48, purify and the Nostoc and
               Anabaena cultures, as one study and so one ASV table
     purify_v4 the 2026 purify run, which amplified V4 alone
+    lab2      lab, plus the two runs of July and September 2026: one V4-V5 table over every
+              V4-V5 sample in the lab
+    lab_v4    lab2 and purify_v4 together, every merged read cut to the V4 amplicon, so that
+              one ASV table holds every sample in the lab
 
 The reads were staged on sockeye by the asv_task project, one directory per sequencing run.
 The sheets come from capella and are pinned at data/aspire/hallam_16s_inputs. The AB48 MAGs
@@ -53,6 +57,12 @@ PURIFY_COHORTS = ["purify_2025-06-02_Enrichment", "purify_2025_10_20_Enrichment"
 # about 253 nt where every other run's are 372. A V4 ASV and a V4-V5 ASV of one organism are
 # different sequences, and the count step maps reads across the two, so it is its own study.
 PURIFY_V4 = ["purify_2026_03_30_Enrichment"]
+# Two later runs, both 515F/926R with primers on. The July run is purify Spirulina; the September
+# run adds one Spirulina library to Patrik's own cultures. Their libraries are named, not dated.
+NEW_COHORTS = ["purify_2026_07_12_Enrichment", "patrik_2026_09_Biofactorial"]
+# A V4 amplicon is about 253 nt after its primers and a V4-V5 read begins at the same base, so a
+# merged read cut to 250 nt is that template's V4 sequence whichever primer pair amplified it.
+V4_TRUNC_LEN = 250
 # mitacs_spirulina is staged too, but its files are byte-identical to purify_2026_03_30's.
 # nostoc_anabaena_2024_07 pools two MiSeq runs of the same 21 libraries, one file pair each.
 NOSTOC_COHORTS = ["nostoc_anabaena", "nostoc_anabaena_2024_07"]
@@ -78,6 +88,8 @@ TARGETS = {
     "purify": ["aspire::counts_clean", "aspire::read_fate", "aspire::measurement_association_outputs"],
     "lab": ANALYSES,
     "purify_v4": ["aspire::counts_clean", "amplicon::asv_taxonomy", "aspire::read_fate"],
+    "lab2": ANALYSES,
+    "lab_v4": ["aspire::counts_clean", "amplicon::asv_taxonomy", "aspire::read_fate"],
 }
 RESOURCE_OVERRIDES = {
     "sina_trim": Resources(cpus=16, memory=Size.GB(48), duration=Duration(hours=6)),
@@ -221,7 +233,7 @@ def purify_study():
 # The lab sheet joins the AB48, purify and Nostoc/Anabaena sheets. Their Condition columns share
 # a name and a meaning, so they share a column. The Nostoc sheet keys its 2024-07 libraries by
 # File_ID (Patrik1..21) and the earlier four by ID.
-def lab_study():
+def lab_study(later_runs: bool = False, v4_run: bool = False):
     ab_samples, _ = ab48_study(AB48_COHORTS)
     taxa = _csv(SHEETS / "Taxa_Metadata.csv")
     by_id = {r["ID"]: r for r in taxa}
@@ -232,7 +244,7 @@ def lab_study():
             meta = taxa_metadata(r, by_id)
             rows.append({"sample": r["asv_table_id"], "project": "AB48", "cohort": r["cohort"],
                          **{c: _label(meta.get(c, "")) for c in LAB_LABELS}})
-    p_reads, p_rows = purify_rows(PURIFY_COHORTS)
+    p_reads, p_rows = purify_rows(PURIFY_COHORTS + (PURIFY_V4 if v4_run else []))
     purify_meta = {r["ID"]: r for r in _csv(SHEETS / "Purify_Metadata.csv")}
     cohort_of = {}
     for r in crosswalk():
@@ -249,6 +261,15 @@ def lab_study():
             m = nostoc.get(sid, {})
             rows.append({"sample": sid, "project": "Nostoc-Anabaena", "cohort": cohort,
                          **{c: _label(m.get(c, "")) for c in LAB_LABELS}})
+    for cohort in NEW_COHORTS if later_runs else []:
+        staged = staged_reads(cohort)
+        for r in crosswalk():
+            if r["cohort"] == cohort and r["asv_table_id"] in staged:
+                reads[r["asv_table_id"]] = staged[r["asv_table_id"]]
+                m = purify_meta.get(r["display_label"], {})
+                rows.append({"sample": r["asv_table_id"], "project": "Purify" if r["group"] == "purify" else "Patrik",
+                             "cohort": cohort, **{c: _label(m.get(c, "")) for c in LAB_LABELS},
+                             "Condition": _label(r["condition"])})
     ids = [r["sample"] for r in rows]
     assert len(ids) == len(set(ids)), "a sample id repeats across cohorts"
     return [reads[i] for i in ids], sheet(rows, ["project", "cohort", *LAB_LABELS])
@@ -257,6 +278,12 @@ def lab_study():
 def v4_params(params: str) -> str:
     out = re.sub(r"(?m)^  regions: .*$", "  regions: [V4]", params)
     return re.sub(r"(?m)^  trim_to: .*$", "  trim_to: V4", out)
+
+
+def v4_cut_params(params: str) -> str:
+    out = re.sub(r"(?m)^(  min_len: .*)$", rf"\1\n  trunc_len: {V4_TRUNC_LEN}", v4_params(params))
+    assert f"trunc_len: {V4_TRUNC_LEN}" in out
+    return out
 
 
 def campaign(args) -> Campaign:
@@ -277,6 +304,16 @@ def campaign(args) -> Campaign:
         return Campaign(name="lab_r1", root=ROOT, samples=samples, study_sheet=study,
                         switches_on={"spieceasi", "network_modules", "asv_mag_link", "graph_network"},
                         mags=MagSet(f"{ROOT}/mags"), **common)
+    if args.study == "lab2":
+        samples, study = lab_study(later_runs=True)
+        return Campaign(name="lab_r2", root=ROOT, samples=samples, study_sheet=study,
+                        switches_on={"spieceasi", "network_modules", "asv_mag_link", "graph_network"},
+                        mags=MagSet(f"{ROOT}/mags"), **common)
+    # Its own agent home, so it can run beside lab2.
+    if args.study == "lab_v4":
+        samples, study = lab_study(later_runs=True, v4_run=True)
+        return Campaign(name="lab_v4_r1", root=f"{ROOT}/purify", samples=samples, study_sheet=study,
+                        **{**common, "params": v4_cut_params(common["params"])})
     cohorts = AB48_COHORTS if args.study == "ab48" else ["lab_25-07-23_Enrichment5"]
     samples, study = ab48_study(cohorts)
     return Campaign(name=f"{args.study}_r1", root=ROOT, samples=samples, study_sheet=study,
