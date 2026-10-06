@@ -320,6 +320,7 @@ def solve_by_mcts(
     max_iter: int=256,
     max_refine: int|None=None,
     fork_groups: Sequence[tuple[Transform, int]]=(),
+    partial: Sequence[Transform]=(),
     guide: Sequence[Transform]=(),
 ) -> Solution:
     # Resolved here and nowhere else. Every layer above forwards `None`, so the
@@ -332,6 +333,6 @@ def solve_by_mcts(
     return solve_with_engine(
         given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
-        fork_groups=fork_groups, guide=guide,
+        fork_groups=fork_groups, partial=partial, guide=guide,
     )
 

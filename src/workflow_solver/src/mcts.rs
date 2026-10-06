@@ -256,18 +256,19 @@ impl<'a> Search<'a> {
         Ok(())
     }
 
-    /// Apply the guide to one timeline: each guide transform, in order, once,
-    /// wherever this timeline's production can feed it, then the target.
-    /// Stops at the target.
+    /// Apply the partial solution to one timeline: each transform, in order,
+    /// once, wherever this timeline's production can feed it, then the target.
+    /// Stops at the target. A transform this timeline cannot feed is skipped,
+    /// not searched for.
     ///
-    /// The guide is a plan already solved for a sibling case, so most of it
-    /// usually applies and the search starts close to, or at, a solution. A
-    /// transform this timeline cannot feed is skipped, not searched for.
+    /// Only the steps up to the fork are replayed. A sibling's steps below the
+    /// fork were chosen for the sibling's outcome, and replaying them here hands
+    /// this outcome the sibling's route whenever that route also fits.
     fn replay(
         &self, ar: &mut Arena, tl: &mut Timelines, mut st: SolverState,
         sigs: &mut Set<ApplSig>, i: i64,
     ) -> Result<SolverState, String> {
-        for &tr in self.p.guide.iter().chain([&self.p.target_index]) {
+        for &tr in self.p.partial.iter().chain([&self.p.target_index]) {
             if st.steps.last().map(|&a| ar.appl(a).transform) == Some(self.p.target_index) {
                 break;
             }
@@ -277,7 +278,7 @@ impl<'a> Search<'a> {
             self.score_appl(ar, a);
             ar.appls[a as usize].iteration = i;
             sigs.insert(ar.appl(a).sig);
-            st = self.expand(ar, tl, &st, a).pop().ok_or("a guide step expanded to nothing")?;
+            st = self.expand(ar, tl, &st, a).pop().ok_or("a partial step expanded to nothing")?;
         }
         Ok(st)
     }
@@ -481,11 +482,14 @@ pub fn mcts(
     let wants_rewards = policy.wants_rewards();
     let mut i: i64 = 0;
 
-    // With a guide, the first iteration is fixed: the given application, then
-    // the guide replayed on every timeline it opens. The search proper starts
-    // from wherever the replay left each timeline, and the replayed steps are
-    // already in the blacklist, so it never proposes them again.
-    if !p.guide.is_empty() {
+    if !p.guide.is_empty() { policy.set_guide(&p.guide); }
+
+    // With a partial solution, the first iteration is fixed: the given
+    // application, then the partial solution replayed on every timeline it
+    // opens. The search proper starts from wherever the replay left each
+    // timeline, and the replayed steps are already in the blacklist, so it
+    // never proposes them again.
+    if !p.partial.is_empty() {
         i += 1;
         let node = frontier.pop().ok_or("no given application to start from")?;
         ar.appls[node as usize].iteration = i;

@@ -74,13 +74,13 @@ def test_a_fork_with_no_choice_takes_its_first_group():
 
 
 @needs_engine
-def test_a_guide_that_reaches_the_target_needs_no_search():
+def test_a_partial_solution_that_reaches_the_target_needs_no_search():
     given, transforms, target = _overlapping_fork()
     fork = transforms[0]
     first = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 1)])
     assert first.complete
-    guide = [a.transform for a in first.dependency_plan if a.transform in transforms]
-    again = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 1)], guide=guide)
+    partial = [a.transform for a in first.dependency_plan if a.transform in transforms]
+    again = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 1)], partial=partial)
     assert again.complete
     assert again._iterations == 1
     assert [a.transform.key for a in again.dependency_plan] == [a.transform.key for a in first.dependency_plan]

@@ -68,6 +68,7 @@ def encode_problem(
     max_refine: int,
     wire_version: int,
     fork_groups: Sequence[tuple[Transform, int]] = (),
+    partial: Sequence[Transform] = (),
     guide: Sequence[Transform] = (),
 ) -> EncodedProblem:
     given_tr, given_appl, groups = build_given_transform(given)
@@ -100,12 +101,14 @@ def encode_problem(
         for tr in ordered_transforms
     ]
 
-    # By identity, like `_rank`: a guide or a choice naming a transform this
+    # By identity, like `_rank`: a partial solution, a guide or a choice naming a transform this
     # problem does not carry has nothing to say about it.
     payload_forks = [[rank[id(tr)], g] for tr, g in fork_groups if id(tr) in rank]
+    payload_partial = [rank[id(tr)] for tr in partial if id(tr) in rank]
     payload_guide = [rank[id(tr)] for tr in guide if id(tr) in rank]
     extra: dict = {}
     if payload_forks: extra["fork_groups"] = payload_forks
+    if payload_partial: extra["partial"] = payload_partial
     if payload_guide: extra["guide"] = payload_guide
 
     return EncodedProblem(
@@ -187,6 +190,7 @@ def solve_via_engine(
     max_iter: int,
     max_refine: int,
     fork_groups: Sequence[tuple[Transform, int]] = (),
+    partial: Sequence[Transform] = (),
     guide: Sequence[Transform] = (),
 ) -> Solution:
     from .solver_engine import SOLVER_WIRE_VERSION, CallEngine
@@ -195,6 +199,6 @@ def solve_via_engine(
         given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
         wire_version=SOLVER_WIRE_VERSION,
-        fork_groups=fork_groups, guide=guide,
+        fork_groups=fork_groups, partial=partial, guide=guide,
     )
     return decode_plan(encoded, CallEngine(info, "solve", encoded.payload))

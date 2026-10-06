@@ -146,13 +146,34 @@ def _unrelated(d: Dependency, by: Dependency) -> bool:
 _MAX_CASES = 64
 
 
+def _around(route: list[Application], step: Application) -> tuple[set[int], set[int]]:
+    made = {e: id(a) for a in route for e in _products(a)}
+    reads = {id(a): {made[e] for e in a.used.values() if e in made} for a in route}
+    above: set[int] = set()
+    todo = list(reads[id(step)])
+    while todo:
+        x = todo.pop()
+        if x not in above:
+            above.add(x)
+            todo.extend(reads[x])
+    below = {id(step)}
+    for a in route:
+        if reads[id(a)] & below:
+            below.add(id(a))
+    below.discard(id(step))
+    return above, below
+
+
 @dataclass
 class _Job:
     # One case on the stack: a declared case, with the outcome of every fork it
-    # has pinned. `head` is the plan of the case that pushed it, replayed first.
+    # has pinned. `partial` is the pushing case's steps up to the fork, replayed
+    # and kept. `guide` is its steps that the fork's outcome does not condition,
+    # which only bias where the search looks.
     root: int
     forks: dict[Transform, int]
-    head: list[Transform]
+    partial: list[Transform]
+    guide: list[Transform]
     origin: tuple[Transform, int]|None = None
     result: SolverResult|None = None
 
@@ -292,6 +313,19 @@ class _Merge:
             out.setdefault(0, []).append("the merged steps form a cycle")
         return out
 
+    def unforked(self) -> list[Transform]:
+        # The merged steps no fork's outcome conditions, in merge order. A step
+        # below a fork was chosen for one outcome, so it is no guide for another.
+        find = self.streams.find
+        forked: set = set()
+        out: list[Transform] = []
+        for n in self._order() or []:
+            if len(n.transform.produces) > 1 or {find(e) for e in n.slots.values()} & forked:
+                forked |= {find(e) for e in n.outputs.values()}
+            else:
+                out.append(n.transform)
+        return out
+
     def _order(self) -> list[_Node]|None:
         find = self.streams.find
         made = {id(n): {find(e) for e in n.outputs.values()} for n in self.nodes}
@@ -383,7 +417,7 @@ def PlanCases(
         return None
 
     seen: set[tuple[int, frozenset]] = set()
-    stack = [_Job(root=r, forks={}, head=[]) for r in reversed(range(len(cases)))]
+    stack = [_Job(root=r, forks={}, partial=[], guide=[]) for r in reversed(range(len(cases)))]
     deferred: list[_Job] = []
     unrouted: list[tuple[_Job, SolverResult, list[str]]] = []
     while stack or deferred:
@@ -402,13 +436,13 @@ def PlanCases(
         else:
             # Only a pushed case is guided. A declared case solves alone, so its
             # plan does not depend on the order cases are declared in.
-            aggregate = [n.transform for n in merge._order() or []] if job.origin else []
-            guide = list({id(t): t for t in job.head + aggregate}.values())
+            aggregate = merge.unforked() if job.origin else []
+            guide = list({id(t): t for t in job.guide + aggregate}.values())
             Log.Info(f"solving case [{cases[job.root].name}]{_describe(job, transform2inst)} for [{len(cases[job.root].given)}] sample(s)")
             result = solve_by_mcts(
                 given=[case_eps[job.root]], target=cases[job.root].target, transforms=transform2inst.keys(),
                 max_iter=max_iter, max_refine=max_refine, seed=seed,
-                fork_groups=list(job.forks.items()), guide=guide,
+                fork_groups=list(job.forks.items()), partial=job.partial, guide=guide,
             )
             job.result = result
         have = set(case_eps[job.root])
@@ -439,15 +473,18 @@ def PlanCases(
         if failed:
             return refuse([(jobs[k], results[k], ps) for k, ps in failed.items()])
 
-        head = [a.transform for a in route if a.used and _products(a)]
         for a in reversed(route):
             if not a.used or len(a.transform.produces) < 2 or a.transform in job.forks:
                 continue
             chosen = a.group or 0
+            above, below = _around(route, a)
+            partial = [x.transform for x in route if (id(x) in above or x is a) and x.used]
+            guide = [x.transform for x in route if id(x) not in below and x is not a and x.used and _products(x)]
             for g in reversed(range(len(a.transform.produces))):
                 if g != chosen:
                     stack.append(_Job(
-                        root=job.root, forks={**job.forks, a.transform: g}, head=head, origin=(a.transform, g),
+                        root=job.root, forks={**job.forks, a.transform: g},
+                        partial=partial, guide=guide, origin=(a.transform, g),
                     ))
 
     if unrouted:

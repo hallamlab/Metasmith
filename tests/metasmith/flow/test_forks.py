@@ -112,16 +112,24 @@ def test_an_outcome_with_no_route_fails_the_plan_and_names_its_group(tmp_path):
     assert "mock::long_reads" in hint.message and "mock::short_reads" not in hint.message
 
 
-def test_a_guide_that_reaches_the_target_solves_a_sibling_at_once(tmp_path, solves):
+def test_a_sibling_keeps_the_steps_up_to_the_fork_and_is_guided_by_none_below_it(tmp_path, monkeypatch):
+    seen: list[dict] = []
+    real = case_merge.solve_by_mcts
+
+    def record(**kw):
+        seen.append(kw)
+        return real(**kw)
+    monkeypatch.setattr(case_merge, "solve_by_mcts", record)
     st = _study(tmp_path)
     plan = st.plan({**FETCH_HYBRID, **MEGAHIT, **VIRAL_ID, **VOTU}, [
         case("S", [st.sample("studyX.json", "s1.acc")], ("votu_table", [])),
     ])
     assert plan.steps
-    ((parent, first), (sibling, second)) = solves
-    assert parent == {} and list(sibling.values()) == [1]
-    assert second._iterations == 1
-    assert [a.transform for a in second.dependency_plan[1:-1]] == [a.transform for a in first.dependency_plan[1:-1]]
+    parent, sibling = seen
+    assert list(parent["partial"]) == [] and list(parent["guide"]) == []
+    (fetch,) = steps_of(plan, "fetch")
+    assert [t.key for t in sibling["partial"]] == [fetch.transform.model.key]
+    assert list(sibling["guide"]) == []
 
 
 def test_nested_forks_solve_every_combination_once(tmp_path, solves):
@@ -173,8 +181,8 @@ def test_the_short_read_and_hybrid_study_plans_a_route_for_each_outcome(tmp_path
     assert plan.cases == ["S"]
     (fetch,) = steps_of(plan, "fetch")
     assemblers = [s for s in plan.steps if s.transform.name in {"megahit", "hybrid"}]
-    reads = {_group_of(fetch, x) for s in assemblers for x in _reads(s, "short_reads")}
-    assert reads == {0, 1}
+    reads = {(s.transform.name, _group_of(fetch, x)) for s in assemblers for x in _reads(s, "short_reads")}
+    assert reads == {("megahit", 0), ("hybrid", 1)}
     assert all(len(_reads(s, "short_reads")) == 1 for s in assemblers)
     (viral_id,) = steps_of(plan, "viral_id")
     assert len(_reads(viral_id, "assembly")) == len(assemblers)

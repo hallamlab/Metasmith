@@ -36,13 +36,16 @@ use serde::{Deserialize, Serialize};
 /// op variant is an envelope change like any other: an older engine handed one
 /// fails to deserialize the request rather than answering it, and "fails rather
 /// than answers" is only a good outcome if the handshake caught it first.
+/// v3 adds `fork_groups`, `partial` and `guide` to the solve request. Without
+/// `deny_unknown_fields` an older engine would drop them silently, so only the
+/// version catches it.
 pub const WIRE_VERSION: u32 = 3;
 
 /// What this binary can actually be asked to do. The Python side falls back to
 /// its own implementation for anything not advertised here, which is how the
 /// port ships one capability at a time instead of all at once.
 // Adding a capability is backwards compatible and adding a reply field is not,
-// which is why the witness arrives as a capability and WIRE_VERSION stays at 2.
+// which is why the witness arrives as a capability and not as a version bump.
 // The Python side negotiates per capability, so an older staged binary that does
 // not advertise `check` falls back for that one thing rather than wholesale.
 pub const CAPABILITIES: &[&str] = &["rng", "solve", "check"];

@@ -36,6 +36,7 @@ def solve_with_engine(
     max_iter: int=256,
     max_refine: int=REFINER_BUDGET,
     fork_groups: Sequence[tuple[Transform, int]]=(),
+    partial: Sequence[Transform]=(),
     guide: Sequence[Transform]=(),
 ) -> Solution:
     from .solver_engine import EngineError, EngineFor
@@ -46,7 +47,7 @@ def solve_with_engine(
     return solve_via_engine(
         info, given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
-        fork_groups=fork_groups, guide=guide,
+        fork_groups=fork_groups, partial=partial, guide=guide,
     )
 
 

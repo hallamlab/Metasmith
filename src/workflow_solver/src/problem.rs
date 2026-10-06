@@ -57,8 +57,12 @@ pub struct EncodedProblem {
     /// named here takes its first group.
     #[serde(default)]
     pub fork_groups: Vec<(TransformId, u32)>,
-    /// Transform indices from a plan already solved for a sibling case, replayed
-    /// in order before the search starts.
+    /// Transform indices of a partial solution: the steps a sibling case took up
+    /// to the fork this case is for. Replayed in order and kept.
+    #[serde(default)]
+    pub partial: Vec<TransformId>,
+    /// Transform indices of steps already solved for other cases that no other
+    /// outcome conditions. A suggestion: it raises their prior and commits nothing.
     #[serde(default)]
     pub guide: Vec<TransformId>,
 }
@@ -80,6 +84,7 @@ pub struct Problem {
     pub seed: u64,
     pub max_iter: u32,
     pub max_refine: u32,
+    pub partial: Vec<TransformId>,
     pub guide: Vec<TransformId>,
     /// The group each fork's applications produce. Every table derived below
     /// still reads all of a fork's groups, so a problem whose fork the search
@@ -183,9 +188,9 @@ impl Problem {
             }
             fork_group.insert(t, g);
         }
-        for &t in &enc.guide {
-            if t as usize >= transforms.len() {
-                return Err(format!("guide names transform {t}, which does not exist"));
+        for (field, ts) in [("partial", &enc.partial), ("guide", &enc.guide)] {
+            if let Some(t) = ts.iter().find(|&&t| t as usize >= transforms.len()) {
+                return Err(format!("{field} names transform {t}, which does not exist"));
             }
         }
 
@@ -250,6 +255,7 @@ impl Problem {
             seed: enc.seed,
             max_iter: enc.max_iter,
             max_refine: enc.max_refine,
+            partial: enc.partial.clone(),
             guide: enc.guide.clone(),
             fork_group,
             iter_order,
