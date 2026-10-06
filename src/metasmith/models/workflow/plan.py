@@ -403,8 +403,10 @@ class WorkflowPlan:
             steps=[step.Pack() for step in self.steps],
             publish_intermediates=self.publish_intermediates,
         )
+        if self.streams:
+            packed.update(streams=dict(self.streams))
         if self.multi_case:
-            packed.update(cases=list(self.cases), streams=dict(self.streams), given_cases=dict(self.given_cases))
+            packed.update(cases=list(self.cases), given_cases=dict(self.given_cases))
         else:
             for x in packed["steps"]: x.pop("cases", None)
             for x in packed["targets"]: x.pop("case", None)
@@ -525,6 +527,11 @@ class WorkflowPlan:
             max_refine=max_refine,
             seed=seed,
         )
+        if any(a.used and len(a.transform.produces) > 1 for a in result.dependency_plan):
+            from .case_merge import PlanCases
+            return PlanCases(
+                cls, cases, transforms, max_iter=max_iter, max_refine=max_refine, seed=seed,
+            )
         plan = cls._Assemble(
             result=result, inst2trlib=inst2trlib,
             solver_inputs=(given_endpoints, list(transform2inst.keys()), target_model),

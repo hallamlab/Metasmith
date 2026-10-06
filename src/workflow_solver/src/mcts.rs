@@ -257,7 +257,8 @@ impl<'a> Search<'a> {
     }
 
     /// Apply the guide to one timeline: each guide transform, in order, once,
-    /// wherever this timeline's production can feed it. Stops at the target.
+    /// wherever this timeline's production can feed it, then the target.
+    /// Stops at the target.
     ///
     /// The guide is a plan already solved for a sibling case, so most of it
     /// usually applies and the search starts close to, or at, a solution. A
@@ -266,7 +267,7 @@ impl<'a> Search<'a> {
         &self, ar: &mut Arena, tl: &mut Timelines, mut st: SolverState,
         sigs: &mut Set<ApplSig>, i: i64,
     ) -> Result<SolverState, String> {
-        for &tr in &self.p.guide {
+        for &tr in self.p.guide.iter().chain([&self.p.target_index]) {
             if st.steps.last().map(|&a| ar.appl(a).transform) == Some(self.p.target_index) {
                 break;
             }

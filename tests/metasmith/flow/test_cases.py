@@ -23,6 +23,7 @@ from .conftest import BuiltPlan, _build_transform_lib, _write_input
 
 TYPES = {
     "study": {"study"},
+    "accession": {"accession"},
     "short_reads": {"reads", "short"},
     "long_reads": {"reads", "long"},
     "assembly": {"assembly"},

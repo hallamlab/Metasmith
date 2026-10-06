@@ -1,6 +1,7 @@
 """Plan several cases: solve each alone, then merge the plans step by step."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from ...logging import Log
@@ -8,8 +9,9 @@ from ..libraries import (
     DataInstance, TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,
 )
 from ..solver import Application, Dependency, Endpoint, Transform, solve_by_mcts, Solution as SolverResult
+from .diagnostics import PlanHint
 from .plan import (
-    Case, CollectSolverInputs, _MixedCase, _absorb_givens, _dedupe_instances, _target_names,
+    Case, CollectSolverInputs, _MixedCase, _absorb_givens, _dedupe_instances, _target_names, _try_name,
 )
 from .steps import WorkflowStep, WorkflowTarget
 
@@ -115,23 +117,52 @@ def _unrelated(d: Dependency, by: Dependency) -> bool:
     return by not in da and d not in ba and not (da & ba)
 
 
+_MAX_CASES = 64
+
+
+@dataclass
+class _Job:
+    # One case on the stack: a declared case, with the outcome of every fork it
+    # has pinned. `head` is the plan of the case that pushed it, replayed first.
+    root: int
+    forks: dict[Transform, int]
+    head: list[Transform]
+    origin: tuple[Transform, int]|None = None
+    result: SolverResult|None = None
+
+
+def _group_names(fork: Transform, g: int, transform2inst, inst2trlib) -> list[str]:
+    lib = inst2trlib[transform2inst[fork]]
+    return [_try_name(lib, Endpoint(d.properties)) or "+".join(sorted(d.properties)) for d in fork.produces[g]]
+
+
+def _describe(job: _Job, transform2inst) -> str:
+    if not job.forks:
+        return ""
+    return " where " + ", ".join(f"[{transform2inst[t].name}] makes group [{g}]" for t, g in job.forks.items())
+
+
 class _Merge:
-    def __init__(self, given_eps, routes, targets, given_map, inst_cases, group_by):
-        self.given_eps: list[set[Endpoint]] = given_eps
-        self.routes: list[list[Application]] = routes
-        self.targets: list[Application] = targets
+    def __init__(self, given_map, inst_cases, group_by):
+        self.given_eps: list[set[Endpoint]] = []
+        self.routes: list[list[Application]] = []
+        self.targets: list[Application] = []
         self.given_map: dict[Endpoint, list[DataInstance]] = given_map
         self.inst_cases: dict[str, set[int]] = inst_cases
         self.group_by: dict[Transform, Dependency] = group_by
         self.streams = _Streams()
         self.nodes: list[_Node] = []
-        self.pending: list[list[Application]] = [list(r) for r in routes]
+        self.pending: list[list[Application]] = []
 
-    def run(self) -> dict[int, list[str]]:
-        for c, route in enumerate(self.routes):
-            for app in route:
-                self.pending[c].remove(app)
-                self._place(c, app)
+    def add(self, given_eps: set[Endpoint], route: list[Application], target: Application) -> dict[int, list[str]]:
+        c = len(self.routes)
+        self.given_eps.append(given_eps)
+        self.routes.append(route)
+        self.targets.append(target)
+        self.pending.append(list(route))
+        for app in route:
+            self.pending[c].remove(app)
+            self._place(c, app)
         return self.problems()
 
     def _place(self, c: int, app: Application) -> None:
@@ -203,7 +234,7 @@ class _Merge:
             for e in self.given_eps[k]:
                 r = find(e)
                 sources[r] = sources.get(r, 0) + 1
-            outs = [list(n.outputs.values()) for n in served] + [_products(a) for a in self.pending[k]]
+            outs = [_products(n.apps[k]) for n in served] + [_products(a) for a in self.pending[k]]
             for es in outs:
                 for r in {find(e) for e in es}:
                     sources[r] = sources.get(r, 0) + 1
@@ -256,70 +287,133 @@ def PlanCases(
     names = [_target_names(case, transforms) for case in cases]
     Log.Info(f"solving plan for [{len(given)}] samples as [{len(cases)}] cases")
 
-    results: list[SolverResult] = []
-    for case, eps in zip(cases, case_eps):
-        Log.Info(f"solving case [{case.name}] for [{len(case.given)}] sample(s)")
-        results.append(solve_by_mcts(
-            given=[eps], target=case.target, transforms=transform2inst.keys(),
-            max_iter=max_iter, max_refine=max_refine, seed=seed,
-        ))
-    solved = [h for h, r in enumerate(results) if r.complete and r.dependency_plan]
-
-    given_eps: list[set[Endpoint]] = []
-    for c, eps in enumerate(case_eps):
-        have = set(eps)
-        r = results[c]
-        if r.dependency_plan and not r.dependency_plan[0].used:
-            have |= set(_products(r.dependency_plan[0]))
-        given_eps.append(have)
-
-    routes: list[list[Application]|None] = []
-    for c, case in enumerate(cases):
-        # A case with no route of its own may still follow the plan of a case
-        # with the same target, skipping the steps whose products it was given.
-        candidates = ([c] if c in solved else []) + [
-            h for h in solved if h != c and cases[h].target is case.target
-        ]
-        routes.append(next(
-            (r for r in (_route(given_eps[c], results[h].dependency_plan) for h in candidates) if r is not None),
-            None,
-        ))
-
     common = dict(given_map=given_map, transform2inst=transform2inst, transforms=transforms)
-
-    def refuse(failed: dict[int, list[str]]):
-        first = min(failed)
-        return plan_cls._Refuse(
-            result=results[first], failed=failed, cases=index,
-            solver_inputs=(case_eps, list(transform2inst.keys()), cases[first].target),
-            target_names=names[first], target_model=cases[first].target, **common,
-        )
-
-    failed = {c: ["no step reaches the target"] for c, r in enumerate(routes) if r is None}
-    if failed:
-        return refuse(failed)
-
-    for h in solved:
-        r = results[h]
-        if r.dependency_plan and not r.dependency_plan[0].used:
-            _absorb_givens(given_map, r.dependency_plan[0], r.merged_endpoints)
-
+    inst_cases: dict[str, set[int]] = {}
+    jobs: list[_Job] = []
+    results: list[SolverResult] = []
     merge = _Merge(
-        given_eps=given_eps,
-        routes=[[a for a in r if _products(a)] for r in routes],  # type: ignore # none are None
-        targets=[r[-1] for r in routes],  # type: ignore
-        given_map=given_map,
-        inst_cases=index.inst_cases,
+        given_map=given_map, inst_cases=inst_cases,
         group_by={t: transform2inst[t].group_by for t in transform2inst},
     )
-    failed = merge.run()
-    if failed:
-        return refuse(failed)
+
+    def refuse(failures: list[tuple[_Job, SolverResult, list[str]]]):
+        failed: dict[int, list[str]] = {}
+        hints = []
+        for job, _, problems in failures:
+            if job.origin is not None:
+                fork, g = job.origin
+                what = _group_names(fork, g, transform2inst, inst2trlib)
+                msg = f"[{transform2inst[fork].name}] can make {what}, and no plan carries that to the target"
+                problems = [f"{msg}: {p}" for p in problems]
+                hints.append(PlanHint(
+                    kind="fork_branch", target=",".join(names[job.root]), message=msg,
+                    candidate_transforms=[transform2inst[fork].name],
+                ))
+            failed.setdefault(job.root, []).extend(problems)
+        job, result, _ = min(failures, key=lambda f: f[0].root)
+        r = job.root
+        plan = plan_cls._Refuse(
+            result=result, failed=failed, cases=index,
+            solver_inputs=(case_eps, list(transform2inst.keys()), cases[r].target),
+            target_names=names[r], target_model=cases[r].target, **common,
+        )
+        plan.hints = hints + plan.hints
+        return plan
+
+    def fallback(job: _Job, have: set[Endpoint]) -> list[Application]|None:
+        # A declared case with no route of its own may still follow the plan of
+        # a declared case with the same target, skipping the steps whose
+        # products it was given. A fork case never does: the substitute would
+        # not carry its outcome.
+        if job.forks:
+            return None
+        for h, other in enumerate(jobs):
+            if other.forks or cases[other.root].target is not cases[job.root].target:
+                continue
+            r = results[h]
+            route = _route(have, r.dependency_plan) if r.complete and r.dependency_plan else None
+            if route is not None:
+                return route
+        return None
+
+    seen: set[tuple[int, frozenset]] = set()
+    stack = [_Job(root=r, forks={}, head=[]) for r in reversed(range(len(cases)))]
+    deferred: list[_Job] = []
+    unrouted: list[tuple[_Job, SolverResult, list[str]]] = []
+    while stack or deferred:
+        if not stack:
+            stack, deferred = list(reversed(deferred)), []
+        job = stack.pop()
+        retry = job.result is not None
+        key = (job.root, frozenset((t, g) for t, g in job.forks.items() if g != 0))
+        if key in seen and not retry:
+            continue
+        seen.add(key)
+        if len(seen) > _MAX_CASES:
+            raise ValueError(f"forks in case [{cases[job.root].name}] make more than [{_MAX_CASES}] cases")
+        if job.result is not None:
+            result = job.result
+        else:
+            # Only a pushed case is guided. A declared case solves alone, so its
+            # plan does not depend on the order cases are declared in.
+            aggregate = [n.transform for n in merge._order() or []] if job.origin else []
+            guide = list({id(t): t for t in job.head + aggregate}.values())
+            Log.Info(f"solving case [{cases[job.root].name}]{_describe(job, transform2inst)} for [{len(cases[job.root].given)}] sample(s)")
+            result = solve_by_mcts(
+                given=[case_eps[job.root]], target=cases[job.root].target, transforms=transform2inst.keys(),
+                max_iter=max_iter, max_refine=max_refine, seed=seed,
+                fork_groups=list(job.forks.items()), guide=guide,
+            )
+            job.result = result
+        have = set(case_eps[job.root])
+        if result.dependency_plan and not result.dependency_plan[0].used:
+            have |= set(_products(result.dependency_plan[0]))
+        route = _route(have, result.dependency_plan) if result.complete and result.dependency_plan else None
+        if route is None:
+            route = fallback(job, have)
+        if route is None:
+            if not retry and not job.forks:
+                deferred.append(job)
+                continue
+            unrouted.append((job, result, ["no step reaches the target"]))
+            if job.forks:
+                break
+            continue
+
+        c = len(jobs)
+        jobs.append(job)
+        results.append(result)
+        for iid, roots in index.inst_cases.items():
+            if job.root in roots:
+                inst_cases.setdefault(iid, set()).add(c)
+        if result.complete and result.dependency_plan and not result.dependency_plan[0].used:
+            _absorb_givens(given_map, result.dependency_plan[0], result.merged_endpoints)
+        failed = merge.add(have, [a for a in route if _products(a)], route[-1])
+        if failed:
+            return refuse([(jobs[k], results[k], ps) for k, ps in failed.items()])
+
+        head = [a.transform for a in route if a.used and _products(a)]
+        for a in reversed(route):
+            if not a.used or len(a.transform.produces) < 2 or a.transform in job.forks:
+                continue
+            chosen = a.group or 0
+            for g in reversed(range(len(a.transform.produces))):
+                if g != chosen:
+                    stack.append(_Job(
+                        root=job.root, forks={**job.forks, a.transform: g}, head=head, origin=(a.transform, g),
+                    ))
+
+    if unrouted:
+        return refuse(unrouted)
     order = merge._order()
     assert order is not None
 
     streams = merge.streams
-    inst_cases = index.inst_cases
+    roots_of = [j.root for j in jobs]
+
+    def root_names(cs) -> list[str]:
+        return [cases[r].name for r in sorted({roots_of[c] for c in cs})]
+
     instance_map: dict[Endpoint, list[DataInstance]] = {k: _dedupe_instances(v) for k, v in given_map.items()}
     out_inst: dict[tuple[int, Dependency], DataInstance] = {}
     step_of: dict[int, WorkflowStep] = {}
@@ -354,16 +448,18 @@ def PlanCases(
             dep_map[d] = [inst]
         step = WorkflowStep(
             order=i+1, dependency_map=dep_map, transform=tr, transform_library=lib,
-            cases=[cases[c].name for c in sorted(n.cases)],
+            cases=root_names(n.cases),
         )
         step_of[id(n)] = step
         steps.append(step)
 
     targets: list[WorkflowTarget] = []
+    placed: set[tuple[str, str, str]] = set()
     dropped_targets: list[str] = []
-    for c, case in enumerate(cases):
+    for c in sorted(range(len(jobs)), key=roots_of.__getitem__):
+        case = cases[roots_of[c]]
         tgt = merge.targets[c]
-        for d, nm in zip(case.target.requires, names[c]):
+        for d, nm in zip(case.target.requires, names[roots_of[c]]):
             e = tgt.used.get(d)
             hit = None if e is None else next((
                 (n, od) for n in order if c in n.cases for od, oe in n.outputs.items()
@@ -375,9 +471,11 @@ def PlanCases(
                     dropped_targets.append(nm)
                 continue
             n, od = hit
-            targets.append(WorkflowTarget(
-                name=nm, instance=out_inst[(id(n), od)], producing_step=step_of[id(n)], case=case.name,
-            ))
+            inst = out_inst[(id(n), od)]
+            if (nm, case.name, inst.instance_id) in placed:
+                continue
+            placed.add((nm, case.name, inst.instance_id))
+            targets.append(WorkflowTarget(name=nm, instance=inst, producing_step=step_of[id(n)], case=case.name))
 
     pool = set(given_map)
     frontier = set(used_endpoints)
@@ -385,13 +483,13 @@ def PlanCases(
         frontier = {p for e in frontier for p in e.parents if p in pool and p not in used_endpoints}  # type: ignore
         used_endpoints |= frontier
     plan_given: list[DataInstance] = []
-    seen: set[str] = set()
+    seen_given: set[str] = set()
     for e, lst in given_map.items():
         if e not in used_endpoints:
             continue
         for inst in lst:
-            if inst.instance_id not in seen:
-                seen.add(inst.instance_id)
+            if inst.instance_id not in seen_given:
+                seen_given.add(inst.instance_id)
                 plan_given.append(inst)
 
     given_steps = [r.dependency_plan[0] for r in results if r.dependency_plan and not r.dependency_plan[0].used]
@@ -419,7 +517,7 @@ def PlanCases(
             for rep, members in streams.members.items() if len(members) > 1 for m in members
         },
         given_cases={
-            inst.instance_id: [cases[c].name for c in sorted(inst_cases.get(inst.instance_id, range(len(cases))))]
+            inst.instance_id: root_names(inst_cases.get(inst.instance_id, range(len(jobs))))
             for inst in plan_given
         },
     )

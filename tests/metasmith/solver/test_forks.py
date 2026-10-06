@@ -79,7 +79,7 @@ def test_a_guide_that_reaches_the_target_needs_no_search():
     fork = transforms[0]
     first = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 1)])
     assert first.complete
-    guide = [a.transform for a in first.dependency_plan if a.transform in transforms] + [target]
+    guide = [a.transform for a in first.dependency_plan if a.transform in transforms]
     again = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 1)], guide=guide)
     assert again.complete
     assert again._iterations == 1
@@ -91,7 +91,7 @@ def test_a_guide_from_the_other_outcome_still_reaches_this_one():
     given, transforms, target = _overlapping_fork()
     fork = transforms[0]
     first = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 0)])
-    guide = [a.transform for a in first.dependency_plan if a.transform in transforms] + [target]
+    guide = [a.transform for a in first.dependency_plan if a.transform in transforms]
     other = solve_by_mcts(given, transforms, target, fork_groups=[(fork, 1)], guide=guide)
     assert other.complete
     assert _fork_step(other, fork).group == 1

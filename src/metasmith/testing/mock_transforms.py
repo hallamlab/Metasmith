@@ -550,14 +550,63 @@ TransformInstance(
 
 # One step of any shape. `requires` maps a variable name to its type and the names of the
 # requirements it descends from, in declaration order.
-def step_transform(
-    name: str, requires: dict[str, tuple[str, list[str]]], product: str, group_by: str,
-) -> dict[str, str]:
-    reqs = "\n".join(
+def _requirements(requires: dict[str, tuple[str, list[str]]]) -> str:
+    return "\n".join(
         f'{var} = model.AddRequirement(lib.GetType("{dtype}")'
         + (f", parents={{{', '.join(parents)}}})" if parents else ")")
         for var, (dtype, parents) in requires.items()
     )
+
+
+def fork_transform(
+    name: str, requires: dict[str, tuple[str, list[str]]],
+    groups: list[dict[str, str]], group_by: str,
+) -> dict[str, str]:
+    # Each group is one possible outcome, as {var: dtype}. A var named in
+    # several groups is one shared product.
+    decls: list[str] = []
+    made: dict[str, str] = {}
+    for i, g in enumerate(groups):
+        if i:
+            decls.append("model.NewProductGroup()")
+        for var, dtype in g.items():
+            if var in made:
+                assert made[var] == dtype, f"{var} is {made[var]} in an earlier group"
+                decls.append(f"model.AddProduct({var})")
+            else:
+                made[var] = dtype
+                decls.append(f'{var} = model.AddProduct(lib.GetType("{dtype}"))')
+    writes = "\n    ".join(f'p_{v} = Path("{name}_{v}.out"); p_{v}.write_text("{name} {v}")' for v in made)
+    manifest = ", ".join("{" + ", ".join(f"{v}: p_{v}" for v in g) + "}" for g in groups)
+    return {
+        name: f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+{_requirements(requires)}
+{chr(10).join(decls)}
+
+def protocol(context: ExecutionContext):
+    {writes}
+    return ExecutionResult(manifest=[{manifest}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by={group_by})
+'''
+    }
+
+
+def step_transform(
+    name: str, requires: dict[str, tuple[str, list[str]]], product: str, group_by: str,
+) -> dict[str, str]:
+    reqs = _requirements(requires)
     return {
         name: f'''
 from pathlib import Path
