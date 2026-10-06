@@ -87,7 +87,9 @@ CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_ass
 SCALED = {
     "seqkit_reads": (2, 4, 1),
     "bbduk": (4, 16, 2),
-    "assembly_stats": (16, 64, 24),  # two deep Pratama 2022 samples ran 36 h at 4 cpus, CPU-bound in minimap2
+    # minimap2 is CPU-bound and scales ~linearly (15.9x at 16 threads). SRR32696690 needs ~40 h at 16,
+    # and every retry is capped at MAX_TASK_DURATION, so width is the only lever that keeps it under 24 h.
+    "assembly_stats": (48, 64, 24),
     "megahit": (16, 64, 12),
     "megahit_draft": (16, 64, 12),
     "deepvirfinder": (8, 64, 6),   # batch 0: a CAMI hybrid contig batch OOMed at 32 GB after 6 h
