@@ -28,9 +28,9 @@ class Orchestrator {
     // inherits its by-item's chain, so the chain records how the item fanned
     // out below every member it descends through. It is the only count early
     // release trusts, because no plan-time count exists: outputs are globs
-    // and optional branches can emit nothing. It rides the member index into
-    // the task and back out, and is stripped from PROV and publish so no
-    // cache key or manifest ever sees it. Kept in lockstep with
+    // and a fork's unwritten group emits only a ZERO_MARK file. It rides the
+    // member index into the task and back out, and is stripped from PROV and
+    // publish so no cache key or manifest ever sees it. Kept in lockstep with
     // LinPayload.SIBS_KEY.
     public static final String SIBS_KEY = "SIBS"
     // CASES is the list of cases an item serves, in a run of more than one

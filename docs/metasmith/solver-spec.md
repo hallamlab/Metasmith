@@ -126,8 +126,9 @@ different answer from unsound.
 `read_metadata` endpoints with no lineage intern to one node — and the given step then presents that
 one pair once per group.
 
-**Nothing confines a plan to one declared group.** The groups are one per sample, and a multi-sample
-workflow legitimately spans all of them. What keeps a single step from mixing two samples is the
+**Nothing confines a plan to one sample family.** The given step's groups are one per sample, and
+a multi-sample workflow legitimately spans all of them. A fork's groups are a different thing, and
+Shape confines each step of a fork to one of them. What keeps a single step from mixing two samples is the
 lineage anchors, not group membership: a transform that declares no anchor between two inputs has
 not asked for them to come from the same sample, and refusing anyway would be refusing on the
 author's behalf.

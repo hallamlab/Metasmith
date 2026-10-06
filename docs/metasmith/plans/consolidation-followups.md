@@ -243,6 +243,16 @@ for the slower assembler. A source step posts its products untagged, so its key 
 and waits for every lane. Each run completes correctly. The first move is a release-spec case per
 shape in `test_release_spec.py`.
 
+**A consumer below a meet step can see the other outcome's items.** A step that reads a product
+two groups of one fork share is placed once per group, but the streams below those copies union
+as before. A step reached through that union, which serves one outcome only, receives the items
+of both. No test drives the shape. The first move is a flow test with a one-outcome consumer
+below a shared meet step, then a narrowing filter at that consumer.
+
+**A transform may declare two groups with the same products.** Nothing refuses it, and the
+planner then solves the same outcome twice. The first move is a check where a `Transform` is
+completed.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
@@ -271,12 +281,21 @@ mitigation there, because it skips pinned libraries by design.
 
 **The merged multi-case plan is never witnessed.** The witness checks each case's own solve, and
 the merge across cases runs after it. `_Merge.problems` is the only guard on the merged plan: one
-source per slot per case, and no cycle. A merge bug that passes that check reaches the runtime.
+source per slot per case, and no cycle. A merge bug that passes that check reaches the runtime. Each fork outcome is a case,
+so the same holds for a plan with forks.
+
+**Nothing makes a fork outcome's route use the products that set it apart.** The hybrid outcome
+of a read fetch may assemble from its short reads alone and leave the long reads unused, since
+that route also reaches the target. The search picks `hybrid` there today, but no rule requires
+it. The first move, if a study needs the guarantee,
+is to require each outcome's route to consume a product only its group makes.
 
 **Separate case solves can pick different interchangeable tools, and then nothing merges.** Two
 cases that could share one assembler may each solve to a different one, so the merge finds no
-common step. The run is correct and computes twice. The first move is to bias each later case's
-solve toward the transforms an earlier case already chose.
+common step. The run is correct and computes twice. A fork's pushed cases already get this
+bias, from a guide of the steps no other outcome conditions. Declared cases solve without one, so
+their plans stay independent of declaration order. The first move is to measure a guide on
+declared cases.
 
 **A mutable container tag can produce a false cache hit.** A container's leaf id addresses the
 docker URL string, not the resolved image digest, so a pinned tag busts the cache on a version
@@ -343,6 +362,11 @@ keyed by stream, so a union's stream holds the parents of every producer in its 
 long-read hash a hybrid assembly item does. Today `o.cases` drops the short-read items before any
 step that reads the long reads. No e2e case drives a join where both lanes survive the filter,
 so whether `group()` raises on the item that lacks the parent is unknown.
+
+**The virtual runtime writes every group of a fork for every sample.** That is a valid outcome,
+but it never exercises a sample that writes one group. Only the host Nextflow test
+`e2e/nextflow/test_forks.py` covers single-group samples. The first move is a per-sample group
+choice in `virtual_runtime.py`.
 
 **No test stages one data library under two task keys**, in either the virtual runtime or the
 `-stub` docker lane. 0.22.1 stopped a staged leaf's id depending on the task key, so this is a

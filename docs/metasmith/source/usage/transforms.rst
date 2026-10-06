@@ -197,6 +197,35 @@ obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NB
         },
     )
 
+Alternative outputs
+===========================================================
+
+Some tools end in one of several ways. An SRA accession yields long reads, paired reads or single
+reads, and only the run's metadata says which. Declare each way as its own product group.
+:python:`AddProduct` adds to the current group, and :python:`NewProductGroup` starts the next one.
+
+.. code-block:: python
+
+    long     = model.AddProduct(lib.GetType("sequences::long_reads"))
+    model.NewProductGroup()
+    short_pe = model.AddProduct(lib.GetType("sequences::short_reads_pe"))
+    model.NewProductGroup()
+    short_se = model.AddProduct(lib.GetType("sequences::short_reads_se"))
+
+Metasmith plans a route to the target below every group. Planning fails if any group has no route,
+and the hint names the transform and the group. Products the tool always writes together belong in
+one group, so do not call :python:`NewProductGroup` between them.
+
+The protocol reports what it wrote. The manifest holds one dict per group, and each dict names every
+product of its group. A task may write several groups. The run fails the task when a dict matches no
+declared group, or when the manifest is empty.
+
+.. code-block:: python
+
+    return ExecutionResult(manifest=[{short_pe: reads.local}], success=reads.local.exists())
+
+``transforms/logistics/getSraReads.py`` in the standard library is a complete example.
+
 Running one transform
 ===========================================================
 

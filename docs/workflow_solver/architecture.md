@@ -48,6 +48,25 @@ binary also advertises `capabilities`; a capability it does not claim is simply 
 `SOLVER_RNG_VERSION` is 3. It went to 3 when PUCT became the selection rule — the envelope did
 not move, and that is exactly the independence the two constants exist to express.
 
+`WIRE_VERSION` is 3. Version 3 added three optional request fields for fork cases, and the version
+is the only guard, because an older engine ignores an unknown field.
+
+## A solve plans one outcome of each fork
+
+A non-given transform with several product groups is a fork. `fork_groups` names the group each
+fork produces in this solve, and a fork it does not name takes its first group. Only the minted
+applications narrow (`Problem::outcome`). Every derived table still reads all of a fork's groups,
+so a fork-free problem makes the same decisions and keeps its fingerprint. The choice is per
+transform, so two applications of one fork in one plan take the same group.
+
+`partial` is a partial solution the solve keeps: the sibling's steps up to the fork. `replay`
+applies the first feasible application of each one, then tries the target, and the search starts
+from the replayed state. `guide` names transforms other cases already used. It only raises their
+prior in PUCT selection (`GUIDE_WEIGHT`), so the search still decides. **CAUTION** Never replay a
+sibling's steps below the fork. They were chosen for the sibling's outcome, and a replay hands
+this outcome the sibling's route whenever that route also fits. The short-read and hybrid study
+did exactly that: its hybrid outcome assembled with `megahit` and left the long reads unused.
+
 ## Plan-fingerprint parity has been re-established
 
 Fingerprints pin the decision contract, so any search change re-pins them. They were held still
