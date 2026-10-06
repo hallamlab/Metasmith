@@ -40,6 +40,11 @@ class Orchestrator {
     // LinPayload.CASES_KEY.
     public static final String CASES_KEY = "CASES"
     public static final List RESERVED_KEYS = [FILES_KEY, PROV_KEY, KEY_KEY, SIBS_KEY, CASES_KEY]
+    // A fork task marks each group it did not write with an empty file whose
+    // name carries this after the position, so the group's optional output
+    // still emits. _post records it as a zero post and posts nothing. Kept in
+    // lockstep with payload.ZERO_MARK.
+    public static final String ZERO_MARK = ".~0."
 
     // Raised when a stream `classify()` proved to be a descendant of the
     // by-stream delivers an item whose index does not carry the by-key.
@@ -108,6 +113,10 @@ class Orchestrator {
     private Map pending_by
     private Map posts_of
     private Map routes
+    // The posts a member left empty, "<stream>#<post>" -> [[chain, index,
+    // cases]], with the member's sibling chain and lineage. Early release
+    // counts such a post as delivered for that member's node.
+    private Map zero_posts
     private volatile boolean sealed = false
     private static final String GROUP_BY_CONFLICT = "\u0000conflict"
     private static final Map NO_ROUTE = [:]
@@ -123,6 +132,7 @@ class Orchestrator {
         this.routes = new java.util.concurrent.ConcurrentHashMap()
         this.hash_cases = new java.util.concurrent.ConcurrentHashMap()
         this.post_cases = new java.util.concurrent.ConcurrentHashMap()
+        this.zero_posts = new java.util.concurrent.ConcurrentHashMap()
     }
 
     // The last statement of the workflow body.
@@ -284,11 +294,16 @@ class Orchestrator {
     // node can make a member per case set (_caseMembers). So each post must
     // deliver members whose case sets split exactly the cases it owes the
     // node, and each member must be whole on its own.
-    private boolean _whole(List paths, int depth, String parent, String stream, Map expected, List cases) {
+    //
+    // A post the node's member left empty counts as delivered once the member
+    // recorded it as a zero post (_zeroed).
+    private boolean _whole(List paths, int depth, String parent, String stream, Map expected, List cases, String root, String root_hash) {
         def want = expected.get(parent)?.findAll((p) -> this._serves(p as String, cases)) as Set
         if (want == null) return false
         def by_post = paths.groupBy((p) -> "${p[depth][0]}#${p[depth][1]}" as String)
-        if (by_post.keySet() != want) return false
+        if (!want.containsAll(by_post.keySet())) return false
+        def prefix = paths[0].subList(0, depth)
+        if (!(want - by_post.keySet()).every((p) -> this._zeroed(p as String, prefix, root, root_hash, cases))) return false
         return by_post.every((post, ps) -> {
             def by_member = ps.groupBy((p) -> p[depth].size() > 5 ? p[depth][5] : null)
             if (!this.all_cases.isEmpty()) {
@@ -307,19 +322,46 @@ class Orchestrator {
                 return by_ord.every((i, qs) -> {
                     if (name == stream) return qs.size() == 1 && qs[0].size() == depth + 1
                     if (qs.any((q) -> q.size() <= depth + 1)) return false
-                    return this._whole(qs, depth + 1, name as String, stream, expected, member_cases ?: cases)
+                    return this._whole(qs, depth + 1, name as String, stream, expected, member_cases ?: cases, root, root_hash)
                 })
             })
         })
     }
 
     private Closure _wholeFor(String stream, String key) {
-        return (List paths, List cases) -> {
+        return (List paths, List cases, Map index) -> {
             def route = this._routes(stream, key)
-            return route != null
+            if (route == null) return false
+            def hs = index[route.root]
+            return (hs instanceof List && hs.size() == 1)
                 && route.givens.every((g) -> !this._serves(g as String, cases))
-                && this._whole(paths, 0, route.root as String, stream, route.expected, cases)
+                && this._whole(paths, 0, route.root as String, stream, route.expected, cases, route.root as String, hs[0] as String)
         }
+    }
+
+    // Whether the member at the node `prefix` names, below the root item
+    // `root_hash`, left `post` empty for every case the node owes it.
+    private boolean _zeroed(String post, List prefix, String root, String root_hash, List cases) {
+        def served = this.post_cases.get(post)
+        def owed = cases.findAll((c) -> served == null || c in served) as Set
+        def covered = new HashSet()
+        for (z : new ArrayList(this.zero_posts.getOrDefault(post, []))) {
+            def (chain, index, tag) = z
+            def hs = index[root]
+            if (!(hs instanceof List) || hs.size() != 1 || hs[0] != root_hash) continue
+            def at = chain.findLastIndexOf((l) -> _isLevel(l) && l[2] == root)
+            if (((at < 0) ? [] : chain.subList(at, chain.size())) != prefix) continue
+            if (this.all_cases.isEmpty()) return true
+            covered.addAll((tag instanceof List) ? tag : this.all_cases)
+        }
+        return !this.all_cases.isEmpty() && covered.containsAll(owed)
+    }
+
+    private void _recordZero(String post, Map index, List cases) {
+        def chain = (index[SIBS_KEY] instanceof List) ? index[SIBS_KEY] : []
+        def tag = (index[CASES_KEY] instanceof List) ? index[CASES_KEY] : cases
+        this.zero_posts.computeIfAbsent(post, (x) -> Collections.synchronizedList(new ArrayList()))
+            .add([chain, stripReserved(index), tag])
     }
 
     public List getDispatchLog() {
@@ -397,6 +439,12 @@ class Orchestrator {
                     if (!(group instanceof List)) {
                         group = [group]
                     }
+                    def written = group.findAll((x) -> !x.name.contains(ZERO_MARK))
+                    if (written.isEmpty() && !group.isEmpty()) {
+                        this._recordZero("${name}#${post_id}" as String, index as Map, cases)
+                        return []
+                    }
+                    group = written
                     def n = group.size()
                     def chain = index[SIBS_KEY]
                     return (0..<n).collect((i) -> {
@@ -573,7 +621,7 @@ class Orchestrator {
             }
             def ps = this.paths.computeIfAbsent(h, x -> [])
             ps.add(path)
-            if (this.whole.call(ps, cases)) {
+            if (this.whole.call(ps, cases, item[0])) {
                 this.complete.add(h)
                 return true
             }

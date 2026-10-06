@@ -18,12 +18,12 @@ from metasmith.models.workflow.payload import build_entry
 KEY = "1e20" + "cd" * 32
 
 
-def _meta(branches: int) -> StepCacheMeta:
+def _meta(branches: int, extra: dict[int, list[str]] | None = None) -> StepCacheMeta:
     return StepCacheMeta(
         order=1, transform_key="trA", signature="sig", step_name="trA", cacheable=True,
         slot_files=[
-            {"dtype_key": f"out{b}", "ext": ".txt", "branch_idx": b, "slot_id": "a" * 64}
-            for b in range(branches)
+            {"dtype_key": k, "ext": ".txt", "branch_idx": b, "slot_id": "a" * 64}
+            for b in range(branches) for k in [f"out{b}", *(extra or {}).get(b, [])]
         ],
         slot_channels={"seed_dep": "seed"},
     )
@@ -35,14 +35,14 @@ def _entry() -> dict:
     return e
 
 
-def _promote(tmp_path: Path, names: list[str], branches: int):
+def _promote(tmp_path: Path, names: list[str], branches: int, extra: dict[int, list[str]] | None = None):
     cwd = tmp_path / "task"
     cwd.mkdir()
     for n in names:
         (cwd / n).write_text("payload")
     cache_root = tmp_path / "task_cache"
     records = promote_members(
-        cwd=cwd, entries=[_entry()], meta=_meta(branches), cache_root=cache_root, successes=[True],
+        cwd=cwd, entries=[_entry()], meta=_meta(branches, extra), cache_root=cache_root, successes=[True],
     )
     return records, cache_root
 
@@ -64,6 +64,12 @@ def test_an_empty_optional_branch_still_promotes(tmp_path):
     records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=2)
     assert [r["status"] for r in records] == ["promoted"]
     assert probe(cache_root, bytes.fromhex(KEY)) is not None
+
+
+def test_a_half_written_branch_mints_no_shard(tmp_path):
+    records, cache_root = _promote(tmp_path, ["1-1-2.abcdef-out1.txt"], branches=2, extra={1: ["more1"]})
+    assert [r["status"] for r in records] == ["incomplete"]
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
 
 
 def test_a_shard_missing_a_listed_file_is_not_a_hit(tmp_path):

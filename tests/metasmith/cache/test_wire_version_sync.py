@@ -93,6 +93,13 @@ def test_groovy_reserved_keys_match_the_parser():
     )
 
 
+def test_groovy_zero_mark_matches_the_bootstrap():
+    from metasmith.models.workflow.payload import ZERO_MARK
+
+    (found,) = re.findall(r'ZERO_MARK\s*=\s*"([^"]+)"', _orchestrator_source())
+    assert found == ZERO_MARK
+
+
 def test_reserved_keys_are_the_set_lineage_index_filters():
     assert LinPayload.RESERVED_KEYS == {
         LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY,

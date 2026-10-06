@@ -14,7 +14,11 @@
 //   slow_in  {regex: seconds}    sleep when a staged input name matches
 //   fan      {sample: n}         emit n files on branch 1    (default 1)
 //   fail     [sample, ...]       exit 1 on every attempt
-//   empty    [sample, ...]       emit zero files on branch 2 (mock1_2 only)
+//   empty    [sample, ...]       leave branch 2 unwritten, as bootstrap marks
+//                                it: one empty `.~0.` file (mock1_2 only)
+//   skip1    [sample, ...]       leave branch 1 unwritten the same way
+//   share    true                branch 2's file is a hard link to branch 1's,
+//                                as bootstrap points two groups at one product
 // A "sample" is the member's `reads` hashes joined with '+', which the
 // fixtures seed as readable ids, so a collector member reads "s0+s1+s2".
 // A member's token is its `by` hashes, then `~` and its cases when it has
@@ -84,13 +88,22 @@ def mock_script(task, index, slots, branches) {
     members.eachWithIndex { m, i ->
         def s = samples[i]
         def n = ((spec.fan ?: [:])[s] ?: 1) as int
-        (0..<n).each { j ->
-            lines << "echo '${s}' > ${i + 1}-${j + 1}-1.${tokens[i]}-${label}.out"
+        def first = "${i + 1}-1-1.${tokens[i]}-${label}.out"
+        if ((spec.skip1 ?: []).contains(s)) {
+            lines << "touch ${i + 1}-1-1.~0.${tokens[i]}-${label}.out"
+        } else {
+            (0..<n).each { j ->
+                lines << "echo '${s}' > ${i + 1}-${j + 1}-1.${tokens[i]}-${label}.out"
+            }
         }
         if (branches > 1) {
-            def n2 = (spec.empty ?: []).contains(s) ? 0 : 1
-            (0..<n2).each { j ->
-                lines << "echo '${s}' > ${i + 1}-${j + 1}-2.${tokens[i]}-${label}2.out"
+            def second = "${i + 1}-1-2.${tokens[i]}-${label}2.out"
+            if ((spec.empty ?: []).contains(s)) {
+                lines << "touch ${i + 1}-1-2.~0.${tokens[i]}-${label}2.out"
+            } else if (spec.share && !(spec.skip1 ?: []).contains(s)) {
+                lines << "ln ${first} ${second}"
+            } else {
+                lines << "echo '${s}' > ${second}"
             }
         }
     }

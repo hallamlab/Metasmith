@@ -292,14 +292,10 @@ def prepare_nextflow(task, context: NextflowGenContext):
             insts = step.dependency_map[d]
             archetype = get_archetype(insts)
             used_archetypes.append(archetype)
-        produced_archetypes: list[list[DataInstance]] = []
-        for dg in step.transform.model.produces:
-            g = []
-            for d in dg:
-                insts = step.dependency_map[d]
-                archetype = get_archetype(insts)
-                g.append(archetype)
-            produced_archetypes.append(g)
+        produced_archetypes: list[list[DataInstance]] = [
+            [get_archetype(insts) for d in dg if (insts := step.ProductsOf(g, d))]
+            for g, dg in enumerate(step.transform.model.produces)
+        ]
         return used_archetypes, produced_archetypes
 
     def prepare_step(step: WorkflowStep):
@@ -368,11 +364,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
             for d in step.transform.model.requires
         }
         dep_out = [
-            {
-                d.key: [inst.instance_id for inst in step.dependency_map.get(d, [])]
-                for d in dep_group
-            }
-            for dep_group in step.transform.model.produces
+            {d.key: [inst.instance_id for inst in step.ProductsOf(g, d)] for d in dep_group}
+            for g, dep_group in enumerate(step.transform.model.produces)
         ]
         structure_arity = {
             d.key: len(step.dependency_map.get(d, []))
@@ -415,7 +408,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
                         slot_id = cache_decision[
                             "out_instance_ids"
                         ].get((dep.key, branch_idx), "")
-                        insts = step.dependency_map.get(dep, [])
+                        insts = step.ProductsOf(branch_idx, dep)
                         if insts:
                             dtype_key = insts[0].dtype.key
                             dtype_name = insts[0].dtype_name
@@ -716,7 +709,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         produced_slot_ids = [
             _out_ids.get((dep.key, branch_idx), "")
             for branch_idx, dep_group in enumerate(step.transform.model.produces)
-            for dep in dep_group
+            for dep in dep_group if step.ProductsOf(branch_idx, dep)
         ]
         slot_ids_literal = (
             "[" + ", ".join(f"'{s}'" for s in produced_slot_ids) + "]"

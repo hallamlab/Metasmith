@@ -364,25 +364,18 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
     from ..models.workflow import METADATA_FILE
 
     used = [step.dependency_map[d][0] for d in step.transform.model.requires if len(step.dependency_map.get(d, [])) > 0]
-    produced: list[list] = []
-    for dep_group in step.transform.model.produces:
-        g = []
-        for dep in dep_group:
-            insts = step.dependency_map.get(dep, [])
-            if insts:
-                g.append(insts[0])
-        produced.append(g)
+    produced = [
+        [insts[0] for dep in dep_group if (insts := step.ProductsOf(g, dep))]
+        for g, dep_group in enumerate(step.transform.model.produces)
+    ]
 
     dep_in = {
         dep.key: [inst.instance_id for inst in step.dependency_map.get(dep, [])]
         for dep in step.transform.model.requires
     }
     dep_out = [
-        {
-            dep.key: [inst.instance_id for inst in step.dependency_map.get(dep, [])]
-            for dep in dep_group
-        }
-        for dep_group in step.transform.model.produces
+        {dep.key: [inst.instance_id for inst in step.ProductsOf(g, dep)] for dep in dep_group}
+        for g, dep_group in enumerate(step.transform.model.produces)
     ]
     structure_arity = {
         dep.key: len(step.dependency_map.get(dep, []))
@@ -475,7 +468,7 @@ def _stage_hit(
     by_slot = {}
     for branch_idx, dep_group in enumerate(step.transform.model.produces):
         for dep in dep_group:
-            insts = list(step.dependency_map.get(dep, []))
+            insts = step.ProductsOf(branch_idx, dep)
             if insts:
                 by_slot[(insts[0].dtype.key, branch_idx)] = insts[0]
     for f in manifest.get("files", []):
@@ -690,7 +683,7 @@ def cli_nextflow(argv: list[str]) -> int:
                     step.transform.model.produces
                 ):
                     for dep in dep_group:
-                        insts = list(step.dependency_map.get(dep, []))
+                        insts = step.ProductsOf(branch_idx, dep)
                         if not insts:
                             continue
                         out_inst = _select_for_key(insts, _key_inst, key_idx)[0]

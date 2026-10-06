@@ -559,3 +559,49 @@ def test_a_given_post_into_a_mixed_stream_does_not_hold_other_cases_back(ws):
     assert_slot(p02["s0~G"], 1, names={"asm_a0.txt"})
     for s in ("s1", "s2"):
         assert_slot(p02[f"{s}~R"], 1, names={product(f"{s}~R", "asm")})
+
+
+# B20. A fork task writes one of its two groups for s1, and a stream below
+# both groups feeds a step grouped by sample. s1 starts once the group it wrote
+# is done, without the close flush: the group it left empty posts a zero.
+FORK_SCRIPT = "\n".join([
+    "include { given; mock1_2 as p01; mock1 as p02; mock1 as p03; mock2 as p04 } from './mocks.nf'",
+    "",
+    "workflow {",
+    "main:",
+    "o = new Orchestrator(Channel.fromList([null]))",
+    '_lf = new groovy.json.JsonSlurper().parseText(file("workflow.lineage_of_given.json").text)',
+    "l = _lf.lineage",
+    "o.seedParents(_lf.child2parent)",
+    "_reads = (o.postIn([given(\"inputs/reads\", l)], [\"reads\"]))[0]",
+    "k = ['asm', 'extra']",
+    "(_asm, _extra) = o.post(o.asStreams(p01(o.group('reads', [_reads], k, 1))), k, ['slot-asm', 'slot-extra'])",
+    "k = ['bins']",
+    "_bins_1 = (o.post(o.asStreams(p02(o.group('asm', [_asm], k, 1))), k, ['slot-bins-1']))[0]",
+    "k = ['bins']",
+    "_bins_2 = (o.post(o.asStreams(p03(o.group('extra', [_extra], k, 1))), k, ['slot-bins-2']))[0]",
+    "_bins = o.mix([_bins_1, _bins_2])",
+    "k = ['qc']",
+    "_qc = (o.post(o.asStreams(p04(o.group('reads', [_reads, _bins], k, 1))), k, ['slot-qc']))[0]",
+    "o.seal()",
+    "}",
+]) + "\n"
+
+
+def test_a_sample_that_left_a_group_empty_starts_once_its_written_group_is_done(ws):
+    empty = "s1"
+    ws.given("reads", SAMPLES)
+    ws.spec("p01", label="asm", empty=[empty], slow={SLOW: SLOW_S})
+    ws.spec("p02", label="bins")
+    ws.spec("p03", label="xbins")
+    ws.spec("p04", label="qc")
+    result = ws.run(script=FORK_SCRIPT)
+    assert_ok(result)
+
+    assert_slow_task_was_slow(result, "p01", SLOW, SLOW_S)
+    assert_runs_ahead(result, result.completed("p04", empty), result.completed("p01", SLOW))
+    result.members("p03", set(SAMPLES) - {empty})
+    p04 = result.members("p04", set(SAMPLES))
+    assert_slot(p04[empty], 1, names={product(empty, "bins")})
+    for s in set(SAMPLES) - {empty}:
+        assert_slot(p04[s], 1, names={product(s, "bins"), product(s, "xbins")})

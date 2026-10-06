@@ -150,12 +150,14 @@ def match_output_slot(name: str, slot_files: list[dict]) -> dict | None:
 
 def member_outputs(cwd: Path, position: int) -> list[Path]:
     """The products in `cwd` that the member at `position` (1-based) wrote."""
+    from ..models.workflow.payload import ZERO_MARK
+
     out: list[Path] = []
     for fp in sorted(cwd.iterdir()):
         if fp.is_symlink():
             continue
         m = CANONICAL_OUTPUT_PREFIX.match(fp.name)
-        if m is None or int(m.group(1)) != position:
+        if m is None or int(m.group(1)) != position or ZERO_MARK in fp.name:
             continue
         out.append(fp)
     return out
@@ -181,9 +183,10 @@ def promote_members(
 
     payload = LinPayload(v=LinPayload.VERSION, entries=list(entries))
     channels = meta.channels
-    required_branches = {
-        int(sf.get("branch_idx", 0)) for sf in meta.slot_files
-    } if len({int(sf.get("branch_idx", 0)) for sf in meta.slot_files}) == 1 else set()
+    slots_of: dict[int, set[str]] = {}
+    for sf in meta.slot_files:
+        slots_of.setdefault(int(sf.get("branch_idx", 0)), set()).add(str(sf.get("dtype_key", "")))
+    required_branches = set(slots_of) if len(slots_of) == 1 else set()
     records: list[dict] = []
     link_dir = _link_dir(cwd, cache_root)
     for member, entry in enumerate(entries):
@@ -234,7 +237,10 @@ def promote_members(
             record["status"] = "failed"
         elif not files or any(
             b not in {f["branch_idx"] for f in files} for b in required_branches
-        ):
+        ) or (len(slots_of) > 1 and any(
+            slots_of[b] - {f["dtype_key"] for f in files if f["branch_idx"] == b}
+            for b in {f["branch_idx"] for f in files}
+        )):
             record["status"] = "incomplete"
         else:
             record["status"], record["shard"] = _promote_one(

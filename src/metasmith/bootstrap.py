@@ -15,7 +15,7 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
-from .models.workflow.payload import output_file_name
+from .models.workflow.payload import output_file_name, zero_file_name
 from .env import Environment, Rootfs
 from .models.lineage import ArityMismatchError, LinPayload, MissingInstanceError
 from .coms.via_file_watcher import RemoteShell
@@ -221,6 +221,10 @@ def ExecuteStep(
         Log.Info(m)
         return ExecutionResult(False)
 
+    groups = step.transform.model.produces
+    fork = len(groups) > 1
+    output_slots: dict[str, tuple[int, int]] = {}
+
     def _get_output_paths(key: Dependency, i: int, batch: int):
         found = False
         for branch, d2e in enumerate(dep2output):
@@ -228,6 +232,14 @@ def ExecuteStep(
                 dtype = d2e[key]
                 found = True
                 break
+        if fork:
+            # A fork's product is named outside every group's glob. Once the
+            # task reports which groups it wrote, each of them gets a pointer
+            # under its own name (point_fork_groups).
+            dtype = dtype if found else Endpoint(set(key.properties))
+            name = output_file_name(lineages[batch], dtype, batch=batch, item=i, branch=-1)
+            output_slots[name] = (batch, i)
+            return ContextPath.ForOutput(name, path_map)
         assert found, f"[{key}] not found in [{dep2output}]"
         name = output_file_name(
             lineages[batch], dtype, batch=batch, item=i, branch=branch
@@ -329,6 +341,10 @@ def ExecuteStep(
                 Log.Info(f"batch [{i+1}] of [{len(results)}]")
             on_exit(result, f"reports {'success' if result.success else 'failure'}")
         success = any(r.success for r in results)
+        if fork and success and not point_fork_groups(groups, results, dep2output, lineages, output_slots):
+            success = False
+            for r in results:
+                r.success = False
         if cache_meta is not None:
             _promote(cache_meta, lineages, results)
         if success: Path(".command.success").touch()
@@ -367,6 +383,64 @@ def _promote(cache_meta, lineages: list, results: list) -> None:
         return
     for r in records:
         Log.Info(f"cache [{r['status']}] member [{r['member'] + 1}] key [{r['key'][:12]}]")
+
+def point_fork_groups(
+    groups: list, results: list[ExecutionResult], dep2output: list, lineages: list,
+    output_slots: dict[str, tuple[int, int]],
+) -> bool:
+    # Each group a fork task wrote gets a pointer to its products under that
+    # group's own name, so each group's glob posts only what was written for it.
+    ok = True
+    moved: dict[Path, Path] = {}
+    for r_i, result in enumerate(results):
+        if not result.success:
+            continue
+        entries = [e for e in result.manifest if e]
+        if not entries:
+            Log.Error("a fork task must write at least one of its groups, and this one wrote none")
+            ok = False
+        at: dict[Dependency, Path] = {}
+        for entry in entries:
+            matches = [g for g, deps in enumerate(groups) if set(entry) == set(deps)]
+            missing = [d for d, p in entry.items() if not moved.get(Path(p), Path(p)).exists()]
+            clash = [d for d, p in entry.items() if at.setdefault(d, Path(p)) != Path(p)]
+            if not matches or missing or clash:
+                Log.Error(
+                    f"manifest entry {sorted(str(d) for d in entry)} is not one whole declared group"
+                    + (f", and names missing files for {sorted(str(d) for d in missing)}" if missing else "")
+                    + (f", and names a second path for {sorted(str(d) for d in clash)}" if clash else "")
+                )
+                ok = False
+                continue
+            g = matches[0]
+            for d, p in entry.items():
+                e = dep2output[g].get(d) if g < len(dep2output) else None
+                if e is None:
+                    continue
+                src = moved.get(Path(p), Path(p))
+                batch, item = output_slots.get(Path(p).name, (r_i if len(results) > 1 else 0, 0))
+                dst = src.parent/output_file_name(lineages[batch], e, batch=batch, item=item, branch=g)
+                if dst.exists() or dst.is_symlink():
+                    continue
+                if Path(p) not in moved:
+                    src.rename(dst)
+                    moved[Path(p)] = dst
+                elif src.is_dir():
+                    dst.symlink_to(src.name)
+                else:
+                    os.link(src, dst)
+        # A group the member did not write still emits on its optional
+        # outputs, as an empty marker, so early release learns it is empty.
+        written = {g for e in entries for g, deps in enumerate(groups) if set(e) == set(deps)}
+        batches = [r_i] if len(results) == len(lineages) else range(len(lineages))
+        for batch in batches:
+            for g, d2e in enumerate(dep2output):
+                if g in written:
+                    continue
+                for e in d2e.values():
+                    (Path.cwd()/zero_file_name(lineages[batch], e, batch=batch, branch=g)).touch()
+    return ok
+
 
 def resolve_step_inputs(step, dep_in_raw: dict, inst_lookup: dict, sar: dict):
     """Turn the instance ids the compiler wrote into `din` back into instances.
@@ -612,7 +686,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                     ids = raw_group.get(dep.key, [])
                     resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
                     if len(resolved) == 0:
-                        resolved = step.dependency_map.get(dep, [])
+                        resolved = step.ProductsOf(i, dep)
                     if len(resolved)==0:
                         continue
                     dgroup[dep] = resolved[0].dtype

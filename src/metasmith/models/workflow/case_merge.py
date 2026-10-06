@@ -1,9 +1,10 @@
 """Plan several cases: solve each alone, then merge the plans step by step."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
+from ...hashing import KeyGenerator
 from ...logging import Log
 from ..libraries import (
     DataInstance, TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,
@@ -43,6 +44,29 @@ def _route(given: set[Endpoint], plan: list[Application]) -> list[Application]|N
                 return fired
             have.update(products)
     return None
+
+
+def _outcome(e: Endpoint, g: int) -> Endpoint:
+    x = Endpoint(set(e.properties), set(e.parents))  # type: ignore[arg-type]
+    x._sig = f"{e.Signature()}#{g}"
+    x.hash, x.key = KeyGenerator.FromStr(x._sig)
+    return x
+
+
+def _by_outcome(route: list[Application]) -> list[Application]:
+    # The products of a fork are equal across its groups, and the merge joins
+    # equal endpoints. Each group's products get an identity of their own, so
+    # a group's stream carries only what a task wrote for that group.
+    remap: dict[Endpoint, Endpoint] = {}
+    out = []
+    for a in route:
+        produced = a.produced
+        if len(a.transform.produces) > 1:
+            g = a.group or 0
+            produced = [{d: remap.setdefault(e, _outcome(e, g)) for d, e in p.items()} for p in a.produced]
+        used = {d: remap.get(e, e) for d, e in a.used.items()}
+        out.append(replace(a, used=used, produced=produced, _sig=None, _hash=None))
+    return out
 
 
 class _Streams:
@@ -89,7 +113,9 @@ class _Node:
         self.cases: list[int] = []
         self.apps: dict[int, Application] = {}
         self.slots: dict[Dependency, Endpoint] = {}
-        self.outputs: dict[Dependency, Endpoint] = {}
+        # Keyed by product and group: each group of a fork posts its own
+        # stream, even for a product that several groups share.
+        self.outputs: dict[tuple[Dependency, int], Endpoint] = {}
 
     def save(self):
         return list(self.cases), dict(self.apps), dict(self.slots), dict(self.outputs)
@@ -172,7 +198,7 @@ class _Merge:
         for n in exact + lanes:
             saved = self.streams.save(), [(m, m.save()) for m in self.nodes]
             self._join(n, c, app)
-            if not self.problems() and not self._pools_case_givens(n):
+            if not self.problems() and not self._pools_case_givens(n) and not self._joins_outcomes():
                 return
             self.streams.restore(saved[0])
             for m, s in saved[1]:
@@ -196,13 +222,27 @@ class _Merge:
             else:
                 n.slots[d] = e
                 self.streams.find(e)
-        for g in app.produced:
-            for d, e in g.items():
-                if d in n.outputs:
-                    self.streams.union(n.outputs[d], e)
-                else:
-                    n.outputs[d] = e
-                    self.streams.find(e)
+        g = (app.group or 0) if len(app.transform.produces) > 1 else 0
+        for d, e in (x for p in app.produced for x in p.items()):
+            if (d, g) in n.outputs:
+                self.streams.union(n.outputs[(d, g)], e)
+            else:
+                n.outputs[(d, g)] = e
+                self.streams.find(e)
+
+    def _joins_outcomes(self) -> bool:
+        # Two outcomes of one fork stay two streams. A step that would read
+        # both through one slot is placed twice instead, once per outcome, so
+        # a step that serves one outcome never sees the other's products.
+        find = self.streams.find
+        for n in self.nodes:
+            if len(n.transform.produces) < 2:
+                continue
+            group_of: dict[Endpoint, int] = {}
+            for (_, g), e in n.outputs.items():
+                if group_of.setdefault(find(e), g) != g:
+                    return True
+        return False
 
     def _pools_case_givens(self, n: _Node) -> bool:
         # A slot unrelated to the grouping input pairs every item with every
@@ -299,9 +339,15 @@ def PlanCases(
     def refuse(failures: list[tuple[_Job, SolverResult, list[str]]]):
         failed: dict[int, list[str]] = {}
         hints = []
-        for job, _, problems in failures:
-            if job.origin is not None:
-                fork, g = job.origin
+        for job, result, problems in failures:
+            # A declared case whose search stopped below a fork names the
+            # outcome it was solving, as a pushed case does.
+            origin = job.origin or next((
+                (a.transform, a.group or 0) for a in result.dependency_plan
+                if a.used and len(a.transform.produces) > 1
+            ), None)
+            if origin is not None:
+                fork, g = origin
                 what = _group_names(fork, g, transform2inst, inst2trlib)
                 msg = f"[{transform2inst[fork].name}] can make {what}, and no plan carries that to the target"
                 problems = [f"{msg}: {p}" for p in problems]
@@ -388,7 +434,8 @@ def PlanCases(
                 inst_cases.setdefault(iid, set()).add(c)
         if result.complete and result.dependency_plan and not result.dependency_plan[0].used:
             _absorb_givens(given_map, result.dependency_plan[0], result.merged_endpoints)
-        failed = merge.add(have, [a for a in route if _products(a)], route[-1])
+        placed = _by_outcome(route)
+        failed = merge.add(have, [a for a in placed if _products(a)], placed[-1])
         if failed:
             return refuse([(jobs[k], results[k], ps) for k, ps in failed.items()])
 
@@ -434,7 +481,9 @@ def PlanCases(
             dep_map[d] = _dedupe_instances([
                 x for m in members for x in instance_map.get(m, []) if serves(x, n)
             ])
-        for d, e in n.outputs.items():
+        fork = len(n.transform.produces) > 1
+        groups: dict[str, list[int]] = {}
+        for (d, g), e in sorted(n.outputs.items(), key=lambda x: x[0][1]):
             path = Path(e.key + e.GetPreferredFileExtension())
             k = 1
             while path in paths_taken:
@@ -444,11 +493,13 @@ def PlanCases(
             inst = DataInstance(path=path, dtype=e, dtype_name=lib.GetName(Endpoint(d.properties)), parent_lib=lib)
             inst_cases[inst.instance_id] = set(n.cases)
             instance_map[e] = instance_map.get(e, []) + [inst]
-            out_inst[(id(n), d)] = inst
-            dep_map[d] = [inst]
+            out_inst[(id(n), d, g)] = inst
+            dep_map[d] = dep_map.get(d, []) + [inst]
+            if fork:
+                groups.setdefault(d.key, []).append(g)
         step = WorkflowStep(
             order=i+1, dependency_map=dep_map, transform=tr, transform_library=lib,
-            cases=root_names(n.cases),
+            cases=root_names(n.cases), groups=groups,
         )
         step_of[id(n)] = step
         steps.append(step)
@@ -471,7 +522,7 @@ def PlanCases(
                     dropped_targets.append(nm)
                 continue
             n, od = hit
-            inst = out_inst[(id(n), od)]
+            inst = out_inst[(id(n), *od)]
             if (nm, case.name, inst.instance_id) in placed:
                 continue
             placed.add((nm, case.name, inst.instance_id))

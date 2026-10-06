@@ -30,6 +30,11 @@ class WorkflowStep:
     # The names of the cases this step serves. A plan of one case does not pack
     # them, so its steps key as before.
     cases: list[str] = field(default_factory=list)
+    # The product group of each instance of a product, in dependency_map
+    # order, keyed by the product's key. A fork step has one instance per
+    # group it reached, so a product two groups share has two. A step without
+    # it has each product instance in every group that declares the product.
+    groups: dict[str, list[int]] = field(default_factory=dict)
 
     def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
         self._dependency_map: dict[Dependency, list[DataInstance]] = {}
@@ -54,13 +59,16 @@ class WorkflowStep:
             for inst in self.dependency_map.get(dep, [])
         ]
         self.produces = [
-            [
-                inst
-                for dep in dep_group
-                for inst in self.dependency_map.get(dep, [])
-            ]
-            for dep_group in self.transform.model.produces
+            [inst for dep in dep_group for inst in self.ProductsOf(g, dep)]
+            for g, dep_group in enumerate(self.transform.model.produces)
         ]
+
+    def ProductsOf(self, g: int, dep: Dependency) -> list[DataInstance]:
+        insts = self.dependency_map.get(dep, [])
+        gs = self.groups.get(dep.key)
+        if gs is None:
+            return list(insts)
+        return [x for x, k in zip(insts, gs) if k == g]
 
     def Pack(self):
         all_instances: dict[str, DataInstance] = {}
@@ -76,6 +84,8 @@ class WorkflowStep:
         )
         if self.cases:
             packed["cases"] = list(self.cases)
+        if self.groups:
+            packed["groups"] = {k: list(v) for k, v in self.groups.items()}
         return packed
 
     @classmethod
@@ -103,6 +113,7 @@ class WorkflowStep:
             transform=tr,
             transform_library=lib,
             cases=list(raw.get("cases", [])),
+            groups={k: list(v) for k, v in raw.get("groups", {}).items()},
         )
 
     def _resolve_dependency_map(self):
