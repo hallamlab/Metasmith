@@ -305,8 +305,8 @@ class TestBranchingBehavior:
         tr_lib = create_transform_library(temp_dir, mock_types, transforms)
 
         tr = tr_lib.GetTransform("branching.py")
-        assert len(tr.model.produces) == 2, (
-            f"Expected 2 product groups, got {len(tr.model.produces)}"
+        assert [len(g) for g in tr.model.produces] == [2], (
+            f"Expected one group of 2 products, got {tr.model.produces}"
         )
 
     def test_branches_produce_multiple_outputs(

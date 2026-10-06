@@ -320,27 +320,9 @@ def build_branching_with_failure_plan(tmp_path: Path) -> BuiltPlan:
     return BuiltPlan(plan=plan, data_library=samples, transform_libraries=[tr_lib])
 
 
-def build_fan_out_plan(tmp_path: Path, n_slots: int = 2) -> BuiltPlan:
-    if n_slots > 8:
-        pytest.skip(f"build_fan_out_plan: type catalogue caps n_slots at 8")
-    types_path = _build_type_lib(tmp_path / "types.yml")
-    samples = _build_samples_lib(tmp_path, types_path, dtype="assembly")
-    tr_lib = _build_transform_lib(
-        tmp_path / "tr", types_path, mt.multi_slot_producer(slots=n_slots)
-    )
-    plan = _generate_plan(
-        samples,
-        tr_lib,
-        sample_dtype="assembly",
-        target_props=[{f"slot_{i}"} for i in range(n_slots)],
-        target_names=[f"slot_{i}" for i in range(n_slots)],
-    )
-    return BuiltPlan(plan=plan, data_library=samples, transform_libraries=[tr_lib])
-
-
-def build_one_group_fan_out_plan(tmp_path: Path, n_products: int = 2) -> BuiltPlan:
+def build_fan_out_plan(tmp_path: Path, n_products: int = 2) -> BuiltPlan:
     if n_products > 8:
-        pytest.skip("build_one_group_fan_out_plan: type catalogue caps at 8")
+        pytest.skip("build_fan_out_plan: type catalogue caps at 8")
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(tmp_path, types_path, dtype="assembly")
     tr_lib = _build_transform_lib(
@@ -658,7 +640,6 @@ __all__ = [
     "build_branching_plan",
     "build_branching_with_failure_plan",
     "build_fan_out_plan",
-    "build_one_group_fan_out_plan",
     "build_batched_plan",
     "build_group_then_split_plan",
     "build_lineage_fork_plan",

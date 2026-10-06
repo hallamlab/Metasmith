@@ -192,6 +192,12 @@ class Transform:
 
     def AddProduct(self, example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):
         prod = self._get_product_group()
+        if isinstance(example, Dependency) and properties is None and parents is None \
+                and any(example in g for g in self.produces):
+            assert example not in prod, f"{example} already in this product group"
+            prod.append(example)
+            self._update_hash()
+            return example
         return self._add_dependency(destination=prod, example=example, properties=properties, parents=parents)
 
     def _add_dependency(self, destination: list[Dependency], example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):

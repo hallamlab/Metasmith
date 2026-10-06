@@ -52,7 +52,7 @@ def test_build_branching_with_failure_plan_returns_plan(tmp_path):
 
 
 def test_build_fan_out_plan_returns_plan(tmp_path):
-    bp = build_fan_out_plan(tmp_path, n_slots=2)
+    bp = build_fan_out_plan(tmp_path, n_products=2)
     assert isinstance(bp, BuiltPlan)
     assert bp.plan is not None
 

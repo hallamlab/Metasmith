@@ -20,11 +20,12 @@ study             = model.AddRequirement(lib.GetType("kbase::study"))
 sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 input_reads_ref   = model.AddRequirement(lib.GetType("kbase::accepts_31"), parents={sample})
 env               = model.AddRequirement(lib.GetType("env::kb_ea_utils.env"))
-# output_reads_name is one of 2 types; each is its own product branch
+# output_reads_name is one of 2 types; each is its own product group, sharing the other products
 output_reads_name = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
+report_           = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 output_reads_name_2 = model.AddProduct(lib.GetType("kbase::KBaseSets_ReadsSet"))
-report_           = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {output_reads_name: context.Output(output_reads_name)}

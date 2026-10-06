@@ -19,11 +19,12 @@ model = Transform()
 study   = model.AddRequirement(lib.GetType("kbase::study"))
 sample  = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 env     = model.AddRequirement(lib.GetType("env::kb_uploadmethods.env"))
-# name is one of 2 types; each is its own product branch
+# name is one of 2 types; each is its own product group, sharing the other products
 name    = model.AddProduct(lib.GetType("kbase::KBaseFile_PairedEndLibrary"))
+report_ = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 name_2  = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
-report_ = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {name: context.Output(name)}

@@ -22,8 +22,9 @@ Four things the port does to the source, each recorded per app in the ledger:
   typed parameters accept more than one. A union is one bare property token that
   every member type also carries, so membership is structural subtyping and
   needs no `extends:`.
-* **An output accepting several types becomes a product group**, one branch per
-  type. Past `MAX_OUTPUT_BRANCHES` the app is a generic object shuffler rather
+* **An output accepting several types becomes a fork**, one product group per
+  type, and every group also carries the app's other outputs. Past
+  `MAX_OUTPUT_BRANCHES` the app is a generic object shuffler rather
   than a workflow step, and is dropped rather than modelled. The cap is 8 because
   4 was wrong: `kb_cutadapt/remove_adapters` declares 6 output types because an
   adapter trimmer preserves whatever read type it was given, and dropping it
@@ -335,24 +336,29 @@ def _stub(app, plan) -> str:
     if module:
         b.append(f'{"env":<{pad}} = model.AddRequirement(lib.GetType("env::{env_type_name(module)}"))\n')
 
-    for i, (var, branches, e) in enumerate(plan["products"]):
-        if i and len(branches) == 1 and len(plan["products"][0][1]) > 1:
-            pass
-        if len(branches) == 1:
-            b.append(f'{var:<{pad}} = model.AddProduct(lib.GetType("kbase::{branches[0]}"))\n')
-        else:
-            b.append(f"# {e['param_id']} is one of {len(branches)} types; each is its own product branch\n")
-            for j, t in enumerate(branches):
-                if j: b.append("model.NewProductGroup()\n")
+    forks = [(var, branches, e) for var, branches, e in plan["products"] if len(branches) > 1]
+    assert len(forks) <= 1, f"{app['app_id']}: more than one output with several types"
+    n_groups = len(forks[0][1]) if forks else 1
+    for j in range(n_groups):
+        if j:
+            b.append("model.NewProductGroup()\n")
+        for var, branches, e in plan["products"]:
+            if len(branches) > 1:
+                if not j:
+                    b.append(f"# {e['param_id']} is one of {len(branches)} types; "
+                             f"each is its own product group, sharing the other products\n")
                 b.append(f'{var if not j else var + "_" + str(j + 1):<{pad}} = '
-                         f'model.AddProduct(lib.GetType("kbase::{t}"))\n')
+                         f'model.AddProduct(lib.GetType("kbase::{branches[j]}"))\n')
+            elif not j:
+                b.append(f'{var:<{pad}} = model.AddProduct(lib.GetType("kbase::{branches[0]}"))\n')
+            else:
+                b.append(f"model.AddProduct({var})\n")
 
-    first = plan["products"][0][0]
     b.append("\ndef protocol(context: ExecutionContext):\n")
+    first = plan["products"][0][0]
     b.append(f"    made = {{{first}: context.Output({first})}}\n")
-    for var, branches, _ in plan["products"][1:]:
-        if len(branches) == 1:
-            b.append(f"    made[{var}] = context.Output({var})\n")
+    for var, _, _ in plan["products"][1:]:
+        b.append(f"    made[{var}] = context.Output({var})\n")
     b.append("    for path in made.values():\n")
     b.append("        context.external_shell.Exec(f'touch {path.external}')\n")
     b.append("    return ExecutionResult(\n")

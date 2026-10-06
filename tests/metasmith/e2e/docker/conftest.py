@@ -331,7 +331,6 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 dep = model.AddRequirement(lib.GetType("mock::assembly"))
 out_a = model.AddProduct(lib.GetType("mock::branch_a"))
-model.NewProductGroup()
 out_b = model.AddProduct(lib.GetType("mock::branch_b"))
 
 def protocol(context: ExecutionContext):
@@ -340,7 +339,7 @@ def protocol(context: ExecutionContext):
     path_a.write_text("branch a content")
     path_b.write_text("branch b content")
     return ExecutionResult(
-        manifest=[{out_a: path_a}, {out_b: path_b}],
+        manifest=[{out_a: path_a, out_b: path_b}],
         success=True
     )
 

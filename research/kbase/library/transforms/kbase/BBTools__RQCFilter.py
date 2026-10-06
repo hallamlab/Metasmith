@@ -20,15 +20,18 @@ study               = model.AddRequirement(lib.GetType("kbase::study"))
 sample              = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 read_library_ref    = model.AddRequirement(lib.GetType("kbase::accepts_05"), parents={sample})
 env                 = model.AddRequirement(lib.GetType("env::BBTools.env"))
-# output_library_name is one of 4 types; each is its own product branch
+# output_library_name is one of 4 types; each is its own product group, sharing the other products
 output_library_name = model.AddProduct(lib.GetType("kbase::KBaseAssembly_PairedEndLibrary"))
+report_             = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 output_library_name_2 = model.AddProduct(lib.GetType("kbase::KBaseAssembly_SingleEndLibrary"))
+model.AddProduct(report_)
 model.NewProductGroup()
 output_library_name_3 = model.AddProduct(lib.GetType("kbase::KBaseFile_PairedEndLibrary"))
+model.AddProduct(report_)
 model.NewProductGroup()
 output_library_name_4 = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
-report_             = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {output_library_name: context.Output(output_library_name)}
