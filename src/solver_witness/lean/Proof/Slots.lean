@@ -25,7 +25,7 @@
       clauses.cl_shape p q ⦃ r => r = decide (∀ s ∈ steps q, Shape p s) ⦄
 
   is FALSE. Take a problem with NO nodes and one transform that requires nothing
-  and produces nothing, and a plan whose one step binds slot `0`. Then `nn = 0`,
+  and produces one empty group, and a plan whose one step binds slot `0`. Then `nn = 0`,
   both bit sets are empty, `shape_at` accepts -- while `Shape` demands
   `SameSet [0] []`, which fails. `shapeR_not_shape` and `derivedR_not_derived`
   below are that gap, machine checked. The `derived` instance is the same shape
@@ -88,14 +88,11 @@
   `List.nodup_cons` is the single lemma that joins them at `j = i + 1`. Nothing
   else about the pair structure is needed.
 
-  **A `zip` conjunct is the `drop` idiom on two lists at once.** `groups_match`
-  walks the product groups by index and the specification quantifies over
-  `s.produced.zip (producesOf p s.transform)`. State the loop over
-  `(prod.drop i).zip (decl.drop i)`; the inductive step is `List.zip_cons_cons`
-  -- one head, one tail -- exactly as for a single list. That form needs
-  `prod.length = decl.length` as a hypothesis, which is sound because `shape_at`
-  guards `groups_match` behind that very test; `mem_zip` is what carries a
-  member of the zip back to its two sides for the range argument.
+  **A search loop is the `drop` idiom with `||` for `&&`.** `matches_declared`
+  stops at the first declared group equal to the step's one product group, and
+  the specification states that as `∃ d ∈ decl, ...`. State the loop as
+  `r = (hit || decide (∃ d ∈ decl.drop g, ...))`; the inductive step is
+  `List.exists_mem_cons`, one head and one tail, exactly as `∀` is for a scan.
 
   **`rw [decide_eq_decide.mpr h]` leaves a `Decidable` instance as a side goal.**
   Rewriting under `decide` asks for the instance at the NEW proposition, and it
@@ -234,9 +231,9 @@ theorem ids_mem (l : List Std.Usize) (L : SolverSpec.Ids)
 @[reducible] def ShapeR (p : types.Problem) (n : Nat) (s : SolverSpec.StepView) : Prop :=
   (SolverSpec.slotsOf s.used).Nodup ∧
   SameSetLt n (SolverSpec.slotsOf s.used) (SolverSpec.requiresOf p s.transform) ∧
-  s.produced.length = (SolverSpec.producesOf p s.transform).length ∧
-  ∀ gd ∈ s.produced.zip (SolverSpec.producesOf p s.transform),
-    SameSetLt n (SolverSpec.slotsOf gd.1) gd.2
+  s.produced.length = 1 ∧
+  ∀ g ∈ s.produced, ∃ d ∈ SolverSpec.producesOf p s.transform,
+    SameSetLt n (SolverSpec.slotsOf g) d
 
 theorem steps_length (q : types.Plan) :
     (SolverSpec.steps q).length = q.steps.val.length := by
@@ -281,20 +278,6 @@ theorem bits_eq_iff_sameSetLt {u v : List Bool} {n : Nat} {A B : SolverSpec.Ids}
     have hj' : j < n := by omega
     rw [hA j hj', hB j hj']
     exact h j hj'
-
-theorem mem_zip {α β} {l₁ : List α} {l₂ : List β} :
-    ∀ {x : α × β}, x ∈ l₁.zip l₂ → x.1 ∈ l₁ ∧ x.2 ∈ l₂ := by
-  induction l₁ generalizing l₂ with
-  | nil => intro x h; simp at h
-  | cons a rest ih =>
-    intro x h
-    cases l₂ with
-    | nil => simp at h
-    | cons b bs =>
-      rw [List.zip_cons_cons] at h
-      rcases List.mem_cons.mp h with h' | h'
-      · subst h'; exact ⟨List.mem_cons_self, List.mem_cons_self⟩
-      · exact ⟨List.mem_cons_of_mem _ (ih h').1, List.mem_cons_of_mem _ (ih h').2⟩
 
 /-! ### The accumulator of a `bits::set` loop, over `Nat` ids -/
 
@@ -1119,14 +1102,15 @@ Neither is a hypothetical about unreachable inputs: the hypotheses of each are
 simultaneously satisfiable, and each describes a plan `cl_indexed` rejects and
 this clause accepts. See the module header. -/
 
-/-- A problem with no nodes, a transform requiring and producing nothing, and a
-step that binds slot `0`. `shape_at` accepts it; `Shape` does not. -/
+/-- A problem with no nodes, a transform requiring nothing and producing one
+empty group, and a step that binds slot `0`. `shape_at` accepts it; `Shape`
+does not. -/
 theorem shapeR_not_shape (p : types.Problem) (s : SolverSpec.StepView)
     (h0 : SolverSpec.nNodes p = 0)
     (hu : SolverSpec.slotsOf s.used = [0])
     (hr : SolverSpec.requiresOf p s.transform = [])
-    (hn : s.produced = [])
-    (hp : SolverSpec.producesOf p s.transform = []) :
+    (hn : s.produced = [[]])
+    (hp : SolverSpec.producesOf p s.transform = [[]]) :
     ShapeR p (SolverSpec.nNodes p) s ∧ ¬ SolverSpec.Shape p s := by
   constructor
   · refine ⟨?_, ?_, ?_, ?_⟩
@@ -1134,10 +1118,13 @@ theorem shapeR_not_shape (p : types.Problem) (s : SolverSpec.StepView)
     · rw [h0]
       intro j hj
       exact absurd hj (Nat.not_lt_zero j)
-    · rw [hn, hp]; simp
-    · rw [hn]
-      intro gd hgd
-      simp at hgd
+    · rw [hn]; simp
+    · rw [hn, hp]
+      intro g hg
+      refine ⟨[], List.mem_singleton_self _, ?_⟩
+      rw [List.mem_singleton.mp hg]
+      intro j _
+      simp [SolverSpec.slotsOf]
   · intro hc
     have h5 := hc.2.1.1 0 (by rw [hu]; simp)
     rw [hr] at h5
@@ -1180,23 +1167,21 @@ theorem shapeR_iff_shape (p : types.Problem) (q : types.Plan)
     obtain ⟨b, hb, hbx⟩ := hx
     rw [← hbx]
     exact (hused b hb).1
-  have h2 : ∀ gd ∈ s.produced.zip (SolverSpec.producesOf p s.transform),
-      (∀ x ∈ SolverSpec.slotsOf gd.1, x < SolverSpec.nNodes p) ∧
-      (∀ x ∈ gd.2, x < SolverSpec.nNodes p) := by
-    intro gd hgd
-    obtain ⟨hg1, hg2⟩ := mem_zip hgd
-    refine ⟨fun x hx => ?_, fun x hx => hpr gd.2 hg2 x hx⟩
+  have h2 : ∀ g ∈ s.produced, ∀ x ∈ SolverSpec.slotsOf g, x < SolverSpec.nNodes p := by
+    intro g hg x hx
     simp only [SolverSpec.slotsOf, List.mem_map] at hx
     obtain ⟨b, hb, hbx⟩ := hx
     rw [← hbx]
-    exact (hprodb gd.1 hg1 b hb).1
+    exact (hprodb g hg b hb).1
   constructor
   · rintro ⟨n1, n2, n3, n4⟩
-    refine ⟨n1, (sameSetLt_iff _ _ _ h1 hreq).mp n2, n3, fun gd hgd => ?_⟩
-    exact (sameSetLt_iff _ _ _ (h2 gd hgd).1 (h2 gd hgd).2).mp (n4 gd hgd)
+    refine ⟨n1, (sameSetLt_iff _ _ _ h1 hreq).mp n2, n3, fun g hg => ?_⟩
+    obtain ⟨d, hd, hgd⟩ := n4 g hg
+    exact ⟨d, hd, (sameSetLt_iff _ _ _ (h2 g hg) (hpr d hd)).mp hgd⟩
   · rintro ⟨n1, n2, n3, n4⟩
-    refine ⟨n1, (sameSetLt_iff _ _ _ h1 hreq).mpr n2, n3, fun gd hgd => ?_⟩
-    exact (sameSetLt_iff _ _ _ (h2 gd hgd).1 (h2 gd hgd).2).mpr (n4 gd hgd)
+    refine ⟨n1, (sameSetLt_iff _ _ _ h1 hreq).mpr n2, n3, fun g hg => ?_⟩
+    obtain ⟨d, hd, hgd⟩ := n4 g hg
+    exact ⟨d, hd, (sameSetLt_iff _ _ _ (h2 g hg) (hpr d hd)).mpr hgd⟩
 
 /-- The `shape` conjunct of `SolverSpec.ValidC`.
 

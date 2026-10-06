@@ -150,8 +150,10 @@ Ten clauses. `Spec.lean` is normative and this is the reading.
 
 1. **Indexed.** Every id names something that exists, every parent precedes its child in both
    tables, and no transform names one requirement twice.
-2. **Shape.** Every step binds exactly the slots its transform requires and emits exactly one
-   endpoint per declared product slot.
+2. **Shape.** Every step binds exactly the slots its transform requires. It carries exactly one
+   product group, and that group emits one endpoint per slot of one declared group. A transform
+   with several groups is a fork, and each plan is solved for one of its outcomes. Groups may share
+   a slot, so the match is by slot set, not by position.
 3. **Conformance.** Every input binding fills its slot, properties and lineage together.
 4. **Emission.** Every produced endpoint fills the slot it is emitted from.
 5. **Derived.** A produced endpoint's declared lineage is exactly what its step confers — everything
