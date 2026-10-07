@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-Dated entries for runs of this campaign's three studies: what ran, what broke, what the
+Dated entries for runs of this campaign's studies: what ran, what broke, what the
 results say. Newest last. How to run the campaign is in `README.md`, and what each step does
 is in its transform.
 
@@ -162,3 +162,25 @@ The reactor log now runs to 2026-10-01: 696,528 rows, rebuilt with `merge_reacto
 from the exported ReactorLogs folder. The rebuild reproduces the earlier merge row for row.
 
 The timeline page, built by `report_data.py`, is a private claude.ai artifact.
+
+## 2026-10-06 — lab2 and lab_v4: the 2026 runs join, key BefOu3ah and XdxlvU1T
+
+Two Biofactorial runs arrived from the Cyanogroup2 SharePoint: July 2026, six Purify Spirulina
+libraries and a blank, and September 2026, one Spirulina library and seven of Patrik's
+cultures with an elution-buffer blank. Both carry 515F/926R primers. Their libraries have
+names but no sampling dates, and the sheets mark their source as not recorded.
+
+- `lab_v4` (XdxlvU1T): 757 tasks succeeded. 240 of 250 samples pass the read floor, and 284
+  ASVs survive curation. The March 2026 V4 samples share 87–100% of their reads with ASVs that
+  other purify samples hold. Arthrospira ASV3 dominates both. The cut keeps more reads than
+  `lab_r1` did in every run, because shorter reads pass the expected-error filter.
+- `lab2` (BefOu3ah): 756 tasks succeeded and `check_results.py --name lab_r2` passes. 232 of 243
+  samples pass the floor, and 300 ASVs survive curation.
+- In `lab2` the new runs hold 30 ASVs above 1% that occur in no earlier run, each one base from
+  another ASV. The mismatch sits 13 or about 40 nt from the 3' end, nearly always G to A, and
+  the twin-to-original ratio is fixed per run (2.1–2.2 across the July run). It is a read-2
+  miscall, not a strain. The page takes its V4–V5 figures from `lab_r1` for that reason.
+- The page now draws from `lab_v4_r1`. It marks each purify sample as a UBC lab culture, a PBR
+  sample or unrecorded, and splits each sample's reads by whether the other source holds the
+  ASV. Across the V4 table, 80% of purify reads sit in ASVs both sources hold, against 11 of
+  42 ASVs by count.
