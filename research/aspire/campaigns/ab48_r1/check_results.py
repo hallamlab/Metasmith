@@ -179,7 +179,7 @@ def main():
     # 3. The July contig map agrees: an ASV whose sequence lies inside a binned 16S gene pairs
     # with that bin. A July hit outside every 16S locus is an off-target amplicon of genomic DNA,
     # which the linker rightly cannot pair, since it pairs through 16S genes only.
-    cohorts = AB48_COHORTS if args.name.startswith(("ab48_r1", "lab_r1")) else ["lab_25-07-23_Enrichment5"]
+    cohorts = AB48_COHORTS if args.name.startswith(("ab48_r1", "lab_r")) else ["lab_25-07-23_Enrichment5"]
     july, july_tot, july_tax, july_hits = load_july(args.july, cohorts)
     loci = rrna_loci(magl)
     july_bins: dict[str, set[str]] = {}

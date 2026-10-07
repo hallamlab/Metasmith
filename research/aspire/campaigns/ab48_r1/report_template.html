@@ -9,6 +9,7 @@
   --hair: #e0e4e1; --axis: #c3c9c5; --accent: #0d6a5b; --wash: rgba(13,106,91,.07);
   --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a; --s3: #eda100; --s4: #e87ba4; --s5: #008300; --s6: #4a3aa7; --s7: #e34948;
   --other: #c4c9c6; --line: #2a78d6; --setpoint: #a2a8a5; --nolog: rgba(20,25,24,.045);
+  --src-lab: #34444c; --src-pbr: #c99a5b; --shared: #0d6a5b;
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -19,6 +20,7 @@
     --hair: #262d2b; --axis: #3a433f; --accent: #52c2a9; --wash: rgba(82,194,169,.09);
     --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
     --other: #4b5350; --line: #5598e7; --setpoint: #69716e; --nolog: rgba(255,255,255,.04);
+    --src-lab: #a7b7c0; --src-pbr: #b98a4c; --shared: #3fb39a;
     color-scheme: dark;
   }
 }
@@ -27,6 +29,7 @@
   --hair: #262d2b; --axis: #3a433f; --accent: #52c2a9; --wash: rgba(82,194,169,.09);
   --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
   --other: #4b5350; --line: #5598e7; --setpoint: #69716e; --nolog: rgba(255,255,255,.04);
+  --src-lab: #a7b7c0; --src-pbr: #b98a4c; --shared: #3fb39a;
   color-scheme: dark;
 }
 * { box-sizing: border-box }
@@ -35,7 +38,11 @@ body { background: var(--bg); color: var(--ink); font-family: var(--body); font-
 a { color: var(--accent) }
 code, .mono { font-family: var(--mono); font-size: .84em }
 
-header { padding-block: 48px 28px; display: grid; gap: 14px }
+header { padding-block: 48px 28px; display: grid; gap: 14px; position: relative }
+.theme { position: absolute; top: 40px; right: 0; display: inline-flex; border: 1px solid var(--hair); border-radius: 999px; background: var(--surface); padding: 3px }
+.theme button { font: 500 .78rem/1 var(--mono); color: var(--ink-2); background: none; border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer }
+.theme button[aria-pressed="true"] { background: var(--ink); color: var(--surface) }
+.theme button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
 .eyebrow { font: 600 .74rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent) }
 h1 { font-family: var(--display); font-variation-settings: "wdth" 118; font-weight: 750; font-size: clamp(2rem, 4.6vw, 3.1rem); line-height: 1.04; letter-spacing: -.015em; margin: 0; text-wrap: balance; max-width: 22ch }
 .lede { font-size: 1.08rem; color: var(--ink-2); max-width: 68ch; margin: 0 }
@@ -75,6 +82,9 @@ svg .mag { font-size: 10.5px; fill: var(--ink-2) }
 .f0 { fill: var(--s0) } .f1 { fill: var(--s1) } .f2 { fill: var(--s2) } .f3 { fill: var(--s3) }
 .f4 { fill: var(--s4) } .f5 { fill: var(--s5) } .f6 { fill: var(--s6) } .f7 { fill: var(--s7) }
 .fo { fill: var(--other) } .fm { fill: var(--muted) }
+.src-lab { fill: var(--src-lab) } .src-pbr { fill: var(--src-pbr) } .src-unconfirmed { fill: var(--surface); stroke: var(--muted); stroke-dasharray: 2 2 }
+.c-shared { fill: var(--shared) } .c-lab { fill: var(--src-lab) } .c-pbr { fill: var(--src-pbr) } .c-neither { fill: var(--other) }
+.undated { stroke: var(--axis); stroke-dasharray: 3 3 }
 .seg { stroke: var(--surface); stroke-width: 1 }
 .dot { stroke: var(--surface); stroke-width: 1.5 }
 .ln { fill: none; stroke: var(--line); stroke-width: 1.4; stroke-linejoin: round }
@@ -101,21 +111,24 @@ th, td { padding: 5px 9px; border-bottom: 1px solid var(--hair); text-align: rig
 th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface) }
 thead th { color: var(--muted); font-weight: 600; font-family: var(--mono); font-size: .72rem }
 footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair); font-size: .84rem; color: var(--ink-2) }
-@media (max-width: 640px) { .wrap { padding-inline: 16px } header { padding-block: 32px 20px } }
+@media (max-width: 640px) { .wrap { padding-inline: 16px } header { padding-block: 72px 20px } .theme { top: 20px } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important } }
 </style>
 
 <div class="wrap">
 <header>
+  <div class="theme" role="group" aria-label="Colour theme">
+    <button type="button" data-set="light">Light</button><button type="button" data-set="dark">Dark</button>
+  </div>
   <div class="eyebrow">Hallam Lab · 16S amplicons · ASPIRE on Sockeye</div>
   <h1>AB48 and Purify Spirulina communities over time</h1>
-  <p class="lede">The July report's two community timelines, rebuilt from one ASPIRE run over every V4–V5 16S sample in the lab, so both lines share one ASV table. Each figure stacks a dot plot and taxonomic bars on one timeline. The Purify figure adds the photobioreactor's own log underneath, one line panel per sensor, so each reactor sample sits directly above the conditions that preceded it.</p>
+  <p class="lede">The July report's two community timelines, rebuilt from two lab-wide ASPIRE tables. The V4 table holds every 16S sample in the lab, each read cut to the V4 region so the 2026 V4-only run joins the rest by ASV. The V4–V5 table keeps the longer reads for every sample sequenced before 2026. The Purify figure marks each sample as a UBC lab culture or a photobioreactor (PBR) sample, and adds the reactor's own log underneath.</p>
   <div class="facts" id="facts"></div>
 </header>
 
 <section id="purify">
   <h2>Purify Spirulina: the community against the reactor log</h2>
-  <p>Seeds and lab flasks from February 2025, then every photobioreactor (PBR) sample from July 2025 to March 2026, placed at its sampling date. A washed PBR sample sits beside its unwashed twin. The reactor log starts on 1 May 2025, so the February samples have no log above them, and it runs on to October 2026, past the last sample.</p>
+  <p>Every Purify Spirulina sample in the V4 table, placed at its sampling date. A strip above the bars marks the source: seeds and flasks grown at UBC, or samples from Purify's photobioreactor. The bars split by source, so the lab cultures and the reactor each read as their own series. A washed PBR sample sits beside its unwashed twin. Libraries whose source or sampling date is not recorded sit in a band at the right. The reactor log starts on 1 May 2025 and runs on to October 2026.</p>
   <div class="figure" id="fig-purify">
     <div class="legend" id="leg-purify"></div>
     <div class="figscroll"><svg id="svg-purify" role="img" aria-labelledby="cap-purify"></svg></div>
@@ -123,9 +136,19 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
   <figcaption id="cap-purify"></figcaption>
 </section>
 
+<section id="shared">
+  <h2>How much of each culture the lab and the reactor share</h2>
+  <p>Each bar is one Purify sample, split by where else its ASVs turn up. Weighting by reads asks how much of a culture's community the other source also holds, which an ASV count cannot: a few dominant shared ASVs can carry most of a sample while dozens of rare ones are unique.</p>
+  <div class="figure" id="fig-shared">
+    <div class="legend" id="leg-shared"></div>
+    <div class="figscroll"><svg id="svg-shared" role="img" aria-labelledby="cap-shared"></svg></div>
+  </div>
+  <figcaption id="cap-shared"></figcaption>
+</section>
+
 <section id="ab48">
   <h2>AB48 consortium: enrichments from 2017 to 2025</h2>
-  <p>Each enrichment run is pooled into one profile at its collection date, the mean of its samples' relative abundances, so the axis is ordered but not to scale. AB48 has no reactor log. The right-hand column names the AB48 metagenome bins whose 16S genes the ASPIRE linker paired with that taxon's ASVs.</p>
+  <p>From the V4–V5 table. Each enrichment run is pooled into one profile at its collection date, the mean of its samples' relative abundances, so the axis is ordered but not to scale. AB48 has no reactor log. The right-hand column names the AB48 metagenome bins whose 16S genes the ASPIRE linker paired with that taxon's ASVs.</p>
   <div class="figure" id="fig-ab48">
     <div class="legend" id="leg-ab48"></div>
     <div class="figscroll"><svg id="svg-ab48" role="img" aria-labelledby="cap-ab48"></svg></div>
@@ -135,11 +158,11 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 
 <section id="methods">
   <h2>How the tables were made</h2>
-  <p>One ASPIRE study holds every non-control V4–V5 sample in the lab: the eight AB48 cohorts, two of the three Purify sequencing runs and the Nostoc and Anabaena cultures. It ran on Sockeye as a Metasmith workflow. The July report ran DADA2 once per sequencing run and joined runs by sequence afterwards. ASPIRE denoises every run together, so one ASV identifier means one sequence across the whole lab.</p>
+  <p>Two ASPIRE studies, each over the non-control samples of the lab: the eight AB48 cohorts, the Purify sequencing runs, the Nostoc and Anabaena cultures and Patrik's 2026 cultures. The V4 table holds every one of them; the V4–V5 table leaves out the three 2026 runs. Both ran on Sockeye as Metasmith workflows. The July report ran DADA2 once per sequencing run and joined runs by sequence afterwards. ASPIRE denoises every run together, so within a table one ASV identifier means one sequence across the whole lab.</p>
   <div class="steps">
-    <div class="step"><h4>Read QC and merge</h4><p>fastp trims the 515F-Y and 926R primers by length. vsearch merges pairs and keeps merged reads of 245 bp or more at ≤1 expected error.</p></div>
+    <div class="step"><h4>Read QC and merge</h4><p>fastp trims the 515F-Y and 926R primers by length. vsearch merges pairs and keeps merged reads of 245 bp or more at ≤1 expected error. For the V4 table every merged read is first cut to 250 bp.</p></div>
     <div class="step"><h4>Denoise</h4><p>vsearch UNOISE3 (minimum size 3) and de novo UCHIME3 call ASVs over the pooled study. Reads map back at 99.9% identity.</p></div>
-    <div class="step"><h4>Trim and classify</h4><p>SINA aligns each ASV to SILVA 138.2 and trims it to V4–V5. QIIME 2's consensus vsearch classifier assigns taxonomy.</p></div>
+    <div class="step"><h4>Trim and classify</h4><p>SINA aligns each ASV to SILVA 138.2 and trims it to V4–V5, or to V4 for the V4 table. QIIME 2's consensus vsearch classifier assigns taxonomy.</p></div>
     <div class="step"><h4>Curate</h4><p>Samples need 5000 reads. Mitochondrial and contaminant ASVs are removed by BLAST, and an ASV must reach 0.5% in at least one sample.</p></div>
     <div class="step"><h4>Link to MAGs</h4><p>barrnap finds 16S genes in the 24 dereplicated AB48 bins. Each ASV is paired with a bin by BLAST over its whole length.</p></div>
   </div>
@@ -158,7 +181,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 </section>
 
 <footer>
-  <p>Built by <code>research/aspire/campaigns/ab48_r1/report_data.py</code> in metasmith's <code>aspire/dev</code> branch, from the pinned results <code>data/aspire/lab_r1</code> and <code>purify_v4_r1</code>, and the reactor log <code>hallam_16s_inputs/pbr_logs_merged.csv</code>. The log is binned to 3-hour means. The logger holds a dose or harvest value for the length of the event, so those two panels show each bin's largest value.</p>
+  <p>Built by <code>research/aspire/campaigns/ab48_r1/report_data.py</code> in metasmith's <code>aspire/dev</code> branch, from the pinned results <code>data/aspire/lab_v4_r1</code> (V4) and <code>lab_r1</code> (V4–V5), and the reactor log <code>hallam_16s_inputs/pbr_logs_merged.csv</code>. The log is binned to 3-hour means. The logger holds a dose or harvest value for the length of the event, so those two panels show each bin's largest value.</p>
 </footer>
 </div>
 
@@ -212,11 +235,15 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     svg.addEventListener("focusout", hideTip);
   }
 
-  function legend(id, sec) {
+  function legend(id, sec, sources) {
     const host = document.getElementById(id);
     const items = sec.bars.slice().sort((a, b) => sec.slots[a] - sec.slots[b])
       .map(t => `<span><i style="background:var(--s${sec.slots[t]})"></i>${italic(t)}</span>`);
     items.push(`<span><i style="background:var(--other)"></i>Other taxa</span>`);
+    if (sources) items.push(`<span style="flex-basis:100%;height:0"></span>`,
+      `<span><i style="background:var(--src-lab)"></i>Source: UBC lab culture</span>`,
+      `<span><i style="background:var(--src-pbr)"></i>Purify PBR</span>`,
+      `<span><i style="border:1px dashed var(--muted)"></i>Not recorded</span>`);
     host.innerHTML = items.join("");
   }
 
@@ -251,37 +278,48 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     });
     if (opts.mags) el(g, "text", { x: W - R + 18, y: top - 8, class: "punit" }, "PAIRED MAG (GTDB)");
 
-    const by = top + rows.length * rowH + 16;
-    el(g, "text", { x: 26, y: by + 12, class: "ptitle" }, "Relative abundance");
-    el(g, "text", { x: 26, y: by + 26, class: "punit" }, "curated reads, by taxon");
-    [0, 0.5, 1].forEach(f => {
-      const yy = by + barH - f * barH;
-      el(g, "line", { x1: L - 6, x2: W - R + 6, y1: yy, y2: yy, class: f === 0 ? "axisline" : "hair" });
-      el(g, "text", { x: L - 10, y: yy + 3.5, class: "tick", "text-anchor": "end" }, (f * 100) + "%");
-    });
+    let by = top + rows.length * rowH + 16;
+    if (opts.strip) by = opts.strip(g, by);
     const order = sec.bars.slice().sort((a, b) => sec.slots[a] - sec.slots[b]);
-    cols.forEach((c, j) => {
-      let acc = 0;
-      const x = xs[j] - barW / 2;
-      const segs = order.map(t => [t, sec.rel[t] ? sec.rel[t][j] : 0, "f" + sec.slots[t]]);
-      const shown = segs.reduce((s, [, v]) => s + v, 0);
-      segs.push(["Other taxa", Math.max(0, 1 - shown), "fo"]);
-      segs.forEach(([t, v, cls], k) => {
-        if (!(v > 0)) return;
-        const h = v * barH, y = by + barH - acc - h;
-        acc += h;
-        const last = k === segs.length - 1 || acc >= barH - 0.5;
-        el(g, "rect", { x, y, width: barW, height: h, class: "seg " + cls, rx: last ? 2 : 0, tabindex: 0,
-          "data-tip": `<b>${italic(t)}</b><br>${esc(c.tipName)}<br>${pct(v)}` });
+    const panels = opts.panels || [{ title: "Relative abundance", unit: "curated reads, by taxon", keep: () => true }];
+    let barTop = by;
+    panels.forEach((panel, pi) => {
+      const keep = cols.map((_, j) => panel.keep(j));
+      if (!keep.some(Boolean)) return;
+      el(g, "text", { x: 26, y: by + 12, class: "ptitle" }, panel.title);
+      el(g, "text", { x: 26, y: by + 26, class: "punit" }, panel.unit);
+      [0, 0.5, 1].forEach(f => {
+        const yy = by + barH - f * barH;
+        el(g, "line", { x1: L - 6, x2: W - R + 6, y1: yy, y2: yy, class: f === 0 ? "axisline" : "hair" });
+        el(g, "text", { x: L - 10, y: yy + 3.5, class: "tick", "text-anchor": "end" }, (f * 100) + "%");
       });
+      cols.forEach((c, j) => {
+        if (!keep[j]) return;
+        let acc = 0;
+        const x = xs[j] - barW / 2;
+        const segs = order.map(t => [t, sec.rel[t] ? sec.rel[t][j] : 0, "f" + sec.slots[t]]);
+        const shown = segs.reduce((s, [, v]) => s + v, 0);
+        segs.push(["Other taxa", Math.max(0, 1 - shown), "fo"]);
+        segs.forEach(([t, v, cls], k) => {
+          if (!(v > 0)) return;
+          const h = v * barH, y = by + barH - acc - h;
+          acc += h;
+          const last = k === segs.length - 1 || acc >= barH - 0.5;
+          el(g, "rect", { x, y, width: barW, height: h, class: "seg " + cls, rx: last ? 2 : 0, tabindex: 0,
+            "data-tip": `<b>${italic(t)}</b><br>${esc(c.tipName)}<br>${pct(v)}` });
+        });
+      });
+      const ly = by + barH + 10;
+      cols.forEach((c, j) => {
+        if (!keep[j]) return;
+        const t = el(g, "text", { x: xs[j] + 3, y: ly, class: "slab", "text-anchor": "end",
+          transform: `rotate(-55 ${xs[j] + 3} ${ly})` });
+        t.textContent = c.short;
+      });
+      if (pi === 0) barTop = by;
+      by = ly + labelBand;
     });
-    const ly = by + barH + 10;
-    cols.forEach((c, j) => {
-      const t = el(g, "text", { x: xs[j] + 3, y: ly, class: "slab", "text-anchor": "end",
-        transform: `rotate(-55 ${xs[j] + 3} ${ly})` });
-      t.textContent = c.short;
-    });
-    return { bottom: ly + labelBand, barTop: by, barBottom: by + barH };
+    return { bottom: by, barTop };
   }
 
   function timeAxis(svg, x, t0, t1, y, L, R, W, up) {
@@ -301,48 +339,71 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     return g;
   }
 
+  const SOURCE = { lab: "UBC lab culture", pbr: "Purify PBR", unconfirmed: "Source not recorded" };
+
   function purifyFigure() {
     const sec = DATA.purify, logs = DATA.logs;
     const svg = document.getElementById("svg-purify");
-    const W = 1040, L = 210, R = 110, PW = W - L - R;
+    const barW = 11, gap = 2;
+    const dated = sec.samples.filter(s => s.date), undated = sec.samples.filter(s => !s.date);
+    const undW = undated.length ? undated.length * (barW + gap) + 44 : 0;
+    const W = 1040, L = 210, R = 110, PW = W - L - R - undW, XR = L + PW;
     const t0 = new Date(Date.UTC(2025, 1, 1));
     const lastLogAt = utc(logs.last), t1 = new Date(Date.UTC(lastLogAt.getUTCFullYear(), lastLogAt.getUTCMonth() + 1, 1));
     const x = d => L + (d - t0) / (t1 - t0) * PW;
-    const barW = 11, gap = 2;
-    const samples = sec.samples.map(s => ({ ...s, d: utc(s.date) }));
+    const samples = [...dated, ...undated].map(s => ({ ...s, d: s.date ? utc(s.date) : null }));
     const byDate = {};
-    samples.forEach(s => (byDate[s.date] = byDate[s.date] || []).push(s));
+    samples.forEach(s => { if (s.d) (byDate[s.date] = byDate[s.date] || []).push(s) });
     const xs = samples.map(s => {
+      if (!s.d) return XR + 32 + undated.indexOf(sec.samples.find(u => u.id === s.id)) * (barW + gap) + barW / 2;
       const grp = byDate[s.date], k = grp.indexOf(s);
       return x(s.d) + (k - (grp.length - 1) / 2) * (barW + gap);
     });
+    const order = samples.map(s => sec.samples.findIndex(u => u.id === s.id));
+    const view = { ...sec, rel: Object.fromEntries(Object.entries(sec.rel).map(([t, v]) => [t, order.map(i => v[i])])) };
     const cols = samples.map(s => ({
-      short: s.label.replace(/^PBR /, "PBR ").replace("Original Community", "Original comm."),
-      tipName: `${s.label} · ${s.condition}${s.washed ? ", washed" : ""} · ${fmtDate(s.d)} · ${s.reads.toLocaleString()} reads${s.study === DATA.study.v4 ? " · V4 run" : ""}`,
+      short: s.label.replace("Original Community", "Original comm."),
+      tipName: `${s.label} · ${SOURCE[s.source]}${s.washed ? ", washed" : ""} · ${s.d ? fmtDate(s.d) : "date not recorded"} · ${s.reads.toLocaleString()} reads`,
     }));
 
     const top = 34;
-    timeAxis(svg, x, t0, t1, 22, L, R, W, true);
-    const comm = community(svg, sec, cols, xs, top, { L, R, W, rowH: 17, rMax: 10, barH: 170, barW, labelBand: 92 });
+    timeAxis(svg, x, t0, t1, 22, L, W - XR, W, true);
+    if (undW) {
+      el(svg, "line", { x1: XR + 16, x2: XR + 16, y1: 10, y2: 30, class: "undated" });
+      el(svg, "text", { x: XR + 24, y: 14, class: "tick" }, "UNDATED");
+    }
+    const strip = (g, y) => {
+      el(g, "text", { x: 26, y: y + 9, class: "ptitle" }, "Source");
+      samples.forEach((s, j) => el(g, "rect", { x: xs[j] - barW / 2, y, width: barW, height: 10, rx: 1.5,
+        class: "src-" + s.source, tabindex: 0, "data-tip": `<b>${esc(SOURCE[s.source])}</b><br>${esc(cols[j].tipName)}` }));
+      return y + 26;
+    };
+    const panels = [
+      { title: "UBC lab cultures", unit: "seeds and flasks, by taxon", keep: j => samples[j].source === "lab" },
+      { title: "Purify PBR", unit: "reactor samples, by taxon", keep: j => samples[j].source === "pbr" },
+      { title: "Source not recorded", unit: "2026 libraries, by taxon", keep: j => samples[j].source === "unconfirmed" },
+    ];
+    const comm = community(svg, view, cols, xs, top, { L, R, W, rowH: 17, rMax: 10, barH: 120, barW, labelBand: 84, strip, panels });
+    if (undW) el(svg, "line", { x1: XR + 16, x2: XR + 16, y1: top, y2: comm.bottom - 20, class: "undated" });
 
     const logTop = comm.bottom + 18, panelH = 50, panelGap = 14;
     const lt0 = utc(logs.t0), step = logs.step_hours * 36e5;
     const firstLog = utc(logs.first), lastLog = utc(logs.last);
-    const panels = logs.panels;
-    const heights = panels.map(p => p.series.length > 2 ? 3 * 18 : panelH);
+    const logPanels = logs.panels;
+    const heights = logPanels.map(p => p.series.length > 2 ? 3 * 18 : panelH);
     let y = logTop;
     const geo = [];
     const lines = el(svg, "g");
     el(lines, "text", { x: 26, y: y - 4, class: "punit" }, "PHOTOBIOREACTOR LOG");
     y += 8;
-    panels.forEach((p, i) => {
+    logPanels.forEach((p, i) => {
       const h = heights[i];
       geo.push({ y, h });
       el(lines, "rect", { x: L, y, width: Math.max(0, x(firstLog) - L), height: h, class: "nolog" });
-      el(lines, "rect", { x: x(lastLog), y, width: Math.max(0, W - R - x(lastLog)), height: h, class: "nolog" });
+      el(lines, "rect", { x: x(lastLog), y, width: Math.max(0, XR - x(lastLog)), height: h, class: "nolog" });
       el(lines, "text", { x: 26, y: y + 12, class: "ptitle" }, p.title);
       if (p.unit) el(lines, "text", { x: 26, y: y + 25, class: "punit" }, p.unit);
-      el(lines, "line", { x1: L, x2: W - R, y1: y + h, y2: y + h, class: "hair" });
+      el(lines, "line", { x1: L, x2: XR, y1: y + h, y2: y + h, class: "hair" });
       if (p.series.length > 2) {
         p.series.forEach((s, k) => {
           const ly = y + k * 18;
@@ -358,7 +419,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
         p.series.forEach(s => drawSeries(lines, s, y + 3, y + h - 2, lo, hi, s.name === "setpoint" ? "ln set" : "ln"));
         if (p.series.length === 2) {
           const s = p.series[1], last = lastValue(s);
-          if (last) el(lines, "text", { x: W - R + 6, y: yOf(last.v, y + 3, y + h - 2, lo, hi) + 3.5, class: "punit" }, "setpoint");
+          if (last) el(lines, "text", { x: XR + 6, y: yOf(last.v, y + 3, y + h - 2, lo, hi) + 3.5, class: "punit" }, "setpoint");
         }
         geo[i].lo = lo; geo[i].hi = hi;
       }
@@ -393,7 +454,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
       el(sampleLines, "line", { x1: xx, x2: xx, y1: logTop + 6, y2: logBottom, class: "samp" });
     });
     svg.insertBefore(sampleLines, svg.firstChild);
-    timeAxis(svg, x, t0, t1, logBottom + 6, L, R, W, false);
+    timeAxis(svg, x, t0, t1, logBottom + 6, L, W - XR, W, false);
 
     const H = logBottom + 30;
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
@@ -401,8 +462,8 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     // Crosshair: one vertical rule through every log panel, and each panel's value in the right gutter.
     const cross = el(svg, "line", { y1: logTop + 6, y2: logBottom, class: "cross", visibility: "hidden" });
     const stamp = el(svg, "text", { y: logTop - 6, class: "readout", "text-anchor": "middle", visibility: "hidden" });
-    const reads = panels.map((p, i) => p.series.map((s, k) => el(svg, "text", {
-      x: W - R + 6, y: p.series.length > 2 ? geo[i].y + k * 18 + 12 : geo[i].y + 12 + k * 13, class: "readout", visibility: "hidden" })));
+    const reads = logPanels.map((p, i) => p.series.map((s, k) => el(svg, "text", {
+      x: XR + 6, y: p.series.length > 2 ? geo[i].y + k * 18 + 12 : geo[i].y + 12 + k * 13, class: "readout", visibility: "hidden" })));
     const hit = el(svg, "rect", { x: L, y: logTop + 6, width: PW, height: logBottom - logTop - 6, class: "hit" });
     const toSvg = e => { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()) };
     hit.addEventListener("pointermove", e => {
@@ -410,10 +471,10 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
       const t = t0.getTime() + (pt.x - L) / PW * (t1 - t0);
       const i = Math.round((t - lt0.getTime()) / step);
       cross.setAttribute("x1", pt.x); cross.setAttribute("x2", pt.x); cross.setAttribute("visibility", "visible");
-      stamp.setAttribute("x", Math.min(Math.max(pt.x, L + 50), W - R - 50));
+      stamp.setAttribute("x", Math.min(Math.max(pt.x, L + 50), XR - 50));
       stamp.textContent = new Date(t).toLocaleString("en-CA", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", timeZone: "UTC", hour12: false }) + " UTC";
       stamp.setAttribute("visibility", "visible");
-      panels.forEach((p, pi) => p.series.forEach((s, k) => {
+      logPanels.forEach((p, pi) => p.series.forEach((s, k) => {
         const v = i >= 0 && i < s.values.length ? s.values[i] : null;
         const r = reads[pi][k];
         r.textContent = v === null ? "—" : (p.series.length === 2 ? (k ? "set " : "") : "") + num(v);
@@ -425,12 +486,12 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     });
     wireTips(svg);
 
-    legend("leg-purify", sec);
-    const pbr = samples.filter(s => s.condition === "PBR").length;
+    legend("leg-purify", sec, true);
+    const n = k => samples.filter(s => s.source === k).length;
     document.getElementById("cap-purify").innerHTML =
-      `<b>Figure 1.</b> ${samples.length} Purify culture samples (${pbr} from the PBR) that pass the 5000-read floor, pooled to taxa. The ${samples.filter(s => s.study === DATA.study.v4).length} samples from 2026 come from the separate V4 study (${sec.asvs[DATA.study.v4]} curated ASVs); the rest hold ${sec.asvs[DATA.study.name]} of the lab table's curated ASVs. ` +
+      `<b>Figure 1.</b> ${samples.length} Purify Spirulina samples that pass the 5000-read floor in the V4 table, pooled to taxa: ${n("lab")} UBC lab cultures, ${n("pbr")} PBR samples${n("unconfirmed") ? ` and ${n("unconfirmed")} libraries whose source is not recorded` : ""}. They hold ${sec.asvs} of the table's curated ASVs. ` +
       `Top: dot area is a taxon's share of a sample's curated reads, for the ${sec.rows.length} taxa that reach the largest shares. ` +
-      `Middle: the same shares stacked, with the ${sec.bars.length} leading taxa coloured and the rest grey. ` +
+      `Middle: the source strip, then the same shares stacked, one panel per source, with the ${sec.bars.length} leading taxa coloured and the rest grey. ${undated.length ? `The ${undated.length} libraries right of the dashed rule have no recorded sampling date. ` : ""}` +
       `Bottom: every logged sensor, ${logs.rows.toLocaleString()} rows binned to 3 hours. Grey hairlines mark sampling dates, and the shaded margins have no log. ` +
       `Four flow columns (${logs.dropped.join(", ")}) read zero throughout and are left out. Hover a panel to read every sensor at one time.`;
   }
@@ -452,8 +513,89 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     legend("leg-ab48", sec);
     const st = sec.stats;
     document.getElementById("cap-ab48").innerHTML =
-      `<b>Figure 2.</b> ${st.samples} AB48 samples in ${n} pooled time points, holding ${st.asvs} of the study's curated ASVs. Encodings as in Figure 1. ` +
+      `<b>Figure 3.</b> ${st.samples} AB48 samples in ${n} pooled time points, holding ${st.asvs} of the study's curated ASVs. Encodings as in Figure 1. ` +
       `A taxon shared with Figure 1 keeps its colour. Where a paired bin's GTDB name differs from the SILVA taxon, the bin is the more recent name for the same lineage or a near relative.`;
+  }
+
+  const CATS = [
+    ["shared", "Found in both sources"], ["lab", "Only in UBC lab cultures"],
+    ["pbr", "Only in Purify PBR"], ["neither", "In neither (unrecorded-source libraries only)"],
+  ];
+
+  function sharedFigure() {
+    const svg = document.getElementById("svg-shared");
+    const W = 1040, L = 150, R = 24, PW = W - L - R, barH = 150;
+    const groupOrder = { lab: 0, pbr: 1, unconfirmed: 2 };
+    const tables = [
+      ["v4", "V4 table", "every Purify sample, reads cut to V4"],
+      ["v4v5", "V4–V5 table", "the same without the 2026 runs"],
+    ];
+    let y = 8;
+    tables.forEach(([key, title, unit]) => {
+      const sec = DATA.shared[key];
+      const rows = sec.samples.slice().sort((a, b) => groupOrder[a.source] - groupOrder[b.source] || (a.date || "9999").localeCompare(b.date || "9999") || a.label.localeCompare(b.label));
+      const n = rows.length, slot = PW / n, barW = Math.min(24, slot - 5);
+      const xs = rows.map((_, i) => L + slot * (i + 0.5));
+      el(svg, "text", { x: 10, y: y + 14, class: "ptitle" }, title);
+      el(svg, "text", { x: 10, y: y + 28, class: "punit" }, unit);
+      // Group brackets above the bars.
+      const gy = y + 46;
+      Object.keys(groupOrder).forEach(src => {
+        const idx = rows.map((r, i) => r.source === src ? i : -1).filter(i => i >= 0);
+        if (!idx.length) return;
+        const x1 = xs[idx[0]] - slot / 2 + 3, x2 = xs[idx[idx.length - 1]] + slot / 2 - 3;
+        el(svg, "rect", { x: x1, y: gy, width: x2 - x1, height: 4, rx: 2, class: "src-" + src });
+        el(svg, "text", { x: (x1 + x2) / 2, y: gy - 6, class: "slab", "text-anchor": "middle" }, SOURCE[src]);
+      });
+      const by = gy + 26;
+      [0, 0.5, 1].forEach(f => {
+        const yy = by + barH - f * barH;
+        el(svg, "line", { x1: L - 6, x2: W - R, y1: yy, y2: yy, class: f === 0 ? "axisline" : "hair" });
+        el(svg, "text", { x: L - 10, y: yy + 3.5, class: "tick", "text-anchor": "end" }, (f * 100) + "%");
+      });
+      el(svg, "text", { x: 10, y: by + barH / 2, class: "punit" }, "share of the");
+      el(svg, "text", { x: 10, y: by + barH / 2 + 12, class: "punit" }, "sample's reads");
+      rows.forEach((r, i) => {
+        let acc = 0;
+        const tip = `<b>${esc(r.label)}</b><br>${esc(SOURCE[r.source])} · ${r.date ? fmtDate(utc(r.date)) : "date not recorded"}<br>` +
+          CATS.filter(([k]) => k in r).map(([k, name]) => `${name}: ${pct(r[k])}`).join("<br>") + `<br>${r.asvs} ASVs present`;
+        CATS.forEach(([k]) => {
+          const v = r[k] || 0;
+          if (!(v > 0)) return;
+          const h = v * barH;
+          el(svg, "rect", { x: xs[i] - barW / 2, y: by + barH - acc - h, width: barW, height: h, class: "seg c-" + k, tabindex: 0, "data-tip": tip });
+          acc += h;
+        });
+        el(svg, "text", { x: xs[i], y: by - 4, class: "tick", "text-anchor": "middle" }, r.asvs);
+        const ly = by + barH + 10;
+        el(svg, "text", { x: xs[i] + 3, y: ly, class: "slab", "text-anchor": "end", transform: `rotate(-55 ${xs[i] + 3} ${ly})` }, r.label);
+      });
+      // The whole table's ASVs and reads, split the same way, for the count-versus-weight contrast.
+      let sy = by + barH + 104;
+      const totalAsvs = sec.asv_sets.lab + sec.asv_sets.shared + sec.asv_sets.pbr;
+      [["ASVs", sec.asv_sets, v => String(v), totalAsvs], ["Reads", sec.read_sets, v => pct(v), 1]].forEach(([name, sets, fmt, total]) => {
+        el(svg, "text", { x: L - 10, y: sy + 11, class: "tick", "text-anchor": "end" }, name);
+        let acc = L;
+        ["lab", "shared", "pbr"].forEach(k => {
+          const w = total ? sets[k] / total * PW : 0;
+          if (w <= 0) return;
+          el(svg, "rect", { x: acc, y: sy, width: w, height: 15, class: "seg c-" + k, tabindex: 0,
+            "data-tip": `<b>${CATS.find(c => c[0] === k)[1].replace("Found in", "In")}</b><br>${fmt(sets[k])} ${name === "ASVs" ? "ASVs" : "of all Purify reads"}` });
+          if (w > 40) el(svg, "text", { x: acc + 6, y: sy + 11.5, class: "readout", fill: k === "pbr" ? "var(--ink)" : "var(--surface)", style: `fill:${k === "pbr" ? "var(--ink)" : "var(--surface)"}` }, fmt(sets[k]));
+          acc += w;
+        });
+        sy += 22;
+      });
+      y = sy + 34;
+    });
+    svg.setAttribute("viewBox", `0 0 ${W} ${y - 20}`);
+    wireTips(svg);
+    document.getElementById("leg-shared").innerHTML = CATS.map(([k, name]) => `<span><i style="background:var(--${k === "shared" ? "shared" : k === "neither" ? "other" : "src-" + k})"></i>${name}</span>`).join("");
+    const v4 = DATA.shared.v4;
+    document.getElementById("cap-shared").innerHTML =
+      `<b>Figure 2.</b> Each bar splits one sample's curated reads by whether its ASVs also occur in the other source. An ASV occurs in a sample from ${pct(v4.present_at)} of its reads; the number over each bar counts those ASVs. ` +
+      `A UBC lab sample's reads are shared when any PBR sample holds the ASV, and the reverse; a library whose source is not recorded is judged against both. ` +
+      `The two strips under each panel pool the whole table: ASVs by count, then by reads. Hover a bar for its numbers.`;
   }
 
   function tables() {
@@ -463,24 +605,42 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
       const body = taxa.map(t => `<tr><td>${italic(t)}</td>${sec.rel[t].map(v => `<td>${(v * 100).toFixed(1)}</td>`).join("")}</tr>`).join("");
       document.getElementById(id).innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
     };
-    mk("table-purify", "Purify, % of reads", DATA.purify, DATA.purify.samples.map(s => `${s.label} (${s.date})`));
+    mk("table-purify", "Purify, % of reads", DATA.purify, DATA.purify.samples.map(s => `${s.label} (${s.date || "undated"})`));
     mk("table-ab48", "AB48, % of reads", DATA.ab48, DATA.ab48.groups.map(g => `${g.label} (${g.date})`));
   }
 
   function facts() {
     const st = DATA.ab48.stats, p = DATA.purify;
     const items = [
-      [DATA.study.samples, "lab samples pass the read floor"], [DATA.study.asvs, "curated ASVs lab-wide"],
+      [DATA.study.samples, "lab samples pass the read floor"], [DATA.study.asvs, "curated V4 ASVs lab-wide"],
+      [DATA.study.v4v5_asvs, "curated V4–V5 ASVs lab-wide"],
       [st.samples, "AB48 samples"], [st.asvs, "curated AB48 ASVs"], [st.paired_asvs, `of ${st.filtered_asvs.toLocaleString()} filtered AB48 ASVs pair with a MAG`],
-      [p.samples.length, "Purify samples"], [DATA.study.nostoc, "Nostoc and Anabaena samples"],
+      [p.samples.length, "Purify samples"], [DATA.study.nostoc, "Nostoc and Anabaena samples"], [DATA.study.patrik, "of Patrik's 2026 cultures"],
       [(DATA.logs.rows / 1000).toFixed(0) + "k", "reactor log rows"],
     ];
     document.getElementById("facts").innerHTML = items.map(([v, l]) => `<div><b>${v}</b>${l}</div>`).join("");
     document.getElementById("cand-n").textContent = st.paired_asvs;
     document.getElementById("purify-method").textContent =
-      "The 2026 Purify sequencing run is the exception. It arrived with its primers removed and amplified V4 alone (515F/806R, about 253 bp), where every other run covers V4–V5 (515F/926R, about 372 bp). A V4 sequence and a V4–V5 sequence of one organism are different ASVs, so that run is its own ASPIRE study, trimmed to V4, and Figure 1 joins it to the other Purify samples by taxon rather than by ASV.";
+      "The March 2026 Purify run amplified V4 alone (515F/806R, about 253 bp), where every other run covers V4–V5 (515F/926R, about 372 bp). Both amplicons start at 515F, so the first 250 bp of a V4–V5 read is the V4 read of the same template. The V4 table cuts every read there and denoises the whole lab together, which puts that run on the same ASVs as the rest. The cut costs V5's resolution: on the earlier V4–V5 table, 240 curated ASVs collapse to 227, no merge crosses a genus, and most merged pairs hold a fixed ratio across samples, as two 16S copies of one genome would. One merge is two Porphyrobacter strains that V5 separates. The V4–V5 table keeps that resolution for every sample but the 2026 runs. The two 2026 Biofactorial runs are left out of it too: their read 2 miscalls a G as an A at two fixed cycles, 13 and about 40 bases before the end of the amplicon, where read 2 alone covers it. Every abundant taxon in those runs then has a twin ASV one base away, in a ratio fixed per run and in no earlier run. Both positions lie past the V4 cut, so the V4 table is clean. A cut V4–V5 read still carries taxa that the 806R primer misses, so a difference between that run and the rest can be primer bias rather than biology.";
   }
 
-  purifyFigure(); ab48Figure(); tables(); facts();
+  function themeToggle() {
+    const root = document.documentElement;
+    const buttons = document.querySelectorAll(".theme button");
+    const system = () => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    const apply = t => {
+      root.setAttribute("data-theme", t);
+      buttons.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.set === t)));
+    };
+    let saved = null;
+    try { saved = localStorage.getItem("theme") } catch (e) {}
+    apply(saved === "light" || saved === "dark" ? saved : system());
+    buttons.forEach(b => b.addEventListener("click", () => {
+      apply(b.dataset.set);
+      try { localStorage.setItem("theme", b.dataset.set) } catch (e) {}
+    }));
+  }
+
+  themeToggle(); purifyFigure(); sharedFigure(); ab48Figure(); tables(); facts();
 })();
 </script>
