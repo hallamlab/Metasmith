@@ -14,10 +14,18 @@ IFS=$'\t' read -r idx run study sample asm bam das reads truth < <(awk -F'\t' -v
 echo "START $(date -Is) $sample ($run, $reads reads) on $(hostname)"
 [ -n "$das" ] || { echo "no DAS Tool table: nothing to score"; exit 0; }
 module load apptainer
-python3 $CK/research/cami/score_reference_amber.py \
+if ! python3 $CK/research/cami/score_reference_amber.py \
     --sample-id $sample --assembly $asm --bam $bam --reads-mapping $truth \
     --contig-to-bin DASTool=$das \
     --threads $SLURM_CPUS_PER_TASK --lib $CK/research/metasmith_benchmark/library/resources/e2/cami_gold_standard.py \
-    --outdir $W/amber/$sample
+    --outdir $W/amber/$sample; then
+    # CAUTION AMBER 2.0.7 saves its metrics, then dies plotting a one-bin sample (KeyError precision_avg_bp_var).
+    O=$W/amber/$sample/work/amber_out.DASTool
+    grep -q "Saving computed metrics" $O/log.txt
+    [ -s $O/results.tsv ] && [ -s $O/genome/DASTool/metrics_per_bin.tsv ]
+    mkdir -p $W/amber/$sample/DASTool
+    cp $O/results.tsv $O/genome/DASTool/metrics_per_bin.tsv $W/amber/$sample/DASTool/
+    echo "kept AMBER's saved metrics: its plots failed on $(tail -n +2 $O/genome/DASTool/metrics_per_bin.tsv | wc -l) bin(s)"
+fi
 rm -rf $W/amber/$sample/work
 echo "EXIT 0 $(date -Is)"
