@@ -3,6 +3,8 @@
 # mito_checker.py makes the non-target call unchanged, and curate.py applies it through
 # filter_nontarget.py's own functions. FILTER_COUNTS's group-size cut is not applied: a rare
 # label value is blanked by plot_metadata instead, so the counts do not depend on the labels.
+# contaminant_hits.py reads the set's headers so each contaminant removal names its list and
+# that entry's support; counts_removed itself keeps upstream's one `reason` column.
 
 import yaml
 from metasmith.python_api import *
@@ -18,6 +20,7 @@ tax       = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents=
 master    = model.AddRequirement(lib.GetType("aspire::mitomaster_table"), parents={study})
 mhits     = model.AddRequirement(lib.GetType("aspire::mito_blast6"), parents={study})
 chits     = model.AddRequirement(lib.GetType("aspire::contaminant_blast6"), parents={study})
+cont_set  = model.AddRequirement(lib.GetType("aspire::contaminant_reference_set"))
 params    = model.AddRequirement(lib.GetType("aspire::params"), parents={study})
 clean     = model.AddProduct(lib.GetType("aspire::counts_clean"))
 removed   = model.AddProduct(lib.GetType("aspire::counts_removed"))
@@ -48,13 +51,17 @@ def protocol(context: ExecutionContext):
             --master {isummaries.container}/nontarget.master.tsv \
             --abundance-threshold {cfg['abundance_threshold']} --min-consensus {cfg['min_consensus']} \
             {excluded} --clean {iclean.container} --removed {iremoved.container}
+        python {iscripts.container}/contaminant_hits.py \
+            --removed {iremoved.container} --master {isummaries.container}/nontarget.master.tsv \
+            --set {context.Input(cont_set).container} --out {isummaries.container}/contaminant_hits.tsv
     """)
 
     return ExecutionResult(
         manifest=[{clean: iclean.local, removed: iremoved.local,
                    summaries: isummaries.local, plots: iplots.local}],
         success=iclean.local.exists() and iremoved.local.exists()
-                and (isummaries.local / "nontarget.master.tsv").exists(),
+                and (isummaries.local / "nontarget.master.tsv").exists()
+                and (isummaries.local / "contaminant_hits.tsv").exists(),
     )
 
 

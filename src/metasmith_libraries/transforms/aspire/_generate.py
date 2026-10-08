@@ -73,7 +73,11 @@ TYPE_SECTIONS: list[tuple[str, dict]] = [
     ("study-level inputs the .nf read out of its config", {
         "sample_measurements": t(FILE, "numeric per-sample measurements, one row per sample keyed by the sample sheet's id", ext="tsv"),
         "mito_reference_source": t(FILE, "mitochondrial reference sequences for the mito BLAST database", ext="fasta"),
-        "contaminant_reference_source": t(FILE, "contaminant/biofilm reference sequences for the contaminant BLAST database", ext="fasta"),
+        # One FASTA per contaminant list, named by its file stem. The members carry no common
+        # parent: a shared supertype would let either list answer for the other's slot.
+        "contaminant_reference_set": t(DIR, "contaminant reference lists for the contaminant BLAST database, one FASTA per list named by its file stem"),
+        "contaminants_literature": t(FILE, "ASVs recovered from published negative controls, each header carrying its support across studies", ext="fasta"),
+        "contaminants_biofactorial": t(FILE, "contaminant sequences recorded at the Biofactorial automation facility", ext="fasta"),
     }),
     ("per-sample read processing", {
         # Interleaved for a paired sample, single-end otherwise; the parity is in the
@@ -323,7 +327,7 @@ TABLE: list[T] = [
       [STUDY, _r("fcounts", "aspire::asv_filtered_counts", "study"),
        _r("fseqs", "aspire::asv_filtered_seqs", "study"),
        _r("mito_src", "aspire::mito_reference_source"),
-       _r("cont_src", "aspire::contaminant_reference_source")],
+       _r("cont_set", "aspire::contaminant_reference_set")],
       [("master", "aspire::mitomaster_table"), ("mhits", "aspire::mito_blast6"),
        ("chits", "aspire::contaminant_blast6")],
       "study", folds=("PREPARE_BLAST_DATABASES@3511",),
@@ -331,11 +335,21 @@ TABLE: list[T] = [
            "each had one consumer, which was this transform. The standard library "
            "already treats that as inside-the-transform work -- "
            "amplicon/blast_map_asvs.py runs makeblastdb and then blastn in one protocol "
-           "-- so the two reference FASTAs move up here. MitoMaster itself is not run: "
+           "-- so the references move up here. Every FASTA in the contaminant set goes "
+           "into one database, each header tagged with its list's stem. MitoMaster itself is not run: "
            "it posts every ASV to mitomap.org, and compute nodes have no internet. The "
            "table is written header-only, which is upstream's own `run_mitomaster: false` "
            "output, so the mitochondrial call rests on the BLAST hits and the taxonomy.",
       cpus=8, memory_gb=16, hours=6),
+
+    T("contaminant_set", None, None,
+      [_r("lit", "aspire::contaminants_literature"),
+       _r("biof", "aspire::contaminants_biofactorial")],
+      [("set", "aspire::contaminant_reference_set")],
+      "lit",
+      note="The default contaminant set: the literature list and the Biofactorial list, "
+           "each copied in under its own stem. A given set short-circuits this row, which "
+           "is how a run screens against a different selection of lists."),
 
     T("curate", "MITO_DECONTAM", 3595,
       [STUDY, _r("fcounts", "aspire::asv_filtered_counts", "study"),
@@ -344,6 +358,7 @@ TABLE: list[T] = [
        _r("master", "aspire::mitomaster_table", "study"),
        _r("mhits", "aspire::mito_blast6", "study"),
        _r("chits", "aspire::contaminant_blast6", "study"),
+       _r("cont_set", "aspire::contaminant_reference_set"),
        PARAMS],
       [("clean", "aspire::counts_clean"), ("removed", "aspire::counts_removed"),
        ("summaries", "aspire::mito_summary_tables"), ("plots", "aspire::mito_plots")],
@@ -352,6 +367,8 @@ TABLE: list[T] = [
            "this in two and partitioned the result into four count tables; here there "
            "are two, the counts kept and the counts removed, and each removed ASV carries "
            "its reason (mitochondrial, contaminant, below abundance, taxonomy). "
+           "`contaminant_hits.tsv` in the summaries names the list, entry and support "
+           "behind each contaminant removal. "
            "Thresholds under `curate:`. Negative controls are not modelled yet; they "
            "belong here as a second evidence input beside the contaminant hits."),
 

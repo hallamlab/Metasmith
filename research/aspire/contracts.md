@@ -12,11 +12,11 @@ Line numbers refer to `research/aspire/upstream/ASPIRE/asv_pipeline.nf` unless a
 
 ## Tally
 
-34 rows: 21 `match`, 12 `fixed`, 1 `open`. The four lung-study analyses are not ported, so they have no row.
+35 rows: 22 `match`, 12 `fixed`, 1 `open`. The four lung-study analyses are not ported, so they have no row.
 
 ## Read spine
 
-Module 1 folds eighteen upstream processes into ten rows. A sample is a `sequences::read_metadata` under `aspire::study_metadata`, and its reads reach `sequences::short_reads` either through `logistics/interleave_zipped_short_reads` (paired) or as a given `short_reads_se` (single-end).
+Module 1 folds eighteen upstream processes into ten rows. `contaminant_set` is an eleventh row with no upstream process. A sample is a `sequences::read_metadata` under `aspire::study_metadata`, and its reads reach `sequences::short_reads` either through `logistics/interleave_zipped_short_reads` (paired) or as a given `short_reads_se` (single-end).
 
 | row | upstream | reads | writes | verdict | reason |
 |---|---|---|---|---|---|
@@ -26,8 +26,9 @@ Module 1 folds eighteen upstream processes into ten rows. A sample is a `sequenc
 | filter_table | FILTER_TABLE@3444 | ASV counts and fasta (2628), params | filtered counts and fasta | match | |
 | sina_trim | SINA_TRIM@3322 | filtered ASV fasta (2630-2631), SINA ARB reference by path (719-735, 3346), now from the `amplicon::silva_db` bundle | trimmed, aligned, log, v-regions | match | |
 | taxonomy | TAXONOMY@3470 | trimmed fasta (2632), reference sequences and taxonomy by path (789-818, 3502-3503) | taxonomy table, uppercase fasta, stats | fixed | Both references are QIIME2 `.qza` artifacts (`qiime_vs_classifier.py:16-17`), now carried in the one `amplicon::silva_db` bundle with SINA's ARB file. The bundle also holds the NB classifier, which is the retired placeholder lane's method, not upstream's. |
-| mitomaster | MITOMASTER@3544 + PREPARE_BLAST_DATABASES@3511 | filtered counts and fasta (2640), mito and contaminant FASTA or prebuilt BLAST db (831-835) | MitoMaster table, mito and contaminant blast6 | match | The port keeps the BLAST screen only. MitoMaster posts every ASV to mitomap.org, and compute nodes have no internet, so the MitoMaster table is written empty. |
-| curate | MITO_DECONTAM@3595 + FILTER_COUNTS@3637 | filtered counts and fasta, taxonomy, MitoMaster tuple (2641-2643), params | clean counts, removed counts with a reason column, mito summaries and plots | open | The four partitioned tables become two. The group-size sample drop (`filter_nontarget.py:509-523`, 862, 3660) is not ported. `plot_metadata` blanks a rare label value instead. Negative controls are not modelled. |
+| mitomaster | MITOMASTER@3544 + PREPARE_BLAST_DATABASES@3511 | filtered counts and fasta (2640), mito and contaminant FASTA or prebuilt BLAST db (831-835) | MitoMaster table, mito and contaminant blast6 | match | The contaminant side reads `aspire::contaminant_reference_set`, a directory of FASTAs, and a one-file set is upstream's input. The port keeps the BLAST screen only. MitoMaster posts every ASV to mitomap.org, and compute nodes have no internet, so the MitoMaster table is written empty. |
+| contaminant_set | none: upstream takes one contaminant database by config path (831-835) | the literature and Bio! lists | `aspire::contaminant_reference_set` | match | A given set short-circuits it. |
+| curate | MITO_DECONTAM@3595 + FILTER_COUNTS@3637 | filtered counts and fasta, taxonomy, MitoMaster tuple (2641-2643), params. The contaminant set, for the support in each header | clean counts, removed counts with a reason column, mito summaries and plots, `contaminant_hits.tsv` | open | The four partitioned tables become two. The group-size sample drop (`filter_nontarget.py:509-523`, 862, 3660) is not ported. `plot_metadata` blanks a rare label value instead. Negative controls are not modelled. |
 | read_accounting | GENERAL_STATS@3755 | per-sample fastp json and read counts, raw ASV table, clean and removed counts | `aspire::read_fate` | fixed | Upstream reads raw reads, fastp reads and filtered fasta by absolute path (757-773) behind a barrier (2651). The row is now a fan-in over the per-sample products. |
 | sankey | SANKEY@3687 | read fate, removed counts (2777-2783), `sankeyMetadataPath` (918, 3717) | read-fate renderings (948) | fixed | The five stats and count tables collapse into `read_fate` and `counts_removed`. The sample manifest (`--sample-manifest`, 3718) stays untyped. |
 
@@ -91,7 +92,7 @@ The mock dataset (Zenodo 21358300, DECOI `mock_airway_chemistry`) supplies these
 | `sequences::short_reads_se` | `fastq/<sample>_R1.fastq.gz` alone | present, as a stand-in for a single-end study |
 | `aspire::study_metadata` | `sample_metadata.tsv`, reduced to the sample id and its label columns | present |
 | `aspire::mito_reference_source` | `references/mitochondria.fasta` | present |
-| `aspire::contaminant_reference_source` | `references/contaminants.fasta` | present |
+| `aspire::contaminant_reference_set` | `references/contaminants.fasta`, as the set's one file | present |
 | `amplicon::silva_db` | none; `downloadSilvaDB` plans the whole bundle | absent |
 
 The mock also ships ground-truth tables (`asv_counts*.tsv`, `asv_taxonomy.tsv`, `ground_truth_*.tsv`) that no transform reads. They are the grading key for a future real run.

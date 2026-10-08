@@ -289,7 +289,6 @@ def v4_cut_params(params: str) -> str:
 def campaign(args) -> Campaign:
     common = dict(here=HERE, params=PRESET.read_text(), targets=TARGETS[args.study],
                   mito_reference=f"{REFS}/refseq_mitochondrion.fasta",
-                  contaminant_reference=f"{REFS}/contaminants.fasta",
                   resource_overrides=RESOURCE_OVERRIDES)
     if args.study == "purify":
         samples, study, measures = purify_study()

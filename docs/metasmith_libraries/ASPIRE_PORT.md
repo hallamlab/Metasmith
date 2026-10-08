@@ -5,7 +5,7 @@
 toggles. `transforms/aspire/` is that pipeline expressed as a typed graph so the
 planner selects stages by what you ask for rather than by what you toggled.
 
-Every one of the 34 rows has a real body. A process row runs upstream's script, and an
+Every one of the 35 rows has a real body. A process row runs upstream's script, and an
 off-arm or layout row writes what its consumers read. Two drivers under
 `research/aspire/campaigns/` run them on sockeye. `cyano_r1` covers 18 public 16S samples.
 `ab48_r1` covers the Hallam lab's AB48 photobioreactor time series with its MAGs, and the
@@ -106,7 +106,7 @@ comparison.
 fewer chimeras: 406 ASVs survived where upstream kept 301. Re-run the comparison before
 moving the pin.
 
-Curation differs in three places, and each can change the curated table.
+Curation differs in four places, and each can change the curated table.
 
 1. **MitoMaster is gone.** Upstream posts every ASV to mitomap.org, and compute nodes have
    no internet. `mitomaster` writes an empty MitoMaster table, so only the BLAST screen
@@ -118,6 +118,48 @@ Curation differs in three places, and each can change the curated table.
 3. **`plot_metadata` skips the mito tables when no ASV is mitochondrial.** Upstream passes
    `--make-mito` unconditionally, and the script raises on an empty table. Host-associated
    samples never reach that case, and a culture does.
+4. **The default contaminant lists differ.** Upstream screens against the Bio! facility's
+   database alone. The port screens against the literature list as well. See *The contaminant
+   screen*.
+
+## The contaminant screen
+
+`mitomaster` screens against `aspire::contaminant_reference_set`, a directory of FASTAs with
+one list per file. It builds one BLAST database from every list and tags each header with its
+file's stem. `contaminant_hits.tsv` in `curate`'s summaries names the list, the entry and its
+support behind each removal. The removal itself is upstream's hard cut at 97% identity and 51%
+query coverage. With no set given, `contaminant_set` bundles the literature list and the Bio!
+list.
+
+`logistics/buildAspireLiteratureContaminants` builds the literature list from published
+negative controls. Its product is pinned with DVC at `data/aspire/contaminants_literature/`:
+383 entries, MD5 `7a05e57a79c5a1b6e360e6a260e38dfa`. The sources are:
+
+- Weyrich et al. 2019, doi:10.1111/1755-0998.13011. 137 controls from figshare
+  doi:10.25909/5bdaa4431a941, CC BY 4.0. V4.
+- Minich et al. 2018 (KatharoSeq), doi:10.1128/mSystems.00218-17. 161 blanks from ENA
+  ERP105802. V4, 150 nt.
+- Dyrhovden et al. 2021, doi:10.1128/mBio.00598-21. 25 extraction controls from ENA
+  PRJEB44556. V3-V4, cut to V4.
+
+Every entry starts right after 515F and spans at most V4. Each header carries `studies`,
+`blanks` and `sources`.
+
+**An entry must appear in at least 25% of its sources' controls.** A control also catches what
+leaks from its own study's samples, and those ASVs sit in one or two controls. Unfiltered, the
+6,980-entry list removed 44% of `lab_r2`'s V4-V5 reads, the lab's dominant *Halomonas* among
+them. Entries from two or more studies still removed 28%, so the number of studies does not
+separate leakage from kitome. At 25% the list removes 0.57%, all typical reagent and skin taxa
+such as *Cutibacterium*, *Enterobacter* and *Streptococcus*. Apply any support cut to the list
+before BLAST, because a hit reports only its best entry.
+
+**CAUTION** A KatharoSeq-only entry is 150 nt. It covers 59% of a V4 query but only 40% of a
+V4-V5 query, under the 51% coverage cut. On a V4-V5 study those entries match nothing.
+
+**A campaign's set directory is named by a digest of its lists.** A given's leaf id is its
+path, so new lists at an old path would reuse the old screen's cached results.
+`contaminant_set()` in `research/aspire/campaigns/_campaign.py` derives the path, and
+`stage-contaminants` copies the local pins there.
 
 ## The sample chain
 
@@ -205,14 +247,24 @@ checks as assertions: both parities, and one case per switch arm.
 ## Known-rough, for the next pass
 
 - The campaigns' mitochondrial reference is NCBI RefSeq mitochondrion, as upstream's
-  shipped config names, but the contaminant reference is still the mock dataset's FASTA.
-  `mitomaster` takes only FASTA, where upstream can read a prebuilt BLAST database.
+  shipped config names. `mitomaster` takes only FASTA, where upstream can read a prebuilt
+  BLAST database.
+- `downloadBiofactorialContaminants` has an empty `SOURCE`. The Bio! list
+  (`ssu_pipeline_contaminants`) exists only as a path on Ryan's machine. Until it has a URL,
+  the default set fails at run time, and a campaign stages the literature list alone.
+- `lab_r1`, `lab_v4_r1`, `lab_r2`, cyano_r1 and ab48_r1 were curated against the mock's
+  3-sequence contaminant FASTA. Re-curate each against its staged set. Their pinned numbers
+  change.
+- `upstream_cyano.py` still gives upstream the mock's contaminant FASTA. Give upstream the
+  campaign's lists, concatenated, before rerunning the comparison.
+- An entry's only support is its blank prevalence. A Logan lookup on the ASVs a study
+  removes would test whether each one also appears in unrelated genome runs.
 - The MAGs carry no taxonomy, because GTDB-Tk takes `sequences::putative_genome` and a
   quality bin is not one. `asv_mag_network` therefore names each MAG by its bin id.
 - Upstream's mito checker reads MitoMaster's header row, `SampleId`, as an ASV. It flags a
   sequence that does not exist, so no count changes.
 - Nothing removes chloroplast ASVs, upstream included. A plant or algal study keeps them
-  unless the contaminant FASTA covers them.
+  unless a contaminant list covers them.
 - The ASPIRE preset excludes *Homo sapiens* and Mammalia, a human-host setting. Its 20/20
   tail trims carry no stated source.
 - SINA reads SILVA 138.2 and the classifier reads SILVA 138. The `amplicon::silva_db`

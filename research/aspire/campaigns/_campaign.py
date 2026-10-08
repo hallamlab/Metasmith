@@ -6,11 +6,12 @@ nodes have no internet.
 """
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cache, cached_property
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -34,6 +35,12 @@ HOST = os.environ.get("ASPIRE_SOCKEYE_HOST", SOCKEYE_HOST)
 REFS = os.environ.get("ASPIRE_REFS", "/arc/project/st-shallam-1/aspire_refs")
 SILVA = f"{REFS}/silva_138_2"
 SILVA_FILES = ("silva.arb", "silva_seqs.qza", "silva_tax.qza", "silva_nb_classifier.qza")
+# Each list's local pin, staged under the name its hits report. The Biofactorial list stages once
+# somebody drops it here.
+CONTAMINANT_LISTS = {
+    "literature.fasta": REPO / "data" / "aspire" / "contaminants_literature" / "contaminants_literature.fasta",
+    "biofactorial.fasta": REPO / "data" / "aspire" / "contaminants_biofactorial" / "contaminants_biofactorial.fasta",
+}
 IMAGE_STORE = os.environ.get("ASPIRE_IMAGE_STORE", SOCKEYE_IMAGE_STORE)
 CONTAINER = os.environ.get("ASPIRE_AGENT_CONTAINER", "docker://quay.io/hallamlab/metasmith:0.23.0")
 # The files a campaign with SpiecEasi switched off hands `spieceasi_external`.
@@ -48,6 +55,22 @@ def aspire_image() -> str:
         if line.startswith("container:"):
             return line.split("://", 1)[1].strip()
     raise SystemExit("resources/env/aspire.env names no container")
+
+
+def contaminant_lists() -> dict[str, Path]:
+    lists = {name: path for name, path in CONTAMINANT_LISTS.items() if path.exists()}
+    if "literature.fasta" not in lists:
+        raise SystemExit(f"no literature list at {CONTAMINANT_LISTS['literature.fasta']}; run `dvc checkout` first")
+    return lists
+
+
+# A given's id is its path (pin_external_leaf_ids), so a set whose lists change must move.
+@cache
+def contaminant_set() -> str:
+    digest = hashlib.sha256()
+    for name, path in sorted(contaminant_lists().items()):
+        digest.update(name.encode() + b"\0" + hashlib.sha256(path.read_bytes()).digest())
+    return f"{REFS}/contaminant_set_{digest.hexdigest()[:12]}"
 
 
 @dataclass
@@ -87,7 +110,7 @@ class Campaign:
     params: str
     targets: list[str]
     mito_reference: str
-    contaminant_reference: str
+    contaminant_set: str = field(default_factory=contaminant_set)
     switches_on: set[str] = field(default_factory=set)
     mags: MagSet | None = None
     external_graphs: str | None = None
@@ -107,7 +130,7 @@ class Campaign:
         return REPO / "cache" / "aspire" / self.name
 
     def remote_inputs(self) -> list[str]:
-        paths = [f"{SILVA}/{n}" for n in SILVA_FILES] + [self.mito_reference, self.contaminant_reference]
+        paths = [f"{SILVA}/{n}" for n in SILVA_FILES] + [self.mito_reference, self.contaminant_set]
         paths += [p for s in self.samples for p in (s.r1, s.r2)]
         if self.mags:
             paths += [self.mags.assembly, self.mags.cluster_table, *self.mags.bins]
@@ -153,7 +176,7 @@ def build_references(c: Campaign):
         lib.AddTypeLibrary(MLIB / "data_types" / t)
     lib.AddItem(SILVA, "amplicon::silva_db")
     lib.AddItem(c.mito_reference, "aspire::mito_reference_source")
-    lib.AddItem(c.contaminant_reference, "aspire::contaminant_reference_source")
+    lib.AddItem(c.contaminant_set, "aspire::contaminant_reference_set")
     if c.mags:
         asm = lib.AddItem(c.mags.assembly, "sequences::assembly")
         lib.AddItem(c.mags.cluster_table, "binning_local::cluster_table", parents={asm})
@@ -235,6 +258,15 @@ def cmd_side_load_images(c: Campaign, _):
                        f"apptainer exec --no-home --cleanenv {remote} true && : > {remote}.verified")
         sif.unlink()
         print(f"loaded   {uri}")
+    return 0
+
+
+def cmd_stage_contaminants(c: Campaign, _):
+    ssh_once(HOST, f"mkdir -p {c.contaminant_set}")
+    for name, path in contaminant_lists().items():
+        subprocess.run(["rsync", "-a", "--chmod=F644", "-e", "ssh -o BatchMode=yes", str(path),
+                        f"{HOST}:{c.contaminant_set}/{name}"], check=True)
+    print(ssh_once(HOST, f"ls -la {c.contaminant_set}").strip())
     return 0
 
 
@@ -327,7 +359,8 @@ def cmd_dag(c: Campaign, _):
 
 
 COMMON = {
-    "side-load-images": cmd_side_load_images, "check-refs": cmd_check_refs, "run": cmd_run,
+    "side-load-images": cmd_side_load_images, "stage-contaminants": cmd_stage_contaminants,
+    "check-refs": cmd_check_refs, "run": cmd_run,
     "status": cmd_status, "retrieve": cmd_retrieve, "dag": cmd_dag,
     "fetch-intermediates": cmd_fetch_intermediates,
 }

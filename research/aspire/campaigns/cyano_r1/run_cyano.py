@@ -19,14 +19,13 @@ proves the off arms, so its results are checked and not pinned.
 Every download runs on the login node, since compute nodes have no internet. Connect to
 sockeye through the awm ssh domain first; every ssh here rides that connection.
 
-`stage-refs` needs the mock's contaminant FASTA locally (ASPIRE_MOCK_REFS), and
+`stage-refs` needs the pinned contaminant lists checked out (`dvc checkout`), and
 `side-load-images` needs the aspire image built locally (docker/aspire/dev.sh --build).
 The study has no MAGs, so the ASV-MAG link is switched off.
 """
 
 import csv
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -34,13 +33,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _campaign import (  # noqa: E402
-    HOST, REFS, REPO, SILVA, Campaign, Sample, cmd_check_refs, main, ssh_once,
+    HOST, REFS, SILVA, Campaign, Sample, cmd_check_refs, cmd_stage_contaminants, main, ssh_once,
 )
 from metasmith.python_api import Duration, Resources, Size  # noqa: E402
 
 ROOT = os.environ.get("ASPIRE_CYANO_ROOT", "/scratch/st-shallam-1/txyliu/aspire_cyano")
 READS = f"{ROOT}/reads"
-MOCK_REFS = Path(os.environ.get("ASPIRE_MOCK_REFS", REPO / "data" / "aspire" / "mock_references"))
 
 TARGETS = ["aspire::counts_clean", "amplicon::asv_taxonomy", "aspire::indicspecies_results",
            "aspire::read_fate", "aspire::sankey_outputs", "aspire::collectors_outputs",
@@ -82,7 +80,6 @@ def campaign(args=None) -> Campaign:
         params=(HERE / "params.yml").read_text(),
         targets=OFF_TARGETS if off else TARGETS,
         mito_reference=f"{REFS}/refseq_mitochondrion.fasta",
-        contaminant_reference=f"{REFS}/contaminants.fasta",
         switches_on=set() if off else {"spieceasi", "network_modules", "graph_network"},
         external_graphs=f"{ROOT}/external_graphs" if off else None,
         resource_overrides=RESOURCE_OVERRIDES,
@@ -115,8 +112,7 @@ def cmd_stage_refs(c, args):
                    f"[ -e silva.arb ] || gunzip silva.arb.gz; ls -la")
     ssh_once(HOST, f"set -e; cd {REFS}; [ -s refseq_mitochondrion.fasta ] || "
                    f"curl -sSfL {MITO_URL} | gunzip > refseq_mitochondrion.fasta")
-    subprocess.run(["scp", "-q", str(MOCK_REFS / "contaminants.fasta"), f"{HOST}:{REFS}/contaminants.fasta"],
-                   check=True)
+    cmd_stage_contaminants(c, args)
     return cmd_check_refs(c, args)
 
 

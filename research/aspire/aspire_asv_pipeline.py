@@ -82,7 +82,7 @@ ALL_TOKENS = {f"aspire::{b}_{arm}" for b in SWITCHES for arm in ("on", "off")}
 
 REFERENCES = [
     "aspire::mito_reference_source",
-    "aspire::contaminant_reference_source",
+    "aspire::contaminant_reference_set",
     "amplicon::silva_db",
 ]
 EXTERNAL_GRAPH = [

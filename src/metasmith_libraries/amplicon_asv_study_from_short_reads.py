@@ -44,7 +44,7 @@ SWITCHES = {
 
 REFERENCES = [
     "aspire::mito_reference_source",
-    "aspire::contaminant_reference_source",
+    "aspire::contaminant_reference_set",
 ]
 
 TARGETS = [

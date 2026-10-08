@@ -23,9 +23,17 @@ types:
     properties:
       _: mitochondrial reference sequences for the mito BLAST database
       ext: fasta
-  contaminant_reference_source:
+  contaminant_reference_set:
     properties:
-      _: contaminant/biofilm reference sequences for the contaminant BLAST database
+      _: contaminant reference lists for the contaminant BLAST database, one FASTA per list named by its file stem
+      Data: directory
+  contaminants_literature:
+    properties:
+      _: ASVs recovered from published negative controls, each header carrying its support across studies
+      ext: fasta
+  contaminants_biofactorial:
+    properties:
+      _: contaminant sequences recorded at the Biofactorial automation facility
       ext: fasta
 # -- per-sample read processing --
   qc_reads:
