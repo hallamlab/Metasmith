@@ -17,16 +17,22 @@ A plan takes one read type, so each type renders its own DAG:
   metagem_se         metaGEM single-end reads
 
 A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. A PacBio
-sample's is Flye on its long reads alone, after Filtlong. Every other sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
-viral lane (opt-in with --viral) pools a study, and a batch holds whole studies. A MAG-only batch
-too large for fir's quota runs in chunks: --chunk I/N takes the I-th of N contiguous slices of
-each study, as its own run.
+sample's is Flye on its long reads alone, after Filtlong. Every other sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so a
+batch holds whole studies. A MAG-only batch too large for fir's quota runs in chunks: --chunk I/N
+takes the I-th of N contiguous slices of each study, as its own run.
+
+The viral lane runs as one plan per vOTU catalogue (CATALOGUES), over the cached assemblies listed in
+results/e5/assemblies.tsv (written by e5_assemblies.py). A catalogue plan cites no reads, so evicting a
+finished batch's trimmed reads leaves its catalogue runnable. --viral instead pools each study inside its
+batch's own plan, which is how the first batches built theirs.
 
 Subcommands: list [--batch N] [--chunk I/N] [--paths], import --batch N [--shape S] [--chunk I/N],
-run --batch N [--shape S] [--chunk I/N] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
+run --batch N [--shape S] [--chunk I/N] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear],
+catalogue NAME [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
 """
 
 import argparse
+import csv
 import os
 import sys
 import time
@@ -77,6 +83,17 @@ BATCHES[0] = {shape: [studies[0]] for b in (2, 3, 4, 1) for shape, studies in BA
 # Batches whose assemblies came from the standard MEGAHIT and e5's own megahit_draft, before e5_assembly.
 # They keep those transforms so a relaunch serves its assemblies, and everything after them, from the cache.
 PRE_E5_ASSEMBLY = {1, 3, 4}
+
+# vOTU catalogue -> the studies it pools. Pratama pools its short and hybrid samples, as the paper did; marine and
+# strain hold their PacBio samples only. Every other catalogue is one study.
+CATALOGUES = {
+    "pratama": ["pratama_short", "pratama_hybrid"],
+    **{s: [s] for s in ("toy_mousegut", "toy_hmp_airskinurogenital", "toy_hmp_gastrooral", "toy_humangut",
+                        "plant_associated", "marine", "strain",
+                        "korem2015", "li2019", "bissett_base", "karlsson2013", "sunagawa2015")},
+}
+ASSEMBLIES = HERE.parent / "results" / "e5" / "assemblies.tsv"
+CATALOGUE_QUEUE = 112
 
 # CAMI's long-read set for each hybrid study.
 CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_associated_long_nano",
@@ -269,8 +286,6 @@ def build_targets(mode, mags=True, viral=False):
     # The sample's assembly is OPERA-MS for a hybrid sample, Flye for a long-read-only one and MEGAHIT
     # otherwise; every lane reads it.
     # DAS Tool's bins are the MAG set: CheckM2, ORFs and models run on them alone.
-    # The viral lane is opt-in: a study-pooled catalogue is not comparable to Pratama's, which pools
-    # short and hybrid samples together, so the pooled Pratama ablation owns vOTUs.
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
     asm = t.Add({"hybrid": "e5::opera_ms_assembly", "long": "sequences::flye_assembly",
@@ -283,9 +298,14 @@ def build_targets(mode, mags=True, viral=False):
         gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[bins])])
         t.Add("modelling::memote_score", parents=[gem])
 
-    if not viral:
-        return t
-    frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm])
+    if viral:
+        add_viral_targets(t, asm)
+    return t
+
+
+def add_viral_targets(t, asm=None):
+    # A given cannot be a target, so a catalogue plan's frozen set has no assembly parent. It is one per study either way.
+    frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm] if asm else [])
     for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
                   "viromics::checkv_quality_summary"):
         t.Add(dtype, parents=[frozen])
@@ -341,6 +361,69 @@ def solve(args, shape, by_study):
                         on_exist="clear" if args.clear else "update")
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
+
+
+def catalogue_assemblies(name):
+    """[(study, sample, assembly path)] for one catalogue, from results/e5/assemblies.tsv."""
+    with open(ASSEMBLIES) as f:
+        rows = [r for r in csv.DictReader(f, delimiter="\t") if r["study"] in CATALOGUES[name]]
+    missing = set(CATALOGUES[name]) - {r["study"] for r in rows}
+    if missing:
+        sys.exit(f"catalogue {name}: {ASSEMBLIES.name} has no assemblies for {sorted(missing)}")
+    for study in CATALOGUES[name]:
+        got = sum(r["study"] == study for r in rows)
+        want = len(samples_of(study))
+        if got != want:
+            sys.exit(f"catalogue {name}: {study} has {got} assemblies of {want} samples")
+    return [(r["study"], r["sample"], Path(r["path"])) for r in rows]
+
+
+def declare_catalogue_givens(smith, name, assemblies, cache_dir, ensure):
+    givens = smith.PoolGivens()
+    study = c.add_value(givens, f"e5cat/{name}", {"study": name}, "sequences::study", tags=["e5cat", name])
+    for study_name, sid, path in assemblies:
+        tags = ["e5cat", name, study_name, sid]
+        ns = f"e5cat/{name}/{sid}"
+        meta = c.add_value(givens, f"{ns}/read_metadata", {"sample": sid, "parity": "paired", "length_class": "short"},
+                           "sequences::read_metadata", parents=[study], tags=tags)
+        c.add_file(givens, f"{ns}/assembly", path, "sequences::assembly", parents=[meta], tags=tags)
+    return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
+
+
+def cmd_catalogue(args):
+    name = args.name
+    assemblies = catalogue_assemblies(name)
+    n = len(assemblies)
+    print(f"=== catalogue {name}: {n} assemblies from {', '.join(CATALOGUES[name])}", flush=True)
+    cache_dir = CACHE_DIR / "catalogue" / name
+    remote = args.stage_only or args.launch or args.materialise
+    smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
+    ensure = args.import_givens or not remote
+    inputs = declare_catalogue_givens(smith, name, assemblies, cache_dir, ensure)
+    pratama_globals = c.pratama_globals(smith, cache_dir, ensure)
+    task = smith.GenerateWorkflow(
+        samples=list(inputs.AsSamples("sequences::read_metadata")),
+        resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
+                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
+                   pratama_globals],
+        transforms=build_transforms("hybrid", pre_e5_assembly=True),
+        targets=add_viral_targets(TargetBuilder()),
+    )
+    c.check_plan(task, {"sequences::study": 1, "sequences::read_metadata": n, "sequences::assembly": n})
+    c.print_plan(task, width=34)
+    reads = sorted({i.dtype_name for i in task.plan.given if "reads" in i.dtype_name})
+    assert not reads, f"the catalogue plan cites reads: {reads}"
+    if args.dag:
+        c.write_dag(task, f"e5_catalogue_{name}", cache_dir)
+    if remote:
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_cat_{name}", stage_only=args.stage_only,
+                        params=dict(executor=dict(queueSize=args.queue_size or CATALOGUE_QUEUE), process=dict(tries=4)),
+                        scaled=SCALED, materialise=args.materialise, on_exist="clear" if args.clear else "update")
+    else:
+        print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
+    return 0
 
 
 def cmd_list(args):
@@ -405,6 +488,19 @@ def main():
                            help="leave out the MAG lane (binners, DAS Tool, CheckM2, GEMs); a later full run adds it from the cache")
             p.add_argument("--viral", action="store_true",
                            help="add the viral lane, pooled per study; off by default")
+    p = sub.add_parser("catalogue", help="the viral lane over one catalogue's cached assemblies")
+    p.add_argument("name", choices=list(CATALOGUES))
+    p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e5_catalogue_<name>.dag.svg")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--stage-only", action="store_true")
+    mode.add_argument("--launch", action="store_true")
+    mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
+    p.add_argument("--tag")
+    p.add_argument("--queue-size", type=int, help=f"tasks this run may queue; default {CATALOGUE_QUEUE}")
+    p.add_argument("--clear", action="store_true", help="restage from scratch; deletes the run's logs")
+    p.add_argument("--import", dest="import_givens", action="store_true",
+                   help="import what the pool lacks before planning")
+    p.set_defaults(fn=cmd_catalogue)
     args = ap.parse_args()
     return args.fn(args)
 
