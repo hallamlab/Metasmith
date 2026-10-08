@@ -18,10 +18,12 @@ A plan takes one read type, so each type renders its own DAG:
 
 A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. A PacBio
 sample's is Flye on its long reads alone, after Filtlong. Every other sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
-viral lane (opt-in with --viral) pools a study, and a batch holds whole studies.
+viral lane (opt-in with --viral) pools a study, and a batch holds whole studies. A MAG-only batch
+too large for fir's quota runs in chunks: --chunk I/N takes the I-th of N contiguous slices of
+each study, as its own run.
 
-Subcommands: list [--batch N], import --batch N [--shape S],
-run --batch N [--shape S] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
+Subcommands: list [--batch N] [--chunk I/N] [--paths], import --batch N [--shape S] [--chunk I/N],
+run --batch N [--shape S] [--chunk I/N] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
 """
 
 import argparse
@@ -59,8 +61,6 @@ SHAPES = {
     "metagem_pe_split": ("metagem", "split", "short"),
     "metagem_se": ("metagem", "se", "short"),
 }
-# Run only when named with --shape: their assembler waits on the Pratama assembler ablation.
-HELD_SHAPES = {"cami_hybrid_ont", "pratama_hybrid_ont"}
 # A long-read-only sample's platform, which picks Flye's mode and minimap2's preset.
 PLATFORM = {"cami_long_pacbio": "PACBIO_CLR"}
 
@@ -147,13 +147,29 @@ def samples_of(study):
     return _metagem(study)
 
 
-def draw(batch, only=None):
-    """{shape: {study: [(sample id, reads, long reads or None)]}} for one batch."""
+def chunk_of(samples, chunk):
+    if chunk is None:
+        return samples
+    i, n = chunk
+    size = -(-len(samples) // n)
+    return samples[(i - 1) * size:i * size]
+
+
+def parse_chunk(text):
+    i, n = (int(x) for x in text.split("/"))
+    if not 1 <= i <= n:
+        raise argparse.ArgumentTypeError(f"chunk {text}: want I/N with 1 <= I <= N")
+    return i, n
+
+
+def draw(batch, only=None, chunk=None):
+    """{shape: {study: [(sample id, reads, long reads or None)]}} for one batch, or one chunk of it."""
     plans = {}
     for shape, studies in BATCHES[batch].items():
         if only and shape != only:
             continue
-        plans[shape] = {s: samples_of(s)[:PILOT_SIZE] if batch == 0 else samples_of(s) for s in studies}
+        plans[shape] = {s: samples_of(s)[:PILOT_SIZE] if batch == 0 else chunk_of(samples_of(s), chunk)
+                        for s in studies}
         for study, samples in plans[shape].items():
             assert samples, f"{shape}/{study}: no samples"
     return plans
@@ -283,7 +299,8 @@ def solve(args, shape, by_study):
     n = sum(len(s) for s in by_study.values())
     print(f"\n=== batch {args.batch} {shape}: {n} samples in {', '.join(f'{s} ({len(v)})' for s, v in by_study.items())}",
           flush=True)
-    cache_dir = CACHE_DIR / f"batch{args.batch}" / shape
+    part = f"_c{args.chunk[0]}of{args.chunk[1]}" if args.chunk else ""
+    cache_dir = CACHE_DIR / f"batch{args.batch}" / f"{shape}{part}"
     importing = args.cmd == "import"
     remote = importing or args.stage_only or args.launch or args.materialise
     smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
@@ -313,10 +330,10 @@ def solve(args, shape, by_study):
     if args.dag:
         c.write_dag(task, f"e5_{shape}", cache_dir)
     if remote:
-        queue = args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape))
+        queue = args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape, args.chunk))
         if queue < 100:
             sys.exit(f"a queue of {queue} is narrower than a 100-wide job array")
-        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}{part}_{shape}", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=queue),
                                     process=dict(tries=4)),
                         scaled=SCALED, comebin_cpus=COMEBIN[shape][0], comebin_memory_gb=COMEBIN[shape][1],
@@ -329,20 +346,23 @@ def solve(args, shape, by_study):
 def cmd_list(args):
     for batch in ([args.batch] if args.batch is not None else sorted(BATCHES)):
         total = 0
-        for shape, by_study in draw(batch).items():
+        for shape, by_study in draw(batch, chunk=args.chunk).items():
             for study, samples in by_study.items():
                 total += len(samples)
+                if args.paths:
+                    for _, reads, long_reads in samples:
+                        for f in (reads if isinstance(reads, tuple) else (reads,)) + ((long_reads,) if long_reads else ()):
+                            print(f)
+                    continue
                 print(f"{batch}  {shape:20s} {study:26s} {len(samples):3d}  {samples[0][0]} ..")
-        print(f"batch {batch}: {total} samples\n")
+        if not args.paths:
+            print(f"batch {batch}: {total} samples\n")
     return 0
 
 
 def cmd_run(args):
     failed = []
-    for shape, by_study in draw(args.batch, args.shape).items():
-        if shape in HELD_SHAPES and args.shape != shape:
-            print(f"skipping {shape}: held until the Pratama assembler ablation reports; name it with --shape to run it")
-            continue
+    for shape, by_study in draw(args.batch, args.shape, args.chunk).items():
         try:
             solve(args, shape, by_study)
         except SystemExit as e:
@@ -358,11 +378,14 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("list")
     p.add_argument("--batch", type=int, choices=sorted(BATCHES))
+    p.add_argument("--chunk", type=parse_chunk, help="I/N: the I-th of N contiguous slices of each study")
+    p.add_argument("--paths", action="store_true", help="print every read file of the selection, one per line")
     p.set_defaults(fn=cmd_list)
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--batch", type=int, required=True, choices=sorted(BATCHES))
         p.add_argument("--shape", choices=list(SHAPES))
+        p.add_argument("--chunk", type=parse_chunk, help="I/N: the I-th of N contiguous slices of each study, as its own run")
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
                        import_givens=False, clear=False, queue_size=None, no_mags=False, viral=False)
         if name == "run":
