@@ -28,7 +28,8 @@ batch's own plan, which is how the first batches built theirs.
 
 Subcommands: list [--batch N] [--chunk I/N] [--paths], import --batch N [--shape S] [--chunk I/N],
 run --batch N [--shape S] [--chunk I/N] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear],
-catalogue NAME [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
+catalogue NAME [--dag] [--stage-only|--launch|--materialise] [--import] [--clear]. A catalogue's --import
+with no launch mode imports and stops, as `import` does.
 """
 
 import argparse
@@ -396,11 +397,15 @@ def cmd_catalogue(args):
     n = len(assemblies)
     print(f"=== catalogue {name}: {n} assemblies from {', '.join(CATALOGUES[name])}", flush=True)
     cache_dir = CACHE_DIR / "catalogue" / name
-    remote = args.stage_only or args.launch or args.materialise
+    launching = args.stage_only or args.launch or args.materialise
+    remote = launching or args.import_givens
     smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
     ensure = args.import_givens or not remote
     inputs = declare_catalogue_givens(smith, name, assemblies, cache_dir, ensure)
     pratama_globals = c.pratama_globals(smith, cache_dir, ensure)
+    if remote and not launching:
+        print(f"the pool at {smith.home.GetPath()} holds the givens of {n} assemblies")
+        return 0
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
@@ -417,7 +422,7 @@ def cmd_catalogue(args):
     assert not reads, f"the catalogue plan cites reads: {reads}"
     if args.dag:
         c.write_dag(task, f"e5_catalogue_{name}", cache_dir)
-    if remote:
+    if launching:
         c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_cat_{name}", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=args.queue_size or CATALOGUE_QUEUE), process=dict(tries=4)),
                         scaled=SCALED, materialise=args.materialise, on_exist="clear" if args.clear else "update")
