@@ -3,8 +3,9 @@
 # mito_checker.py makes the non-target call unchanged, and curate.py applies it through
 # filter_nontarget.py's own functions. FILTER_COUNTS's group-size cut is not applied: a rare
 # label value is blanked by plot_metadata instead, so the counts do not depend on the labels.
-# contaminant_hits.py reads the set's headers so each contaminant removal names its list and
-# that entry's support; counts_removed itself keeps upstream's one `reason` column.
+# contaminant_hits.py cuts the contaminant screen to entries seen in at least
+# `contaminant_min_prevalence` of their blanks before mito_checker.py reads it, and tags every
+# ASV the uncut screen matched; counts_removed itself keeps upstream's one `reason` column.
 
 import yaml
 from metasmith.python_api import *
@@ -34,26 +35,30 @@ def protocol(context: ExecutionContext):
     iscripts, itax = context.Input(scripts), context.Input(tax)
     cfg = yaml.safe_load(context.Input(params).local.read_text())["curate"]
     excluded = " ".join(f'--exclude-taxon "{t}"' for t in cfg.get("exclude_taxa") or [])
+    ichits, iset = context.Input(chits).container, context.Input(cont_set).container
+    thresholds = f"--min-pident {cfg['min_pident']} --min-percov {cfg['min_percov']}"
 
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
         mkdir -p {isummaries.container} {iplots.container}
+        python {iscripts.container}/contaminant_hits.py cut --blast6 {ichits} --set {iset} \
+            --min-prevalence {cfg.get('contaminant_min_prevalence', 0.10)} --out contaminants.cut.blast6
         python {iscripts.container}/mito_checker.py \
             --mitomaster-file {context.Input(master).container} \
             --mito-blast {context.Input(mhits).container} \
             --silva-tax {itax.container} \
-            --biof-file {context.Input(chits).container} \
+            --biof-file contaminants.cut.blast6 \
             --output-dir {isummaries.container} --prefix nontarget --formats svg,pdf \
-            --min-pident {cfg['min_pident']} --min-percov {cfg['min_percov']} --overwrite
+            {thresholds} --overwrite
         find {isummaries.container} -maxdepth 1 \\( -name '*.svg' -o -name '*.pdf' \\) -exec mv {{}} {iplots.container}/ \\;
         python {iscripts.container}/curate.py \
             --counts {context.Input(fcounts).container} --taxonomy {itax.container} \
             --master {isummaries.container}/nontarget.master.tsv \
             --abundance-threshold {cfg['abundance_threshold']} --min-consensus {cfg['min_consensus']} \
             {excluded} --clean {iclean.container} --removed {iremoved.container}
-        python {iscripts.container}/contaminant_hits.py \
-            --removed {iremoved.container} --master {isummaries.container}/nontarget.master.tsv \
-            --set {context.Input(cont_set).container} --out {isummaries.container}/contaminant_hits.tsv
+        python {iscripts.container}/contaminant_hits.py tag --blast6 {ichits} --set {iset} {thresholds} \
+            --counts {context.Input(fcounts).container} --removed {iremoved.container} \
+            --out {isummaries.container}/contaminant_hits.tsv
     """)
 
     return ExecutionResult(

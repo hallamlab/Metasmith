@@ -1,6 +1,6 @@
 outs:
-- md5: 9908a192cde08bd72f97b824c6ef655b.dir
-  size: 119021
+- md5: fd11fda31f9c3226bd29b0f36a51a72c.dir
+  size: 1691089
   nfiles: 1
   hash: md5
   path: contaminants_literature

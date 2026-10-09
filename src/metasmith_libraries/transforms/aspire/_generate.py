@@ -367,8 +367,10 @@ TABLE: list[T] = [
            "this in two and partitioned the result into four count tables; here there "
            "are two, the counts kept and the counts removed, and each removed ASV carries "
            "its reason (mitochondrial, contaminant, below abundance, taxonomy). "
-           "`contaminant_hits.tsv` in the summaries names the list, entry and support "
-           "behind each contaminant removal. "
+           "A contaminant entry counts only when seen in at least "
+           "`contaminant_min_prevalence` of its sources' blanks. `contaminant_hits.tsv` in "
+           "the summaries tags every ASV the uncut screen matched with its highest matched "
+           "prevalence, so a cut can be retuned from it without a rerun. "
            "Thresholds under `curate:`. Negative controls are not modelled yet; they "
            "belong here as a second evidence input beside the contaminant hits."),
 

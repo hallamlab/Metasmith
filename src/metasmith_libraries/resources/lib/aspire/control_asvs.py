@@ -6,10 +6,7 @@ layout, URL and MD5. Each source is denoised alone, so `blanks` counts the contr
 seen in within its own study. Across sources, a shorter ASV that prefixes a longer one is the
 same sequence read to a different length, and `studies` counts the sources behind each entry.
 
-An entry is kept only when it was seen in at least MIN_PREVALENCE of its sources' controls. A
-control also catches what leaks from the study's own samples, and those ASVs sit in one or two
-controls: unfiltered, the list removed 44% of the lab's V4-V5 reads, its dominant Halomonas
-among them.
+Every entry is kept. `blanks` is its prevalence, which curate's contaminant_min_prevalence cuts.
 """
 
 import argparse
@@ -42,7 +39,6 @@ PRIMER_515F = re.compile(r"GTG[CT]CAGC[AC]GCCGCGGTAA")
 PRIMER_806R_RC = re.compile(r"ATTAGA[AT]ACCC[CGT][ACGT]GTAGTCC")
 ADAPTERS = ("AGATCGGAAGAGC", "CTCGTATGCCGTC", "CTGTCTCTTATACACATCT")
 MIN_LENGTH = 100
-MIN_PREVALENCE = 0.25
 
 
 def controls(source):
@@ -210,9 +206,7 @@ def assemble(args):
         blanks = {(label.split("|")[0], sample) for label in labels
                   for sample in seen[label.split("|")[0]].get(label.split("|")[1], ())}
         total = sum(totals[s] for s in sources)
-        if len(blanks) >= MIN_PREVALENCE * total:
-            entries.append((len(sources), len(blanks), total, sources, seqs[centroid]))
-    print(f"[INFO] {len(entries)} of {len(members)} ASVs seen in at least {MIN_PREVALENCE:.0%} of their controls")
+        entries.append((len(sources), len(blanks), total, sources, seqs[centroid]))
     entries.sort(key=lambda e: (-e[0], -e[1], e[4]))
 
     with open(args.out, "w") as out:

@@ -119,21 +119,22 @@ Curation differs in four places, and each can change the curated table.
    `--make-mito` unconditionally, and the script raises on an empty table. Host-associated
    samples never reach that case, and a culture does.
 4. **The default contaminant lists differ.** Upstream screens against the Bio! facility's
-   database alone. The port screens against the literature list as well. See *The contaminant
-   screen*.
+   database alone. The port screens against the literature list as well, and counts an entry
+   only above a blank-prevalence cut. See *The contaminant screen*.
 
 ## The contaminant screen
 
 `mitomaster` screens against `aspire::contaminant_reference_set`, a directory of FASTAs with
 one list per file. It builds one BLAST database from every list and tags each header with its
-file's stem. `contaminant_hits.tsv` in `curate`'s summaries names the list, the entry and its
-support behind each removal. The removal itself is upstream's hard cut at 97% identity and 51%
-query coverage. With no set given, `contaminant_set` bundles the literature list and the Bio!
-list.
+file's stem. `curate` counts an entry only when it appears in at least
+`curate.contaminant_min_prevalence` of its sources' blanks, read from the header's `blanks`
+field. An entry without that field always counts. The removal itself is upstream's hard cut at
+97% identity and 51% query coverage. With no set given, `contaminant_set` bundles the
+literature list and the Bio! list.
 
 `logistics/buildAspireLiteratureContaminants` builds the literature list from published
 negative controls. Its product is pinned with DVC at `data/aspire/contaminants_literature/`:
-383 entries, MD5 `7a05e57a79c5a1b6e360e6a260e38dfa`. The sources are:
+6,980 entries, MD5 `be6980c34bd077be64d250850a4a5e7f`. The sources are:
 
 - Weyrich et al. 2019, doi:10.1111/1755-0998.13011. 137 controls from figshare
   doi:10.25909/5bdaa4431a941, CC BY 4.0. V4.
@@ -143,15 +144,26 @@ negative controls. Its product is pinned with DVC at `data/aspire/contaminants_l
   PRJEB44556. V3-V4, cut to V4.
 
 Every entry starts right after 515F and spans at most V4. Each header carries `studies`,
-`blanks` and `sources`.
+`blanks` and `sources`. The list keeps every entry, so the prevalence cut stays a parameter.
 
-**An entry must appear in at least 25% of its sources' controls.** A control also catches what
-leaks from its own study's samples, and those ASVs sit in one or two controls. Unfiltered, the
-6,980-entry list removed 44% of `lab_r2`'s V4-V5 reads, the lab's dominant *Halomonas* among
-them. Entries from two or more studies still removed 28%, so the number of studies does not
-separate leakage from kitome. At 25% the list removes 0.57%, all typical reagent and skin taxa
-such as *Cutibacterium*, *Enterobacter* and *Streptococcus*. Apply any support cut to the list
-before BLAST, because a hit reports only its best entry.
+**The prevalence cut defaults to 10%.** A control also catches what leaks from its own study's
+samples, and those ASVs sit in one or two controls. Measured on `lab_r2`'s V4 reads against the
+lab's own 10 blanks:
+
+- At 0%, the list removes 47.5% of the samples' reads and 30.6% of the blanks'. Entries from
+  two or more studies still remove 28% of the V4-V5 reads, so the study count does not
+  separate leakage from kitome.
+- Between 4% and 9% three abundant lab ASVs leave the removed set: *Halomonas* (23.5% of the
+  reads, best match at 7.5%), a Rhodobacteraceae (6.2%) and *Mesorhizobium* (8.0%).
+- At 10%, the list removes 0.77% of the samples' reads and 20.1% of the blanks', 26 times
+  more. 760 entries count.
+- The kitome entries of the no-template controls sit at 24.5% to 28.5%. A cut at 25% already
+  loses some of them.
+
+**`contaminant_hits.tsv` makes the cut tunable without a rerun.** It tags every ASV with a
+qualifying hit in the uncut screen by the highest prevalence among its hits. The ASV is removed
+at a cut t exactly when its tag is at least t. Filter the table to try another cut. `curate`
+cuts the screen's hit rows before the non-target call, because the call keeps one hit per ASV.
 
 **CAUTION** A KatharoSeq-only entry is 150 nt. It covers 59% of a V4 query but only 40% of a
 V4-V5 query, under the 51% coverage cut. On a V4-V5 study those entries match nothing.
