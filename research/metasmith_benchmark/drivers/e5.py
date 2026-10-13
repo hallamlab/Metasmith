@@ -122,9 +122,11 @@ SCALED = {
 # The transform's CPU patch trains a ~97K-contig Pratama sample at 27.7 s/epoch on 24 cpus and 25.8 s on 48,
 # so every shape takes 24. That sample runs all 200 epochs in ~2 h; its Leiden sweep peaks at 38 GB. A CAMI sample takes
 # ~17 min at 12 cpus. Hours are about 2x the measured run, 3x for the shapes with ~180K-contig assemblies.
+# Tara (metagem_pe_split) takes 24: over its first 164 samples a successful attempt ran p50 3.4 h, p90 6.9 h,
+# max 11.5 h, and 47 first attempts died at the old 6 h limit and restarted from scratch.
 COMEBIN = {
     "cami_pe": (24, 24, 2), "cami_hybrid_ont": (24, 24, 2), "cami_long_pacbio": (24, 24, 3), "metagem_se": (24, 24, 2),
-    "pratama_pe": (24, 48, 4), "pratama_hybrid_ont": (24, 48, 6), "metagem_pe_split": (24, 48, 6),
+    "pratama_pe": (24, 48, 4), "pratama_hybrid_ont": (24, 48, 6), "metagem_pe_split": (24, 48, 24),
 }
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
 # Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
