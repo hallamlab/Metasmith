@@ -1,0 +1,6 @@
+outs:
+- md5: 06b18179baf44a99d5c9c3f199f8cd1c.dir
+  size: 1820952
+  nfiles: 80
+  hash: md5
+  path: chinook

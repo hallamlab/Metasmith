@@ -1,0 +1,5 @@
+outs:
+- md5: 974ab99596818dddc43e68e022296afa
+  size: 48402
+  hash: md5
+  path: manifest.tsv
