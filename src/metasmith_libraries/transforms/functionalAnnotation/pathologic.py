@@ -1,3 +1,5 @@
+import os
+import pwd
 from pathlib import Path
 
 from metasmith.python_api import *
@@ -130,11 +132,14 @@ write("pathways.csv", ["pathway", "evidenced_reactions"], pwys)
     # The engine already mounts the task directory at /ws, so the task's ws/ is /ws/ws.
     # The image is read-only, and PathoLogic builds the PGDB under
     # /data/ptools-local/pgdbs before the wrapper moves it to -o. Pathway Tools refuses
-    # to start without a HOME it can read, which --no-home takes away.
+    # to start unless the passwd home exists, and --no-home leaves it out; $HOME does not
+    # stand in for it.
+    context.LocalShell("mkdir -p ws/home")
     context.ExecWithEnv(
         env=image,
-        binds=[(context.external_cwd / "ws" / "pgdbs", "/data/ptools-local/pgdbs")],
-        cmd=f"mkdir -p /ws/ws/home && export HOME=/ws/ws/home && pathologic -i /ws/ws/{PF_NAME} -o /ws/ws/cyc --silent",
+        binds=[(context.external_cwd / "ws" / "pgdbs", "/data/ptools-local/pgdbs"),
+               (context.external_cwd / "ws" / "home", pwd.getpwuid(os.getuid()).pw_dir)],
+        cmd=f"pathologic -i /ws/ws/{PF_NAME} -o /ws/ws/cyc --silent",
     )
     # The wrapper exits 0 whether or not Pathway Tools built anything.
     built = Path("ws/cyc/data/reactions.dat").exists()
