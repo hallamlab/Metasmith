@@ -122,27 +122,48 @@ FINDINGS = """
 CAMI_OTU genomes plus one community PGDB per sample. CarveMe and the 4-lane cover E5's 757 DAS Tool MAGs,
 assembled from reads. A per-subject pairing across these two sets needs a MAG-to-genome assignment, which
 neither output carries.</li>
-<li><b>MEMOTE's total jumps on a small change.</b> DH10B scores 0.847 and the other five strains score
-0.680–0.681, with about 40 fewer reactions in DH10B. The whole gap is the consistency section (0.873
-against 0.448). The 757 CAMI MAGs split the same way: 431 score 0.66–0.71 and 326 score 0.82–0.88, with
-none between. Consistency alone separates them (0.45–0.53 against 0.89–0.97). The four annotation sections
-score alike in both groups. Read MEMOTE's total as two states plus noise, not as a scale.</li>
-<li><b>A PGDB's reaction list includes reactions with no gene.</b> In one genome, reactions.dat lists 2,320
-reactions and 1,443 have an enzyme linked to a gene. Count reactions with a gene when the question is
-what the genome encodes.</li>
-<li><b>Ryan's <code>_pwy.tsv</code> is a filtered list.</b> PathoLogic's evidence list names more pathways
-than the table (358 against 328 in the same genome).</li>
+<li><b>Per-sample size follows each method's own subjects.</b> E5 recovered 6–36 MAGs per sample, from
+samples holding 24–320 gold-standard genomes, and the two counts do not track (Spearman −0.07). The community
+PGDB's size follows its genome count (0.80), CarveMe's union follows its MAG count (0.72), and the two sizes
+do not track each other (−0.07). A sample-level size comparison measures binning, not reconstruction.</li>
+<li><b>CarveMe's identifiers mostly sit inside the community PGDB.</b> Per sample, 78% (65–83%) of the MetaCyc
+reaction ids on CarveMe's gene-ruled reactions, pooled over the sample's MAGs, are reactions with a gene in
+the community PGDB. EC numbers give the same 78%. The reverse fraction is small (MetaCyc 15%, EC 28%), because
+the PGDB covers every genome and CarveMe covers only the binned ones. Both methods carry these ids natively,
+so this needs no translation.</li>
+<li><b>CarveMe recovers about three quarters of a curated E. coli model.</b> By BiGG reaction id, CarveMe's
+gene-ruled reactions hold 78% of iML1515's gene-ruled reactions for K-12, and 76% of iECDH10B_1368's for
+DH10B and EPI300. 82–86% of CarveMe's gene-ruled reactions are in the curated model. This anchor is partly
+circular: CarveMe's universal model is built from BiGG models, these among them. EPI300 has no curated
+model of its own and borrows DH10B's.</li>
+<li><b>CarveMe and the 4-lane agree on which strains differ.</b> Over the 15 strain pairs, the size of the
+set difference ranks the pairs alike in both methods (Spearman 0.84, CarveMe gene-ruled reactions against
+all 4-lane MNXR). Both put EPI300 nearest to DH10B, its parent strain: the 4-lane by a wide margin (62
+against 218 or more), CarveMe narrowly (32 against 38). Proteome size differences do not predict either
+(0.2–0.3). The KOfam and UniRef50 lanes see no difference between DH10B and EPI300 at all.</li>
+<li><b>MEMOTE's total is two states, set by one binary test.</b> DH10B scores 0.847 and the other five strains
+0.680–0.681. The 757 CAMI MAGs split the same way: 431 score 0.66–0.71 and 326 score 0.82–0.88, with none
+between. The consistency section alone separates them (0.45–0.53 against 0.89–0.97). In E. coli the switch is
+stoichiometric consistency: five strains fail it on unconserved protons (h_c, h_p, h_e), and DH10B passes.
+DH10B and EPI300 also carry an ATP-generating cycle that the other four do not. The best-scoring model
+holds a free-ATP loop, so a higher total does not mean a sounder model.</li>
 <li><b>The 4-lane emits a scored candidate set, not a model.</b> Each E. coli strain gets about 31,000
 calls to about 11,200 distinct MNXR from about 2,800 ORFs. CLEAN alone proposes about 9,700 MNXR.
 CarveMe's models hold about 2,480 reactions. Any count comparison with the 4-lane needs a score cut,
-and choosing it is part of the test.</li>
-<li><b>Some identifiers overlap without translation.</b> CarveMe's SBML annotations carry MetaNetX reaction
-ids (about 2,000 of 2,480 in E. coli), MetaCyc reaction ids (about 960) and EC numbers (about 950). The
-4-lane speaks MNXR natively and the PGDBs speak MetaCyc and EC. CarveMe's MNXR come from the MetaNetX
-release BiGG annotated against, which is older than the 4-lane's.</li>
-<li><b>E. coli gene ids line up between CarveMe and the 4-lane.</b> Both read the same RefSeq proteome, so
-a gene-level comparison needs no mapping there. MetaPathways calls its own ORFs from the genome, so a
-PGDB's gene ids will differ.</li>
+and choosing it is part of the test. Its lanes score in different kinds (CLEAN confidence, KOfam bitscore,
+ProteinBERT neighbour vote, UniRef50 blast score ratio), so one cut does not fit all four.</li>
+<li><b>Untranslated MNXR overlap understates agreement.</b> Only 24% of CarveMe's MNXR in K-12 appear among
+the 4-lane's MNXR, and 35% for reactions that carry an EC number. CarveMe's MNXR come from BiGG's annotation
+and cluster at MNXR94k–103k, while the 4-lane's mostly sit at MNXR130k–200k. MetaNetX keeps separate ids for
+variants of one reaction, so the two methods often name the same reaction differently. The 4-lane reaches
+50% of the curated model's MNXR on the same footing. Treat MNXR overlap as a floor, not a measure.</li>
+<li><b>A PGDB's reaction list includes reactions with no gene.</b> In one genome, reactions.dat lists 2,320
+reactions and 1,443 have an enzyme linked to a gene. Count reactions with a gene when the question is
+what the genome encodes. Ryan's <code>_pwy.tsv</code> is also a filtered list: PathoLogic's evidence list
+names more pathways (358 against 328 in the same genome).</li>
+<li><b>Gene ids line up between CarveMe and the 4-lane.</b> Both read the same proteins, the RefSeq
+proteome in E. coli and E5's MAG ORFs on CAMI, so a gene-level comparison needs no mapping. MetaPathways
+calls its own ORFs, so a PGDB's gene ids will differ.</li>
 """
 
 STYLE = """
