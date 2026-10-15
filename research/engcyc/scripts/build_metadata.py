@@ -103,6 +103,12 @@ def sharknado():
         "amp_linep_jgi_itags": pd.concat(plates, ignore_index=True),
         "amp_saanich_jgi_itags": read_tsv(d / "Saanich/RawData/Joint_Genome_Institute/Illumina_iTags/"
                                                 "sample_name_metadata_updated_ALL.tsv", header=None),
+        "amp_sakinaw_jgi_itags": read_sheet(d / "StratifiedLakes/Sakinaw/RawData/Joint_Genome_Institute/Illumina_iTags/"
+                                                "Sakinaw_SZHZ_TWUN_name_map.xlsx", 0),
+        "amp_powell_jgi_itags": read_sheet(d / "StratifiedLakes/Powell/RawData/Joint_Genome_Institute/Illumina_iTags/"
+                                               "iTagsMarch2014/Powell_SHZH_name_map.xlsx", 0),
+        "amp_knorr2013_jgi_itags": read_sheet(d / "Knorr_2013/RawData/Joint_Genome_Institute/Illumina_iTags/"
+                                                  "Knorr_TBOC_TWUN_TUGS_name_map.xlsx", 0),
     }
 
 
