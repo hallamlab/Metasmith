@@ -9,6 +9,7 @@ Writes data/mm_compare/probes/:
   ecoli_memote_flip.tsv    the MEMOTE tests behind each strain's total
   cami_sample_overlap.tsv  per sample, CarveMe's MetaCyc and EC ids (all MAGs) inside the community PGDB's
   cami_gpr_vs_carveme.tsv  per MAG, the 4-lane and CarveMe on the same ORFs (once the 4-lane tables exist)
+  gene_overlap.tsv         per model, CarveMe's genes against the ORFs the 4-lane called, by ORF id
 Prints the headline numbers.
 """
 import gzip
@@ -16,6 +17,9 @@ import itertools
 import json
 import sys
 from pathlib import Path
+
+import re
+import xml.etree.ElementTree as ET
 
 import pandas as pd
 
@@ -134,6 +138,42 @@ def cami_gpr(mm, out):
     print(d.drop(columns=["sample", "mag"]).describe().round(3).T[["min", "50%", "max"]].to_string())
 
 
+FBC = "{http://www.sbml.org/sbml/level3/version1/fbc/version2}"
+
+
+def norm(orf):
+    return re.sub(r"[^A-Za-z0-9]", "_", orf)
+
+
+def carveme_genes(sbml: Path):
+    return {norm(g.get(f"{FBC}id")[2:]) for g in ET.parse(sbml).getroot().iter(f"{FBC}geneProduct")}
+
+
+def gene_overlap(repo, mm, out):
+    rows = []
+    runs = repo / "data" / "fabfos" / "runs"
+    for s in STRAINS:
+        g = pd.read_parquet(runs / f"e_coli_{s}" / "gpr" / "gpr_denovo.parquet", columns=["orf", "channel"])
+        rows.append(("ecoli", s, carveme_genes(mm / "ecoli_carveme" / s / "carveme_sbml.xml"), g))
+    for f in sorted((mm / "gpr_4lane").glob("toy_hmp_*.parquet")):
+        g = pd.read_parquet(f, columns=["orf", "channel", "mag"])
+        for mag, calls in g.groupby("mag"):
+            rows.append(("cami_hmp", mag, carveme_genes(mm / "e5_hmp_carveme" / f.stem / mag / "carveme_sbml.xml"), calls))
+    out_rows = []
+    for ds, subject, genes, calls in rows:
+        called = {norm(o) for o in calls.orf}
+        row = {"dataset": ds, "subject": subject, "carveme_genes": len(genes), "4lane_orfs": len(called),
+               "carveme_genes_called": len(genes & called) / max(1, len(genes)),
+               "4lane_orfs_in_carveme": len(genes & called) / max(1, len(called))}
+        for lane in LANES:
+            lane_called = {norm(o) for o in calls[calls.channel == lane].orf}
+            row[f"carveme_genes_called_{lane}"] = len(genes & lane_called) / max(1, len(genes))
+        out_rows.append(row)
+    d = pd.DataFrame(out_rows)
+    d.to_csv(out / "gene_overlap.tsv", sep="\t", index=False)
+    print(d.groupby("dataset").median(numeric_only=True).round(3).T.to_string())
+
+
 def main(repo: Path):
     mm = repo / "data" / "mm_compare"
     out = mm / "probes"
@@ -143,6 +183,7 @@ def main(repo: Path):
     ecoli(repo, mm, out)
     cami(mm, out)
     cami_gpr(mm, out)
+    gene_overlap(repo, mm, out)
 
 
 if __name__ == "__main__":

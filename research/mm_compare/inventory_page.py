@@ -161,9 +161,20 @@ variants of one reaction, so the two methods often name the same reaction differ
 reactions and 1,443 have an enzyme linked to a gene. Count reactions with a gene when the question is
 what the genome encodes. Ryan's <code>_pwy.tsv</code> is also a filtered list: PathoLogic's evidence list
 names more pathways (358 against 328 in the same genome).</li>
-<li><b>Gene ids line up between CarveMe and the 4-lane.</b> Both read the same proteins, the RefSeq
-proteome in E. coli and E5's MAG ORFs on CAMI, so a gene-level comparison needs no mapping. MetaPathways
-calls its own ORFs, so a PGDB's gene ids will differ.</li>
+<li><b>Gene ids line up between CarveMe and the 4-lane, and the two mostly agree on which genes matter.</b>
+Both read the same proteins, the RefSeq proteome in E. coli and E5's MAG ORFs on CAMI, so the comparison
+needs no mapping. 83% of CarveMe's model genes carry at least one 4-lane call (median over 757 MAGs; 84% in
+E. coli). ProteinBERT reaches the most of them (73%), UniRef50 the fewest (39%). The reverse is lower: 35% of
+the ORFs the 4-lane calls are CarveMe model genes (48% in E. coli), because the 4-lane calls every ORF
+it can and CarveMe keeps only the genes its carved network uses. MetaPathways calls its own ORFs, so a
+PGDB's gene ids will differ.</li>
+<li><b>On the CAMI MAGs the 4-lane behaves as it does on E. coli.</b> Per MAG, 62% of ORFs get a call
+(59–64% interquartile), giving a median of 6,500 distinct MNXR against CarveMe's 1,360 reactions. A median 23% of a
+MAG's CarveMe MNXR appear among its 4-lane MNXR, the same floor as in E. coli.</li>
+<li><b>Pooling a sample's MAGs into one 4-lane run changed nothing.</b> One MAG (3,041 ORFs) run alone
+gave the same CLEAN, KOfam and UniRef50 calls as its share of the pooled sample, with identical scores.
+ProteinBERT swapped 32 of 5,411 calls and moved scores by at most 1e-6, the lane's known non-determinism.
+Per-sample pooling is safe for later runs.</li>
 """
 
 STYLE = """
@@ -312,6 +323,8 @@ def main(repo: Path, out: Path):
   <ul class="paths">
     <li><code>data/mm_compare/manifest.tsv</code>: one row per output, with path and provenance</li>
     <li><code>data/mm_compare/inventory/</code>: the per-subject counts on this page</li>
+    <li><code>data/mm_compare/gpr_4lane/</code>: the CAMI 4-lane calls, one table per sample with a <code>mag</code> column</li>
+    <li><code>data/mm_compare/probes/</code>: the tables behind the findings above</li>
     <li><code>research/mm_compare/</code>: the scripts that fetched, ran and counted</li>
   </ul>
   <p class="note">Branch <code>feat/engine/bench-E4</code> of metasmith. The data is pinned by <code>data/mm_compare.dvc</code>.</p>
