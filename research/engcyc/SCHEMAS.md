@@ -58,6 +58,8 @@ A metadata table is a copy of the metadata that already exists for a dataset. Wr
 
 A run or file list that came with the study counts as metadata. A directory listing made during a survey does not.
 
+**CAUTION** The manifest and the tables are read-only DVC hardlinks. Run `dvc unprotect data/engcyc/manifest.tsv data/engcyc/metadata` before you edit or rebuild them. Run `dvc add` on both afterwards.
+
 Run `research/engcyc/scripts/build_metadata.py` to rebuild the tables. It also rewrites the `metadata_table` column of the manifest. Copy a new source into `data/engcyc/sources/` before you add it to the script.
 
 Run `research/engcyc/scripts/validate_manifest.py` after every manifest edit. It fails on a schema error. It warns when a table's row count differs from `n_samples`, because a table can count files, runs or plate sets. Explain each such difference in `notes`.
