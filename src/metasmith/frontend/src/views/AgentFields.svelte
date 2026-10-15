@@ -48,7 +48,7 @@
        and this row is a tablist over a box that sometimes holds another -->
   <div class="field">
     <span class="small muted">where it lives</span>
-    <div class="tabs" role="tablist" aria-label="where this agent lives">
+    <div class="tabs" role="tablist" aria-label="where this agent lives" data-tour="agent-where">
       {#each WHERE as w}
         <button
           class="tab"
@@ -56,6 +56,7 @@
           role="tab"
           aria-selected={form.kind === w.id}
           onclick={() => (form.kind = w.id)}
+          data-tour={`agent-where-${w.id}`}
         >{w.label}</button>
       {/each}
     </div>
@@ -96,7 +97,7 @@
   {/if}
 
   <Field label="runtime">
-    <select bind:value={form.runtime}>
+    <select bind:value={form.runtime} data-tour="agent-runtime">
       {#each runtimes as r}
         <option value={r}>{RUNTIME_LABELS[r] ?? r.toLowerCase()}</option>
       {/each}

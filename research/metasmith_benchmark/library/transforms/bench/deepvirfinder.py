@@ -1,5 +1,7 @@
-# DeepVirFinder over one assembly, as Pratama ran it: `dvf.py -l 1000`. The paper gives no score or
-# p-value cut, so the per-contig table is the product and no call joins the frozen viral set.
+# DeepVirFinder over one assembly, as Pratama ran it: `dvf.py -l 1000`. The paper's Methods cut is
+# score >= 0.9 and p-value <= 0.05, but this transform applies none of it: the per-contig table is
+# the product and no call joins the frozen viral set here. e3::deepvirfinder_pratama is the one that
+# applies the cut and feeds the pooled caller set.
 from metasmith.python_api import *
 
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)

@@ -30,6 +30,10 @@
   import NewWorkflow from './components/NewWorkflow.svelte'
   import ShareIn from './components/ShareIn.svelte'
   import StatusDot from './components/StatusDot.svelte'
+  import TourLayer from './components/TourLayer.svelte'
+  import TourButton from './components/TourButton.svelte'
+  import TutorialView from './views/TutorialView.svelte'
+  import { TUTORIALS } from './lib/tutorials/index.js'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
@@ -146,6 +150,8 @@
     ]
   })
 
+  const tutorialItems = TUTORIALS.map((t) => ({ id: t.id, t }))
+
   let agentItems = $derived(
     app.agents.map((a) => ({ id: a.name, agent: a, dim: !!a.archived_at })),
   )
@@ -253,7 +259,7 @@
 </script>
 
 <div class="shell">
-  <header>
+  <header data-tour="header">
     <div class="brand">
       <img class="wordmark" src={wordmark} alt="Metasmith" />
       {#if app.project}<span class="ver mono">{app.project.version}</span>{/if}
@@ -261,7 +267,12 @@
 
     <nav>
       {#each SECTIONS as s}
-        <button class="tab" class:on={app.section === s.id} onclick={() => selectSection(s.id)}>
+        <button
+          class="tab"
+          class:on={app.section === s.id}
+          onclick={() => selectSection(s.id)}
+          data-tour={`tab-${s.id}`}
+        >
           {s.label}
         </button>
       {/each}
@@ -280,6 +291,8 @@
         <CopyButton text={app.project.root} label="copy the project path" />
       {/if}
     </div>
+
+    <TourButton />
 
     <!-- the glyph is the theme you would switch *to*, not the one showing, and
          the title says so. Outside the project check for the same reason the
@@ -321,7 +334,22 @@
   {/if}
 
   <div class="body">
-    {#if app.section === 'ssh'}
+    {#if app.section === 'tutorials'}
+      <Rail
+        title="tutorials"
+        items={tutorialItems}
+        selected={sel ?? TUTORIALS[0]?.id}
+        onselect={(id) => select('tutorials', id)}
+        empty="no tutorials"
+      >
+        {#snippet row(item)}
+          <div class="grow">
+            <div class="truncate">{item.t.title}</div>
+            <div class="small muted">{item.t.steps.length} steps · {item.t.duration}</div>
+          </div>
+        {/snippet}
+      </Rail>
+    {:else if app.section === 'ssh'}
       <Rail
         title="hosts"
         items={sshItems}
@@ -379,7 +407,7 @@
       >
         {#snippet actions()}
           <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
-          <button class="small" disabled={creating} onclick={newAgent}>+ agent</button>
+          <button class="small" disabled={creating} onclick={newAgent} data-tour="new-agent">+ agent</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -444,7 +472,7 @@
       >
         {#snippet actions()}
           <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
-          <button class="small" onclick={() => (choosing = true)}>+ workflow</button>
+          <button class="small" onclick={() => (choosing = true)} data-tour="new-workflow">+ workflow</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -534,7 +562,11 @@
            nobody reads it -- and the duplicate button made "new agent" a thing
            in two places that had to be kept in step. The rail is the section's
            own explanation. -->
-      {#if app.section === 'ssh'}
+      {#if app.section === 'tutorials'}
+        {#if sel ?? TUTORIALS[0]}
+          {#key sel}<TutorialView id={sel ?? TUTORIALS[0].id} />{/key}
+        {/if}
+      {:else if app.section === 'ssh'}
         {#if sel === 'new'}
           <SshNew />
         {:else if sel === 'editor'}
@@ -570,6 +602,8 @@
 {#if choosing}
   <NewWorkflow onclose={() => (choosing = false)} />
 {/if}
+
+<TourLayer />
 
 <style>
   .shell { display: flex; flex-direction: column; height: 100vh; }

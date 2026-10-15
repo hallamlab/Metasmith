@@ -1,0 +1,2 @@
+arm	pipeline	samples	source	min	p10	median	p90	max	mean
+short	E1	208	MultiQC bowtie2 assembly log	80.83	93.193	97.66	98.879	99.9	96.55326923076925

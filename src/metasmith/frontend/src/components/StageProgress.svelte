@@ -6,10 +6,10 @@
   // before the current stage is 'done', everything after is 'idle', and the
   // current stage alone takes its color from whatever is actually happening)
   // rather than this component guessing at status semantics it doesn't own.
-  let { stages, stageStates } = $props()
+  let { stages, stageStates, tour = null } = $props()
 </script>
 
-<div class="progress">
+<div class="progress" data-tour={tour}>
   {#each stages as label, i}
     <div class="seg {stageStates[i]}">
       <span class="bar"></span>

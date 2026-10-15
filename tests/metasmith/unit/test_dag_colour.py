@@ -49,18 +49,18 @@ def test_every_named_scheme_colours_every_node():
         if scheme == "none":
             assert not c
             continue
-        assert set(c.nodes) == {n.name for n in lay.nodes}, scheme
+        assert set(c.nodes) == set(lay.order), scheme
         assert all(v.startswith("#") for v in c.nodes.values()), scheme
 
 
-def test_lane_gives_neighbouring_lanes_different_hues():
+def test_lane_gives_neighbouring_columns_different_hues():
     lay = load_dag().layout()
     c = colour_layout(lay, "lane")
-    by_lane = {n.lane: c.nodes[n.name] for n in lay.nodes}
-    for lane in sorted(by_lane)[:-1]:
-        if lane + 1 in by_lane:
-            assert by_lane[lane] != by_lane[lane + 1], lane
-    assert all(c.nodes[n.name] == by_lane[n.lane] for n in lay.nodes)
+    by_col = {lay.col[n]: c.nodes[n] for n in lay.order}
+    for col in sorted(by_col)[:-1]:
+        if col + 1 in by_col:
+            assert by_col[col] != by_col[col + 1], col
+    assert all(c.nodes[n] == by_col[lay.col[n]] for n in lay.order)
 
 
 def test_repeat_paints_every_instance_of_a_motif_the_same():
@@ -72,7 +72,7 @@ def test_repeat_paints_every_instance_of_a_motif_the_same():
         hues = {c.nodes[x] for x in m.nodes}
         assert len(hues) == 1, m.heads
         assert hues != {UNMATCHED}
-    outside = {n.name for n in lay.nodes} - set().union(*(m.nodes for m in motifs))
+    outside = set(lay.order) - set().union(*(m.nodes for m in motifs))
     assert all(c.nodes[x] == UNMATCHED for x in outside)
 
 
@@ -89,10 +89,9 @@ def test_module_gives_touching_modules_different_hues():
     lay = load_dag().layout()
     hue, owner = _by_module(lay), _module_owner(lay)
     touching = {
-        (owner[e.src], owner[e.dst])
-        for e in lay.edges
-        if not e.back and owner[e.src] != owner[e.dst]
-        and owner[e.src] is not None and owner[e.dst] is not None
+        (owner[src], owner[dst])
+        for src, dst in lay.edges
+        if owner[src] != owner[dst] and owner[src] is not None and owner[dst] is not None
     }
     assert touching
     for a, b in touching:
@@ -114,10 +113,8 @@ def test_namespace_follows_the_prefix_and_greys_what_has_none():
 def test_an_edge_takes_its_source_colour():
     lay = load_dag().layout()
     c = colour_layout(lay, "lane")
-    for e in lay.edges:
-        if e.back:
-            continue
-        assert c.edges[(e.src, e.dst)] == c.nodes[e.src]
+    for src, dst in lay.edges:
+        assert c.edges[(src, dst)] == c.nodes[src]
 
 
 def test_svg_puts_the_hue_on_the_marker_and_the_rail():

@@ -81,10 +81,12 @@ def build_targets(arm):
     t = TargetBuilder()
     if arm == "short":
         asm = t.Add("e2::megahit_assembly")
-        for report in ("fastqc_raw_reports", "fastqc_trimmed_reports", "fastp_json", "fastp_html"):
+        for report in ("trimmed_short_reads", "fastqc_raw_reports", "fastqc_trimmed_reports", "fastp_json", "fastp_html"):
             t.Add(f"e2::{report}")
     else:
         asm = t.Add("e2::flye_assembly")
+        t.Add("e2::filtered_long_reads")
+    t.Add("e2::binning_bam", parents=[asm])
     # nf-core/mag's control config sends raw and refined bins downstream, so CheckM2 scores all four sets.
     for binner in ("metabat2", "semibin2", "comebin", "das_tool"):
         bins = t.Add(f"e2::{binner}_bin", parents=[asm])

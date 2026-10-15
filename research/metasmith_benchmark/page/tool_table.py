@@ -2,7 +2,7 @@
 import html
 
 RUNS = ["E1", "E2", "Pratama", "E3", "metaGEM", "E4", "E5"]
-HEAD = ["E1 nf-core/mag", "E2 msm<br>matches E1", "Pratama paper", "E3 msm<br>matches Pratama",
+HEAD = ["E1 nf-core/mag", "E2 msm<br>matches E1", "Pratama paper", "E3 msm<br>matches Pratama's viruses",
         "metaGEM paper", "E4 msm<br>from metaGEM proteins", "E5"]
 
 # (tool, {run: cell}, E5 reason). A run missing from the dict doesn't use the tool.
@@ -30,30 +30,30 @@ GROUPS = [
     ("Assembly", [
         ("MEGAHIT", {"E1": True, "E2": True, "Pratama": "viral contigs only", "E3": "viral contigs only", "metaGEM": True, "E5": True}, "Performance over metaSPAdes"),
         ("metaSPAdes", {"Pratama": "-k 21,33,55,77", "E3": "-k 21,33,55,77"}, "Performance: MEGAHIT instead"),
-        ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "--meta -m 380 --nanopore, no -k; 17 replicates with their well's MinION run (wave 4)"}, "fill"),
+        ("metaSPAdes --nanopore (hybrid)", {"Pratama": "per Illumina run, 17 assemblies", "E3": "--meta -m 380 --nanopore, no -k; 17 assemblies, each pairing on its own hard-linked MinION file"}, "fill"),
         ("Flye", {"E1": True, "E2": "preset from declared platform; memory from measured peaks", "E5": "preset from declared platform; memory from measured peaks"}, "Tony: long-read assembler"),
     ]),
     ("Read mapping and coverage", [
         ("bowtie2", {"E1": "short reads", "E2": "short reads; E2 library"}, "Tony: minimap2"),
         ("minimap2", {"E1": "long reads", "E2": "long reads", "E5": True}, "Tony: minimap2 with a coverage step"),
-        ("assembly_stats", {"E3": "minimap2, samtools, bedtools; per-base coverage", "E5": "per-base coverage"}, "Tony: per-base coverage, better than CoverM"),
+        ("assembly_stats", {"E5": "per-base coverage"}, "Tony: per-base coverage, better than CoverM"),
         ("bwa", {"metaGEM": True}, None),
         ("CoverM", {"Pratama": "MAG and vOTU abundance"}, "Tony: assembly_stats gives per-base coverage"),
     ]),
     ("Binners", [
-        ("MetaBAT2", {"E1": True, "E2": True, "Pratama": True, "E3": "via MetaWRAP", "metaGEM": True, "E5": True}, "Tony: three binners into MAGScoT"),
-        ("MaxBin2", {"Pratama": True, "E3": "via MetaWRAP", "metaGEM": True}, "Tony: three binners into MAGScoT"),
-        ("CONCOCT", {"Pratama": True, "E3": "via MetaWRAP", "metaGEM": True}, "Tony: three binners into MAGScoT"),
+        ("MetaBAT2", {"E1": True, "E2": True, "Pratama": True, "metaGEM": True, "E5": True}, "Tony: three binners into MAGScoT"),
+        ("MaxBin2", {"Pratama": True, "metaGEM": True}, "Tony: three binners into MAGScoT"),
+        ("CONCOCT", {"Pratama": True, "metaGEM": True}, "Tony: three binners into MAGScoT"),
         ("SemiBin2", {"E1": True, "E2": True, "E5": True}, "Tony: three binners into MAGScoT"),
         ("COMEBin", {"E1": True, "E2": True, "E5": True}, "Tony: three binners into MAGScoT"),
-        ("BinSanity", {"Pratama": True, "E3": NEW}, "fill"),
-        ("abawaca", {"Pratama": True, "E3": NEW}, "fill"),
+        ("BinSanity", {"Pratama": True}, "fill"),
+        ("abawaca", {"Pratama": True}, "fill"),
     ]),
     ("Dereplication: one non-redundant bin set from overlapping candidates", [
         ("DAS Tool", {"E1": "per sample", "E2": "per sample", "E5": "NEW: per sample, over all three binners"}, "Tony: four interchangeable dereplicators for one step"),
-        ("MetaWRAP bin_refinement", {"Pratama": "2 rounds, with CheckM filtering", "E3": "2 rounds; now 1, until BinSanity and abawaca", "metaGEM": "with CheckM filtering"}, "Tony: MAGScoT"),
+        ("MetaWRAP bin_refinement", {"Pratama": "2 rounds, with CheckM filtering", "metaGEM": "with CheckM filtering"}, "Tony: MAGScoT"),
         ("MAGScoT", {"E5": "NEW: per sample, over all three binners"}, "Tony: four interchangeable dereplicators for one step"),
-        ("dRep", {"Pratama": "across samples", "E3": "NEW: across samples", "E5": "NEW: per sample, and per study"}, "Tony: four interchangeable dereplicators for one step"),
+        ("dRep", {"Pratama": "across samples", "E5": "NEW: per sample, and per study"}, "Tony: four interchangeable dereplicators for one step"),
         ("skani_dedup", {"E5": "per sample, and per study; needs a study grouping"}, "Tony: four interchangeable dereplicators for one step"),
     ]),
     ("Reassembly", [
@@ -61,36 +61,37 @@ GROUPS = [
     ]),
     ("Bin quality", [
         ("CheckM2", {"E1": True, "E2": True, "E5": "bench library, on all four bin sets"}, "Tony: CheckM2 only"),
-        ("CheckM", {"Pratama": "inside MetaWRAP", "E3": "inside MetaWRAP", "metaGEM": "inside MetaWRAP"}, "Tony: CheckM2 only"),
+        ("CheckM", {"Pratama": "inside MetaWRAP", "metaGEM": "inside MetaWRAP"}, "Tony: CheckM2 only"),
     ]),
     ("MAG taxonomy", [
-        ("GTDB-Tk", {"Pratama": "r202", "E3": "r232; package extracted on fir", "metaGEM": True, "E5": "r232; package extracted on fir"}, "Tony: r232 everywhere, even where it breaks parity"),
+        ("GTDB-Tk", {"Pratama": "r202", "metaGEM": True, "E5": "r232; package extracted on fir"}, "Tony: r232 everywhere, even where it breaks parity"),
     ]),
     ("Gene calling", [
-        ("Prodigal", {"E1": "standalone, unscored", "Pratama": "inside DRAM", "E3": True, "metaGEM": True, "E4": "not rerun: metaGEM's published proteins, from CheckM's Prodigal in single mode", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
-        ("prodigal-gv", {"E3": "viral contigs", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
+        ("Prodigal", {"E1": "standalone, unscored", "Pratama": "inside DRAM", "metaGEM": True, "E4": "not rerun: metaGEM's published proteins, from CheckM's Prodigal in single mode", "E5": True}, "Tony: both Prodigal and prodigal-gv"),
+        ("prodigal-gv", {"E5": True}, "Tony: both Prodigal and prodigal-gv"),
     ]),
     ("Virus identification", [
-        ("DeepVirFinder", {"Pratama": "-l 1000", "E3": NEW, "E5": "-l 1000; score table only, its calls stay out of the vOTU set (no cut given)"}, "fill"),
+        ("DeepVirFinder", {"Pratama": "-l 1000", "E3": "-l 1000; score >= 0.9, p <= 0.05, pooled with the other callers", "E5": "-l 1000; score table only, its calls stay out of the vOTU set (Pratama's cut: score >= 0.9, p <= 0.05)"}, "fill"),
         ("VIBRANT", {"Pratama": "-virome", "E3": "-virome", "E5": True}, "Taken from Pratama"),
         ("geNomad", {"Pratama": "two sensitivity flags", "E3": "Pratama's flags", "E5": True}, "Taken from Pratama"),
-        ("VirSorter2", {"Pratama": "dsDNAphage, ssDNA", "E3": "Pratama's groups", "E5": True}, "Taken from Pratama"),
+        ("VirSorter2", {"Pratama": "dsDNAphage, ssDNA", "E3": "Pratama's groups; whole-contig boundaries for full calls", "E5": True}, "Taken from Pratama"),
     ]),
     ("Viral genomes", [
-        ("CheckV", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
-        ("MMseqs2 vOTU clustering", {"Pratama": "cov-mode 0", "E3": "cov-mode 0", "E5": True}, "Taken from Pratama"),
-        ("vConTACT3", {"Pratama": "db 220", "E3": True, "E5": True}, "Taken from Pratama"),
-        ("MetaPop microdiversity", {"Pratama": "--min_cov 70", "E3": "NEW: needs every BAM against one shared reference", "E5": "--min_cov 70; per study, every sample mapped to the study's vOTU representatives with bowtie2"}, "Tony: add"),
-        ("DRAM-v (AMGs)", {"Pratama": "manual curation, ≥10 kb", "E3": "no manual curation", "E5": "to decide after the pilot"}, "Taken from Pratama; confirm it goes or stays with DRAM"),
+        ("CheckV", {"Pratama": "curation and host trimming before clustering", "E3": "keep rules and host trimming before clustering", "E5": True}, "Taken from Pratama"),
+        ("MMseqs2 vOTU clustering", {"Pratama": "cov-mode 0", "E3": "cov-mode 0, on the curated set", "E5": True}, "Taken from Pratama"),
+        ("vConTACT3", {"Pratama": "db 220", "E5": True}, "Taken from Pratama"),
+        ("MetaPop microdiversity", {"Pratama": "--min_cov 70", "E5": "--min_cov 70; per study, every sample mapped to the study's vOTU representatives with bowtie2"}, "Tony: add"),
+        ("Island filter", {"Pratama": "vOTUs >100 kb with island genes; tool not named", "E3": "geNomad annotate on vOTUs >=100 kb; Antonio's pattern list"}, None),
+        ("DRAM-v (AMGs)", {"Pratama": "manual curation, ≥10 kb", "E5": "to decide after the pilot"}, "Taken from Pratama; confirm it goes or stays with DRAM"),
     ]),
     ("CRISPR spacers and host prediction", [
-        ("minced", {"Pratama": True, "E3": NEW, "E5": "NEW: to decide after the pilot"}, "Its only E5 use was the dropped BLASTn links"),
-        ("BLASTn spacers to contigs", {"Pratama": True, "E3": True}, "Tony: drop in E5"),
-        ("GTDB-Tk de novo", {"Pratama": True, "E3": True, "E5": True}, "Taken from Pratama"),
-        ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E3": "both databases; now shipped only, until dRep", "E5": True}, "Tony: keep; the database costs little"),
+        ("minced", {"Pratama": True, "E5": "NEW: to decide after the pilot"}, "Its only E5 use was the dropped BLASTn links"),
+        ("BLASTn spacers to contigs", {"Pratama": True}, "Tony: drop in E5"),
+        ("GTDB-Tk de novo", {"Pratama": True, "E5": True}, "Taken from Pratama"),
+        ("iPHoP", {"Pratama": "default and extra-MAGs databases", "E5": True}, "Tony: keep; the database costs little"),
     ]),
     ("Functional annotation", [
-        ("DRAM (MAGs)", {"Pratama": True, "E3": "on MAGs"}, "Tony: the 4-lane panel replaces DRAM"),
+        ("DRAM (MAGs)", {"Pratama": True}, "Tony: the 4-lane panel replaces DRAM"),
         ("KOfamScan", {"E5": True}, "4-lane panel"),
         ("CLEAN", {"E5": True}, "4-lane panel"),
         ("DIAMOND UniRef50", {"E5": True}, "4-lane panel"),
@@ -106,7 +107,7 @@ GROUPS = [
     ("Scoring", [
         ("AMBER", {"E1": "after the run", "E2": True, "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
         ("GEM parity vs published", {"E4": "per bin: reaction, metabolite and gene Jaccard, and GPR"}, None),
-        ("skANI recovery vs published", {"E3": "vOTUs, MAGs", "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
+        ("skANI recovery vs published", {"E3": "vOTUs, pooled set and final set", "E5": "after the run, outside the plan"}, "Tony: one plan can't give samples different targets"),
     ]),
 ]
 

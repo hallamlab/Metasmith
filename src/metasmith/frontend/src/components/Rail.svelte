@@ -110,6 +110,7 @@
       {:else}
         <div
           class="item"
+          data-rail-id={item.id}
           class:sel={item.id === selected}
           class:dim={item.dim}
           role="button"

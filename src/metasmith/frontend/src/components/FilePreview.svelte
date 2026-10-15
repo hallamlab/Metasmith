@@ -42,7 +42,7 @@
   })
 
   const src = (p) =>
-    `/api/runs/${workflow}/${run}/download?path=${encodeURIComponent(p)}`
+    `api/runs/${workflow}/${run}/download?path=${encodeURIComponent(p)}`
 
   async function fetchWindow(opts = {}) {
     busy = true

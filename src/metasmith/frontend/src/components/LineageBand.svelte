@@ -74,6 +74,7 @@
       <div
         class="entry"
         data-row-key={row.key}
+        data-row-type={row.type ?? ''}
         class:hl={isHl(row.key)}
         animate:flip={{ duration: 150 }}
       >

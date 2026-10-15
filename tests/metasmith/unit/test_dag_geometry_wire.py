@@ -54,7 +54,7 @@ FORK_EDGES = [{"from": "#a", "to": "#d"}, {"from": "#b", "to": "#d"}]
 
 def test_a_caller_can_fix_the_rows_it_already_has():
     own = _rows(dag_geometry(FORK, FORK_EDGES))
-    mine = ["#c", "#b", "#a", "#d"]
+    mine = ["#a", "#b", "#c", "#d"]
     assert mine != own
     assert _rows(dag_geometry(FORK, FORK_EDGES, order=mine)) == mine
 
@@ -91,7 +91,7 @@ def test_a_lane_floor_moves_the_gutter_and_not_the_shape(geo):
     shift = wide["nodes"][0]["cx"] - geo["nodes"][0]["cx"]
     assert shift > 0
     for a, b in zip(geo["nodes"], wide["nodes"]):
-        assert a["lane"] == b["lane"] and a["row"] == b["row"]
+        assert a["col"] == b["col"] and a["row"] == b["row"]
         assert b["cx"] - a["cx"] == pytest.approx(shift)
 
 

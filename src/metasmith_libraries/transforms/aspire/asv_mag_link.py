@@ -13,9 +13,9 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-policy  = model.AddRequirement(lib.GetType("aspire::asv_mag_link_on"), parents={run})
-fseqs   = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={run})
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+policy  = model.AddRequirement(lib.GetType("aspire::asv_mag_link_on"), parents={study})
+fseqs   = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={study})
 pairing = model.AddProduct(lib.GetType("aspire::asv_mag_pairing"))
 out     = model.AddProduct(lib.GetType("aspire::asv_mag_outputs"))
 
@@ -37,7 +37,7 @@ _DIRECTORY_PRODUCTS = {out}
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=8,
         memory=Size.GB(32),

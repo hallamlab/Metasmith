@@ -250,6 +250,7 @@
           {/if}
           ping
         </button>
+        <span class="anchor" data-tour="agent-deploy">
         <SplitButton
           label={deploying ? 'deploying…' : 'deploy'}
           disabled={problems.length > 0 || deploying}
@@ -260,6 +261,7 @@
             onclick: () => deploy(true),
           }]}
         />
+        </span>
       </div>
     </div>
 
@@ -300,10 +302,11 @@
       </div>
     {/if}
 
-    <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} />
+    <StageProgress stages={DEPLOY_STAGES} stageStates={deployStageStates} tour="agent-progress" />
 
     <JobLog
       {jobId}
+      tour="agent-log"
       bind:status={jobStatus}
       bind:phase={jobPhase}
       onend={async () => {
@@ -340,6 +343,7 @@
 {/if}
 
 <style>
+  .anchor { display: inline-flex; }
   .link {
     background: none;
     border: none;

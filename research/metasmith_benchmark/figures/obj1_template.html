@@ -1,0 +1,335 @@
+<title>nf-core/mag Replication</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+:root {
+  --bg: #f5f6f8;
+  --surface: #fcfcfd;
+  --ink: #141820;
+  --ink-2: #4a5361;
+  --muted: #7d8593;
+  --rule: #dde1e7;
+  --grid: #e6e9ee;
+  --axis: #c3c8d0;
+  --accent: #0e6a70;
+  --s1: #212121;
+  --s2: #636efa;
+  --g1: #2a78d6; --g2: #eb6834; --g3: #1baf7a; --g4: #4a3aa7; --gb: #8a8a8a;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #101317;
+    --surface: #171b21;
+    --ink: #e6e9ee;
+    --ink-2: #b3bac6;
+    --muted: #8a92a0;
+    --rule: #2a3039;
+    --grid: #232830;
+    --axis: #3a414c;
+    --accent: #5cc4c9;
+    --s1: #d9dce1;
+    --s2: #636efa;
+    --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #9085e9; --gb: #7a7f88;
+  }
+  :root:not([data-theme="light"]) .light-only { display: none; }
+  :root:not([data-theme="light"]) .dark-only { display: block; }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101317;
+  --surface: #171b21;
+  --ink: #e6e9ee;
+  --ink-2: #b3bac6;
+  --muted: #8a92a0;
+  --rule: #2a3039;
+  --grid: #232830;
+  --axis: #3a414c;
+  --accent: #5cc4c9;
+  --s1: #d9dce1;
+  --s2: #636efa;
+  --g1: #3987e5; --g2: #d95926; --g3: #199e70; --g4: #9085e9; --gb: #7a7f88;
+}
+:root[data-theme="dark"] .light-only { display: none; }
+:root[data-theme="dark"] .dark-only { display: block; }
+.dark-only { display: none; }
+
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans); }
+.wrap { max-width: 1060px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--cond); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.005em; }
+h1 { font-size: clamp(30px, 4.6vw, 44px); line-height: 1.1; }
+h2 { font-size: 26px; line-height: 1.2; }
+h3 { font-size: 17px; line-height: 1.3; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 12px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--ink-2); }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+header { display: grid; gap: 16px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; padding: 3px; background: var(--surface); gap: 3px; }
+.seg button { font: 500 13px var(--sans); color: var(--ink-2); background: none; border: 0; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--grid); color: var(--ink); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lede { font-size: 17px; color: var(--ink-2); }
+
+section { display: grid; gap: 20px; }
+.sec-head { display: grid; gap: 8px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.sec-head .eyebrow { color: var(--muted); }
+.sub-head { display: grid; gap: 4px; margin-top: 12px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.legend svg { flex: none; }
+
+.dags { display: grid; grid-template-columns: auto auto; gap: 16px; justify-content: start; }
+.col-head { font: 600 15px var(--cond); padding-left: 4px; }
+.dag { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px 16px; display: grid; gap: 10px; align-content: start; margin: 0; min-width: 0; }
+.dag figcaption { display: grid; gap: 1px; }
+.dag figcaption b { font: 600 14px var(--cond); }
+.dag figcaption span { font-size: 13px; color: var(--ink-2); }
+.dag img { max-width: 100%; height: auto; }
+
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 18px 12px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.plotly-fig { width: 100%; height: 680px; }
+.fig-note { font-size: 14px; max-width: 80ch; }
+
+.notes { display: grid; gap: 10px; font-size: 14px; color: var(--ink-2); padding: 0; margin: 0; list-style: none; max-width: 80ch; }
+.notes li { padding-left: 16px; position: relative; }
+.notes li::before { content: ""; position: absolute; left: 0; top: 0.65em; width: 6px; height: 1px; background: var(--muted); }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th { font: 500 12px/1.3 var(--mono); letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; }
+td.n, th.n { text-align: right; }
+tbody tr:last-child td { border-bottom: 0; }
+details { font-size: 14px; }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details[open] summary { margin-bottom: 10px; }
+
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 16px; }
+
+@media (max-width: 760px) {
+  .dags { grid-template-columns: 1fr; }
+  .col-head { display: none; }
+  .wrap { padding-inline: 16px; gap: 44px; }
+}
+</style>
+
+
+<div class="wrap">
+  <header>
+    <div class="topbar">
+      <div class="eyebrow">metasmith benchmark · objective 1 · E1 vs E2 on CAMI II</div>
+      <div class="seg" id="theme" role="group" aria-label="Theme">
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+    </div>
+    <h1>Does metasmith reproduce nf-core/mag?</h1>
+    <p class="lede">E1 ran nf-core/mag 5.5.0 on 249 CAMI II samples: 208 short-read and 41 nanopore. E2 ran the same pipeline as a plan metasmith solved from a library of the same tool calls.</p>
+  </header>
+
+  <section id="workflow">
+    <div class="sec-head">
+      <div class="eyebrow">1 · workflow</div>
+      <h2>The solved plan is nf-core's pipeline, step for step</h2>
+      <p class="muted">Steps only: each data node is folded into the step that produces it. Left, nextflow's own DAG of the E1 run, cut to the processes that ran on that arm. Right, the plan metasmith solved for E2, which is the plan that ran. All four are drawn by metasmith's DAG renderer at the same scale, and a step's function has the same colour in each. This grid also leaves out the FastQC reports, and nf-core's seqkit statistics, FASTA splitting and depth summaries. The full graphs at the end of the page keep every step, with its data. The plan's two scoring steps against the CAMI gold standard are left out, because nf-core has no counterpart to them, and so is nf-core's Prodigal gene calling.</p>
+    </div>
+    <div class="legend stage-legend"></div>
+    <div class="dags" id="dags-steps"></div>
+    <ul class="notes" id="dag-notes"></ul>
+  </section>
+
+  <section id="bins">
+    <div class="sec-head">
+      <div class="eyebrow">2 · bin reproduction</div>
+      <h2>The same genomes, in the same numbers on short reads</h2>
+      <p class="muted">CheckM2 quality of every bin set, and how many of nf-core's bins metasmith reproduces. A bin is reproduced when it has a reciprocal partner in the other run: skani ANI ≥ 95 and aligned fraction ≥ 50% in both directions.</p>
+    </div>
+
+    <div class="panel"><div id="bins-fig" class="plotly-fig" role="img" aria-label="Bin counts and share of nf-core's bins reproduced, per binner, short and long reads"></div></div>
+    <p class="muted fig-note">Top: high-quality (solid) and medium-quality (hatched) bins in each bin set over all 249 samples, labelled with their sum. Bottom: the share of the first run's bins with a partner in the second. The black ticks are nf-core against itself. Two control reruns, E1ctl and E1ctl2, binned E1's own assemblies for 25 of the samples. E1ctl changed SemiBin2's seed, and E1ctl2 changed MetaBAT2's and SemiBin2's. Each tick is one of the three pairs among E1 and the two reruns, and the line spans them. The blue point is E1 against metasmith over all 249 samples.</p>
+    <details><summary>Bin counts as a table</summary><div class="tbl-wrap"><table id="tier-table"></table></div></details>
+    <details><summary>Match rates as a table</summary><div class="tbl-wrap"><table id="match-table"></table></div></details>
+    <ul class="notes" id="bin-notes"></ul>
+  </section>
+
+  <section id="full">
+    <div class="sec-head">
+      <div class="eyebrow">3 · full graphs</div>
+      <h2>The same four graphs, with their data</h2>
+      <p class="muted">Each step's products take its colour, so a step can be followed from nf-core to metasmith by function. Uncoloured nodes are the inputs each pipeline is given.</p>
+    </div>
+    <div class="legend stage-legend"></div>
+    <div class="dags" id="dags-full"></div>
+  </section>
+
+  <footer>
+    <div>Sources: <code>research/metasmith_benchmark/results/</code> on <code>feat/engine/bench-run</code>. Built by <code>figures/f1_dag_parity.py</code> and <code>figures/obj1_page.py</code>.</div>
+    <div>High quality: completeness &gt; 90 and contamination &lt; 5. Medium quality: completeness ≥ 50 and contamination &lt; 10. MIMAG's rRNA and tRNA criteria are not applied.</div>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.3/plotly.min.js"></script>
+<script>const DATA = /*DATA*/null;</script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => n.toLocaleString("en-US");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const txt = (s, attrs, parent) => { const t = el("text", attrs, parent); t.textContent = s; return t; };
+  const NAMES = { DASTool: "DAS Tool", MetaBAT2: "MetaBAT2", SemiBin2: "SemiBin2", COMEBin: "COMEBin" };
+  const ARM = { short: "Short reads", long: "Long reads" };
+  const ARMS = ["short", "long"];
+  const N = { short: 208, long: 41 };
+
+  const root = document.documentElement;
+  const osDark = matchMedia("(prefers-color-scheme: dark)");
+  function setTheme(t) {
+    if (t) root.dataset.theme = t;
+    const now = root.dataset.theme || (osDark.matches ? "dark" : "light");
+    document.querySelectorAll("#theme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.theme === now)));
+    dispatchEvent(new Event("themechange"));
+  }
+  try { setTheme(localStorage.getItem("obj1-theme")); } catch (e) { setTheme(null); }
+  osDark.addEventListener("change", () => setTheme(null));
+  document.querySelectorAll("#theme button").forEach((b) => b.addEventListener("click", () => {
+    setTheme(b.dataset.theme);
+    try { localStorage.setItem("obj1-theme", b.dataset.theme); } catch (e) {}
+  }));
+
+
+  // 1 · DAG grid
+  const STAGES = [["read processing and QC", "g1"], ["assembly and read mapping", "g2"], ["binning and DAS Tool", "g3"],
+    ["CheckM2", "g4"], ["nf-core bookkeeping and reports", "gb"]];
+  document.querySelectorAll(".stage-legend").forEach((l) => { l.innerHTML = STAGES.map(([n, c]) => `<span><i style="background:var(--${c})"></i>${n}</span>`).join(""); });
+  const SIDE = { e1: "nf-core/mag 5.5.0", e2: "metasmith, solved" };
+  const cap = (side, arm, tag) => {
+    const s = DATA.dag[arm];
+    if (tag) return side === "e1" ? `${s.e1_steps_shown} processes shown` : `${s.e2_steps_shown} steps shown`;
+    return side === "e1" ? `${s.e1_processes} processes shown · ${s.e1_tool_processes} run a tool`
+      : `${s.e2_steps} steps · ${s.tools} tools, ${s.checkm2_steps} CheckM2 steps`;
+  };
+  const img = (side, arm, tag) => ["light", "dark"].map((th) =>
+    `<img class="${th}-only" src="dags/${side}_${arm}${tag}_${th}.svg" alt="${SIDE[side]}${tag ? " steps" : ""}, ${ARM[arm].toLowerCase()}">`).join("");
+  const grid = (tag) => `<div class="col-head">${SIDE.e1}</div><div class="col-head">${SIDE.e2}</div>` +
+    ARMS.flatMap((arm) => ["e1", "e2"].map((side) =>
+      `<figure class="dag"><figcaption><b>${ARM[arm]} · ${N[arm]} samples</b><span>${cap(side, arm, tag)}</span></figcaption>${img(side, arm, tag)}</figure>`)).join("");
+  $("dags-steps").innerHTML = grid("_steps");
+  $("dags-full").innerHTML = grid("");
+  $("dag-notes").innerHTML = [
+    `<b>Same tools, same order.</b> Contracted to the steps that run a tool, both graphs hold the same ${DATA.dag.short.tools} tools on short reads and ${DATA.dag.long.tools} on long reads, with the same reachability between them.`,
+    `<b>Grey steps</b> are nf-core's bookkeeping and report processes: decompression, renaming, seqkit, FASTA splitting, depth summaries, QUAST and NanoPlot. metasmith does the format conversions inside each transform and runs no report steps.`,
+    `<b>Two processes, one step.</b> <code>bowtie2_binning_bam</code> holds BUILD and ALIGN, <code>minimap2_binning_bam</code> holds INDEX and ALIGN, and <code>metabat2</code> holds the depth table and MetaBAT2.`,
+    `<b>CheckM2</b> is one nf-core process over all four bin sets, and one plan step per bin set.`,
+  ].map((s) => `<li>${s}</li>`).join("");
+
+  // 2 · one figure: bin counts over reproduced share, short and long reads side by side
+  const TI = DATA.tiers, M = DATA.match;
+  const delta = (a, b) => { const x = b - a; return x === 0 ? "±0" : (x > 0 ? "+" : "−") + fmt(Math.abs(x)); };
+  $("tier-table").innerHTML = `<thead><tr><th>arm</th><th>binner</th><th class="n">HQ nf-core</th><th class="n">HQ metasmith</th><th class="n">Δ</th><th class="n">MQ nf-core</th><th class="n">MQ metasmith</th><th class="n">Δ</th></tr></thead><tbody>` +
+    ARMS.flatMap((a) => DATA.binners.map((b) => {
+      const t = TI[`${a}/${b}`];
+      return `<tr><td>${a}</td><td>${NAMES[b]}</td><td class="n">${fmt(t.e1_hq)}</td><td class="n">${fmt(t.e2_hq)}</td><td class="n muted">${delta(t.e1_hq, t.e2_hq)}</td><td class="n">${fmt(t.e1_mq)}</td><td class="n">${fmt(t.e2_mq)}</td><td class="n muted">${delta(t.e1_mq, t.e2_mq)}</td></tr>`;
+    })).join("") + "</tbody>";
+
+  $("match-table").innerHTML = `<thead><tr><th>arm</th><th>binner</th>${M["short/DASTool"].self.map((p) => `<th class="n">${p.pair}</th>`).join("")}<th class="n">E1 vs metasmith</th></tr></thead><tbody>` +
+    ARMS.flatMap((a) => DATA.binners.map((b) => {
+      const m = M[`${a}/${b}`];
+      return `<tr><td>${a}</td><td>${NAMES[b]}</td>${m.self.map((p) => `<td class="n">${p.pct.toFixed(1)}%</td>`).join("")}<td class="n">${m.e2.pct.toFixed(1)}%</td></tr>`;
+    })).join("") + "</tbody>";
+
+  const A = DATA.assemblies, pct = (v) => (100 * v).toFixed(v > 0.99 ? 2 : 1) + "%";
+  const maxRel = (arm) => Math.max(...DATA.binners.flatMap((b) => { const t = TI[`${arm}/${b}`]; return ["hq", "mq"].map((q) => Math.abs(t[`e1_${q}`] - t[`e2_${q}`]) / t[`e1_${q}`]); }));
+  const lo = (a, b) => Math.min(...M[`${a}/${b}`].self.map((p) => p.pct));
+  const hi = (a, b) => Math.max(...M[`${a}/${b}`].self.map((p) => p.pct));
+  const inside = (a) => DATA.binners.filter((b) => M[`${a}/${b}`].e2.pct >= lo(a, b) && M[`${a}/${b}`].e2.pct <= hi(a, b));
+  const below = (a) => DATA.binners.filter((b) => M[`${a}/${b}`].e2.pct < lo(a, b));
+  const names = (bs) => bs.map((b) => NAMES[b]).join(bs.length > 2 ? ", " : " and ").replace(/, ([^,]*)$/, " and $1");
+  $("bin-notes").innerHTML = [
+    `<b>Bin counts.</b> On short reads every tier of every bin set is within ${(100 * maxRel("short")).toFixed(1)}% of nf-core's count. On long reads the largest difference is ${(100 * maxRel("long")).toFixed(1)}%, in DAS Tool's high-quality bins.`,
+    `<b>Short reads.</b> metasmith falls inside nf-core's own range for ${names(inside("short"))}. ` +
+      below("short").map((b) => `${NAMES[b]} is ${(lo("short", b) - M[`short/${b}`].e2.pct).toFixed(1)} points below it`).join(", and ") + ".",
+    `<b>Long reads.</b> metasmith falls below every nf-core pair for ${names(below("long"))}. The gap follows the assembly. E1 removed lambda-phage reads before Flye and E2 did not, and Flye ran on different thread counts, so the long assemblies share a median ${pct(A.long.exact_med)} of their bases in identical contigs. Short assemblies share ${pct(A.short.exact_med)}. Every nf-core pair bins E1's own assemblies, so its range has no assembly difference in it.`,
+    `<b>What the pairs vary.</b> E1ctl and E1ctl2 differ from each other only in their binner seeds. Both skip nf-core's read QC and map untrimmed reads, so a pair against E1 also varies the reads. The long-read pairs cover four samples.`,
+  ].map((s) => `<li>${s}</li>`).join("");
+
+  function binsFigure() {
+    const css = getComputedStyle(root), v = (k) => css.getPropertyValue(k).trim();
+    const nf = v("--s1"), ms = v("--s2"), surface = v("--surface"), ink = v("--ink-2"), grid = v("--grid"), axis = v("--axis");
+    const X = DATA.binners.map((b) => NAMES[b]);
+    const traces = [];
+    ARMS.forEach((arm, c) => {
+      const xa = c ? "x2" : "x", ya = c ? "y2" : "y", xb = c ? "x4" : "x3", yb = c ? "y4" : "y3", first = c === 0;
+      const t = DATA.binners.map((b) => TI[`${arm}/${b}`]);
+      [["e1", "nf-core/mag", nf], ["e2", "metasmith", ms]].forEach(([k, name, col]) => {
+        const hq = t.map((r) => r[`${k}_hq`]), mq = t.map((r) => r[`${k}_mq`]);
+        traces.push({ type: "bar", x: X, y: hq, xaxis: xa, yaxis: ya, offsetgroup: k, name: `${name} · high quality`,
+          legendgroup: `${k}hq`, showlegend: first, marker: { color: col, line: { width: 0 } },
+          hovertemplate: `${name}<br>%{x}: %{y:,} high quality<extra>${ARM[arm]}</extra>` });
+        traces.push({ type: "bar", x: X, y: mq, base: hq, xaxis: xa, yaxis: ya, offsetgroup: k, name: `${name} · medium quality`,
+          legendgroup: `${k}mq`, showlegend: first,
+          marker: { color: surface, line: { color: col, width: 1 }, pattern: { shape: "/", fgcolor: col, bgcolor: surface, size: 6, solidity: 0.45 } },
+          text: hq.map((h, i) => (h + mq[i]).toLocaleString("en-US")), textposition: "outside", cliponaxis: false,
+          textfont: { family: "IBM Plex Mono, monospace", size: 11, color: ink },
+          hovertemplate: `${name}<br>%{x}: %{customdata:,} medium quality<extra>${ARM[arm]}</extra>`, customdata: mq });
+      });
+      // metasmith first, so the nf-core ticks draw over a point they overlap
+      traces.push({ type: "scatter", mode: "markers", x: X, y: DATA.binners.map((b) => M[`${arm}/${b}`].e2.pct), xaxis: xb, yaxis: yb,
+        name: "nf-core vs metasmith · 249 samples", legendgroup: "e2", showlegend: first,
+        marker: { color: ms, size: 11, line: { width: 0 } },
+        hovertemplate: `E1 vs metasmith<br>%{x}: %{y:.1f}%<extra>${ARM[arm]}</extra>` });
+      const lx = [], ly = [], lt = [];
+      DATA.binners.forEach((b) => {
+        const self = [...M[`${arm}/${b}`].self].sort((p, q) => p.pct - q.pct);
+        self.forEach((p) => { lx.push(NAMES[b]); ly.push(p.pct); lt.push(p.pair); });
+        lx.push(null); ly.push(null); lt.push(null);
+      });
+      traces.push({ type: "scatter", mode: "lines+markers", x: lx, y: ly, customdata: lt, xaxis: xb, yaxis: yb,
+        name: "nf-core vs nf-core · 3 pairs, 25 samples", legendgroup: "self", showlegend: first,
+        line: { color: nf, width: 1.5 }, marker: { symbol: "line-ew", size: 16, line: { color: nf, width: 2.5 } },
+        hovertemplate: `%{customdata}<br>%{x}: %{y:.1f}%<extra>${ARM[arm]}</extra>` });
+    });
+    const ax = (extra) => Object.assign({ gridcolor: grid, linecolor: axis, zeroline: false, tickfont: { family: "IBM Plex Mono, monospace", size: 11, color: ink } }, extra);
+    const cols = [[0, 0.47], [0.53, 1]], rows = [[0.5, 1], [0, 0.4]];
+    const layout = {
+      barmode: "group", bargap: 0.28, bargroupgap: 0.06,
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "IBM Plex Sans, system-ui, sans-serif", size: 12, color: ink },
+      margin: { l: 64, r: 8, t: 96, b: 36 },
+      legend: { orientation: "h", x: 0, y: 1.07, yanchor: "bottom", font: { size: 12, color: ink }, bgcolor: "rgba(0,0,0,0)" },
+      hoverlabel: { font: { family: "IBM Plex Sans, system-ui, sans-serif" } },
+      xaxis: ax({ domain: cols[0], anchor: "y", matches: "x3", showticklabels: false }),
+      xaxis2: ax({ domain: cols[1], anchor: "y2", matches: "x4", showticklabels: false }),
+      xaxis3: ax({ domain: cols[0], anchor: "y3", showgrid: false }),
+      xaxis4: ax({ domain: cols[1], anchor: "y4", showgrid: false }),
+      yaxis: ax({ domain: rows[0], anchor: "x", tickformat: ",", title: { text: "bins", font: { size: 12, color: ink } } }),
+      yaxis2: ax({ domain: rows[0], anchor: "x2", tickformat: "," }),
+      yaxis3: ax({ domain: rows[1], anchor: "x3", range: [40, 102], ticksuffix: "%", dtick: 20, title: { text: "nf-core's bins reproduced", font: { size: 12, color: ink } } }),
+      yaxis4: ax({ domain: rows[1], anchor: "x4", range: [40, 102], ticksuffix: "%", dtick: 20 }),
+      annotations: ARMS.map((arm, c) => ({ text: `<b>${ARM[arm]}</b> · ${N[arm]} samples`, xref: "paper", yref: "paper",
+        x: cols[c][0], y: 1.02, xanchor: "left", yanchor: "bottom", showarrow: false, font: { size: 14, color: v("--ink") } })),
+    };
+    Plotly.react("bins-fig", traces, layout, { responsive: true, displaylogo: false, displayModeBar: "hover", modeBarButtonsToRemove: ["select2d", "lasso2d"] });
+  }
+  if (window.Plotly) {
+    binsFigure();
+    addEventListener("themechange", binsFigure);
+  } else {
+    $("bins-fig").textContent = "The figure needs plotly.js, which did not load. The tables below hold the same numbers.";
+  }
+})();
+</script>

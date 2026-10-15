@@ -364,7 +364,20 @@ fn merge_states(
         let mut groups = ar.appl(s).produced.clone();
         for g in groups.iter_mut() {
             for slot in g.iter_mut() {
-                if let Some(&ne) = swapped.get(&ar.eps.sig(slot.1)) { slot.1 = ne; }
+                if let Some(&ne) = swapped.get(&ar.eps.sig(slot.1)) {
+                    if std::env::var_os("MSM_SOLVER_TRACE").is_some()
+                        && !p.ep_is_a(&ar.eps, ne, slot.0)
+                    {
+                        eprintln!(
+                            "SWAP-PRODUCED t{} slot={} {:?} -> ep {:?} (does NOT conform)",
+                            ar.appl(s).transform,
+                            slot.0,
+                            p.types.props(p.deps.ty(slot.0)),
+                            p.types.props(ar.eps.ty(ne)),
+                        );
+                    }
+                    slot.1 = ne;
+                }
             }
         }
         ar.appls[s as usize].produced = groups;

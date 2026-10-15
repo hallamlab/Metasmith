@@ -11,11 +11,11 @@ from metasmith.python_api import (
 )
 
 DOMAINS = [
-    # Every library root under transforms/. `amplicon` and `fabfos` are the two that
-    # predate this list and are still missing from it; `aspire` and `kbase` were added
-    # when they landed, because a root absent here is silently skipped by the
+    # Every library root under transforms/ except `fabfos`, which predates this list
+    # and is still missing from it. A root absent here is silently skipped by the
     # per-transform structural checks AND by the GetType resolution sweep in section 5 --
     # which is the check that catches a typo'd type name.
+    "amplicon",
     "aspire",
     "assembly",
     "functionalAnnotation",

@@ -98,6 +98,8 @@ class TestWorkflowGeneration:
         (sample_dir / "output.bam").write_text("already exists")
         lib.AddItem(Path("sample_00/output.bam"), "mock::bam")
         lib.Save()
+        # Read it back: a plan refuses a given whose identity this process minted.
+        lib = DataInstanceLibrary.Load(lib.location)
 
         transforms = alignment_transform()
         tr_lib = create_transform_library(temp_dir / "tr_sat", mock_types, transforms)

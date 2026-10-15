@@ -1,0 +1,148 @@
+# absolute-path audit of E3's cache index, 2026-09-22T11:55:06-07:00
+
+-- rows containing '/scratch/', by origin --
+origin    n  
+--------  ---
+imported  239
+
+-- LINEAGE rows containing '/scratch/' (must be 0) --
+0
+
+-- imported rows WITHOUT a /scratch path (the 243-239 remainder) --
+transform_key  output_root                                                                     size_bytes 
+-------------  ------------------------------------------------------------------------------  -----------
+               imported/1e/2056d96506eee3a75e70843aeffa2c7777499fbc994c0d6b8f3e2c83b661609196  25345024406
+               imported/1e/20fd9772645602d12fd5ebfacc1e64fa255a0e07de38b8071781e5eee3ed07720c  1449984    
+               imported/1e/20f904fd88da1188fbe515bfeec382a2cd8d37c171d386883af1f3559d52818b15  2838644    
+               imported/1e/207dbf4c0b2744cd696996393d64b37158d87477de3d3bde5bfff75d4f7b9ba694  4096       
+
+-- external trees the imported rows point at, with row counts --
+    122 /scratch/phyberos/pratama2026/metasmith
+      1 /scratch/phyberos/wave2_b3_nfcore/checkm2_db
+      1 /scratch/phyberos/pratama2026/zenodo_17897233_unpacked
+
+-- full distinct given paths referenced by imported rows --
+/scratch/phyberos/pratama2026/metasmith/imports/e3/contig_study@4f4d1a486654gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858110/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858110/read_pair@819dfdedd7b6gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858111/read_pair@662c1ed895cdgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858112/read_pair@431c34c8a46fgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858113/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858113/read_pair@03185e23ed99gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858114/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858114/read_pair@56f94913667bgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858115/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858115/read_pair@7b0136f5a204gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858117/read_pair@dee1cdc748e5gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858118/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858118/read_pair@ab8a9efc5f24gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858119/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858119/read_pair@c66a3ee09878gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858120/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858120/read_pair@68ae854f7becgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858121/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858121/read_pair@e0ac3d7e85b9gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858122/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858122/read_pair@469ebc20c1c4gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858123/read_pair@448ad3224497gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858124/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858124/read_pair@55588a637fdagparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858125/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858125/read_pair@5081c6ee9028gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858127/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858127/read_pair@ad125232b208gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858128/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858128/read_pair@840655596253gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858129/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858129/read_pair@99feefc88fb4gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858130/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858130/read_pair@439b330a9b99gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858131/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858131/read_pair@420159f91d5egparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858132/read_pair@4d96c2369c51gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858133/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858133/read_pair@700f2738235cgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858134/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858134/read_pair@6a1b558ef55bgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858135/read_pair@f78117234d2fgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858136/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858136/read_pair@91feaac5ce65gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858137/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858137/read_pair@e06f1b67cc05gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858138/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858138/read_pair@76b9e2f0e775gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858139/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858139/read_pair@749483a3fad3gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858140/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858140/read_pair@ce7227641c3egparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/ERR3858141/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696677/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696677/read_pair@a0029592eba8gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696678/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696678/read_pair@e5672642c9e9gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696679/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696679/read_pair@c42edaaccb8egparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696680/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696680/read_pair@4744bf068746gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696681/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696681/read_pair@4d2391e2a664gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696682/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696682/read_pair@f357c41ff9dbgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696689/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696689/read_pair@c36940750bcfgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696690/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696691/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696691/read_pair@35d64c8eb90dgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696692/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696693/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696693/read_pair@fb4cf81e4202gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696694/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696695/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696695/read_pair@985404244173gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696696/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696696/read_pair@5822d5ed75c7gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696697/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696697/read_pair@b748a4643683gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696698/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696698/read_pair@6ba93cab62fagparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696699/read_pair@c57d9a853cc8gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696700/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696701/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696701/read_pair@3ee37cc15281gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696702/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696702/read_pair@555d4f5055a5gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696703/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696703/read_pair@6a5a3b61910dgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696704/read_pair@e8f16c861a1cgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696705/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696705/read_pair@2737f758aa82gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696706/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696706/read_pair@f18910664584gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696707/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696707/read_pair@74324ed31a29gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696708/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696708/read_pair@7fd1c8514f73gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696709/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696709/read_pair@607a9b293a0dgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696710/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696710/read_pair@0d4e547c1d69gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696711/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696711/read_pair@5498ffdf026bgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696712/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696713/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696714/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696714/read_pair@8152670f271cgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696715/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696715/read_pair@8781f2f294degparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696716/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e3/SRR32696716/read_pair@5bf37d11951cgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e5/pratama/ERR3858110/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e5/pratama/ERR3858110/read_pair@819dfdedd7b6gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e5/pratama/ERR3858111/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e5/pratama/ERR3858111/read_pair@662c1ed895cdgparents
+/scratch/phyberos/pratama2026/metasmith/imports/e5/pratama/ERR3858112/read_metadata@af9565424e41gparents
+/scratch/phyberos/pratama2026/metasmith/imports/e5/pratama/ERR3858112/read_pair@431c34c8a46fgparents
+/scratch/phyberos/pratama2026/metasmith/imports/ref/bench::smetana_media_db@0ca7a3b49192gparents
+/scratch/phyberos/pratama2026/metasmith/imports/ref/modelling::medium_name@61142030f3b2gparents
+/scratch/phyberos/pratama2026/zenodo_17897233_unpacked/votu/FINAL_groundwater-votu-5k.fastagparents
+/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmndgparents

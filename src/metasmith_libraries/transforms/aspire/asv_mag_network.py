@@ -14,12 +14,13 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-graph   = model.AddRequirement(lib.GetType("aspire::network_graph_all"), parents={run})
-nf      = model.AddRequirement(lib.GetType("aspire::network_node_features"), parents={run})
-tax     = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={run})
-counts  = model.AddRequirement(lib.GetType("aspire::analysis_counts"), parents={run})
-pairing = model.AddRequirement(lib.GetType("aspire::asv_mag_pairing"), parents={run})
+study   = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+graph   = model.AddRequirement(lib.GetType("aspire::network_graph_all"), parents={study})
+nf      = model.AddRequirement(lib.GetType("aspire::network_node_features"), parents={study})
+tax     = model.AddRequirement(lib.GetType("amplicon::asv_taxonomy"), parents={study})
+counts  = model.AddRequirement(lib.GetType("aspire::analysis_counts"), parents={study})
+pairing = model.AddRequirement(lib.GetType("aspire::asv_mag_pairing"), parents={study})
+magl    = model.AddRequirement(lib.GetType("aspire::asv_mag_outputs"), parents={study})
 out     = model.AddProduct(lib.GetType("aspire::asv_mag_network_outputs"))
 
 def protocol(context: ExecutionContext):
@@ -39,7 +40,7 @@ _DIRECTORY_PRODUCTS = {out}
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=4,
         memory=Size.GB(16),

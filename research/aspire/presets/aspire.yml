@@ -1,0 +1,58 @@
+# ASPIRE's own settings for the read-to-ASV pipeline, as its shipped config
+# (upstream asv_pipeline_nextflow.yml) sets them. Same keys as tool_defaults.yml.
+#
+# A 0 means the filter is off. Upstream differs: Groovy's `?:` treats a configured
+# 0 as unset and substitutes its code default, so `table_filter.min_asv_sum: 0`
+# upstream silently runs at 0.01.
+#
+# "no stated source" means neither the code nor the docs say where the value came from.
+
+fastp:
+  trim_front_r1: 19       # primer length, forward; shipped config
+  trim_tail_r1: 20        # shipped config; the mock config uses 0
+  trim_front_r2: 20       # primer length, reverse; shipped config
+  trim_tail_r2: 20        # shipped config; the mock config uses 0
+  qualified_quality: 15   # fastp default, not set upstream
+  unqualified_percent: 40 # fastp default, not set upstream
+  length_required: 15     # fastp default, not set upstream
+  n_base_limit: 5         # fastp default, not set upstream
+  adapter_trimming: true  # fastp default, not set upstream
+
+merge:                    # paired samples only
+  max_diffs: 20           # vsearch default 10; no stated source
+  min_overlap: 5          # vsearch default 10; no stated source
+  trunc_quality: 5        # vsearch default off; no stated source
+  allow_stagger: true     # vsearch default off; no stated source
+
+filter:
+  max_ee: 1.0             # vsearch default none; the usual UPARSE/USEARCH recommendation
+  min_len: 245            # vsearch default 1; fits a V4-V5 amplicon; the mock config uses 230
+  max_len: 1500           # vsearch default none; the mock config uses 350
+
+unoise:
+  min_size: 3             # vsearch default 8; no stated source
+  alpha: 2.0              # vsearch default, not set upstream
+
+count:
+  identity: 0.999         # usearch_global --id has no default; hardcoded upstream
+
+sina:
+  regions: [V4-V5, V5, V4]  # shipped config; ASPIRE's own primers are 515F-Y/926R
+  trim_to: V4-V5            # shipped config
+
+table_filter:
+  min_sample_sum: 5000    # reads per sample; Thompson 2017 (Earth Microbiome Project) rarefies at 5000. The mock config uses 1000
+  min_asv_sum: 0.01       # percent of all reads; what upstream actually runs when the config says 0
+
+curate:
+  min_pident: 97.0        # mito/contaminant BLAST hit identity; code default
+  min_percov: 51.0        # mito/contaminant BLAST hit coverage; code default
+  abundance_threshold: 0.5  # percent, kept if reached in at least one sample. Code default 0.005, si config 0.005, mock 0.
+                            # Reitmeier 2021 (ISME Commun 1:31) recommends 0.1-0.3; Bokulich 2013 uses 0.005 of the dataset total
+  min_consensus: 0.0      # taxonomy consensus floor; code default
+  exclude_taxa:
+    - "Species:Homo sapiens"
+    - "Class:Mammalia"
+
+analysis:
+  min_level_size: 3       # samples a label value needs, else it is blanked; the shipped config's curate.min_group_size

@@ -88,7 +88,8 @@ def mock_samples(temp_dir, mock_types) -> DataInstanceLibrary:
         )
 
     lib.Save()
-    return lib
+    # Read it back: a plan refuses a given whose identity this process minted.
+    return DataInstanceLibrary.Load(lib.location)
 
 
 def create_transform_library(
