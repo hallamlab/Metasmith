@@ -30,7 +30,7 @@ The manifest has one row per dataset. Every column is a string. An empty cell me
 | `origin` | `internal`, `external` or `collaborator`. |
 | `accession` | Public IDs, such as a BioProject, ENA study, Zenodo record or JGI proposal. Empty when the data is not public. |
 | `locations` | Every place the data lives, as `node:path` entries separated by `; `. |
-| `n_samples` | Number of samples, runs or libraries, as the source counts them. Fosmid rows count libraries. |
+| `n_samples` | Number of samples that have sequence data, counted from the read files or a sample sheet. Fosmid rows count libraries. Empty when the count needs a guess. When the source lists more samples than have reads, `notes` says `Sequenced: X of Y`. |
 | `size_bytes` | Disk size of the raw inputs. |
 | `size_source` | `measured` (a live listing) or `recorded` (taken from a doc). |
 | `status` | `available`, `archived`, `missing` or `candidate`. |
