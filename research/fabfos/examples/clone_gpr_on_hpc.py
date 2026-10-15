@@ -46,7 +46,8 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _driver import (                                                   # noqa: E402
+from _driver import (
+    pin_external_leaf_ids,                                                   # noqa: E402
     check_schedulable, check_staged_executor, check_tasks, check_walltimes,
     envs_from_plan, landed_products, preflight, provision_dev_overlay_remote,
     publish_by_type, retrieve,
@@ -94,6 +95,7 @@ def plan(work: Path, agent, orfs: Path, remote_processed: str):
         remote = f"{remote_processed}/{rel}"
         print(f"    {dtype:32s} {remote}")
         inputs.AddItem(remote, dtype)
+    pin_external_leaf_ids(inputs)
     inputs.Save()
 
     resources = [

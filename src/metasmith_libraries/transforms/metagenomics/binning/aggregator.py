@@ -7,6 +7,39 @@ model = Transform()
 
 asm   = model.AddRequirement(lib.GetType("sequences::assembly"))
 
+# One `checkm_stats` per bin set, each parented to that set. The parent is what forks
+# the fan-out: an unparented requirement is answered once, from whichever binner the
+# planner likes, and the other two binners' bins reach no instance at all.
+#
+# CAUTION this transform used to carry a third requirement per bin set, `taxonomy::gtdbtk`,
+# parented the same way. It was removed 2026-09-12 and the reasoning matters, because
+# re-adding it re-opens a launch blocker rather than a cost:
+#
+#   1. The protocol never read it. Only `checkm_stats` selects a bin -- completeness and
+#      contamination -- so the taxonomy content reached no output. The slots existed to
+#      shape the plan, the way `getNcbiAssembly` requires a name it never opens.
+#   2. Their original purpose is gone. They were here so `iphop_add_to_db` got taxonomy
+#      covering every binner that can contribute to the pool. That consumer now requires
+#      `taxonomy::gtdbtk_raw` instead -- add_to_db wants de_novo_wf's DECORATED TREES, and
+#      the classification TSV `taxonomy::gtdbtk` carries is a different artifact it never
+#      opens. So these three became vestigial when that split landed, and nothing in this
+#      library consumed `taxonomy::gtdbtk` afterwards except this transform.
+#   3. The fan-out does not depend on them. `checkm_stats` is parented to the same three
+#      bin sets by the same mechanism, so the three-way fork survives their removal --
+#      verified by bindings, not argued.
+#   4. They made GTDB-Tk load-bearing for a chain that does not want it. gtdbtk requires
+#      `ref::gtdb`, and gtdbtk 2.6.1's classify step runs a post-placement skani
+#      verification that `--skip_ani_screen` does NOT gate (classify.py ~1230; the
+#      `if not prescreening and ...` guard is commented out upstream). Without a
+#      skani/database/ tree it raises `Reference genome missing from skani database` and
+#      exits -- AFTER pplacer, measured at 33m44s for ONE genome. With retry-then-ignore
+#      that starves this transform silently, and with it the whole quality-MAG chain:
+#      skani_dedup, derep_mag_reference and the published-MAG recovery comparison.
+#      Restoring the requirement therefore means staging GTDB's ~179 GB / ~113 K-file
+#      representative-genome set, for output no consumer reads.
+#
+# A driver that genuinely wants per-bin taxonomy should target `taxonomy::gtdbtk`
+# directly. It must not be forced through this transform, which discards it.
 mb_bin = model.AddRequirement(lib.GetType("sequences::metabat2_bin_fasta"), parents={asm})
 mb_ck  = model.AddRequirement(lib.GetType("taxonomy::checkm_stats"), parents={mb_bin})
 

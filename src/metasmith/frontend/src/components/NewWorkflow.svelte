@@ -37,6 +37,8 @@
   let stageEl = $state(null)
   let imgEl = $state(null)
   let drag = $state(null)
+  // when the viewer last zoomed or panned since the drawing was placed, 0 if not
+  let movedAt = $state(0)
 
   const MIN_SCALE = 0.2
   const MAX_SCALE = 8
@@ -47,6 +49,7 @@
   function center() {
     if (!stageEl || !imgEl?.naturalWidth) return
     scale = 1
+    movedAt = 0
     tx = (stageEl.clientWidth - imgEl.naturalWidth) / 2
     ty = (stageEl.clientHeight - imgEl.naturalHeight) / 2
   }
@@ -67,6 +70,7 @@
     // shift turns the wheel into a scrollbar: some browsers already swap
     // deltaX/deltaY for us when shift is held, so take whichever axis carries
     // the motion rather than assuming deltaY
+    movedAt = Date.now()
     if (e.shiftKey) {
       ty -= e.deltaY || e.deltaX
       return
@@ -93,8 +97,11 @@
 
   function onPointerMove(e) {
     if (!drag || drag.id !== e.pointerId) return
-    tx = e.clientX - drag.x
-    ty = e.clientY - drag.y
+    const nx = e.clientX - drag.x
+    const ny = e.clientY - drag.y
+    if (Math.abs(nx - tx) + Math.abs(ny - ty) > 0) movedAt = Date.now()
+    tx = nx
+    ty = ny
   }
 
   function endDrag(e) {
@@ -171,6 +178,8 @@
 <Modal title="new workflow" subtitle="start from a template, or from nothing" {onclose}>
   <div
     class="stage"
+    data-tour="template-preview"
+    data-moved={movedAt || undefined}
     class:panning={!!drag}
     role="application"
     aria-label="template diagram — scroll to zoom, drag to pan"
@@ -193,7 +202,7 @@
         onload={center}
         draggable="false"
         style={`transform: translate(${tx}px, ${ty}px) scale(${scale})`}
-        src={`/api/templates/${picked}/dag?theme=${ui.theme}&v=${stamp}`}
+        src={`api/templates/${picked}/dag?theme=${ui.theme}&v=${stamp}`}
         alt={`what ${picked} builds`}
       />
     {:else}
@@ -208,7 +217,7 @@
   <label class="col small">
     <span class="muted">template</span>
     <div class="row">
-      <select bind:value={picked}>
+      <select bind:value={picked} data-tour="template-select">
         <option value="">blank</option>
         {#each templates as t (t.name)}
           <option value={t.name}>{t.name}</option>
@@ -225,7 +234,7 @@
 
   {#snippet footer()}
     <button onclick={() => onclose?.()}>cancel</button>
-    <button class="primary" disabled={creating || drawing} onclick={create}>create</button>
+    <button class="primary" disabled={creating || drawing} onclick={create} data-tour="template-create">create</button>
   {/snippet}
 </Modal>
 

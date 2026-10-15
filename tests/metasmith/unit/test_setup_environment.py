@@ -30,7 +30,7 @@ KRAKEN = "docker://quay.io/biocontainers/kraken2:2.1.3--h43eeafb_0"
 def _step(order, transform, envs):
     return {f"p{order:02}__{transform}": {
         "step": order, "transform": transform, "process": f"p{order:02}__{transform}",
-        "arms": ["ifVirtualEnvDo"], "envs": envs,
+        "runs": 1, "envs": envs,
     }}
 
 

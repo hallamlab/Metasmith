@@ -1,0 +1,24 @@
+name: aspire
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pandas=2.2.*
+  - numpy
+  - scipy
+  - biopython
+  - tqdm
+  - matplotlib-base
+  - seaborn
+  - plotly=5.24.*
+  - python-kaleido=0.2.1
+  - r-base=4.4
+  - r-indicspecies
+  - r-optparse
+  - r-dplyr
+  - r-purrr
+  - r-readr
+  - r-tibble
+  - r-tidyr
+  - r-permute
+  - procps-ng

@@ -1,36 +1,57 @@
+# mitomaster -- MITOMASTER (asv_pipeline.nf:3544) with PREPARE_BLAST_DATABASES (3511), BLAST only.
+#
+# MitoMaster itself posts every ASV to mitomap.org, and compute nodes have no internet. The
+# table is written header-only, which is upstream's own `run_mitomaster: false` output, and
+# mito_checker.py reads it as no MitoMaster calls. The image's gzip is busybox, which has no
+# `-f` passthrough, so an uncompressed reference is read with cat. A reference is staged into
+# the work dir under its own file name, so the screens' copies take a prefix: writing to that
+# name writes through the link into the reference.
+
 from metasmith.python_api import *
 
-lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
-run     = model.AddRequirement(lib.GetType("aspire::run"))
-fcounts = model.AddRequirement(lib.GetType("aspire::asv_filtered_counts"), parents={run})
-fseqs   = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={run})
-mito_db = model.AddRequirement(lib.GetType("aspire::mito_blast_db"), parents={run})
-cont_db = model.AddRequirement(lib.GetType("aspire::contaminant_blast_db"), parents={run})
-master  = model.AddProduct(lib.GetType("aspire::mitomaster_table"))
-mhits   = model.AddProduct(lib.GetType("aspire::mito_blast6"))
-chits   = model.AddProduct(lib.GetType("aspire::contaminant_blast6"))
+lib      = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model    = Transform()
+image    = model.AddRequirement(lib.GetType("env::blast.env"))
+study    = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+fcounts  = model.AddRequirement(lib.GetType("aspire::asv_filtered_counts"), parents={study})
+fseqs    = model.AddRequirement(lib.GetType("aspire::asv_filtered_seqs"), parents={study})
+mito_src = model.AddRequirement(lib.GetType("aspire::mito_reference_source"))
+cont_src = model.AddRequirement(lib.GetType("aspire::contaminant_reference_source"))
+master   = model.AddProduct(lib.GetType("aspire::mitomaster_table"))
+mhits    = model.AddProduct(lib.GetType("aspire::mito_blast6"))
+chits    = model.AddProduct(lib.GetType("aspire::contaminant_blast6"))
+
+BLAST6 = "6 qseqid sseqid pident length qlen mismatch gapopen qstart qend sstart send evalue bitscore"
+
 
 def protocol(context: ExecutionContext):
-    made = {
-        master: context.Output(master),
-        mhits: context.Output(mhits),
-        chits: context.Output(chits),
-    }
-    for key, path in made.items():
-        make = 'mkdir -p' if key in _DIRECTORY_PRODUCTS else 'touch'
-        context.external_shell.Exec(f'{make} {path.external}')
+    imaster, imhits, ichits = context.Output(master), context.Output(mhits), context.Output(chits)
+    threads = context.params.get("cpus", 8)
+    screens = ""
+    for name, src, out in (("mito", mito_src, imhits), ("contaminants", cont_src, ichits)):
+        screens += f"""
+        case {context.Input(src).container} in *.gz) gzip -cd {context.Input(src).container} ;; *) cat {context.Input(src).container} ;; esac > screen_{name}.fasta
+        makeblastdb -in screen_{name}.fasta -dbtype nucl -parse_seqids -out {name}_db
+        blastn -query asvs.fasta -db {name}_db -outfmt "{BLAST6}" -out {out.container} -num_threads {threads}
+        """
+    context.ExecWithEnv(env=image, cmd=f"""\
+        set -euo pipefail
+        gzip -cd {context.Input(fseqs).container} > asvs.fasta
+        {screens}
+        printf 'Sequence_ID\\thaplo\\n' > {imaster.container}
+        rm -f asvs.fasta screen_*.fasta mito_db.* contaminants_db.*
+    """)
+
     return ExecutionResult(
-        manifest=[{k: v.local for k, v in made.items()}],
-        success=all(v.local.exists() for v in made.values()),
+        manifest=[{master: imaster.local, mhits: imhits.local, chits: ichits.local}],
+        success=all(p.local.exists() for p in (imaster, imhits, ichits)),
     )
 
-_DIRECTORY_PRODUCTS = set()
 
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=8,
         memory=Size.GB(16),

@@ -1,0 +1,30 @@
+name: fba_from_fba_model
+description: merge_metabolic_models_into_community_model -> run_flux_balance_analysis.
+  Seen in 8 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseFBA_FBA
+transform_libraries:
+- w_s0022
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/6296ac3d1f9f42439e473f3715667671:
+      type: kbase::sample
+      parents:
+        IOde1npnD2dV@/msm_deferred/e677c8eb1b3f400693aa011a83b37661: kbase::study
+      instance_id: 1e203e1a9e4e9737ddabf3751645fe7260b8502c127e622bd62a14a2bcf98323a9ed
+      origin: leaf
+    /msm_deferred/985f52f8393f46a49b298cfc40ac8ccf:
+      type: kbase::KBaseFBA_FBAModel
+      parents:
+        IOde1npnD2dV@/msm_deferred/6296ac3d1f9f42439e473f3715667671: kbase::sample
+      instance_id: 1e20e28c2cb6887abd3b8c2d0c119eadcc90e975f676071fd7a6587f9fa7db0bc635
+      origin: leaf
+    /msm_deferred/e677c8eb1b3f400693aa011a83b37661:
+      type: kbase::study
+      instance_id: 1e201a29d52efb21b61c1f9eeec1ccf1675c44bcb0544c1ad1b008a7e22c20c0142d
+      origin: leaf

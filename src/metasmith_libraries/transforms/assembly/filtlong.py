@@ -17,16 +17,12 @@ def protocol(context: ExecutionContext):
     _cmd = f"""\
             filtlong --min_length 1000 --keep_percent 90 {ireads.container} >{temp_unzipped}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     _cmd = f"""\
             filterbyname.sh in={ireads.container} out={idisc.container} names={temp_unzipped}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=im_bb, cmd=_cmd) \
-        .ifVirtualEnvDo(env=im_bb, cmd=_cmd)
+    context.ExecWithEnv(env=im_bb, cmd=_cmd)
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"

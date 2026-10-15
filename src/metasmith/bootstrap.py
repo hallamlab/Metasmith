@@ -264,7 +264,7 @@ def ExecuteStep(
         external_agent_home=Path(agent_home),
         _environment=Environment(
             image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args),
-            rootfs=_rootfs,
+            rootfs=_rootfs, native=agent.native,
         ),
         params=params,
         _slot_keys=slot_keys,
@@ -305,8 +305,16 @@ def ExecuteStep(
                 insts = step.dependency_map.get(d, [])
                 inst_names = {x.dtype_name for x in insts}
                 iname = '/'.join(inst_names) if len(inst_names)>0 else "no expected instances"
-                dmeta = context.Output(d)
-                mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{iname}]")
+                # Naming the missing file can itself fail -- context.Output routes
+                # through the lineage entry, which is exactly what is broken when a
+                # member was never routed. This runs from the `except` arm, so a
+                # raise here replaces the transform's real error with this one and
+                # the log says only "failed with error".
+                try:
+                    where = str(context.Output(d).local)
+                except Exception as _e:
+                    where = f"<could not name output: {_e}>"
+                mg.append(f"    X branch [{i+1}] [{where}] [{iname}]")
             if seen: missings.append(mg)
         if any(len(g)>0 for g in missings):
             Log.Info(f"missing outputs:")
@@ -314,15 +322,6 @@ def ExecuteStep(
                 Log.Info(m)
     try:
         results = step.transform.protocol(context)
-        unmatched = context.UnmatchedEnvDispatches()
-        if unmatched:
-            runtime = agent.runtime.name
-            declared = sorted({a for d in unmatched for a in d.declared})
-            raise AssertionError(
-                f"transform [{step_name}] reached [{len(unmatched)}] ExecWithEnv "
-                f"declaration(s) with no arm for runtime [{runtime}]; "
-                f"arms declared: {declared or ['<none>']}"
-            )
         if not isinstance(results, list):
             results = [results]
         for i, result in enumerate(results):
@@ -368,6 +367,41 @@ def _promote(cache_meta, lineages: list, results: list) -> None:
         return
     for r in records:
         Log.Info(f"cache [{r['status']}] member [{r['member'] + 1}] key [{r['key'][:12]}]")
+
+def resolve_step_inputs(step, dep_in_raw: dict, inst_lookup: dict, sar: dict):
+    """Turn the instance ids the compiler wrote into `din` back into instances.
+
+    The two sides speak different id spaces and only sometimes notice. `din` is written
+    AFTER the cache pass rewrites each instance's id into its cache SLOT id; the plan this
+    agent reloads from disk was serialised BEFORE that pass. `inst_lookup` is therefore
+    keyed on archetype ids, and for a step whose input was produced by another step in the
+    same plan the two sets never intersect.
+
+    The step's own dependency map is the list the compiler built `din` from, so it is the
+    right answer whenever the ids do not resolve -- and the arity check still holds by
+    construction, because it is the same list the arity was measured on. The `produces`
+    path has always fallen back this way for the mirror-image mismatch; this is the same
+    fallback on the side that used to raise instead.
+    """
+    input_by_dep: dict = {}
+    for dep in step.transform.model.requires:
+        ids = dep_in_raw.get(dep.key, [])
+        resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
+        if not resolved and ids:
+            resolved = list(step.dependency_map.get(dep, []))
+        if not resolved and ids:
+            raise MissingInstanceError(
+                instance_id=ids[0] if ids else None,
+                dep_key=dep.key,
+            )
+        if dep.key in sar and len(resolved) != sar[dep.key]:
+            raise ArityMismatchError(
+                expected=sar[dep.key],
+                actual=len(resolved),
+                dep_key=dep.key,
+            )
+        input_by_dep[dep] = resolved
+    return input_by_dep
 
 
 def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root: Path|None=None):
@@ -424,6 +458,50 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
         Log.Info(f"step [{step_index}:{step_name}]")
 
         params = {}
+
+        # Open the channel from a driver's `RunWorkflow(params=...)` to a transform's
+        # `context.params`. Without this there is NO such channel: that dict reaches
+        # nextflow only, and `context.params` is built purely from `.command.metadata`
+        # below, which carries just res/gpu/rootfs. So every `context.params.get(key,
+        # default)` for a driver-supplied key silently returned its default.
+        #
+        # CAUTION this is why it survived two gates and a live campaign: a `.get` whose
+        # DEFAULT equals the value the driver meant to pin is indistinguishable from a
+        # delivered pin. metabat2's `--seed` read correctly (default 1 == pinned 1) while
+        # `--minContig` used the transform's own 2500 against a pinned 1500 -- and 1500 is
+        # what nf-core/mag uses, so a parity comparison was confounded by a 1000 bp
+        # binning floor while the driver source plainly showed the pin.
+        #
+        # `workflow_ops`' `_parse` splits every key on `_` and nests it, which is correct
+        # for a config selector (`process_array` -> `params.process.array`). So both
+        # spellings are offered here: the nested dict as nextflow received it, and every
+        # `_`-joined path, which is the spelling the driver wrote. The join is not a
+        # perfect inverse -- `executor=dict(queueSize=4)` also yields `executor_queueSize`
+        # -- but an extra key nobody reads costs nothing.
+        #
+        # Applied BEFORE the metadata block on purpose: cpus/memory/attempt/gpus/rootfs
+        # describe what the executor actually granted, so a params file must never
+        # override them.
+        try:
+            import yaml as _yaml
+            _pf = workspace/AgentPaths.NXF_PARAMS
+            if _pf.exists():
+                with open(_pf) as f:
+                    _raw = _yaml.safe_load(f) or {}
+                def _flatten(d: dict, prefix: str = ""):
+                    for k, v in d.items():
+                        key = f"{prefix}_{k}" if prefix else str(k)
+                        if isinstance(v, dict):
+                            yield (key, v)
+                            yield from _flatten(v, key)
+                        else:
+                            yield (key, v)
+                if isinstance(_raw, dict):
+                    params.update(dict(_flatten(_raw)))
+                    Log.Info(f"params from [{AgentPaths.NXF_PARAMS}]: {sorted(k for k in params)}")
+        except Exception as e:
+            Log.Warn(f"could not read params from [{AgentPaths.NXF_PARAMS}]: {e}")
+
         raw_meta = {}
         try:
             with open(METADATA_FILE) as f:
@@ -509,21 +587,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
 
         input_by_dep: dict[Dependency, list[DataInstance]] = {}
         if fmt >= 2:
-            for dep in step.transform.model.requires:
-                ids = dep_in_raw.get(dep.key, [])
-                resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
-                if not resolved and ids:
-                    raise MissingInstanceError(
-                        instance_id=ids[0] if ids else None,
-                        dep_key=dep.key,
-                    )
-                if dep.key in sar and len(resolved) != sar[dep.key]:
-                    raise ArityMismatchError(
-                        expected=sar[dep.key],
-                        actual=len(resolved),
-                        dep_key=dep.key,
-                    )
-                input_by_dep[dep] = resolved
+            input_by_dep = resolve_step_inputs(step, dep_in_raw, inst_lookup, sar)
         else:
             inp_keys = [x for x in raw_meta.get("inp", "").split(",") if len(x)>0]
             for dep, k in zip(step.transform.model.requires, inp_keys):

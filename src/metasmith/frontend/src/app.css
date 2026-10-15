@@ -57,6 +57,8 @@
   --code-var: #e0b877;
 
   --shadow: rgba(0, 0, 0, 0.45);
+  /* what a tutorial dims the page with around the thing it points at */
+  --tour-scrim: rgba(0, 0, 0, 0.55);
 
   --radius: 5px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -104,6 +106,7 @@
   --code-var: #8a5a12;
 
   --shadow: rgba(27, 30, 36, 0.18);
+  --tour-scrim: rgba(24, 28, 36, 0.4);
 
   color-scheme: light;
 }

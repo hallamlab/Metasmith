@@ -118,7 +118,7 @@ class Spec:
         )
 
 
-    def Solve(self, max_iter: int = 256, max_refine: int = 256, seed: int = 42) -> WorkflowTask:
+    def Solve(self, max_iter: int = 256, max_refine: int|None = None, seed: int = 42) -> WorkflowTask:
         data_lib = _as_data_lib(self.input_library)
         tr_libs = [_as_transform_lib(x) for x in self.transform_libraries]
         res_libs = [_as_data_lib(x) for x in self.resource_libraries]
@@ -155,7 +155,7 @@ class Spec:
         resources: Iterable[DataInstanceLibraryView | DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary | TransformInstanceLibraryView],
         targets: TargetBuilder | list,
-        max_iter: int = 256, max_refine: int = 256, seed: int = 42,
+        max_iter: int = 256, max_refine: int|None = None, seed: int = 42,
     ) -> WorkflowTask:
         if not isinstance(targets, TargetBuilder):
             tb = TargetBuilder()

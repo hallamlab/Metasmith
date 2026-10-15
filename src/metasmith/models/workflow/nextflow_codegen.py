@@ -63,6 +63,30 @@ def CachedProcessName(process_name: str) -> str:
     return f"{process_name}_cached"
 
 
+TWIN_SRC, TWIN_DST = "@src@", "@dst@"
+
+
+def TwinHomeBash() -> str:
+    """Bash that sets `h` to the agent home as the twin's own work dir spells it."""
+    return f'h="${{PWD%/{AgentPaths.STAGED}/*}}"'
+
+
+def TwinPlaceBash(external_home: Path, src: str = TWIN_SRC, dst: str = TWIN_DST) -> str:
+    """Bash that places one shard product at `dst`, after `TwinHomeBash` set `h`."""
+    # A driver container binds the agent home at its host path and again at /msm_home. The two
+    # binds share a device, yet a hard link between them fails with EXDEV, so the shard is linked
+    # through the bind the work dir sits on first. A copy costs a product's bytes twice, so say so.
+    return (
+        f"m='{src}'; ln -f \"$h${{m#'{external_home}'}}\" '{dst}' 2>/dev/null"
+        f" || ln -f \"$m\" '{dst}' 2>/dev/null"
+        f" || {{ echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
+    )
+
+
+def _groovy_literal_text(bash: str) -> str:
+    return bash.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+
+
 @dataclass
 class NextflowGenContext:
     workflow_file: str
@@ -173,6 +197,23 @@ def DownloadSteps(plan) -> list:
                 all(n.startswith(_ENV_NAMESPACE) for n in taken):
             found.append(step)
     return found
+
+
+def _dep_type_name(step, dep) -> str:
+    """The declared name of a slot's type, for the branch that has no instance.
+
+    get_io_signature indexes dependency_map directly, so a produced slot always
+    has one by the time this runs; this is the belt to that brace. A dep that
+    carries lineage signs differently from the bare type it was declared from
+    and will not be found, which is a missing name rather than an error.
+    """
+    lib = getattr(step, "transform_library", None)
+    if lib is None:
+        return ""
+    try:
+        return lib.GetName(dep)
+    except KeyError:
+        return ""
 
 
 def prepare_nextflow(task, context: NextflowGenContext):
@@ -312,14 +353,14 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "step": step.order,
             "transform": str(step.transform.name),
             "process": process_name,
-            "arms": None if _scan is None else _scan.arms,
+            "runs": None if _scan is None else len(_scan.runs),
             "envs": _read_env_declarations(step),
         }
         duration_is_strict = res is not None and res.duration is not None and res.duration.strict
         memory_is_strict = res is not None and res.memory is not None and res.memory.strict
         if duration_is_strict and memory_is_strict:
             src_res += [
-                "errorStrategy 'ignore'"
+                "errorStrategy = 'ignore'"
             ]
         used_archetypes, produced_archetypes = get_io_signature(step)
         dep_in = {
@@ -377,15 +418,22 @@ def prepare_nextflow(task, context: NextflowGenContext):
                         insts = step.dependency_map.get(dep, [])
                         if insts:
                             dtype_key = insts[0].dtype.key
+                            dtype_name = insts[0].dtype_name
                             ext = (
                                 insts[0].dtype.GetPreferredFileExtension()
                                 or ""
                             )
                         else:
                             dtype_key = dep.key
+                            dtype_name = _dep_type_name(step, dep)
                             ext = dep.GetPreferredFileExtension() or ""
                         slot_files.append({
                             "dtype_key": dtype_key,
+                            # The name is what makes a promoted product
+                            # describable as a data instance later. The key is
+                            # a property-set fingerprint and cannot be turned
+                            # back into a type, so it has to travel separately.
+                            "dtype_name": dtype_name,
                             "ext": ext,
                             "branch_idx": branch_idx,
                             "slot_id": slot_id,
@@ -431,7 +479,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "{external_binds_param}" >{BIND_FILE}',
             f'{context.bootstrap_var}',
             f'bootstrap {context.external_work_var} "{step.order}" ${{params.hostName}}',
-            f'[ "\\$__msm_wd" = "\\$PWD" ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" 2>/dev/null || true',
+            # A record lost on the way out of scratch leaves an exit-0 task the
+            # trace never sees, so a failed copy fails the task and it retries.
+            f'[ "\\$__msm_wd" = "\\$PWD" ] || [ ! -e {CACHE_RECORD_FILE} ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" || exit 1',
             f'[ -e .command.success ] && exit 0 || exit 1',
             '"""',
             'stub:',
@@ -461,14 +511,22 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # products into its work dir under the member's position. Nextflow then
         # publishes and traces it like any other task, and no scheduler saw it.
         # No `stub:` block: under `-stub` the copy is still the twin's whole job,
-        # and a touched stand-in cannot serve a directory product.
+        # and a touched stand-in cannot serve a directory product. `array 0` and
+        # `scratch false` override a Slurm preset's catch-all `process` settings, as
+        # its `xlocalx` block does: the local executor refuses a job array at compile
+        # time, killing the run before any task starts, and a login node's scratch is
+        # a tmpfs that turns every link into a copy charged to the user's memory.
         process_name = NextflowProcessName(step.order, step.transform.name)
         twin_name = CachedProcessName(process_name)
         _used, produced_archetypes = get_io_signature(step)
         optional = ", optional: true" if len(produced_archetypes) > 1 else ""
+        place = _groovy_literal_text(TwinPlaceBash(context.external_home)) \
+            .replace(TWIN_SRC, "${s[1]}").replace(TWIN_DST, "${s[0]}-${s[2]}")
         src = [
             f"process {twin_name}"+" {",
             TAB+"executor 'local'",
+            TAB+"array 0",
+            TAB+"scratch false",
             TAB+"cache false",
             "input:",
             TAB+"tuple val(index), val(sources)",
@@ -480,7 +538,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "script:",
             '"""',
             f'echo "step {step.order} (cached), sample $index"',
-            "${sources.collect { s -> \"ln -f '${s[1]}' '${s[0]}-${s[2]}' 2>/dev/null || cp -r '${s[1]}' '${s[0]}-${s[2]}'\" }.join('\\n')}",
+            _groovy_literal_text(TwinHomeBash()),
+            "${sources.collect { s -> \"" + place + "\" }.join('\\n')}",
             '"""',
             "}",
             "",

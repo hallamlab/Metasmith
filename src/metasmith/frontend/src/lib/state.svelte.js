@@ -1,9 +1,14 @@
 import { api } from './api.svelte.js'
 
 export const SECTIONS = [
-  // in setup order: you need a host before an agent, an agent before a run
+  // Tutorials leftmost, where a newcomer looks first; the rest in setup
+  // order: you need a host before an agent, an agent before a run.
+  // Data sits after Agents because a store belongs to one -- it is the same
+  // pool a run's products land in, read as instances rather than as cache.
+  { id: 'tutorials', label: 'Tutorials' },
   { id: 'ssh', label: 'SSH' },
   { id: 'agents', label: 'Agents' },
+  { id: 'data', label: 'Data' },
   { id: 'workflows', label: 'Workflows' },
   { id: 'runs', label: 'Runs' },
 ]
@@ -37,7 +42,7 @@ const fromUrl = parseHash()
 export const app = $state({
   section: fromUrl.section,
   // one remembered selection per section, so switching tabs does not lose your place
-  selected: { ssh: null, agents: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
+  selected: { tutorials: null, ssh: null, agents: null, data: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
   showArchived: false,
   project: null,
   hosts: [],
@@ -47,6 +52,8 @@ export const app = $state({
   runs: [],
   notice: null,
   loading: false,
+  // sections whose lists have come back at least once since the page opened
+  loaded: {},
   // the standard-library type vocabulary: identical for every workflow in the
   // project, so it is loaded once per session rather than once per workflow
   types: [],
@@ -54,7 +61,7 @@ export const app = $state({
 })
 
 // -- the left rail's width -------------------------------------------------
-// One value for all four sections: the rail is the same furniture whichever tab
+// One value for every section: the rail is the same furniture whichever tab
 // you are on, and a width that changed under you when you switched would read as
 // a glitch. Kept out of `app` because nothing reloads it from the server.
 
@@ -484,7 +491,8 @@ export async function refresh(section = app.section) {
   app.loading = true
   try {
     if (section === 'ssh') await loadSsh()
-    if (section === 'agents') await loadAgents()
+    // Data's rail is the agent list too, because a store belongs to an agent.
+    if (section === 'agents' || section === 'data') await loadAgents()
     if (section === 'workflows') await loadWorkflows()
     // the Runs rail needs agents to offer a launch target, and Workflows shows
     // run counts, so these two are always loaded together
@@ -492,6 +500,7 @@ export async function refresh(section = app.section) {
       await loadRuns()
       await loadAgents()
     }
+    app.loaded[section] = true
   } catch (e) {
     notify(e.message, e.kind ?? 'error')
   } finally {

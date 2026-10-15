@@ -21,11 +21,6 @@ Pick the axis by what the test pins, not by what it uses. A test whose assertion
 about correctness and merely happens to use a large fixture belongs with the behaviour it
 pins. A GUI test that needs a docker daemon is an e2e test.
 
-`python_solver` is the one marker that *removes* tests from every routine run, release
-included: the rust engine is the shipped solver, so tests that need the python implementation
-skip unless it is asked for. `--solver=` is unrelated and selects which implementation
-everything else runs on.
-
 ## Writing one
 
 Reuse the shared stimuli rather than defining ad-hoc transforms per test, and assert through

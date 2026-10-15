@@ -42,7 +42,7 @@ Command                                                           Purpose
 ``metasmith data list LIB [--type TYPE]``                         List items, optionally filtered
 ``metasmith data create PATH --type-lib ... [--purge]``           Create a new ``.xgdb`` and attach types
 ``metasmith data attach-types LIB TYPE_LIB --namespace NS``       Add a types YAML to an existing library
-``metasmith data add-item LIB --path P --dtype T [--parent ...]`` Register an existing file
+``metasmith data add-item LIB --path P --dtype T``                Register an existing file (``--parent`` repeats)
 ``metasmith data add-value LIB --name N --value V --dtype T``     Register a scalar/dict as a typed item
 ``metasmith data set-parents LIB ITEM PARENT ...``                Attach parents
 ``metasmith data remove LIB ITEM``                                Remove from manifest (filesystem unchanged)
@@ -54,7 +54,38 @@ Command                                                           Purpose
 ``metasmith data trace LIB FROM_TYPE TO_TYPE``                    Yield ancestor/descendant pairs by type
 ``metasmith data load-remote URI DEST [--on-exist ...]``          Pull an ``.xgdb`` image via Logistics
 ``metasmith data lineage LIB ITEM``                               Show an item's type + parents
+``metasmith data fork LIB DEST [--fork-id ID]``                   Copy under a new fork id; no data copied
+``metasmith data pin LIB [--deep]``                               Trust the recorded ids, refuse mutation
+``metasmith data unpin LIB``                                      Lift a pin so the library can be rebuilt
+``metasmith data restamp LIB [--entry E]``                        Re-record stat stamps, moving no identity
+``metasmith data verify LIB [--deep]``                            Report drift in a pinned library
+``metasmith data invalidate LIB [ITEM...] [--all]``               Say an item changed, so runs re-run
 ================================================================  ============================================================
+
+C2. The pool
+============================================================
+
+The pool at ``<agent_home>/task_cache`` is the store *and* the index. A
+run's products land there, and so does anything you import. It projects
+as a ``DataInstanceLibrary``, which is what the planner reads inputs
+from — so importing data and recording a product are one mechanism, not
+two.
+
+================================================================  ============================================================
+Command                                                           Purpose
+================================================================  ============================================================
+``metasmith data import PATH --dtype T [--agent-home H]``         Register a file or folder; nothing copied or read
+``metasmith data forget ID [--delete]``                           Drop an imported entry; the data is untouched
+``metasmith data import-library URI DEST --cache-root R``         Fetch a library image and register its entries
+``metasmith cache list [--origin|--run|--tag|--dtype ...]``       One row per stored file, filtered and grouped
+``metasmith cache tag KEY TAG... [--remove|--replace]``           Label an entry so you can group by it
+``metasmith cache gc [--older-than S] [--max-size B]``            Tombstone; ``--delete`` unlinks past the grace period
+``metasmith cache explain KEY``                                   Decode an entry's manifest and lineage
+================================================================  ============================================================
+
+**CAUTION** An import produces no cache hit. A hit substitutes for a
+step and needs the shard's ``out/`` files, which an import never places.
+What it buys is that the data is in the index the planner reads.
 
 D. Transform libraries
 ============================================================
@@ -108,16 +139,25 @@ Command                                                           Purpose
 ================================================================  ============================================================
 ``metasmith workflow stage AGENT TASK [--on-exist ...]``          Compile DAG → Nextflow and transfer
 ``metasmith workflow materialise AGENT TASK [--force]``           Fetch the task's tool images onto the agent first
-``metasmith workflow run AGENT TASK [--preset P] [--params JSON]`` Detached launch
+``metasmith workflow run AGENT TASK [--preset P]``                Detached launch (``--params JSON`` to override)
 ``metasmith workflow wait AGENT TASK [--timeout S]``              Block on sentinel
-``metasmith workflow tail AGENT TASK [--source agent|main] [--lines N]`` Last N lines of agent.log or main.log
+``metasmith workflow tail AGENT TASK [--lines N]``                Last N lines of agent.log (``--source main``)
 ``metasmith workflow cancel AGENT TASK``                          Remove ``workspace/PID.lock``; pkill fallback
 ``metasmith workflow runs AGENT TASK``                            All ``logs.<ts>`` directories
 ``metasmith workflow check TASK [--run N]``                       Same-machine status + logs
 ``metasmith workflow result-source AGENT TASK``                   Where results live (Globus if available)
 ``metasmith workflow collect AGENT TASK --dest URI``              Transfer results to a URI
 ``metasmith workflow presets AGENT``                              Bundled Nextflow configs
+``metasmith run TRANSFORM -d LIB -i NAME=ITEM [-w DIR]``          One transform, no solver and no Nextflow
 ================================================================  ============================================================
+
+``metasmith run`` is the inner loop for writing a transform: it reaches
+the protocol through the same ``bootstrap.ExecuteStep`` the Nextflow path
+calls, so what you test alone is what runs in a DAG. ``NAME`` is the
+variable the requirement was assigned to in the transform file, and
+``ITEM`` names an item in ``-d``'s library rather than a filesystem path
+— the library is what carries the item's type and its recorded parents,
+so a protocol asking ``SourceOf`` gets a real answer.
 
 H. Source / Logistics
 ============================================================

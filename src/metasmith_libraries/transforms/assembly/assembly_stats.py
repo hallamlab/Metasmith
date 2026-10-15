@@ -59,9 +59,7 @@ def protocol(context: ExecutionContext):
             minimap2 {preset} -a -2 {cpus_string} \
                 {iasm.container} {ireads.container} > {temp_sam_path}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_mm2, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_mm2, cmd=_cmd)
+    context.ExecWithEnv(env=img_mm2, cmd=_cmd)
 
     Log.Info("convert to BAM, sort and index")
     cpus_string = "" if cpus is None else f"-@ {cpus}"
@@ -73,9 +71,7 @@ def protocol(context: ExecutionContext):
             samtools index {cpus_string} -c {bam_file}
             samtools flagstat {cpus_string} -O tsv {bam_file} >{alignment_stats_file}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_sam, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_sam, cmd=_cmd)
+    context.ExecWithEnv(env=img_sam, cmd=_cmd)
 
     Log.Info("calculating per bp coverage")
     cov_tsv = "bp_cov.tsv"
@@ -84,9 +80,7 @@ def protocol(context: ExecutionContext):
             echo "{_header}" >{cov_tsv}
             bedtools genomecov -ibam {bam_file} -bg >>{cov_tsv}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_bed, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_bed, cmd=_cmd)
+    context.ExecWithEnv(env=img_bed, cmd=_cmd)
 
     Log.Info("compressing per bp coverage")
     cpus_string = ""
@@ -175,9 +169,7 @@ def protocol(context: ExecutionContext):
     _cmd = f"""
             seqkit stat --all --tabular {iasm.container} >{seqkit_stats_file}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=img_sqk, cmd=_cmd) \
-        .ifVirtualEnvDo(env=img_sqk, cmd=_cmd)
+    context.ExecWithEnv(env=img_sqk, cmd=_cmd)
     Log.Info("compiling stats")
     df = pd.read_csv(seqkit_stats_file, sep="\t")
     seqkit_stats = {k:_from_np(v) for k, v in dict(df.iloc[0]).items()}

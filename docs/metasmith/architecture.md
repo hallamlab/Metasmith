@@ -73,8 +73,9 @@ products stay in one timeline (A *and* B). The solver discriminates on whether t
 application's transform is the given one. Getting it wrong stops a multi-output tool's products
 co-existing.
 
-**What the solver does.** It works backwards from the target carrying `SolverState` of what it
-has and which transforms remain candidates. An `Application` is one use of one transform — a
+**What the solver does.** It works backwards from the target, carrying what it has and which
+transforms remain candidates. The search itself is `src/workflow_solver/` — `msm_solver`, the only
+implementation, reached through `solve_by_mcts`. An `Application` is one use of one transform — a
 `{Dependency: Endpoint}` map of what filled each slot and what it produced — signed by the
 transform key paired with each slot's filling endpoint. One transform on different inputs is a
 different application; on the same inputs it dedupes.
@@ -122,15 +123,16 @@ A transform is one Python file in three parts — contract, protocol, instance. 
 slot rather than as a set of types: bbduk does not want three files, it wants the reads
 belonging to *this* metadata.
 
-**A transform never learns which runtime it is on, and does not need to.** It declares an arm
-per world (`ifContainerDo` / `ifVirtualEnvDo`, either omissible) and the `env` package owns
-every per-runtime difference: bind dialect, whether a container boundary exists, GPU flags.
+**A transform never learns which runtime it is on, and does not need to.** It makes one call,
+`ExecWithEnv(env=, cmd=)`, naming what to run and the environment to run it in; the `env`
+package owns every per-runtime difference: which key of the environment resource is read,
+bind dialect, whether a container boundary exists, GPU flags.
 Code branching on the runtime is a bug — declare the need instead. That holds inside `env` too:
 `MakeBindsParam` is the only place a mount is spelled, and rendered shell templates must
 interpolate it rather than hand-write a flag, since a literal reads correctly under the runtime
 its author had in mind and is silently wrong under the other.
 `test_env_deploy_scripts.py::TestBindDialectPurity` holds that line by scanning each rendered
-script for the other dialect's tokens. `ifContainerDo(args=[...])` appends verbatim runtime
+script for the other dialect's tokens. `ExecWithEnv(args=[...])` appends verbatim runtime
 flags just before the image, so a flag passed there beats the framework default of the same
 name — but the dialect is the caller's problem, and mounts go through the typed `binds=`.
 
@@ -322,6 +324,16 @@ errorStrategy's retry branch is guarded by `params.process.tries`, and `maxRetri
 above that threshold or nextflow stops retrying before the strategy asks it to — a `tries` of 1
 makes the retry branch unreachable and sends every first failure straight to `ignore`.
 
+**Everything written after Nextflow exits depends on the driver surviving, so lineage is also
+written while it runs.** `trace.jsonl` and `results/_metadata` are written once, after the exit,
+and a driver killed by a signal writes neither. The lineage report (`lineage.csv` and
+`lineage_parents.csv` in the run's log dir) is rebuilt on a tick from what each task leaves as it
+finishes: its `.command.cache`, the hit log and the shard manifests the hit log names. It is a
+reader and never a source of truth. Nothing reads it back, so a wrong row cannot change what a run
+computes, caches or collects. Each post-run step is guarded on its own, and any failure among them
+ends the run on `RUN_FAILED_SENTINEL` naming the step. Before that guard, one raising step skipped
+every later step and the sentinel with them, and the watcher could only say "errored".
+
 **A run is a process group and a token.** `start.sh` backgrounds the driver under `set -m`, so
 the whole run descends from one process group, and exports `METASMITH_RUN=<task_key>.<timestamp>`,
 which every descendant inherits, docker tool containers carry as the `msm.run` label and
@@ -506,28 +518,48 @@ batch (`python -m metasmith.caching.invocation`, JSON on stdin), which costs abo
 interpreter start-up per call at any batch width. On by default, with a per-transform opt-out
 and the `METASMITH_CACHE=0` kill switch. A helper failure is a miss, never a hit.
 
-**Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
-leaf is a file or a 300k-file directory. The absolute path belongs to whichever host ran the stat,
-so `StageWorkflow` re-derives every leaf id on the agent before compiling (`restat_leaf_ids`) and
-writes the plan back to `task.yml`: the client that registered an input living on the agent's host
-cannot stat it, and `CollectResults` later joins the trace against that same plan. Re-submitting
-unmodified files at the same paths hits the same shards; two hosts holding identical bytes at
-different paths do not agree, and a same-mtime in-place edit is invisible. A path nothing can stat
-keeps a random per-call id and gets no reuse. `fabfos/refs.py` substitutes the DVC pin's own md5,
-which survives the re-materialisation that moves an mtime. A change below the top node is
-invisible by construction, and `msm data invalidate` is the lever for it: it moves the mtime
-forward and re-mints through the same formula, so client and agent still agree.
+**A transform's source text moves the cache and never moves the plan.** Two keys read the same
+transform and ask different questions, and confusing them costs a reuse measurement in whichever
+direction you guess wrong. `Transform.key` is a digest over the requirement and product
+declarations alone, and the plan key is those keys for every step plus the sorted given ids, so
+editing a protocol body or a shell command leaves the plan key and the run directory exactly
+where they were. `_protocol_source_hash` is a digest over the whole definition file, it moves on
+any edit including a comment, and `compute_cache_decisions` folds it into each step's structural
+slot ids. So an edited transform busts its own shards and its descendants' and nothing else.
+Measured on 0.23.0: a command-string edit and a body edit each moved the source hash and left the
+transform key untouched, while adding a requirement moved the transform key. **CAUTION** A plan
+key that moves after a transform edit means the edit changed the model, most often the `env::`
+requirement that a tool change drags along with the command.
 
-**CAUTION** A staged leaf's id folds the task key, so only an identical plan reuses its shards.
-`restat_leaf_ids` runs after `StageWorkflow` copies the data libraries into
-`runs/<task key>/_metasmith/task/data/`, so the absolute path it stats carries the task key, and
-the task key is a function of the whole plan. Re-running one plan re-derives every id unchanged
-and hits every shard. Adding a sample mints a new task key, re-paths every staged leaf, and
-changes every member key beneath it, so nothing hits — which is the case the member unit exists
-to serve. An input left outside the workspace keeps a stable id, so the databases named by
-`shared_input_paths` do reuse their shards across plans. Two real runs of the annotation trio
-confirmed both halves. No test covers this: the virtual runtime and the `-stub` docker lane never
-stage one library under two task keys.
+**Leaf ids are stat-addressed** — `multihash("stat" ‖ abspath ‖ mtime_ns)`, one stat whether the
+leaf is a file or a 300k-file directory. That is what a transform's own outputs and a staged
+library carry. It is no longer what a *given* carries: a plan refuses a given whose identity the
+calling process minted, because the absolute path belongs to whichever host ran the stat and a
+path nothing can stat used to fall back to a fresh uuid4 per call. Two hosts holding identical
+bytes at different paths still do not agree, and a same-mtime in-place edit is still invisible.
+`StageWorkflow` re-derives every remaining leaf id on the agent before compiling
+(`restat_leaf_ids`) and writes the plan back to `task.yml`, because `CollectResults` later joins
+the trace against that same plan. A change below the top node is invisible by construction, and
+`msm data invalidate` is the lever for it: it moves the mtime forward and re-mints through the
+same formula, so client and agent still agree. Invalidate refuses an imported item and says to
+import again, because an assigned identity has nothing to re-derive.
+
+**A given's identity is a record, and the plan refuses one that is not.** `_mint_leaf_id` marks
+what it invented, `Pack` does not carry the mark, and `CollectSolverInputs` refuses anything that
+still carries it — naming `metasmith data import` and the `GivenLibrary` call that replaces the
+registration. So the question survives exactly one process: a library that was saved and loaded
+again is a record, and a library built here and handed straight to the planner is not.
+
+The test is a mint rather than a pool, and that is the limit of the rule rather than an oversight.
+A shipped template's placeholders, the `env` and `containers` libraries, and a DVC-pinned fabfos
+reference all carry recorded leaf ids, and none of them is data a pool should hold — so "imported
+or nothing" would refuse three categories that are right. What no longer passes is an identity
+nobody wrote down. A deferred given is exempt as well: there is nothing at the path yet, and
+`StageWorkflow.RefuseIfDeferred` is what catches one that never got a source.
+
+An invalidate and a fork clear the mark after moving an id, because both act on a record the
+library already held rather than inventing one, and an invalidate has already refused every path
+it could not stat.
 
 **A slot id is structural. It joins a consumer to a producer and carries no inputs.** The
 solver folds a multi-sample run into one *unique case*, so a step has one plan instance whatever
@@ -538,7 +570,24 @@ runs that reach a transform through the same chain of transforms mint the same s
 their sample sets, step orders, or unrelated steps differ, and the member key then decides the
 hit from the ids that member actually consumed. That is what lets sample A hit in run 2 when run
 1 computed it beside B and C and run 2 places it beside X and Y through a changed plan. Slot
-identity holds that up. The staged leaf ids beneath it defeat it today, per the caution above.
+identity holds that up, and a given cited from the pool is what finally lets it: the identity
+underneath was assigned once and does not move with the plan around it.
+
+**The pool is authoritative state, and it dies with the agent home.** An imported identity is
+assigned rather than derived, so nothing can rebuild it: re-importing after a loss mints
+identities that match none of the shards keyed on the old ones. Three consequences, and all three
+arrive silently long after the decision that caused them.
+
+Reuse never crosses a campaign boundary. Every shard a campaign writes on top of its imports dies
+when the pool holding them does. And a measurement comparing two batches has to finish inside the
+agent home's retention window, or the comparison is lost rather than degraded.
+
+So **where an agent home lives is the decision this rests on.** A home on scratch that is swept
+sixty days after creation is a legitimate choice for a campaign that starts and finishes inside
+the window, and it is the wrong choice for anything meant to be re-run later.
+`metasmith data import` warns once when the pool it is about to create sits under a path whose
+name says it is swept, and it warns rather than refuses because that placement is the operator's
+call. Nothing recovers a purged pool.
 
 **A database shard outlives a re-solve and dies with the agent home.** A download step consumes
 only its tool environment, so its key is stat-addressed on the env files under
@@ -569,27 +618,77 @@ member takes in a batch. Nothing on the promote or the hit path may branch on th
 extension to decide file from directory: `GetPreferredFileExtension` answers `""` for plenty of
 file types, and a directory type can carry one.
 
-**A task promotes its own members, and the driver records the run afterwards.** After the
-protocol, `promote_members` writes one shard per successful member: the products renamed to
-position `1`, linked on the same filesystem and copied otherwise, and a `manifest.cbor` with each
-file's slot id, dtype, `parents` from that member's `PROV`, and the member's `consumes`. The shard
-is staged as `<key>.<host>.<pid>.tmp` and renamed onto its final name. An existing shard wins. A
-member whose required branch produced nothing mints no shard. The task then writes one
-`.command.cache` record beside `.command.metadata`, one JSON line per member, and never opens
-sqlite. A hit is decided by the probe alone: a manifest, every listed file present, and no
-`tombstone` marker. After Nextflow exits, `record_run` reads every `.command.cache` of the run's
-session and `_metasmith/cache_hits.jsonl`, appends one trace event per member, upserts one sqlite
-row per shard, and copies the producing task's `.command.*` into the shard's `logs/`. Sqlite is
-bookkeeping for `msm cache ls` and `gc`, never the hit authority. Every on-disk name in this
-paragraph is defined once, in `caching/layout.py` and `caching/invocation.py`.
+**One function writes a pool entry, and it has two halves because a promotion is two writes on
+two machines.** `caching/admission.py` is the only code in the tree that resolves a shard, writes
+a manifest or computes a size. `write_shard` runs inside the task, on a cluster node with no
+business opening the driver's sqlite; `index_shard` runs in the driver once Nextflow has exited;
+`admit` is both, for a caller that is one process. A shard is staged as `<key>.<host>.<pid>.tmp`
+and renamed onto its final name, and an existing shard wins — two tasks that reached the same key
+produced the same thing, and the first one there has readers.
 
-**CAUTION** A record names its shard as the container saw it. The task writes `.command.cache`
-inside its own container, where the cache root is `/msm_home/task_cache`, and the driver reads
-that record on the host, where the same directory sits under the agent home. `record_run`
-therefore derives every shard from the member key and treats the recorded path as a fallback.
-It also indexes each record and each hit on its own, because this pass is the sole writer of the
-run's member events and it runs after Nextflow has exited: one unreadable record must cost one
-record, not the run's whole bookkeeping behind a single warning.
+**A shard is always derived from the key and the origin, never from a path a task recorded.** The
+two shard rules are both correct and stay distinct: a product shards under a key that folds
+`CACHE_KEY_VERSION`, because it is re-derivable and an epoch bump may strand it; an import shards
+under `imported/`, outside the epoch, because it may be the user's only copy. Collapsing them
+makes an epoch bump destroy imports. Deriving from the key is what removed a real escape: a task
+writes `.command.cache` inside its own container, where the cache root is `/msm_home/task_cache`,
+and the driver reads that record on the host — so a recorded path stored as `output_root` resolved
+absolute, won the join that read it back, and put collection outside the store.
+
+**After the protocol, `promote_members` writes one shard per successful member** — the products
+renamed to position `1`, and a manifest with each file's slot id, dtype key, dtype *name*,
+`parents` from that member's `PROV`, and the member's `consumes`. A member whose required branch
+produced nothing mints no shard. The task then writes one `.command.cache` record beside
+`.command.metadata`, one JSON line per member. A hit is decided by the probe alone: a manifest,
+every listed file present, and no `tombstone` marker. `record_run` then reads every
+`.command.cache` of the run's session and `_metasmith/cache_hits.jsonl`, appends one trace event
+per member, indexes one sqlite row per shard, and copies the producing task's `.command.*` into
+the shard's `logs/`. Sqlite is bookkeeping for `msm cache list` and `gc`, never the hit authority.
+It indexes each record and each hit on its own, because this pass is the sole writer of the run's
+member events and runs after Nextflow has exited: one unreadable record must cost one record, not
+the run's whole bookkeeping behind a single warning. Every on-disk name here is defined once, in
+`caching/layout.py` and `caching/invocation.py`.
+
+**A pool entry is a data instance, so the store is also the index.** It has a path, a type name,
+an identity and the identities it descends from, which is the whole of what a
+`DataInstanceLibrary` holds — so `caching/projection.py` reads the entries and hands `Unpack` the
+same packed shape `index.yml` uses, and the planner takes the result with no branch added to
+`_as_data_lib`. Masking is `AsView`, so scoping by origin, run, tag or type is a set of paths. The
+type *name* is what makes this possible and is the one field the compiler had in hand and dropped:
+a dtype key is a property-set fingerprint and cannot be read back as a type. A projection is a
+live view, not a portable image — its paths are absolute and `MaterializeImage` drops absolute
+entries — so staging a store to a remote agent is a separate and larger job.
+
+**An import assigns an identity rather than deriving one.** `mint_import_id` folds a nonce, so
+every import act is a separate entry and no two are ever the same. Nothing is stat'd, walked or
+read, which is why importing a folder of six hundred thousand files costs what importing one
+costs — and is the same reason the type carries the trust, since the declaration *is* what
+identifies the data and opening the bytes would answer a question the identity never asked.
+
+This reverses what the pool did first, and the reversal is the point. A derived id answered "what
+is this data" with what the caller spelled, and the caller's spelling is not a property of the
+data: two physically separate files declared the same way collapsed into one entry, and a
+re-declaration of one file could not be said at all. The question the pool can actually observe
+is "which act put this here", so that is the question it answers now. Importing one path twice is
+two entries, which is how a caller says the second declaration is a second thing, and the newest
+claim on a path is the one a reference resolves to.
+
+Two things follow and both are recorded in the manifest, because nothing else holds them once the
+id stops carrying the declaration: the `name`, which is what a later reference matches on, and
+`imported_at` in nanoseconds, because two imports of one path inside one second are ordinary and
+`created_at` cannot order them.
+
+The id deliberately does not fold `CACHE_KEY_VERSION`, and no epoch can reach it: an assigned
+identity is not a derivation, so there is nothing an epoch bump could invalidate.
+`fabfos/refs.py` stays on the derived path through `pinned_import_id`, whose payload is frozen,
+because a DVC pin's md5 genuinely is a content address — there the name *is* the identity, and
+`tests/fabfos/test_refs_pin.py` asserts the literals for that reason.
+
+**Collection removes only what it can get back, and only its own.** `gc` refuses a path outside
+the cache root and says which rows it refused. It leaves imports alone entirely: `msm data forget`
+is the only thing that drops one, and even that removes just the entry and the shard's manifest,
+because the pool never held the bytes. The epoch sweep is scoped to derivation keys for the same
+reason.
 
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.** It
 rotates on compile and is never truncated. A `SessionStart` sentinel leads every fresh file, and
@@ -631,7 +730,9 @@ cache shard.
 member carries `KEY`. They were one constant once, and bumping it for a key-epoch reason desynced
 the emitter and failed every containerized step with a masked exit 1 that no fast test could see.
 `SHARD_LAYOUT_VERSION` tracks the shard's own layout: the manifest shape and the log capture that
-makes a shard's stdout resolve after `rm -rf work/`.
+makes a shard's stdout resolve after `rm -rf work/`. The manifest is written in one place and read
+by version — a pool holds every shape it was ever written with, and a reader that refuses an old
+one turns an upgrade into a cache wipe.
 
 Open weaknesses in this subsystem are tracked in `plans/consolidation-followups.md`.
 
@@ -673,8 +774,9 @@ checkout's own source rather than whatever an ambient `PYTHONPATH` resolves, use
 ## Web GUI
 
 `msm gui` serves a localhost page covering the same run path as the notebook — ssh host, agent,
-inputs, plan, run, results — without writing Python. Transform *authoring* is deliberately
-absent. Frontend source is `src/metasmith/frontend/` (Svelte 5 + Vite); the bundle it emits is
+data, plan, run, results — without writing Python. Transform *authoring* is deliberately absent.
+The Data tab is scoped to an agent because the pool is, and its rail is the agent list itself
+rather than a second list to keep in step. Frontend source is `src/metasmith/frontend/` (Svelte 5 + Vite); the bundle it emits is
 generated by `./dev/metasmith.sh --build-gui`, **never committed**, and node is a build
 dependency deliberately kept out of the conda env. Brand marks are reached through a vite alias
 rather than copied, and ship only because vite emits them into the bundle — an icon referenced by
@@ -734,8 +836,10 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
   into, so it wins whole and says so.
 - **The workflow diagram's `<img src>` carries the plan's generation timestamp**, not just the
   theme: the route serves a file cached beside the bundle, so a url that never changes across a
-  re-solve is one the browser's cache keeps answering from. The cache is keyed on nothing about
-  the *renderer*, so changing how a node is drawn does not invalidate a drawing already on disk.
+  re-solve is one the browser's cache keeps answering from. The only renderer key is
+  `GEOMETRY_VERSION`: a bump rebuilds each stored plan graph and drops its cached drawings on the
+  next read, and stamps the template drawing directory. Change how a node is drawn without a bump
+  and the old drawings stay on disk.
 - **A step's controls sit level with its node, in the drawing's own pixels**, placed at the
   `dag_cy` the server measured off the same geometry `render_svg` is written in terms of. Scaling
   the image, or putting anything between it and the rows box, moves one origin and not the other —
@@ -748,6 +852,23 @@ behaviour are readable in `src/metasmith/gui/` and `src/metasmith/frontend/`.
 - **A type name is split in one place and it cuts where the engine cuts** — at the *first* `::`,
   matching `dag_draw.default_label`. The half the page prints is the *name*: a namespace is shared
   by every type in a library, so it never tells two rows apart.
+- **A section id is spelled in three places**: `SECTIONS`, the per-section key in `app.selected`,
+  and — through `SECTIONS` — what the url hash is validated against. An id added to only the first
+  falls back to the first tab on reload, with nothing to say why.
+- **The page reaches its API by a relative `api/` path.** Routing is hash-only, so the page is
+  always at the root of wherever it is mounted, and a reverse proxy can serve it under a prefix.
+  An absolute `/api` works on localhost and breaks only behind such a proxy.
+- **A tutorial step names its control by a `data-tour` attribute** in the view that draws it.
+  Renaming or removing one breaks nothing visible: the step shows its `waiting` text and never
+  completes. A tab keeps its last selection, so a step that asks for something new compares
+  against a snapshot, never against "something is selected". The snapshot waits until the
+  step's own section is open and `refresh` has marked its list loaded. Taken sooner, as on a
+  reload, it is of an empty list, and everything already there counts as new. Rail rows
+  (`data-rail-id`) and the `tour` prop on `StageProgress` and `JobLog` are anchors in the same way.
+- **A tutorial step's `id` keys the text edits made under `?tourEdit=1`**, so renaming an id
+  orphans its edits without warning. The agent, workflow and run a tutorial made are kept per
+  tutorial id, each recorded when the step that makes it completes. Both live in that browser's
+  local storage only. Nothing on the server ties a workflow to the tutorial that made it.
 
 ## DAG rendering
 
@@ -760,42 +881,79 @@ for raster formats and only as `neato -n2`, which honours our positions and lays
   the only thing keeping them apart. Shorten the id and the three fold into one node — after which
   the layout's cycle-breaker cuts edges to restore acyclicity, silently.
 - **A repeated block is a shape, never a name.** Products are named per instance, so nothing
-  matches as a string; a node's signature is its kind, its **fan-in**, and the sorted multiset of
-  its children's signatures to a bounded depth. Fan-in is in there because without it three
-  unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's block
-  is its descendants minus everything its siblings also reach — *not* its dominator subtree, which
-  loses any node with a second parent.
-- **Supply is emitted where it is consumed, not where it is declared.** A reference database is a
-  root that owns nothing; drawn at either end it holds a rail across every module between and
-  drags its consumers with it.
+  matches as a string; a node's signature is its **fan-in** and the sorted multiset of its
+  children's signatures to a bounded depth. Without fan-in, three unrelated merge steps hash alike.
+  An instance's block is its descendants minus everything its siblings also reach — *not* its
+  dominator subtree, which loses any node with a second parent.
 - **Colour is decoration and the layout must never see it.** Every scheme is a pure function of a
-  finished `Layout`. Two opposite jobs share the word: `lane` and `module` are graph colouring
-  (touching things differ), while `repeat` is the reverse — every instance of a motif in one hue.
-  Only the second makes a repetition visible, and only because the layout already put the
-  instances in the same shape.
+  finished `Layout`. Two opposite jobs share the word: `lane` (by column) and `module` are graph
+  colouring (touching things differ), while `repeat` is the reverse — every instance of a motif in
+  one hue. The scheme keeps the name `lane` because the GUI offers it by that name.
 - **`background=False` renders transparent**, for the GUI's card; node fills are untouched, so
   such a drawing is pixel-exact on a card of the theme's colour and only very close on any other.
+- **A data label's indent is `NodeGeometry.indent`, never folded into `label_x`.** In the label
+  column every node shares one `label_x`, and `DagRail.svelte` takes its gutter from the first
+  node's. Fold the indent in and the GUI's gutter shifts whenever the first row is data.
 
-**Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-congruence, rail rows, lanes, crossings, detours and module contiguity, and `layout` picks
-symmetry ahead of length. Congruence is *modal* — the largest set of instances arranged alike —
-because mean agreement is too coarse to separate row orders. Prefer adding a candidate to tuning a
-constant. Ceilings are pinned in `tests/metasmith/unit/test_dag_stress.py`; a tuning change is free to
-improve one and has to say so out loud to make one worse.
+**The layout is two integers per node, and the drawer decides nothing.** `Layout` holds a row
+order and a column per node. Runs, bars and routes are derived from those, on half-rows: node row
+`r` sits at `2r`, the band above it at `2r − 1`. A node's run holds its column down to the band of
+its last child, and every edge into a node meets one bar in that band, so a route has at most one
+horizontal leg. A leaf's run ends at `2r + 1`, half-open. End it anywhere later and the next row
+cannot reuse the column. The drawer draws every turn as an arc, so an arc is a connection and a
+straight line through a junction is a crossing.
 
-Four things were measured and **rejected**, and the numbers are why they stay rejected: optimal
-Sugiyama layer assignment as a row sort (ranks are right, but many nodes share one, so the branch
-walk's grouping is lost and the drawing costs half again as much rail); sift-based local search on
-that objective (lowers the cost, scatters every cluster to do it); marker-to-label distance as a
-selection term (~11% more crossings across a 300-graph corpus, buys nothing on the metagenomics
-plan); and detour as anything but the last tie-break (crossings cannot see one, and most detours
-are forced). The first two are the general lesson: the objective is a proxy, and it stops agreeing
-with the picture close to its optimum. The last two are kept as *measurements* so either case can
-be re-argued in numbers.
+**The SVG draws each stretch of line once.** Every child of a node runs down the same column, and
+every parent of a node shares its bar, so edges retrace each other. An antialiased stroke drawn
+twice darkens its own edge and reads thicker at some zooms. `_strokes` cuts every straight piece
+where another touches it, keeps one piece per stretch, and rejoins the pieces into paths with butt
+caps. `Geometry` still carries one path per edge, because the GUI highlights edges one at a time.
+
+**The row order is a solve for minimum total edge length over blocks.** `DagRenderer` passes one
+block per step: the step and each node whose only producer is that step. A block takes consecutive
+rows, head first. Total length is the sum over nodes of in-degree minus out-degree times row, so
+the order inside a block is fixed before the search (rearrangement inequality). `_solve_component`
+then runs a beam DP over placed sets, one move per block, and `optimal` is true only when no layer
+was truncated. Repeated blocks then take one internal order: length outranks congruence.
+
+**CAUTION** Blocks raise the minimum length, by about 7% on a large metagenomics plan over the
+unconstrained order. That is the price of keeping outputs under their step, not a solver
+regression.
+
+**The columns are solved in stages: fewest columns, then fewest crossings, then least horizontal
+travel, with no bends.** A crossing is a live run strictly inside a bar's span other than its
+target, including a parent whose run continues below the bar, since the drawing shows it as a
+four-way junction. The rule against bends is hard: a node that ends a parent's run takes the column
+of one such parent. It never costs width, and can cost a crossing that one more column would win
+back, but width outranks crossings. `_columns` is the storyline sweep of Kostitsyna and Nöllenburg
+(GD 2015), fixed-parameter in the width, under a beam. `optimal_columns` is true only when no layer
+was cut. An unproven result is polished by `_improve`, which moves a run together with every run
+stacked straight below it, or the move would open a bend.
+
+Two things were considered and **rejected**:
+
+- **The storyline ILP of Gronemann et al. (GD 2016)**, solved with HiGHS. It still held 285
+  crossings on a long plan after 60 s, where the sweep reaches about 40 in under a second.
+- **A Sidney decomposition of the row order.** It cannot split a component: in an order-closed
+  set, in-degree minus out-degree sums to minus the edges leaving it, never above zero, so the
+  whole component is one block.
+
+A 100-node graph takes about 0.8 s, and the 1 s budget is pinned in `tests/metasmith/perf/`. Past
+that the result degrades to best-effort rather than failing. Ceilings are pinned in
+`tests/metasmith/unit/test_dag_stress.py`, and a solver change may move them either way.
+
+**A blacklist cuts, and `DagMode.STEPS` bypasses.** `DagRenderer(blacklist=...)` deletes every
+node whose type `IsA` one of the given types, with its edges, and wires nothing around it.
+`DagMode.STEPS` drops every data node and wires each step to the steps its data fed. Pass a generic
+type to cut a whole family.
 
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a declared
 dependency like any other, so without it every plan DAG grows an `env::*` node per step. Three
 defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
+
+**CAUTION** The namespace default catches only the standard library's environments. A library
+that declares environments in its own namespace reaches the drawing unless the caller blacklists
+its generic environment type.
 
 ## Versioning
 

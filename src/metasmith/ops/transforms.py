@@ -146,11 +146,7 @@ def scaffold_transform(
 
     group_var = var_names[group_by]
     if env_type:
-        protocol_body = (
-            'context.ExecWithEnv() \\\n'
-            '        .ifContainerDo(env=image, cmd="TODO") \\\n'
-            '        .ifVirtualEnvDo(env=image, cmd="TODO")'
-        )
+        protocol_body = 'context.ExecWithEnv(env=image, cmd="TODO")'
     else:
         protocol_body = 'context.external_shell.Exec("TODO")'
     manifest_entries = ",\n                ".join(
@@ -197,30 +193,24 @@ def check_env_declarations(source: str, filename: str = "<transform>") -> dict:
     for name, lineno in scan.forbidden:
         errors.append(
             f"line {lineno}: [{name}] is not a tool-launch entry point; "
-            f"declare the run with ExecWithEnv().ifContainerDo(...)/.ifVirtualEnvDo(...)"
+            f"declare the run with ExecWithEnv(env=..., cmd=...) and let the "
+            f"agent's runtime decide how it is launched"
         )
-    for chain in scan.empty_chains():
+    for run in scan.incomplete():
+        missing = [k for k, present in (("env", run.has_env), ("cmd", run.has_cmd)) if not present]
         errors.append(
-            f"line {chain.lineno}: ExecWithEnv() declares no arm, so it can never run anything"
+            f"line {run.lineno}: ExecWithEnv is missing {'/'.join(missing)}, "
+            f"so it can never run anything"
         )
-    for chain in scan.chains:
-        if len(set(chain.arms)) != len(chain.arms):
-            errors.append(f"line {chain.lineno}: repeated arm in one chain {chain.arms}")
-        if chain.duplicate_command:
-            warnings.append(
-                f"line {chain.lineno}: both arms carry byte-identical commands; "
-                f"the split is carrying no information here"
-            )
     for lineno in scan.host_shell_calls:
         warnings.append(
             f"line {lineno}: external_shell.Exec runs on the host shell, not in a "
-            f"tool environment, and does not go through the arms"
+            f"tool environment"
         )
 
     return {
-        "arms": scan.arms,
-        "chains": [
-            {"line": c.lineno, "arms": c.arms, "envs": c.envs} for c in scan.chains
+        "runs": [
+            {"line": r.lineno, "env": r.env} for r in scan.runs
         ],
         "errors": errors,
         "warnings": warnings,

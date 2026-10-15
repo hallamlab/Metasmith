@@ -41,6 +41,14 @@ Two invariants the build enforces, both by failing:
 and one it enforces by solving: a transform whose products change shape takes its
 templates down here, by name, rather than in someone's GUI a week later.
 
+**A library's target vocabulary is its declared types plus their ancestors.** A target
+names a type, and a type is nameable only if some loaded transform library carries it.
+`_metadata/types/` therefore keeps every type a transform declares *and* every type those
+declarations satisfy -- `sequences::reads` survives in `logistics` because `long_reads`
+extends it, though nothing there names `reads` outright. Load the library that produces
+the thing you are asking for and the ancestor is nameable; the failure otherwise reads
+`no transform library declares [ns::type]`.
+
 ## Environments
 
 `resources/env/<tool>.env` declares a tool's environment generically: an optional
@@ -55,8 +63,18 @@ engine picks by the global runtime. To add one:
    automatically and leaves its `HAND_WRITTEN` set alone
 4. rebuild; `dev/libraries.sh --create-envs` materialises the conda envs to test against
 
+**`provides` is a MATCHED PROPERTY SET, not documentation.** An env satisfies a requirement
+when the requirement's properties are a subset of the instance's, so listing one more tool
+makes that env a property-superset of every env offering a subset -- and each of their
+requirements becomes satisfiable by it too. Adding `py/polars` to `python_for_data_science`,
+which is TRUE of the 1.4.0 image, made it subsume `polars.env` and moved five of the eleven
+shipped template plans. List what an environment OFFERS, not what its image happens to
+contain, and re-solve the templates after touching a `provides` line.
+
 **Pin by digest and say what the digest is.** A tag is not stable and a digest is not
-readable, so a bare digest with no comment is a pin nobody can audit. This is not
+readable, so a bare digest with no comment is a pin nobody can audit. A tag can also stop
+resolving outright: `stringtie` was pinned to `2.2.3--h43eeafb_1`, which quay no longer
+serves at all, and the pull fails rather than fetching something else. This is not
 hypothetical: `python_for_data_science` was once pinned to a digest that resolved to
 an *older* image than its version number suggested and carried no polars at all —
 80 tasks in one run died on `ModuleNotFoundError` after their expensive work had
@@ -69,9 +87,9 @@ by what the interpreter has — the same module is imported outside any containe
 pyarrow is what exists. `pd.read_parquet` and `DataFrame.to_parquet` are pyarrow front
 ends and fail there, at module import, after the expensive lanes have already succeeded.
 
-`ExecWithContainer` is retired; the engine rejects it statically. Use
-`context.ExecWithEnv().ifContainerDo(env=, cmd=)`, and add `.ifVirtualEnvDo(env=, cmd=)`
-only for a conda arm you have actually run. See `docs/metasmith_libraries/ENV_PORT.md`.
+`ExecWithContainer` and the two `if*Do` arms are retired; the engine rejects all three
+statically. One call launches a tool — `context.ExecWithEnv(env=, cmd=)` — and the agent's
+runtime decides how. See `docs/metasmith_libraries/ENV_PORT.md`.
 
 ## Two rules that fail quietly
 
@@ -162,9 +180,12 @@ ships in the wheel and nothing in that namespace runs during a pipeline.
 ## Drivers
 
 Template authors live here in the package. Everything under
-`research/metasmith_libraries/` runs against a real cluster, and
-`probe_planner.py` is the plan-only one — solve a target set and print which transforms
-were picked, nothing opened. It is the tool for "why did the planner add that step".
+`research/metasmith_libraries/` runs against a real cluster, except the probes, which solve
+and open nothing. `probe_ambiguity.py` takes library names and lists every requirement with
+more than one producer — the first question to ask of a solve that suddenly costs minutes.
+**CAUTION** `probe_planner.py` is not the generic "why did the planner add that step" tool
+its name suggests: it is bound to the deep-learning embedding target set through
+`_dl_embeddings`. Copy `probe_kbase_parity.py` for a new target set.
 
 - **Public-repo-safe config.** No hardcoded absolute paths, allocations, usernames or DB
   paths. Site-specific values come from env vars with `<placeholder>` defaults (`MSM_SRC`,
@@ -172,10 +193,23 @@ were picked, nothing opened. It is the tool for "why did the planner add that st
   `require_configured()` and exit if a placeholder is unfilled.
 - **A `sample_type` masks the library down to that row's lineage.** Anything with no lineage
   relation to it — a weight tarball, a reference DB — becomes invisible to the plan and comes
-  back as a `download*` step. Either leave the sample type unset or list the entry in
-  `shared_input_paths`.
+  back as a `download*` step. Leave the sample type unset, list the entry in
+  `shared_input_paths`, or parent the entry to the sample row. Reach for the last when the
+  reference has no producer at all — `ref::mnxr_lookup` and `ref::label_transfer_landmarks`
+  are consumed by `gpr_4lane` and produced by nothing, so there is no `download*` step to
+  fall back to and an invisible one takes the whole plan down.
 - To force all sibling transforms (e.g. all three binners), target a downstream that requires
   them all (`binning_local::cluster_table`), or give each sibling's target a distinct parent.
+  `cluster_table` reaches `aggregator`, which requires checkm and gtdbtk once per binner under
+  distinct parents. That one target therefore plans three binners, three CheckM runs and three
+  GTDB-Tk runs, and adds `downloadGtdbDB` and its ~179 GB reference when no `ref::gtdb` is given.
+  An *unpinned* `taxonomy::gtdbtk` target is the trap it replaces: it binds to whichever single bin
+  type the search reaches first, and under an ambiguous `sequences::assembly` that is a second
+  assembler leg the aggregator never sees.
+- **The aggregator's own output cannot be scored.** `binning_local::quality_bin_fasta` carries no
+  `genome_scope`, so it does not satisfy `sequences::putative_genome`. CheckM and GTDB-Tk therefore
+  never run on the pooled quality MAGs, only on each binner's raw bins. `skani_dedup` is the sole
+  consumer of that type.
 
 ## Layout
 
@@ -184,3 +218,20 @@ hand-edited, never committed. The hand-edited surface is `data_types/`, the
 `resources/*/` instance files, and the transform `.py` files themselves.
 `transforms/_template.py` is the minimal skeleton. Disabled transforms live in
 `transforms/*/_disabled/` or are renamed `<name>.py.disabled` so the build skips them.
+
+**`transforms/kbase/` is the one group whose every body has been executed.** Curation round 5
+ran twenty of its twenty-one against real fixtures on one host and recorded what was checked
+in each product; `build_tree/gtdbtk_tree.py` is the exception, and its body says so. That is
+worth knowing when you change something they share, because it is also the only group where
+"did it still run?" is a question the repository can answer.
+`research/kbase/curation/r5/runs.md` is that record; `transforms/kbase/README.md` says the rest.
+
+**`transforms/aspire/` is generated from one table.** `transforms/aspire/_generate.py` holds one
+row per transform and writes both `data_types/aspire.yml` and every stub transform. Edit the row,
+regenerate, then run `dev/libraries.sh -bm`, then `_generate.py --lint`. The generator rewrites
+only files that begin with its banner. A file without the banner is a real body and is never
+touched, so a row edit must be mirrored in that body by hand. **CAUTION** delete the banner line
+when you write a real body, or the next regenerate replaces it with a stub. `--lint` fails until
+each real body's requirements, products and grouping match its row. Dropping a transform means
+dropping its types from the same table, because `aspire.yml` is rewritten from the table
+wholesale.

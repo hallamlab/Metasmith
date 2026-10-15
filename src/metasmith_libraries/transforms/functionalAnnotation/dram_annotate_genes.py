@@ -29,7 +29,7 @@ annotate_called_genes(
 )
 DRAMPY""")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
         cmd=f"""

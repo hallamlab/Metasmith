@@ -11,8 +11,15 @@ from metasmith.python_api import (
 )
 
 DOMAINS = [
+    # Every library root under transforms/ except `fabfos`, which predates this list
+    # and is still missing from it. A root absent here is silently skipped by the
+    # per-transform structural checks AND by the GetType resolution sweep in section 5 --
+    # which is the check that catches a typo'd type name.
+    "amplicon",
+    "aspire",
     "assembly",
     "functionalAnnotation",
+    "kbase",
     "logistics",
     "metabolicModelling",
     "metagenomics",

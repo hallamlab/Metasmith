@@ -11,7 +11,7 @@ BACMET_URL = "http://bacmet.biomedicine.gu.se/download/BacMet2_predicted_databas
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             wget -q --no-check-certificate {BACMET_URL} -O bacmet.fasta.gz

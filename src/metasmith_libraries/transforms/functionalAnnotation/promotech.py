@@ -22,7 +22,7 @@ def protocol(context: ExecutionContext):
     chunks_dir  = "/ws/pt_chunks"
     results_dir = "/ws/pt_results"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             python {iextract.container} \
@@ -34,7 +34,7 @@ def protocol(context: ExecutionContext):
     )
 
     cpus = context.params.get("cpus", 4)
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             cd /opt/promotech &&
@@ -54,7 +54,7 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             python {imerge.container} \

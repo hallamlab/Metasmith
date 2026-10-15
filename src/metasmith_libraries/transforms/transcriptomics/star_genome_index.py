@@ -17,9 +17,7 @@ def protocol(context: ExecutionContext):
                 --genomeFastaFiles {iasm.container} \
                 --runThreadN {threads}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"mv star_idx {iout.local}")
     return ExecutionResult(
         manifest=[

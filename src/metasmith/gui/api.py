@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import threading
+import uuid
 from dataclasses import replace
 from fnmatch import fnmatch
 from pathlib import Path
@@ -18,6 +19,7 @@ from ..models.dag_renderer import THEMES
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
+from ..ops import cache as op_cache
 from ..ops import data as op_data
 from ..ops import runtime as op_runtime
 from ..ops import inputs as op_inputs
@@ -693,7 +695,7 @@ def _template_version(p, name: str, source: str) -> str | None:
 
 
 def _template_dag_path(p, name: str, version: str | None, theme: str) -> Path:
-    stamp = (version or "unversioned")[:12]
+    stamp = f"{(version or 'unversioned')[:12]}-g{op_workflow.GEOMETRY_VERSION}"
     return p.cache_dir / "template_dags" / stamp / f"{name}.{theme}.svg"
 
 
@@ -854,6 +856,11 @@ def get_workflow(name):
         or (wf.result.get("plan_graph") or {}).get("v") != op_workflow.GEOMETRY_VERSION
     ):
         display, plan_graph = _step_display(wf.path, p.root)
+        if plan_graph:
+            # the drawings cached beside the bundle were laid out by the same
+            # renderer as the geometry just replaced
+            for stale in _dag_cache_names():
+                (wf.path / stale).unlink(missing_ok=True)
         if display:
             wf = p.write_result(name, wf.result | {
                 "step_display": display, "plan_graph": plan_graph,
@@ -1062,6 +1069,32 @@ def _given_summary(lib_path: str) -> list[dict]:
     ]
 
 
+def _pool_resolver(project):
+    """Answer a pool row by asking the named agent what it holds.
+
+    One read per agent, cached for the length of a sync: a plan with fifty
+    samples cites fifty entries out of one pool, and asking fifty times over
+    ssh would cost fifty round trips to answer one question.
+    """
+    seen: dict[str, list] = {}
+
+    def resolve(agent: str, ref: str) -> dict:
+        if agent not in seen:
+            if not project.agent_exists(agent):
+                raise ProjectError(
+                    f"[{ref}] cites the pool of an agent named [{agent}], and "
+                    f"there is no such agent here"
+                )
+            seen[agent] = op_agent.read_pool(
+                str(project.agent_path(agent))
+            )["entries"]
+        return op_agent.resolve_pool_refs(
+            str(project.agent_path(agent)), [ref], entries=seen[agent],
+        )[0]
+
+    return resolve
+
+
 @bp.post("/workflows/<name>/generate")
 def generate_workflow(name):
     p = _project()
@@ -1093,7 +1126,9 @@ def generate_workflow(name):
         with LogCapture(job):
             job.emit("PHASE:syncing")
 
-            synced = op_inputs.sync(lib_path, rows, table)
+            synced = op_inputs.sync(
+                lib_path, rows, table, resolve_pool=_pool_resolver(p),
+            )
 
             registered = synced["rows"]
             generated = synced["generated"]
@@ -1260,10 +1295,20 @@ def workflow_dag(name):
         raise ProjectError(f"workflow [{name}] has no successful plan to draw")
     theme, background = _theme_arg(), _background_arg()
     svg = wf.path / _dag_cache_name(theme, background)
-    if not svg.is_file():
-        task = _load_task(wf.path)
-        task.plan.RenderDAG(str(svg), theme=theme, background=background)
-    return Response(svg.read_text(), mimetype="image/svg+xml")
+    try:
+        return Response(svg.read_text(), mimetype="image/svg+xml")
+    except FileNotFoundError:
+        pass
+    # drawn beside the cache and moved in whole: get_workflow may drop the cache
+    # at any moment, and a reader must never see a half-written file
+    tmp = svg.with_name(f".{uuid.uuid4().hex}.{svg.name}")
+    try:
+        _load_task(wf.path).plan.RenderDAG(str(tmp), theme=theme, background=background)
+        body = tmp.read_text()
+        os.replace(tmp, svg)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return Response(body, mimetype="image/svg+xml")
 
 
 @bp.post("/dag/layout")
@@ -1999,6 +2044,86 @@ def agent_presets(name):
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
     return jsonify(op_runtime.list_presets(str(p.agent_path(name))))
+
+
+# -- an agent's store ------------------------------------------------------
+#
+# The pool lives at an agent's home, so the tab is scoped to an agent the same
+# way. Every route here hands straight to `ops/`: the tab is a view of the
+# backend, and there is nothing it can do that the CLI cannot.
+
+
+def _agent_store_home(name: str) -> str:
+    p = _project()
+    if not p.agent_exists(name):
+        raise ProjectError(f"no agent named [{name}]")
+    path = p.agent_path(name)
+    if not Path(path).is_file():
+        raise ProjectError(f"no agent named [{name}]")
+    return str(path)
+
+
+# Every store verb goes through the agent, so a home on another host is read
+# and written where it sits rather than refused. The agent runs its own
+# metasmith over one ssh command; nothing is fetched and no path in the answer
+# means anything on this machine.
+@bp.get("/agents/<name>/store")
+def agent_store(name):
+    q = request.args
+    out = op_agent.read_pool(
+        _agent_store_home(name),
+        origin=q.get("origin") or None,
+        tag=q.get("tag") or None,
+        dtype=q.get("dtype") or None,
+        name=q.get("name") or None,
+        refs=[r for r in q.getlist("ref") if r] or None,
+    )
+    rows = out.get("entries") or []
+    if q.get("run"):
+        rows = [r for r in rows if r.get("run") == q.get("run")]
+    sort_by = q.get("sort_by") or "created_at"
+    descending = q.get("order", "desc") != "asc"
+    if rows and sort_by in rows[0]:
+        rows.sort(key=lambda r: r.get(sort_by) or 0, reverse=descending)
+    out["entries"] = rows
+    group_by = q.get("group_by") or None
+    if group_by:
+        out["group_by"] = group_by
+        out["groups"] = op_cache._group(rows, group_by)
+    return jsonify(out)
+
+
+@bp.post("/agents/<name>/store/import")
+def agent_store_import(name):
+    b = _body()
+    path = (b.get("path") or "").strip()
+    dtype = (b.get("dtype") or "").strip()
+    assert path, "a path is required"
+    assert dtype, "a type is required -- the declaration is what identifies it"
+    return jsonify(op_agent.import_to_pool(
+        _agent_store_home(name), path, dtype,
+        name=(b.get("name") or None),
+        parents=(b.get("parents") or None),
+        tags=(b.get("tags") or None),
+    ))
+
+
+@bp.post("/agents/<name>/store/entries/<key>/tags")
+def agent_store_tags(name, key):
+    b = _body()
+    return jsonify(op_agent.tag_pool_entry(
+        _agent_store_home(name), key, list(b.get("tags") or []),
+        replace=bool(b.get("replace")),
+        remove=bool(b.get("remove")),
+    ))
+
+
+@bp.delete("/agents/<name>/store/entries/<key>")
+def agent_store_forget(name, key):
+    return jsonify(op_agent.forget_pool_entry(
+        _agent_store_home(name), key,
+        delete=request.args.get("delete") == "1",
+    ))
 
 
 @bp.post("/share/export")

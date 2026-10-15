@@ -51,9 +51,7 @@ def protocol(context: ExecutionContext):
                 export PATH=/opt/conda/envs/external_checkm2_env/bin:/opt/conda/bin:$PATH
                 prodigal -i {fa} -a {target} -o /dev/null -p meta -q || true
             """
-        context.ExecWithEnv() \
-            .ifContainerDo(env=image, cmd=_cmd) \
-            .ifVirtualEnvDo(env=image, cmd=_cmd)
+        context.ExecWithEnv(env=image, cmd=_cmd)
         if not target.exists() or target.stat().st_size == 0:
             failed_prodigal.append(fa.stem)
             Log.Info(f"prodigal produced no FAA for [{fa.stem}] (likely v1.1.0 heap abort)")
@@ -66,9 +64,7 @@ def protocol(context: ExecutionContext):
                 export PATH=/opt/conda/envs/external_checkm2_env/bin:/opt/conda/bin:$PATH
                 checkm2 predict {threads_arg} --genes -x faa --input ./faa --output-directory ./{out_dir} || true
             """
-        context.ExecWithEnv() \
-            .ifContainerDo(env=image, cmd=_cmd) \
-            .ifVirtualEnvDo(env=image, cmd=_cmd)
+        context.ExecWithEnv(env=image, cmd=_cmd)
     else:
         Log.Info("all bins failed prodigal; skipping checkm2 predict")
 

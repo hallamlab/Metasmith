@@ -27,7 +27,7 @@ def protocol(context: ExecutionContext):
     ext = iasm.container.suffix.replace(".", "")
     temp_ws = "checkm_ws"
     qa_file = "checkm_qa.tsv"
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env = image,
         cmd = f"""
             export PATH=/opt/conda/bin:/opt/conda/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

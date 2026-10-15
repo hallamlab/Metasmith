@@ -7,7 +7,11 @@ img_brk = model.AddRequirement(lib.GetType("env::bracken.env"))
 img_bb  = model.AddRequirement(lib.GetType("env::bbtools.env"))
 img_pq  = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 db      = model.AddRequirement(lib.GetType("ref::kraken2_db"))
-reads   = model.AddRequirement(lib.GetType("sequences::short_reads"))
+# Required and never read: this is how the sample's name enters the lineage of the
+# four reports, so a later step that pools them can ask which sample each came from.
+# `logistics/getNcbiAssembly.py` does the same with `ncbi::genome_name`.
+name    = model.AddRequirement(lib.GetType("sequences::sample_name"))
+reads   = model.AddRequirement(lib.GetType("sequences::short_reads"), parents={name})
 
 classif = model.AddProduct(lib.GetType("taxonomy::kraken2_classifications"))
 kreport = model.AddProduct(lib.GetType("taxonomy::kraken2_report"))
@@ -25,7 +29,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--threads {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_bb,
         cmd=f"""
             reformat.sh in={ireads.container} \
@@ -33,7 +37,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_k2,
         cmd=f"""
             kraken2 --paired --db {idb.container} {threads_arg} \
@@ -43,7 +47,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_brk,
         cmd=f"""
             bracken -d {idb.container} \
@@ -54,7 +58,7 @@ def protocol(context: ExecutionContext):
         """
     )
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=img_pq,
         cmd=f"""
             python <<'PY'

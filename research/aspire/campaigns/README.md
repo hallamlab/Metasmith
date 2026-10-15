@@ -1,11 +1,12 @@
 # ASPIRE campaigns
 
-Real runs of this pipeline family on HPC. One so far.
+Real runs of this pipeline family on HPC.
 
 | | |
 |---|---|
 | `r1/` | GMCF_3495 — 34 lung metagenomes on the Alliance cluster **fir**: assembly, binning, functional annotation, taxonomy. Complete; published and mirrored. |
-| `JOURNAL.md` | the ten session debriefs from the run, carried out of the project that held them |
+| `cyano_r1/` | PRJNA801777 — 18 V4 16S libraries from cyanobacteria cultures on **sockeye**: the ASPIRE port's reads-to-counts lane and its first three analyses. Green; see its `README.md`. |
+| `JOURNAL.md` | `r1`'s ten session debriefs, carried out of the project that held them |
 
 ## Where this came from
 

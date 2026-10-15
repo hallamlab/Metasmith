@@ -33,6 +33,8 @@ const FALLBACK = {
     },
   },
 }
+// an input drawn without a `given` step is an end of the plan, inked as a target
+FALLBACK.styles.given = FALLBACK.styles.target
 
 const themes = $state({ light: FALLBACK, dark: FALLBACK })
 

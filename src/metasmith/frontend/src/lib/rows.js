@@ -35,7 +35,13 @@ export function entries(d) {
 // never in here -- a key names the field in the object the row writes and is
 // literal in both states.
 export const boundColumns = (d) =>
-  d?.mode === 'value' ? entries(d).map((e) => e.column) : [String(d?.column ?? '')]
+  d?.mode === 'value'
+    ? entries(d).map((e) => e.column)
+    // A pool row binds no column: what it names is an entry in a pool, and a
+    // sheet expands rows over paths rather than over identities.
+    : d?.mode === 'pool'
+      ? []
+      : [String(d?.column ?? '')]
 
 // Whether this row would register anything under a sheet. A field bound to
 // nothing is a blank in the recipe, not a constant -- see `ops.samples`.
@@ -59,7 +65,7 @@ export function normalize(list, mint) {
     .filter((d) => d && typeof d === 'object')
     .map((d) => ({
       id: String(d.id ?? mint()),
-      mode: d.mode === 'value' ? 'value' : 'file',
+      mode: ['value', 'pool'].includes(d.mode) ? d.mode : 'file',
       path: d.path ?? '',
       // A file row's half of the sheet binding -- the same field a value row's
       // entries each carry, and one `column_of` reads both on the server.
@@ -80,6 +86,11 @@ export function normalize(list, mint) {
       // library moves when it does.
       values: entries(d),
       dtype: d.dtype ?? '',
+      // A pool row's two fields: whose pool, and the name the import recorded.
+      // Carried on every row so the shape stays one shape, which is what the
+      // recipe fingerprint depends on.
+      agent: d.agent ?? '',
+      ref: d.ref ?? '',
       parents: [...(d.parents ?? [])],
     }))
 }

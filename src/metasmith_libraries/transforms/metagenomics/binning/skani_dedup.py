@@ -53,9 +53,7 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 8)
     ani_tsv = "skani_ani.tsv"
     _cmd = f"skani triangle -l {bins_list} --sparse -o {ani_tsv} -t {threads}"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     ani_map: dict[tuple[str, str], float] = {}
     with open(ani_tsv) as f:

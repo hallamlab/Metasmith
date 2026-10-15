@@ -1,0 +1,82 @@
+#!/usr/bin/env -S python3
+"""score -- build the engine, gate it, measure it, log it. The only command a worker needs."""
+import argparse, json, os, sys, time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import harness as H
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--puct", default=None, help="value for MSM_SOLVER_PUCT, e.g. c_puct=1.5,fpu=0.5")
+ap.add_argument("--set", default="fast", choices=["fast", "full"])
+ap.add_argument("--quiet", action="store_true")
+a = ap.parse_args()
+
+root = H.worktree()
+worker = H.worker_name(root)
+scratch = H.SCRATCH / "scratch" / worker
+scratch.mkdir(parents=True, exist_ok=True)
+
+t0 = time.monotonic()
+binary, build_s = H.build(root, H.SCRATCH / f"target-{worker}")
+print(f"build   {build_s:.1f}s")
+
+base = json.loads((H.RESULTS / "baseline.json").read_text())["rows"]
+head_f = H.RESULTS / "head.json"
+head = json.loads(head_f.read_text())["rows"] if head_f.exists() else None
+
+why = H.witness_unchanged(root)
+if why:
+    print(f"\nGATE 1 FAILED (the adjudicator moved): {why}")
+    sys.exit(1)
+print("gate 1  ok   witness crates byte-identical to what the proof was run against")
+
+cand_rows = H.run_set(binary, a.set, None, a.puct,
+                      scratch / "cand.json", scratch / "cand-replies")
+
+# Before the witness: a crashed run has no plans to adjudicate, and reporting
+# "accepted all 0 plans" ahead of the real cause reads as a pass.
+crashed = [k for k, v in cand_rows.items() if v["rc"] not in (0,)]
+if crashed:
+    print(f"\nENGINE ERROR on {len(crashed)}/{len(cand_rows)} payloads")
+    for k in crashed[:3]:
+        print(f"  {k}: {(cand_rows[k].get('err') or '').strip()[:300]}")
+    sys.exit(1)
+
+bad2 = H.gate_witness(cand_rows, scratch / "cand-replies", a.set)
+if bad2:
+    print(f"\nGATE 2 FAILED (witness rejected {len(bad2)} plans)")
+    for n, why in bad2[:8]:
+        print(f"  {n}: {why}")
+    sys.exit(1)
+n_ok = sum(1 for v in cand_rows.values() if v.get("complete"))
+print(f"gate 2  ok   witness accepted all {n_ok} complete plans")
+
+print()
+print(H.table(cand_rows, base, head))
+ref = head if head else base
+mv, n = H.movers(cand_rows, ref)
+print(f"\nmoved vs {'head' if head else 'baseline'}: {n} payloads")
+if mv:
+    print(mv)
+
+cs = H.summarise(cand_rows, base)
+bs = H.summarise(base, base)
+v_base = H.verdict(cs, bs)
+v_head = None
+if head:
+    v_head = H.verdict(H.summarise(cand_rows, head), H.summarise(head, head))
+total = time.monotonic() - t0
+print(f"\nscore   {total:.1f}s   verdict {v_base} vs baseline"
+      + (f", {v_head} vs head" if v_head else ""))
+
+H.log_append(worker, {
+    "ts": time.strftime("%H:%M:%S"), "worker": worker, "kind": "score",
+    "puct": a.puct, "set": a.set,
+    "solved": cs["solved"], "total": cs["total"], "steps": cs["steps"], "iters": cs["iters"],
+    "verdict_base": v_base, "verdict_head": v_head, "moved": n, "seconds": round(total, 1),
+    "md": f"- `{time.strftime('%H:%M:%S')}` **{worker}** score"
+          f"{' `'+a.puct+'`' if a.puct else ''} -> solved {cs['solved']}/{cs['total']}, "
+          f"steps {cs['steps']}, iters {cs['iters']}, moved {n} — **{v_base}** vs baseline"
+          + (f", **{v_head}** vs head" if v_head else "") + "\n",
+})

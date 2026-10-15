@@ -88,12 +88,19 @@ def _bounce_text(tmp_path: Path) -> str:
     return scripts[0].read_text()
 
 
-def test_container_arm_issues_run_command(tmp_path, _bounce_ready):
+# --------------------------------------------------------- one call, either runtime
+#
+# The body says what to run and in what environment. Everything below is the engine
+# deciding how, from the same call: which key of the env resource to read, whether
+# there is a mount namespace to bind into, and what launches the shell.
+
+
+def test_container_runtime_issues_a_run_command(tmp_path, _bounce_ready):
     image_dep = _dep("image")
     ctx = _build_context(tmp_path, Runtime.DOCKER, image_dep)
     shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
 
-    ctx.ExecWithEnv().ifContainerDo(env=image_dep, cmd="echo hello")
+    ctx.ExecWithEnv(env=image_dep, cmd="echo hello")
 
     assert len(shell.calls) == 1
     run_cmd = shell.calls[0]
@@ -109,91 +116,43 @@ def test_container_arm_issues_run_command(tmp_path, _bounce_ready):
     assert run_cmd.startswith("docker run ")
 
 
-def test_container_runtime_runs_only_the_container_arm(tmp_path, _bounce_ready):
-    image_dep = _dep("image")
-    ctx = _build_context(tmp_path, Runtime.DOCKER, image_dep)
-    shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
-
-    chain = ctx.ExecWithEnv() \
-        .ifContainerDo(env=image_dep, cmd="echo container") \
-        .ifVirtualEnvDo(env=image_dep, cmd="echo venv")
-
-    assert chain.matched == "ifContainerDo"
-    assert chain.declared == ["ifContainerDo", "ifVirtualEnvDo"]
-    assert len(shell.calls) == 1
-    assert "echo venv" not in _bounce_text(tmp_path)
-    assert ctx.UnmatchedEnvDispatches() == []
-
-
-def test_mamba_runtime_runs_only_the_virtual_env_arm(tmp_path, _bounce_ready):
+def test_the_same_call_runs_under_mamba_without_a_container(tmp_path, _bounce_ready):
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
     shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
 
-    chain = ctx.ExecWithEnv() \
-        .ifContainerDo(env=env_dep, cmd="echo container", binds=[("/db", "/db")]) \
-        .ifVirtualEnvDo(env=env_dep, cmd="echo venv")
+    ctx.ExecWithEnv(env=env_dep, cmd="echo hello")
 
-    assert chain.matched == "ifVirtualEnvDo"
     assert len(shell.calls) == 1
     assert shell.calls[0].startswith("mamba run -n toolenv bash ")
-    assert "echo venv" in _bounce_text(tmp_path)
-    assert ctx.UnmatchedEnvDispatches() == []
+    assert "echo hello" in _bounce_text(tmp_path)
 
 
-def test_arm_order_does_not_change_which_arm_runs(tmp_path, _bounce_ready):
+def test_the_runtime_picks_which_key_of_the_env_resource_is_read(tmp_path, _bounce_ready):
+    # `tool.env` carries both; MAMBA reads `conda:` and a container runtime reads
+    # `container:`. The body names neither.
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
-    chain = ctx.ExecWithEnv() \
-        .ifVirtualEnvDo(env=env_dep, cmd="echo venv") \
-        .ifContainerDo(env=env_dep, cmd="echo container")
-    assert chain.matched == "ifVirtualEnvDo"
-    assert chain.declared == ["ifVirtualEnvDo", "ifContainerDo"]
+    assert ctx.GetContainerModel(env_dep).image == "toolenv"
+
+    ctx._environment = Runtime.DOCKER
+    ctx.__post_init__()
+    assert ctx.GetContainerModel(env_dep).image == "docker://example/tool:1"
 
 
-def test_container_only_chain_on_mamba_is_reported_unmatched(tmp_path, _bounce_ready):
+def test_binds_are_refused_where_there_is_no_boundary_to_cross(tmp_path, _bounce_ready):
+    # The honest refusal: a mount is meaningless without a mount namespace, and
+    # silently dropping it would run the command against paths that are not there.
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
-    shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
-
-    chain = ctx.ExecWithEnv().ifContainerDo(env=env_dep, cmd="echo container")
-
-    assert chain.matched is None
-    assert shell.calls == []
-    unmatched = ctx.UnmatchedEnvDispatches()
-    assert unmatched == [chain]
-    assert unmatched[0].declared == ["ifContainerDo"]
-
-
-def test_venv_only_chain_on_docker_is_reported_unmatched(tmp_path, _bounce_ready):
-    image_dep = _dep("image")
-    ctx = _build_context(tmp_path, Runtime.DOCKER, image_dep)
-    chain = ctx.ExecWithEnv().ifVirtualEnvDo(env=image_dep, cmd="echo venv")
-    assert chain.matched is None
-    assert ctx.UnmatchedEnvDispatches() == [chain]
-
-
-def test_empty_chain_is_reported_unmatched(tmp_path, _bounce_ready):
-    env_dep = _dep("env")
-    ctx = _mamba_context(tmp_path, env_dep)
-    chain = ctx.ExecWithEnv()
-    assert ctx.UnmatchedEnvDispatches() == [chain]
-    assert chain.declared == []
-
-
-def test_virtual_env_arm_rejects_binds(tmp_path, _bounce_ready):
-    env_dep = _dep("env")
-    ctx = _mamba_context(tmp_path, env_dep)
-    with pytest.raises(TypeError):
-        ctx.ExecWithEnv().ifVirtualEnvDo(  # type: ignore[call-arg]
-            env=env_dep, cmd="echo venv", binds=[("/db", "/db")],
-        )
+    with pytest.raises(AssertionError, match="binds are meaningless"):
+        ctx.ExecWithEnv(env=env_dep, cmd="echo hello", binds=[("/db", "/db")])
 
 
 def test_exports_are_prepended_to_the_bounce_script(tmp_path, _bounce_ready):
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
-    ctx.ExecWithEnv().ifVirtualEnvDo(
+    ctx.ExecWithEnv(
         env=env_dep, cmd="gtdbtk classify_wf",
         exports={"GTDBTK_DATA_PATH": Path("/ref/gtdb")},
     )
@@ -205,9 +164,7 @@ def test_exports_are_prepended_to_the_bounce_script(tmp_path, _bounce_ready):
 def test_exports_with_spaces_are_quoted(tmp_path, _bounce_ready):
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
-    ctx.ExecWithEnv().ifVirtualEnvDo(
-        env=env_dep, cmd="run", exports={"REF": "/a path/with spaces"},
-    )
+    ctx.ExecWithEnv(env=env_dep, cmd="run", exports={"REF": "/a path/with spaces"})
     assert "export REF='/a path/with spaces'" in _bounce_text(tmp_path)
 
 
@@ -216,11 +173,11 @@ def test_reserved_exports_are_refused(tmp_path, _bounce_ready, name):
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
     with pytest.raises(AssertionError, match="reserved"):
-        ctx.ExecWithEnv().ifVirtualEnvDo(env=env_dep, cmd="run", exports={name: "/x"})
+        ctx.ExecWithEnv(env=env_dep, cmd="run", exports={name: "/x"})
 
 
 def test_export_names_must_be_shell_identifiers(tmp_path, _bounce_ready):
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
     with pytest.raises(AssertionError, match="valid shell identifier"):
-        ctx.ExecWithEnv().ifVirtualEnvDo(env=env_dep, cmd="run", exports={"a-b": "1"})
+        ctx.ExecWithEnv(env=env_dep, cmd="run", exports={"a-b": "1"})

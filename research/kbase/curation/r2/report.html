@@ -1,0 +1,5207 @@
+<title>KBase in Fifty-Four Verbs</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root {
+  --ground:#F6F8F6; --surface:#FFFFFF; --raised:#EEF2EF;
+  --ink:#171C1A; --ink2:#4A5651; --ink3:#78857F;
+  --rule:#DCE3DF; --rule-strong:#C3CEC8;
+  --entity:#017A5B; --family:#3FB08D; --warn:#B85E12;
+  --seq-0:#E4F0EB; --seq-1:#B7DACC; --seq-2:#79C0A8; --seq-3:#2F9E7C; --seq-4:#017A5B;
+  --sans:"IBM Plex Sans Condensed",'Helvetica Neue',Arial,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,'Times New Roman',serif;
+  --mono:"IBM Plex Mono",ui-monospace,'SFMono-Regular',Menlo,monospace;
+  --measure:68ch; --wide:1080px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#101412; --surface:#171D1A; --raised:#1E2622;
+    --ink:#E8EDEA; --ink2:#A5B2AC; --ink3:#7A8781;
+    --rule:#28322E; --rule-strong:#3A4742;
+    --entity:#35CBA2; --family:#17836B; --warn:#E5964A;
+    --seq-0:#1B2420; --seq-1:#234237; --seq-2:#1D6551; --seq-3:#25A483; --seq-4:#4FD9B2;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#101412; --surface:#171D1A; --raised:#1E2622;
+  --ink:#E8EDEA; --ink2:#A5B2AC; --ink3:#7A8781;
+  --rule:#28322E; --rule-strong:#3A4742;
+  --entity:#35CBA2; --family:#17836B; --warn:#E5964A;
+  --seq-0:#1B2420; --seq-1:#234237; --seq-2:#1D6551; --seq-3:#25A483; --seq-4:#4FD9B2;
+}
+
+* { box-sizing:border-box; }
+body {
+  background:var(--ground); color:var(--ink);
+  font-family:var(--serif); font-size:16.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.page { max-width:var(--wide); margin:0 auto; padding:0 24px 96px; }
+.col { max-width:var(--measure); }
+p { margin:0 0 1em; }
+a { color:var(--entity); text-underline-offset:2px; }
+code, .mono { font-family:var(--mono); font-size:.86em; }
+h1,h2,h3 { font-family:var(--sans); font-weight:700; text-wrap:balance; margin:0; line-height:1.15; }
+h2 { font-size:1.62rem; letter-spacing:-.01em; }
+h3 { font-size:1.06rem; font-weight:600; letter-spacing:.01em; }
+.eyebrow {
+  font-family:var(--sans); font-weight:600; font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink3);
+}
+.num { font-variant-numeric:tabular-nums; }
+
+/* ---- masthead ---- */
+header.masthead { padding:60px 0 34px; border-bottom:2px solid var(--ink); }
+header.masthead h1 {
+  font-size:clamp(2.4rem,6.4vw,3.9rem); letter-spacing:-.025em; margin:.24em 0 .32em;
+}
+.dek { font-size:1.16rem; color:var(--ink2); max-width:60ch; }
+.byline {
+  display:flex; flex-wrap:wrap; gap:8px 22px; margin-top:26px;
+  font-family:var(--sans); font-size:.8rem; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--ink3);
+}
+
+/* ---- sections ---- */
+section { padding-top:56px; }
+#claim { padding-top:26px; }
+.sechead { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+.sechead .eyebrow { padding-top:.2em; }
+.lede { font-size:1.05rem; color:var(--ink2); margin:14px 0 26px; max-width:var(--measure); }
+
+/* ---- claim ---- */
+.claims { margin:38px 0 8px; display:grid; gap:0; }
+.claim {
+  display:grid; grid-template-columns:2.1rem 1fr; gap:0 18px;
+  padding:18px 0; border-top:1px solid var(--rule);
+}
+.claim:last-child { border-bottom:1px solid var(--rule); }
+.claim .k {
+  font-family:var(--mono); font-size:.78rem; color:var(--ink3);
+  padding-top:.42em; letter-spacing:.02em;
+}
+.claim p { margin:0; max-width:64ch; }
+.claim strong { font-weight:500; background:linear-gradient(transparent 62%, var(--seq-1) 62%); }
+
+/* ---- figure shell ---- */
+figure { margin:0 0 8px; }
+.fig {
+  background:var(--surface); border:1px solid var(--rule);
+  padding:26px 26px 20px; margin:8px 0 10px;
+}
+figcaption {
+  font-family:var(--sans); font-size:.78rem; color:var(--ink3);
+  letter-spacing:.02em; margin-top:2px; max-width:76ch;
+}
+figcaption b { color:var(--ink2); font-weight:600; }
+
+/* ---- collapse bars ---- */
+.collapse { display:grid; gap:0; }
+.crow { display:grid; grid-template-columns:96px 1fr; gap:0 20px; padding:15px 0; border-top:1px solid var(--rule); }
+.crow:first-child { border-top:none; padding-top:2px; }
+.crow > .axis { font-family:var(--sans); font-weight:700; font-size:.95rem; padding-top:.1em; }
+.ctrack { position:relative; }
+.cbar { position:relative; height:26px; background:var(--seq-0); }
+.cbar .fill { position:absolute; inset:0 auto 0 0; background:var(--entity); min-width:3px; }
+.clabels { display:flex; justify-content:space-between; gap:12px; margin-top:7px; align-items:baseline; }
+.clabels .before, .clabels .after { font-family:var(--sans); font-size:.82rem; color:var(--ink2); }
+.clabels .after { color:var(--entity); font-weight:600; }
+.ratio {
+  font-family:var(--mono); font-size:.78rem; color:var(--ink3);
+  position:absolute; right:8px; top:4px;
+}
+.cnote { font-size:.85rem; color:var(--ink3); margin-top:2px; font-family:var(--sans); }
+
+/* ---- tables ---- */
+.tablewrap { overflow-x:auto; border:1px solid var(--rule); background:var(--surface); margin:10px 0; }
+table { border-collapse:collapse; width:100%; font-size:.86rem; }
+th, td { text-align:left; padding:7px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+thead th {
+  font-family:var(--sans); font-size:.72rem; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--ink3); font-weight:600; border-bottom:1px solid var(--rule-strong);
+  position:sticky; top:0; background:var(--surface); z-index:1;
+}
+tbody tr:last-child td { border-bottom:none; }
+td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; font-family:var(--mono); font-size:.8rem; }
+td.id { font-family:var(--mono); font-size:.76rem; color:var(--ink2); }
+td.verb { font-family:var(--mono); font-size:.82rem; font-weight:500; white-space:nowrap; }
+tr.grouphead td {
+  font-family:var(--sans); font-weight:700; font-size:.74rem; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--ink3);
+  background:var(--raised); border-bottom:1px solid var(--rule-strong); padding:7px 12px;
+}
+.io { font-family:var(--mono); font-size:.76rem; color:var(--ink2); white-space:nowrap; }
+.io .arrow { color:var(--ink3); padding:0 6px; }
+td.verb .tag { margin-top:3px; }
+
+.tag {
+  display:inline-block; font-family:var(--sans); font-size:.66rem; font-weight:600;
+  letter-spacing:.07em; text-transform:uppercase; padding:1px 6px; white-space:nowrap;
+}
+.tag.untyped { color:var(--warn); border:1px solid var(--warn); }
+.tag.plumb { color:var(--ink3); border:1px solid var(--rule-strong); }
+
+/* magnitude bar inside a cell */
+.magcell { min-width:150px; }
+.mag { height:9px; background:var(--seq-0); position:relative; }
+.mag > i { position:absolute; inset:0 auto 0 0; background:var(--seq-3); display:block; }
+
+/* ---- stacked union bar ---- */
+.stack { display:flex; height:38px; gap:2px; }
+.stack > span { display:block; }
+.stackkey { display:flex; flex-wrap:wrap; gap:6px 24px; margin-top:14px; }
+.stackkey div { display:flex; gap:8px; align-items:baseline; font-family:var(--sans); font-size:.84rem; color:var(--ink2); }
+.swatch { width:11px; height:11px; flex:none; position:relative; top:1px; }
+
+/* ---- chart ---- */
+.chartwrap { position:relative; }
+svg { display:block; width:100%; height:auto; overflow:visible; }
+.tip {
+  position:absolute; pointer-events:none; opacity:0; transition:opacity .09s;
+  background:var(--ink); color:var(--ground); padding:6px 9px;
+  font-family:var(--mono); font-size:.74rem; line-height:1.35; white-space:nowrap; z-index:3;
+}
+.tip.on { opacity:1; }
+
+/* ---- gap list ---- */
+.gaps { display:grid; grid-template-columns:repeat(auto-fill,minmax(228px,1fr)); gap:0 0; border-top:1px solid var(--rule); }
+.gap { border-bottom:1px solid var(--rule); border-right:1px solid var(--rule); padding:13px 16px; }
+.gap .verb { font-family:var(--mono); font-size:.86rem; font-weight:500; color:var(--warn); }
+.gap .who { font-family:var(--mono); font-size:.72rem; color:var(--ink3); display:block; margin-top:3px; word-break:break-all; }
+
+/* ---- shape list ---- */
+ul.plain { margin:0 0 1em; padding-left:1.15em; }
+ul.plain li { margin-bottom:.5em; max-width:64ch; }
+
+footer.end { margin-top:72px; padding-top:26px; border-top:2px solid var(--ink); }
+footer.end .col { font-size:.92rem; color:var(--ink2); }
+.filelist { display:grid; gap:0; margin:14px 0 0; }
+.filerow { display:grid; grid-template-columns:230px 1fr; gap:0 18px; padding:7px 0; border-top:1px solid var(--rule); font-size:.86rem; }
+.filerow .f { font-family:var(--mono); font-size:.78rem; color:var(--ink); }
+.filerow .d { color:var(--ink3); font-family:var(--sans); font-size:.84rem; }
+
+@media (max-width:640px) {
+  .crow { grid-template-columns:1fr; gap:6px; }
+  .filerow { grid-template-columns:1fr; gap:2px; }
+  .claim { grid-template-columns:1fr; gap:4px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<div class="page">
+
+<header class="masthead">
+  <div class="eyebrow">DOE KBase &middot; metasmith port &middot; curation round 2</div>
+  <h1>KBase in Fifty-Four Verbs</h1>
+  <p class="dek">The KBase catalog publishes 493 apps over 121 workspace types with 2,758
+  declared parameters, and its users have left 1,633 distinct workflows behind. This round asks
+  how many distinct <em>things</em> that actually is, and proposes the vocabulary a curated
+  metasmith library would be built from.</p>
+  <div class="byline">
+    <span>Catalog fetched <span id="fetched" class="num"></span></span>
+    <span>Proposal only &mdash; nothing is built</span>
+    <span>22 reconciliation checks pass</span>
+  </div>
+</header>
+
+<section id="claim">
+  <div class="claims">
+    <div class="claim"><span class="k">01</span><p>KBase&rsquo;s redundancy is in its
+      <strong>vocabulary, not its science</strong>. 493 apps do 54 distinct things, 121 workspace
+      types name 35 distinct kinds of object, and 2,758 declared parameters leave 262 real
+      knobs.</p></div>
+    <div class="claim"><span class="k">02</span><p>That redundancy is <strong>mechanical, so a
+      property grid removes it without judgment calls</strong>. Four names for a read library,
+      <code>min_contig_len</code> beside <code>min_contig_length</code>, sixty-seven anonymous
+      unions that are one entity with an axis left free. 64 of the 67 unions disappear, and the
+      three survivors all belong to apps that accept any object by design.</p></div>
+    <div class="claim"><span class="k">03</span><p>What does <strong>not</strong> collapse is
+      composition. 1,633 workflow shapes reduce only to 631, because a small vocabulary generates
+      a long tail. But <strong>the head is short: 39 workflows cover half</strong> of everything
+      anyone ran.</p></div>
+    <div class="claim"><span class="k">04</span><p>The blocker for a curated library is not
+      vocabulary. <strong>Thirteen of the 54 verbs&rsquo; most-used implementation declares no
+      typed output at all</strong>, and taxonomic classification has no workspace type anywhere in
+      KBase. That is what stops a chain being asked for, and curation does not fix it.</p></div>
+  </div>
+</section>
+
+<section id="collapses">
+  <div class="sechead"><span class="eyebrow">The four axes</span></div>
+  <h2>Where the count goes</h2>
+  <p class="lede">Each row is one axis of the catalog, measured before and after the
+  normalisation this round proposes. The bars are scaled within their own row, because the
+  four totals are not comparable to one another &mdash; the ratio is the reading.</p>
+  <figure>
+    <div class="fig"><div class="collapse" id="collapse"></div></div>
+    <figcaption>Read from <b>app_tasks.jsonl</b>, <b>type_map.jsonl</b>, <b>param_map.jsonl</b> and
+    <b>workflows.jsonl</b>. The workflow row is the weakest collapse in the set, and that is the
+    finding rather than a shortfall: the vocabulary is small, its compositions are not.</figcaption>
+  </figure>
+</section>
+
+<section id="verbs">
+  <div class="sechead"><span class="eyebrow">Apps</span></div>
+  <h2>The core task vocabulary</h2>
+  <p class="lede">A core task is the verb an app performs. Every one of the 493 catalog apps
+  resolves to exactly one of these or to a named non-task, and the canonical method is the
+  implementation the public narratives actually ran &mdash; the corpus picks it, not taste.
+  <span class="mono">consumes &rarr; produces</span> is the proposal; where KBase&rsquo;s own
+  canonical app declares no typed product the row is flagged.</p>
+  <div class="tablewrap"><table id="verbtable"></table></div>
+  <figcaption>Read from <b>tasks.yml</b>, <b>app_tasks.jsonl</b>, <b>task_io.jsonl</b> and
+  <b>param_map.jsonl</b>. <span class="tag plumb">plumbing</span> marks a verb that moves objects
+  without producing new science; <span class="tag untyped">no typed output</span> marks one whose
+  canonical method declares only a report.</figcaption>
+  <div class="col" style="margin-top:20px">
+    <h3 style="margin-bottom:8px">Three apps carry no verb</h3>
+    <div id="nontasks"></div>
+  </div>
+</section>
+
+<section id="types">
+  <div class="sechead"><span class="eyebrow">Types</span></div>
+  <h2>One grid instead of 121 names</h2>
+  <p class="lede">KBase names a concept once per era, once per container and once per
+  measurement: <code>KBaseAssembly.PairedEndLibrary</code> beside
+  <code>KBaseFile.PairedEndLibrary</code>, one <code>Genome</code> beside four kinds of
+  <code>GenomeSet</code>, eight <code>KBaseMatrices</code> types that differ only in what the
+  cells hold. Replacing that with an entity crossed with property axes is the shape
+  <code>src/metasmith_libraries/data_types/sequences.yml</code> already uses.</p>
+  <figure>
+    <div class="fig">
+      <h3 style="margin-bottom:14px">Workspace types absorbed per entity</h3>
+      <div class="tablewrap" style="border:none;margin:0"><table id="entitytable"></table></div>
+    </div>
+    <figcaption>Entities absorbing more than one workspace type. <span id="naxes"></span> axes &mdash;
+    <code>cardinality</code> folds the eleven <code>*Set</code> types, <code>qc</code> separates a
+    cleaned read library from the dirty one it came from &mdash; recover the distinctions the names
+    were carrying. Read from <b>type_map.jsonl</b>.</figcaption>
+  </figure>
+  <figure>
+    <div class="fig">
+      <h3 style="margin-bottom:14px">What happens to the 67 parameter unions</h3>
+      <div class="stack" id="unionstack"></div>
+      <div class="stackkey" id="unionkey"></div>
+    </div>
+    <figcaption>A union is a parameter accepting several workspace types. It disappears when its
+    members share an entity and differ only along an axis, or when they share one of the seven
+    declared families. Read from <b>type_map.jsonl</b>.</figcaption>
+  </figure>
+  <div class="col">
+    <p>The three survivors are not a modelling gap. Each belongs to an app that accepts every
+    object type by design &mdash; <code>KButil_copy_object</code>, the staging exporter, and one
+    viewer &mdash; so the rule falls out clean: <strong>every union that belongs to a science verb
+    collapses.</strong></p>
+    <div id="families"></div>
+  </div>
+</section>
+
+<section id="config">
+  <div class="sechead"><span class="eyebrow">Config</span></div>
+  <h2>Most parameters are not knobs</h2>
+  <p class="lede">Metasmith has no parameter primitive. A knob reaches a transform as a typed data
+  item whose content is a config blob, so proposing a configuration ontology means proposing one
+  config type per task and saying which of the 2,758 declared parameters belong in it. Most do
+  not, and each of the others has a better home than a config blob.</p>
+  <div class="tablewrap"><table id="disptable"></table></div>
+  <figcaption>Read from <b>config.yml</b> and <b>param_map.jsonl</b>. Bars are shares of the 2,758
+  declared parameters.</figcaption>
+  <div class="col" style="margin-top:26px">
+    <p id="configsum"></p>
+    <h3 style="margin:22px 0 8px">The shared vocabulary</h3>
+    <p style="font-size:.95rem;color:var(--ink2)">A knob earns a place here by being declared by at
+    least two core tasks and meaning the same thing in each. <code>maxaccepts</code> taught the
+    rule: twelve apps declare it and all twelve do homology search, so it is private to one verb
+    rather than shared.</p>
+    <div class="tablewrap"><table id="commontable"></table></div>
+  </div>
+</section>
+
+<section id="workflows">
+  <div class="sechead"><span class="eyebrow">Workflows</span></div>
+  <h2>A short head and a long tail</h2>
+  <p class="lede">Round 1 reduced 3,965 public narratives to 1,633 distinct app sequences. Asked
+  again over verbs &mdash; with plumbing and reporting steps dropped, and the remainder taken as a
+  set because the corpus records cell order rather than dependency order &mdash; those 1,633
+  become 631 canonical workflows over 2,407 narrative copies.</p>
+  <figure>
+    <div class="fig">
+      <h3 style="margin-bottom:4px">Narrative copies covered, by workflow rank</h3>
+      <div class="chartwrap" id="curvewrap"></div>
+    </div>
+    <figcaption>Each point is one more canonical workflow, taken in order of how many scientists
+    ran it. Read from <b>workflows.jsonl</b>.</figcaption>
+  </figure>
+  <div class="tablewrap"><table id="wftable"></table></div>
+  <figcaption>The twenty most-run canonical workflows. <b>Shapes</b> is how many distinct app
+  sequences reduce to that one workflow &mdash; the redundancy the verbs removed.</figcaption>
+</section>
+
+<section id="gaps">
+  <div class="sechead"><span class="eyebrow">Where it breaks</span></div>
+  <h2>The source under-declares itself</h2>
+  <p class="lede">Every gap below is KBase&rsquo;s, not the planner&rsquo;s. An app that reports its
+  result instead of storing it leaves the chain&rsquo;s end untyped, and nothing downstream can ask
+  for it. This is the port&rsquo;s dominant failure class, and the verb vocabulary localises it:
+  it is not spread across 493 apps, it is thirteen verbs.</p>
+  <figure>
+    <div class="fig" style="padding-bottom:0">
+      <h3 style="margin-bottom:14px">Verbs whose canonical method declares no typed output</h3>
+      <div class="gaps" id="gaplist"></div>
+    </div>
+  </figure>
+  <div class="col">
+    <p id="gapsum"></p>
+    <p><code>extract_bins_as_assemblies</code> extracts assemblies and declares none.
+    <code>run_checkM_lineage_wf</code> reports bin quality and declares none.
+    <code>align_reads_using_hisat2</code> and <code>run_stringtie</code>, the two most-run steps of
+    every RNA-seq narrative in the corpus, declare none between them. A hand-written output
+    override table for these thirteen buys more coverage than anything in the planner.</p>
+  </div>
+</section>
+
+<section id="library">
+  <div class="sechead"><span class="eyebrow">If it were built</span></div>
+  <h2>What a curated library would look like</h2>
+  <div class="col">
+    <ul class="plain">
+      <li><strong>One transform per core task</strong>, in a directory named for its domain group,
+      the way <code>src/metasmith_libraries/transforms/</code> is already organised. 47 scientific
+      transforms in place of 371.</li>
+      <li><strong>Templates naming directories, not masks.</strong> The port ships one committed
+      mask directory per template because 27 apps produce an Assembly and 46 require nothing at
+      all. With one producer per type the ambiguity that forced the mask is gone.</li>
+      <li><strong>Imports as deferred inputs, not transforms.</strong> This is the load-bearing bet
+      and it is untested. The 46 pure sources are the cheapest producer of anything, which is why
+      an unmasked solve answers every target with &ldquo;import it from staging&rdquo;. Making them
+      template inputs removes them from the search entirely, and the <code>qc</code> axis stops an
+      importer answering a target downstream of trimming. Neither claim is proved here.</li>
+      <li><strong>Config as one typed item per task</strong>, carrying a YAML block with a median
+      of four fields. The workflow catalogue is 631 YAML rows against one generic author module,
+      in place of one Python module and one mask directory per workflow.</li>
+    </ul>
+  </div>
+</section>
+
+<footer class="end">
+  <div class="col">
+    <p><strong>This round proposes and does not build.</strong> No transform, type or template was
+    written. The deliverable is nine tables under
+    <code>research/kbase/curation/r2/</code> and a gate that reconciles every one of them against
+    the port&rsquo;s own census, catalog and round&nbsp;1 shapes &mdash; never against itself.
+    Rebuild everything with <code>curate.py</code>; it ends by running <code>check.py</code>, which
+    exits non-zero rather than leaving the tables in a state that does not add up.</p>
+  </div>
+  <div class="filelist" id="files"></div>
+</footer>
+
+</div>
+
+<script id="report-data" type="application/json">{
+ "generated_from": "research/kbase/curation/r2",
+ "census_date": "2026-09-04",
+ "funnels": [
+  {
+   "axis": "Apps",
+   "before": 493,
+   "before_label": "apps in the catalog",
+   "after": 54,
+   "after_label": "core task verbs",
+   "note": "47 of them scientific, 7 plumbing"
+  },
+  {
+   "axis": "Types",
+   "before": 121,
+   "before_label": "workspace types",
+   "after": 35,
+   "after_label": "entities",
+   "note": "93 fully specified meanings on a 11-axis grid"
+  },
+  {
+   "axis": "Config",
+   "before": 2758,
+   "before_label": "declared parameters",
+   "after": 262,
+   "after_label": "config fields",
+   "note": "239 distinct names in 39 config types"
+  },
+  {
+   "axis": "Workflows",
+   "before": 1633,
+   "before_label": "narrative workflow shapes",
+   "after": 631,
+   "after_label": "canonical workflows",
+   "note": "83 distinct product-from-source names"
+  }
+ ],
+ "verbs": [
+  {
+   "task": "import_reads",
+   "group": "reads",
+   "means": "Bring a read library into the workspace from a URL, an SRA accession or staging.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 17,
+   "canonical": "kb_uploadmethods/import_fastq_sra_as_reads_from_staging",
+   "canonical_name": "Import FASTQ/SRA File as Reads from Staging Area",
+   "copies": 229,
+   "ws_types_in": 0,
+   "consumes": [],
+   "produces": [
+    "reads"
+   ],
+   "kbase_consumes": "none",
+   "kbase_produces": "reads",
+   "untyped": false,
+   "knobs": 2
+  },
+  {
+   "task": "qc_reads",
+   "group": "reads",
+   "means": "Measure read quality and report it. Produces no new data object.",
+   "plumbing": false,
+   "reporting": true,
+   "apps": 4,
+   "canonical": "kb_fastqc/runFastQC",
+   "canonical_name": "Assess Read Quality with FastQC - v0.12.1",
+   "copies": 467,
+   "ws_types_in": 6,
+   "consumes": [
+    "reads"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "reads",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 0
+  },
+  {
+   "task": "clean_reads",
+   "group": "reads",
+   "means": "Trim, filter or error-correct a read library. Consumes reads and produces reads.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 11,
+   "canonical": "kb_trimmomatic/run_trimmomatic",
+   "canonical_name": "Trim Reads with Trimmomatic - v0.39",
+   "copies": 343,
+   "ws_types_in": 9,
+   "consumes": [
+    "reads"
+   ],
+   "produces": [
+    "reads"
+   ],
+   "kbase_consumes": "reads",
+   "kbase_produces": "reads",
+   "untyped": false,
+   "knobs": 12
+  },
+  {
+   "task": "merge_reads",
+   "group": "reads",
+   "means": "Combine or divide read libraries without changing any read.",
+   "plumbing": true,
+   "reporting": false,
+   "apps": 4,
+   "canonical": "kb_ReadsUtilities/KButil_Merge_MultipleReadsLibs_to_OneLibrary",
+   "canonical_name": "Merge Reads Libraries - v1.2.2",
+   "copies": 56,
+   "ws_types_in": 5,
+   "consumes": [
+    "reads"
+   ],
+   "produces": [
+    "reads"
+   ],
+   "kbase_consumes": "reads",
+   "kbase_produces": "reads",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "convert_reads",
+   "group": "reads",
+   "means": "Rewrite a read library in another format or schema version.",
+   "plumbing": true,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "legacy_reads_conversion/legacy_reads_conversion",
+   "canonical_name": "Convert Legacy Read Library to New Read Library",
+   "copies": 0,
+   "ws_types_in": 5,
+   "consumes": [
+    "reads"
+   ],
+   "produces": [
+    "reads"
+   ],
+   "kbase_consumes": "reads",
+   "kbase_produces": "reads",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "import_assembly",
+   "group": "assembly",
+   "means": "Bring contigs into the workspace from a FASTA file or an assembly file.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 4,
+   "canonical": "kb_uploadmethods/import_fasta_as_assembly_from_staging",
+   "canonical_name": "Import FASTA File as Assembly from Staging Area",
+   "copies": 95,
+   "ws_types_in": 1,
+   "consumes": [],
+   "produces": [
+    "assembly"
+   ],
+   "kbase_consumes": "none",
+   "kbase_produces": "assembly",
+   "untyped": false,
+   "knobs": 2
+  },
+  {
+   "task": "assemble",
+   "group": "assembly",
+   "means": "Build contigs from sequencing reads.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 23,
+   "canonical": "kb_SPAdes/run_SPAdes",
+   "canonical_name": "Assemble Reads with SPAdes - v3.15.3",
+   "copies": 318,
+   "ws_types_in": 9,
+   "consumes": [
+    "reads"
+   ],
+   "produces": [
+    "assembly"
+   ],
+   "kbase_consumes": "reads",
+   "kbase_produces": "assembly",
+   "untyped": false,
+   "knobs": 4
+  },
+  {
+   "task": "polish_assembly",
+   "group": "assembly",
+   "means": "Correct an assembly using the reads it was built from.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 1,
+   "canonical": "kb_polypolish/run_kb_polypolish",
+   "canonical_name": "Polish Assemblies with Polypolish - v0.6.0",
+   "copies": 0,
+   "ws_types_in": 5,
+   "consumes": [
+    "assembly",
+    "reads"
+   ],
+   "produces": [
+    "assembly"
+   ],
+   "kbase_consumes": "sequence_data",
+   "kbase_produces": "assembly",
+   "untyped": false,
+   "knobs": 4
+  },
+  {
+   "task": "filter_assembly",
+   "group": "assembly",
+   "means": "Select a subset of contigs by length or by membership.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "kb_AssemblyUtilities/run_fractionate_contigs",
+   "canonical_name": "Fractionate Contigs - v1.2.0",
+   "copies": 14,
+   "ws_types_in": 7,
+   "consumes": [
+    "assembly"
+   ],
+   "produces": [
+    "assembly"
+   ],
+   "kbase_consumes": "sequence_object",
+   "kbase_produces": "sequence_object",
+   "untyped": false,
+   "knobs": 1
+  },
+  {
+   "task": "qc_assembly",
+   "group": "assembly",
+   "means": "Measure assembly quality and report it.",
+   "plumbing": false,
+   "reporting": true,
+   "apps": 3,
+   "canonical": "kb_quast/run_QUAST_app",
+   "canonical_name": "Assess Quality of Assemblies with QUAST - v4.4",
+   "copies": 92,
+   "ws_types_in": 5,
+   "consumes": [
+    "assembly"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "assembly",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 2
+  },
+  {
+   "task": "import_genome",
+   "group": "annotation",
+   "means": "Bring an annotated genome into the workspace from GenBank or GFF plus FASTA.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 7,
+   "canonical": "kb_uploadmethods/import_genbank_as_genome_from_staging",
+   "canonical_name": "Import GenBank File as Genome from Staging Area",
+   "copies": 37,
+   "ws_types_in": 0,
+   "consumes": [],
+   "produces": [
+    "genome"
+   ],
+   "kbase_consumes": "none",
+   "kbase_produces": "genome",
+   "untyped": false,
+   "knobs": 3
+  },
+  {
+   "task": "annotate_domains",
+   "group": "annotation",
+   "means": "Assign protein domain families to a genome's features.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "kb_phylogenomics/run_DomainAnnotation_Sets",
+   "canonical_name": "Annotate Domains in a GenomeSet - v1.7.1",
+   "copies": 50,
+   "ws_types_in": 3,
+   "consumes": [
+    "genome"
+   ],
+   "produces": [
+    "annotation"
+   ],
+   "kbase_consumes": "genome_group",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 1
+  },
+  {
+   "task": "annotate",
+   "group": "annotation",
+   "means": "Call genes on a sequence and assign functions to them.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 24,
+   "canonical": "RAST_SDK/annotate_genome_assembly",
+   "canonical_name": "Annotate Genome/Assembly with RASTtk - v1.073",
+   "copies": 520,
+   "ws_types_in": 11,
+   "consumes": [
+    "assembly",
+    "genome"
+   ],
+   "produces": [
+    "genome"
+   ],
+   "kbase_consumes": "sequence_object",
+   "kbase_produces": "genome",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "search_homologs",
+   "group": "annotation",
+   "means": "Find sequences resembling a query and return them as a feature set.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 19,
+   "canonical": "kb_blast/BLASTp_Search",
+   "canonical_name": "BLASTp prot-prot Search - v2.13.0+",
+   "copies": 35,
+   "ws_types_in": 13,
+   "consumes": [
+    "genome",
+    "sequences"
+   ],
+   "produces": [
+    "feature_set"
+   ],
+   "kbase_consumes": "any",
+   "kbase_produces": "feature_set",
+   "untyped": false,
+   "knobs": 8
+  },
+  {
+   "task": "bin",
+   "group": "binning",
+   "means": "Group a metagenome assembly's contigs into candidate genomes.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "metabat/run_metabat",
+   "canonical_name": "MetaBAT2 Contig Binning - v1.7",
+   "copies": 548,
+   "ws_types_in": 6,
+   "consumes": [
+    "assembly",
+    "reads"
+   ],
+   "produces": [
+    "bins"
+   ],
+   "kbase_consumes": "sequence_data",
+   "kbase_produces": "bins",
+   "untyped": false,
+   "knobs": 1
+  },
+  {
+   "task": "refine_bins",
+   "group": "binning",
+   "means": "Combine or edit bin sets to improve them.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 4,
+   "canonical": "kb_das_tool/run_kb_das_tool",
+   "canonical_name": "Optimize Bacterial or Archaeal Binned Contigs using DAS Tool - v1.1.2",
+   "copies": 278,
+   "ws_types_in": 7,
+   "consumes": [
+    "bins"
+   ],
+   "produces": [
+    "bins"
+   ],
+   "kbase_consumes": "sequence_object",
+   "kbase_produces": "bins",
+   "untyped": false,
+   "knobs": 6
+  },
+  {
+   "task": "qc_bins",
+   "group": "binning",
+   "means": "Score bin completeness and contamination, and optionally filter on the score.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 2,
+   "canonical": "kb_Msuite/run_checkM_lineage_wf",
+   "canonical_name": "Assess Genome Quality with CheckM - v1.0.18",
+   "copies": 702,
+   "ws_types_in": 6,
+   "consumes": [
+    "bins"
+   ],
+   "produces": [
+    "report",
+    "bins"
+   ],
+   "kbase_consumes": "sequence_object",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 2
+  },
+  {
+   "task": "extract_bins",
+   "group": "binning",
+   "means": "Publish each bin as a standalone assembly.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 2,
+   "canonical": "MetagenomeUtils/extract_bins_as_assemblies",
+   "canonical_name": "Extract Bins as Assemblies from BinnedContigs - v1.0.2",
+   "copies": 589,
+   "ws_types_in": 1,
+   "consumes": [
+    "bins"
+   ],
+   "produces": [
+    "assembly"
+   ],
+   "kbase_consumes": "bins",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 1
+  },
+  {
+   "task": "classify_taxa",
+   "group": "taxonomy",
+   "means": "Assign taxonomy to reads, contigs, bins or genomes.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 7,
+   "canonical": "kb_gtdbtk/run_kb_gtdbtk_classify_wf",
+   "canonical_name": "Classify Microbes with GTDB-Tk - v2.3.2",
+   "copies": 541,
+   "ws_types_in": 14,
+   "consumes": [
+    "reads",
+    "assembly",
+    "bins",
+    "genome"
+   ],
+   "produces": [
+    "taxonomy"
+   ],
+   "kbase_consumes": "sequence_object",
+   "kbase_produces": "tree",
+   "untyped": false,
+   "knobs": 7
+  },
+  {
+   "task": "profile_abundance",
+   "group": "taxonomy",
+   "means": "Reduce a community to a taxonomic or functional abundance matrix.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 2,
+   "canonical": "retrieve_taxonomic_abundance_profile",
+   "canonical_name": "Generate Taxonomic Abundance Data",
+   "copies": 0,
+   "ws_types_in": 2,
+   "consumes": [
+    "metagenome"
+   ],
+   "produces": [
+    "matrix"
+   ],
+   "kbase_consumes": "metagenome",
+   "kbase_produces": "matrix",
+   "untyped": false,
+   "knobs": 4
+  },
+  {
+   "task": "import_model",
+   "group": "modelling",
+   "means": "Bring a metabolic model into the workspace from SBML, TSV or Excel.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 7,
+   "canonical": "kb_uploadmethods/import_file_as_fba_model_from_staging",
+   "canonical_name": "Import TSV/XLS/SBML File as an FBAModel from Staging Area",
+   "copies": 14,
+   "ws_types_in": 1,
+   "consumes": [
+    "genome"
+   ],
+   "produces": [
+    "model"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "model",
+   "untyped": false,
+   "knobs": 4
+  },
+  {
+   "task": "import_media",
+   "group": "modelling",
+   "means": "Bring a growth medium into the workspace from a file.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 5,
+   "canonical": "kb_uploadmethods/import_tsv_excel_as_media_from_staging",
+   "canonical_name": "Import Media file (TSV/Excel) from Staging Area",
+   "copies": 33,
+   "ws_types_in": 0,
+   "consumes": [],
+   "produces": [
+    "media"
+   ],
+   "kbase_consumes": "none",
+   "kbase_produces": "media",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "import_phenotype",
+   "group": "modelling",
+   "means": "Bring a phenotype set into the workspace from a file.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "kb_uploadmethods/import_tsv_as_phenotype_set_from_staging",
+   "canonical_name": "Import TSV File as Phenotype Set from Staging Area",
+   "copies": 11,
+   "ws_types_in": 1,
+   "consumes": [
+    "genome"
+   ],
+   "produces": [
+    "phenotype"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "phenotype",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "build_model",
+   "group": "modelling",
+   "means": "Reconstruct a metabolic model from an annotated genome or metagenome.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 14,
+   "canonical": "fba_tools/build_metabolic_model",
+   "canonical_name": "Build Metabolic Model",
+   "copies": 588,
+   "ws_types_in": 14,
+   "consumes": [
+    "genome",
+    "metagenome"
+   ],
+   "produces": [
+    "model"
+   ],
+   "kbase_consumes": "any",
+   "kbase_produces": "model",
+   "untyped": false,
+   "knobs": 13
+  },
+  {
+   "task": "gapfill_model",
+   "group": "modelling",
+   "means": "Add reactions until a model grows on a medium.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "fba_tools/gapfill_metabolic_model",
+   "canonical_name": "Gapfill Metabolic Model",
+   "copies": 163,
+   "ws_types_in": 3,
+   "consumes": [
+    "model",
+    "media"
+   ],
+   "produces": [
+    "model"
+   ],
+   "kbase_consumes": "modelling_object",
+   "kbase_produces": "model",
+   "untyped": false,
+   "knobs": 7
+  },
+  {
+   "task": "edit_model",
+   "group": "modelling",
+   "means": "Change a model's reactions or compounds by hand.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 2,
+   "canonical": "fba_tools/edit_metabolic_model",
+   "canonical_name": "Edit Metabolic Model",
+   "copies": 45,
+   "ws_types_in": 1,
+   "consumes": [
+    "model"
+   ],
+   "produces": [
+    "model"
+   ],
+   "kbase_consumes": "model",
+   "kbase_produces": "model",
+   "untyped": false,
+   "knobs": 29
+  },
+  {
+   "task": "edit_media",
+   "group": "modelling",
+   "means": "Change a growth medium's composition.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 1,
+   "canonical": "fba_tools/edit_media",
+   "canonical_name": "Edit Media",
+   "copies": 97,
+   "ws_types_in": 1,
+   "consumes": [
+    "media"
+   ],
+   "produces": [
+    "media"
+   ],
+   "kbase_consumes": "media",
+   "kbase_produces": "media",
+   "untyped": false,
+   "knobs": 13
+  },
+  {
+   "task": "run_fba",
+   "group": "modelling",
+   "means": "Solve a model for flux on a medium, with or without omics constraints.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 10,
+   "canonical": "fba_tools/run_flux_balance_analysis",
+   "canonical_name": "Run Flux Balance Analysis",
+   "copies": 378,
+   "ws_types_in": 8,
+   "consumes": [
+    "model",
+    "media"
+   ],
+   "produces": [
+    "fba"
+   ],
+   "kbase_consumes": "any",
+   "kbase_produces": "fba",
+   "untyped": false,
+   "knobs": 17
+  },
+  {
+   "task": "predict_phenotype",
+   "group": "modelling",
+   "means": "Simulate growth of a model against a phenotype set.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "fba_tools/simulate_growth_on_phenotype_data",
+   "canonical_name": "Simulate Growth on Phenotype Data",
+   "copies": 33,
+   "ws_types_in": 2,
+   "consumes": [
+    "model",
+    "phenotype"
+   ],
+   "produces": [
+    "phenotype_simulation"
+   ],
+   "kbase_consumes": "modelling_object",
+   "kbase_produces": "phenotype_simulation",
+   "untyped": false,
+   "knobs": 10
+  },
+  {
+   "task": "compare_models",
+   "group": "modelling",
+   "means": "Report the difference between two models or two flux solutions.",
+   "plumbing": false,
+   "reporting": true,
+   "apps": 4,
+   "canonical": "fba_tools/compare_models",
+   "canonical_name": "Compare Models",
+   "copies": 22,
+   "ws_types_in": 4,
+   "consumes": [
+    "model",
+    "fba"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "any",
+   "kbase_produces": "model",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "import_matrix",
+   "group": "expression",
+   "means": "Bring an expression, amplicon or abundance matrix into the workspace from a file.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 5,
+   "canonical": "GenericsAPI/import_amplicon",
+   "canonical_name": "Import Amplicon Matrix from TSV/FASTA File in Staging Area",
+   "copies": 57,
+   "ws_types_in": 5,
+   "consumes": [],
+   "produces": [
+    "matrix"
+   ],
+   "kbase_consumes": "any",
+   "kbase_produces": "matrix",
+   "untyped": false,
+   "knobs": 21
+  },
+  {
+   "task": "build_index",
+   "group": "alignment",
+   "means": "Build an aligner index over a reference genome.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 1,
+   "canonical": "KBaseRNASeq/build_bowtie2_index",
+   "canonical_name": "Build Bowtie2 Index - v2.2.9",
+   "copies": 1,
+   "ws_types_in": 1,
+   "consumes": [
+    "genome"
+   ],
+   "produces": [
+    "index"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "index",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "align_reads",
+   "group": "alignment",
+   "means": "Map reads onto a reference and produce an alignment.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 7,
+   "canonical": "kb_hisat2/align_reads_using_hisat2",
+   "canonical_name": "Align Reads using HISAT2 - v2.1.0",
+   "copies": 140,
+   "ws_types_in": 10,
+   "consumes": [
+    "reads",
+    "genome"
+   ],
+   "produces": [
+    "alignment"
+   ],
+   "kbase_consumes": "sequence_data",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 10
+  },
+  {
+   "task": "qc_alignment",
+   "group": "alignment",
+   "means": "Measure alignment quality and report it.",
+   "plumbing": false,
+   "reporting": true,
+   "apps": 1,
+   "canonical": "kb_QualiMap/run_QualiMap",
+   "canonical_name": "Assess Reads Alignment Quality using Qualimap - v2.2.1",
+   "copies": 4,
+   "ws_types_in": 3,
+   "consumes": [
+    "alignment"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "alignment",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 0
+  },
+  {
+   "task": "quantify_expression",
+   "group": "expression",
+   "means": "Turn alignments into per-feature expression values.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 9,
+   "canonical": "kb_stringtie/run_stringtie",
+   "canonical_name": "Assemble Transcripts using StringTie - v2.1.5",
+   "copies": 80,
+   "ws_types_in": 7,
+   "consumes": [
+    "alignment"
+   ],
+   "produces": [
+    "matrix"
+   ],
+   "kbase_consumes": "alignment",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 6
+  },
+  {
+   "task": "differential_expression",
+   "group": "expression",
+   "means": "Contrast expression between conditions.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 7,
+   "canonical": "kb_deseq/run_DESeq2",
+   "canonical_name": "Create Differential Expression Matrix using DESeq2 - v1.20.0",
+   "copies": 113,
+   "ws_types_in": 5,
+   "consumes": [
+    "matrix"
+   ],
+   "produces": [
+    "matrix",
+    "feature_set"
+   ],
+   "kbase_consumes": "matrix",
+   "kbase_produces": "matrix",
+   "untyped": false,
+   "knobs": 1
+  },
+  {
+   "task": "cluster_expression",
+   "group": "expression",
+   "means": "Group features or conditions by expression similarity.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 9,
+   "canonical": "KBaseFeatureValues/expression_toolkit_cluster_hierarchical",
+   "canonical_name": "Cluster Expression Data - Hierarchical",
+   "copies": 12,
+   "ws_types_in": 2,
+   "consumes": [
+    "matrix"
+   ],
+   "produces": [
+    "clusters"
+   ],
+   "kbase_consumes": "matrix",
+   "kbase_produces": "clusters",
+   "untyped": false,
+   "knobs": 3
+  },
+  {
+   "task": "enrichment",
+   "group": "expression",
+   "means": "Test a feature set for over-represented functions.",
+   "plumbing": false,
+   "reporting": true,
+   "apps": 1,
+   "canonical": "kb_functional_enrichment_1/functional_enrichment_go_term",
+   "canonical_name": "Functional Enrichment for GO Terms - v1.0.8",
+   "copies": 26,
+   "ws_types_in": 1,
+   "consumes": [
+    "feature_set"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "feature_set",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 2
+  },
+  {
+   "task": "transform_matrix",
+   "group": "matrix",
+   "means": "Filter, normalise, rarefy, impute or re-key a matrix. Consumes a matrix and produces a matrix.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 16,
+   "canonical": "GenericsAPI/transform_matrix",
+   "canonical_name": "Transform Matrix",
+   "copies": 8,
+   "ws_types_in": 12,
+   "consumes": [
+    "matrix"
+   ],
+   "produces": [
+    "matrix"
+   ],
+   "kbase_consumes": "matrix",
+   "kbase_produces": "matrix",
+   "untyped": false,
+   "knobs": 15
+  },
+  {
+   "task": "correlate_matrix",
+   "group": "matrix",
+   "means": "Compute a correlation matrix within or between matrices.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 2,
+   "canonical": "GenericsAPI/compute_matrices_corr",
+   "canonical_name": "Compute Correlation Matrix Between Two Matrices",
+   "copies": 4,
+   "ws_types_in": 2,
+   "consumes": [
+    "matrix"
+   ],
+   "produces": [
+    "correlation"
+   ],
+   "kbase_consumes": "matrix",
+   "kbase_produces": "correlation",
+   "untyped": false,
+   "knobs": 4
+  },
+  {
+   "task": "ordinate",
+   "group": "matrix",
+   "means": "Reduce a matrix to an ordination.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "GenericsAPI/perform_pca",
+   "canonical_name": "Perform PCA Analysis",
+   "copies": 9,
+   "ws_types_in": 5,
+   "consumes": [
+    "matrix"
+   ],
+   "produces": [
+    "ordination"
+   ],
+   "kbase_consumes": "table_object",
+   "kbase_produces": "ordination",
+   "untyped": false,
+   "knobs": 6
+  },
+  {
+   "task": "test_statistics",
+   "group": "matrix",
+   "means": "Run a statistical test over a matrix and its sample attributes.",
+   "plumbing": false,
+   "reporting": true,
+   "apps": 3,
+   "canonical": "GenericsAPI/perform_simper",
+   "canonical_name": "Perform Similarity Percentage (SIMPER) Statistics Analysis",
+   "copies": 5,
+   "ws_types_in": 3,
+   "consumes": [
+    "matrix"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "table_object",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 3
+  },
+  {
+   "task": "build_network",
+   "group": "matrix",
+   "means": "Turn a correlation matrix into a network.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 1,
+   "canonical": "GenericsAPI/build_network",
+   "canonical_name": "Build Correlation Network",
+   "copies": 4,
+   "ws_types_in": 1,
+   "consumes": [
+    "correlation"
+   ],
+   "produces": [
+    "network"
+   ],
+   "kbase_consumes": "correlation",
+   "kbase_produces": "network",
+   "untyped": false,
+   "knobs": 2
+  },
+  {
+   "task": "align_sequences",
+   "group": "comparative",
+   "means": "Build or trim a multiple sequence alignment.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 4,
+   "canonical": "kb_muscle/MUSCLE_prot",
+   "canonical_name": "MUSCLE Multiple Sequence Alignment (Protein) - v3.8.425",
+   "copies": 28,
+   "ws_types_in": 3,
+   "consumes": [
+    "sequences"
+   ],
+   "produces": [
+    "msa"
+   ],
+   "kbase_consumes": "feature_set",
+   "kbase_produces": "msa",
+   "untyped": false,
+   "knobs": 2
+  },
+  {
+   "task": "build_tree",
+   "group": "comparative",
+   "means": "Build a phylogeny, or place genomes into an existing one.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 13,
+   "canonical": "SpeciesTreeBuilder/insert_set_of_genomes_into_species_tree",
+   "canonical_name": "Insert Genome Into SpeciesTree - v2.2.0",
+   "copies": 360,
+   "ws_types_in": 7,
+   "consumes": [
+    "genome",
+    "msa"
+   ],
+   "produces": [
+    "tree"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "genome_group",
+   "untyped": false,
+   "knobs": 2
+  },
+  {
+   "task": "pangenome",
+   "group": "comparative",
+   "means": "Compute orthologous groups across a set of genomes.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 4,
+   "canonical": "PangenomeOrthomcl/build_pangenome_with_orthomcl",
+   "canonical_name": "Build Pangenome with OrthoMCL - v2.0",
+   "copies": 84,
+   "ws_types_in": 3,
+   "consumes": [
+    "genome"
+   ],
+   "produces": [
+    "pangenome"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "pangenome",
+   "untyped": false,
+   "knobs": 24
+  },
+  {
+   "task": "compare_genomes",
+   "group": "comparative",
+   "means": "Report similarity between genomes or proteomes.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 6,
+   "canonical": "GenomeComparisonSDK/compare_genomes",
+   "canonical_name": "Compare Genomes from Pangenome",
+   "copies": 47,
+   "ws_types_in": 3,
+   "consumes": [
+    "genome",
+    "pangenome"
+   ],
+   "produces": [
+    "genome_comparison"
+   ],
+   "kbase_consumes": "pangenome",
+   "kbase_produces": "genome_comparison",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "call_variants",
+   "group": "comparative",
+   "means": "Call sequence variants of a population against a reference.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 2,
+   "canonical": "kb_meta_decoder/call_snps",
+   "canonical_name": "Call Microbial SNPs",
+   "copies": 1,
+   "ws_types_in": 6,
+   "consumes": [
+    "reads",
+    "assembly"
+   ],
+   "produces": [
+    "variants"
+   ],
+   "kbase_consumes": "sequence_data",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 3
+  },
+  {
+   "task": "identify_virus",
+   "group": "virus",
+   "means": "Find and characterise viral sequence in an assembly.",
+   "plumbing": false,
+   "reporting": false,
+   "apps": 5,
+   "canonical": "VirSorter/run_VirSorter",
+   "canonical_name": "VirSorter 1.0.5",
+   "copies": 37,
+   "ws_types_in": 6,
+   "consumes": [
+    "assembly"
+   ],
+   "produces": [
+    "bins",
+    "genome"
+   ],
+   "kbase_consumes": "sequence_object",
+   "kbase_produces": "bins",
+   "untyped": false,
+   "knobs": 5
+  },
+  {
+   "task": "build_set",
+   "group": "logistics",
+   "means": "Group objects into a set, or slice one. Produces no new science.",
+   "plumbing": true,
+   "reporting": false,
+   "apps": 28,
+   "canonical": "kb_SetUtilities/KButil_Build_GenomeSet",
+   "canonical_name": "Build GenomeSet - v1.7.6",
+   "copies": 201,
+   "ws_types_in": 15,
+   "consumes": [
+    "any"
+   ],
+   "produces": [
+    "any"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "genome",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "manage_samples",
+   "group": "logistics",
+   "means": "Attach metadata or access control to a sample set.",
+   "plumbing": true,
+   "reporting": false,
+   "apps": 7,
+   "canonical": "sample_uploader/import_samples",
+   "canonical_name": "Import Samples",
+   "copies": 70,
+   "ws_types_in": 9,
+   "consumes": [
+    "sample_set"
+   ],
+   "produces": [
+    "sample_set"
+   ],
+   "kbase_consumes": "sample_set",
+   "kbase_produces": "sample_set",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "import_other",
+   "group": "logistics",
+   "means": "Bring an object the vocabulary has no specific verb for into the workspace.",
+   "plumbing": true,
+   "reporting": false,
+   "apps": 11,
+   "canonical": "GenericsAPI/import_chemical_abundance",
+   "canonical_name": "Import Chemical Abundance Matrix from CSV/Excel/TSV File in Staging Area",
+   "copies": 19,
+   "ws_types_in": 4,
+   "consumes": [],
+   "produces": [
+    "any"
+   ],
+   "kbase_consumes": "any",
+   "kbase_produces": "matrix",
+   "untyped": false,
+   "knobs": 0
+  },
+  {
+   "task": "export",
+   "group": "logistics",
+   "means": "Write an object out of the workspace.",
+   "plumbing": true,
+   "reporting": false,
+   "apps": 3,
+   "canonical": "kb_staging_exporter/export_to_staging",
+   "canonical_name": "Export Data Object To Staging Area",
+   "copies": 19,
+   "ws_types_in": 13,
+   "consumes": [
+    "any"
+   ],
+   "produces": [],
+   "kbase_consumes": "any",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 0
+  },
+  {
+   "task": "view",
+   "group": "logistics",
+   "means": "Render an object as a report. Produces no data object.",
+   "plumbing": true,
+   "reporting": true,
+   "apps": 144,
+   "canonical": "CGViewAdvanced/run_CGViewAdvanced",
+   "canonical_name": "Circular Genome Visualization Tool",
+   "copies": 67,
+   "ws_types_in": 74,
+   "consumes": [
+    "any"
+   ],
+   "produces": [
+    "report"
+   ],
+   "kbase_consumes": "genome",
+   "kbase_produces": "none",
+   "untyped": true,
+   "knobs": 0
+  }
+ ],
+ "groups": {
+  "reads": "getting sequencing reads into a usable state",
+  "assembly": "turning reads into contigs and judging the result",
+  "annotation": "naming what is on a sequence",
+  "binning": "separating a metagenome assembly into genomes",
+  "taxonomy": "naming who is present",
+  "modelling": "metabolic reconstruction and flux",
+  "alignment": "mapping reads onto a reference and judging the result",
+  "expression": "RNA-seq from alignment to differential expression",
+  "matrix": "generic operations on an abundance or expression matrix",
+  "comparative": "alignments, trees, pangenomes and genome comparison",
+  "virus": "viral sequence identification",
+  "logistics": "moving, grouping and exporting objects"
+ },
+ "non_tasks": [
+  {
+   "name": "object_shuffler",
+   "means": "Copies or renames an object without changing it. Accepts so many types it is not a workflow step.",
+   "apps": 1
+  },
+  {
+   "name": "test_harness",
+   "means": "Runs the module's own tests.",
+   "apps": 1
+  },
+  {
+   "name": "no_op",
+   "means": "Declares neither a typed input nor a typed output nor a service method.",
+   "apps": 1
+  }
+ ],
+ "types": {
+  "referenced": 121,
+  "entities": 35,
+  "meanings": 93,
+  "axes": 11,
+  "families": 7,
+  "absorbed": [
+   [
+    "matrix",
+    27
+   ],
+   [
+    "reads",
+    8
+   ],
+   [
+    "genome",
+    8
+   ],
+   [
+    "model",
+    8
+   ],
+   [
+    "fba",
+    8
+   ],
+   [
+    "report",
+    5
+   ],
+   [
+    "assembly",
+    5
+   ],
+   [
+    "annotation",
+    5
+   ],
+   [
+    "biochem",
+    5
+   ],
+   [
+    "metagenome",
+    3
+   ],
+   [
+    "alignment",
+    3
+   ],
+   [
+    "ordination",
+    2
+   ],
+   [
+    "genome_comparison",
+    2
+   ],
+   [
+    "feature_set",
+    2
+   ],
+   [
+    "sequences",
+    2
+   ],
+   [
+    "msa",
+    2
+   ],
+   [
+    "attribute_mapping",
+    2
+   ],
+   [
+    "clusters",
+    2
+   ],
+   [
+    "model_template",
+    2
+   ],
+   [
+    "media",
+    2
+   ],
+   [
+    "protein_structure",
+    2
+   ],
+   [
+    "ontology",
+    2
+   ],
+   [
+    "classifier",
+    2
+   ],
+   [
+    "unknown",
+    1
+   ],
+   [
+    "bins",
+    1
+   ],
+   [
+    "feature",
+    1
+   ],
+   [
+    "tree",
+    1
+   ],
+   [
+    "pangenome",
+    1
+   ],
+   [
+    "index",
+    1
+   ],
+   [
+    "variants",
+    1
+   ],
+   [
+    "correlation",
+    1
+   ],
+   [
+    "network",
+    1
+   ],
+   [
+    "phenotype",
+    1
+   ],
+   [
+    "phenotype_simulation",
+    1
+   ],
+   [
+    "sample_set",
+    1
+   ]
+  ],
+  "unmapped_entities": [
+   "taxonomy"
+  ],
+  "unions": {
+   "total": 67,
+   "entity": 40,
+   "family": 24,
+   "none": 3,
+   "survivors": [
+    {
+     "entities": [
+      "annotation",
+      "assembly",
+      "bins",
+      "biochem",
+      "fba",
+      "feature_set",
+      "genome",
+      "genome_comparison",
+      "matrix",
+      "media",
+      "model",
+      "model_template",
+      "msa",
+      "pangenome",
+      "protein_structure",
+      "reads",
+      "sample_set",
+      "sequences",
+      "tree"
+     ]
+    },
+    {
+     "entities": [
+      "alignment",
+      "assembly",
+      "genome",
+      "reads",
+      "sample_set"
+     ]
+    },
+    {
+     "entities": [
+      "alignment",
+      "assembly",
+      "feature_set",
+      "genome",
+      "matrix",
+      "reads"
+     ]
+    }
+   ]
+  },
+  "family_means": {
+   "sequence_data": "The payload is sequence. Anything a read mapper, an assembler or a homology search can be pointed at.",
+   "sequence_object": "Assembled sequence with stable identity, as opposed to reads. The slot an annotator, a binner or a classifier accepts.",
+   "feature_container": "Names genomic features. The slot a feature set operation or an enrichment accepts.",
+   "modelling_object": "Part of a metabolic reconstruction. The slot a modelling utility or an exporter accepts.",
+   "genome_group": "A named collection of genomes, or a structure derived from one that implies it. The phylogenomics tools accept a GenomeSet or the Tree built from it interchangeably.",
+   "query_source": "Somewhere a homology search or an aligner can read query sequences from, whatever object holds them.",
+   "table_object": "A table with sample and feature axes, or something derived from one."
+  }
+ },
+ "params": {
+  "declared": 2758,
+  "distinct_ids": 1255,
+  "normalised": 1238,
+  "dispositions": [
+   {
+    "name": "typed_io",
+    "means": "Carries a workspace type. The type graph already models it, so it is not configuration at all.",
+    "home": "the data type graph",
+    "declarations": 599,
+    "names": 197
+   },
+   {
+    "name": "object_name",
+    "means": "Names the object the app will write. Metasmith names its own outputs from the plan, so nothing supplies this.",
+    "home": "the engine",
+    "declarations": 274,
+    "names": 92
+   },
+   {
+    "name": "object_metadata",
+    "means": "A label or description attached to the output object for a human reading the workspace.",
+    "home": "nowhere -- a metasmith run records provenance instead",
+    "declarations": 124,
+    "names": 35
+   },
+   {
+    "name": "input_metadata",
+    "means": "A property of the input data rather than of the method. It belongs on the data type as an axis, which is where the same fact stops being asked for once per app.",
+    "home": "types.yml",
+    "declarations": 138,
+    "names": 28
+   },
+   {
+    "name": "report_style",
+    "means": "How the app renders its report. A workflow that asks for a typed product does not care.",
+    "home": "nowhere",
+    "declarations": 64,
+    "names": 17
+   },
+   {
+    "name": "handled_by_engine",
+    "means": "A path into staging or a workspace reference. Metasmith carries the file itself and its lineage, so the pointer has nothing to point at.",
+    "home": "the engine",
+    "declarations": 38,
+    "names": 13
+   },
+   {
+    "name": "passthrough",
+    "means": "A raw command line the app hands to its tool unread. A config blob may carry it, but nothing can validate it.",
+    "home": "the config blob, unvalidated",
+    "declarations": 10,
+    "names": 2
+   },
+   {
+    "name": "knob",
+    "means": "Changes what the method computes. This is what a task's config type holds.",
+    "home": "the task's config type",
+    "declarations": 1511,
+    "names": 875
+   }
+  ],
+  "knobs": 1521,
+  "curated": 262,
+  "curated_names": 239,
+  "config_types": 39,
+  "common": [
+   {
+    "name": "minimum_contig_length",
+    "means": "Discard a contig shorter than this. Declared by assemble, bin, filter_assembly, classify_taxa and identify_virus.",
+    "kind": "string",
+    "tasks": 5
+   },
+   {
+    "name": "e_value",
+    "means": "The expectation cutoff a homology search reports down to.",
+    "kind": "string",
+    "tasks": 2
+   },
+   {
+    "name": "bitscore",
+    "means": "The bit score cutoff a homology search reports down to.",
+    "kind": "string",
+    "tasks": 3
+   },
+   {
+    "name": "minimum_length",
+    "means": "Discard a sequence shorter than this. Declared by annotate, classify_taxa, clean_reads and identify_virus, which is four tasks asking one question four ways.",
+    "kind": "string",
+    "tasks": 5
+   },
+   {
+    "name": "minimum_depth",
+    "means": "Require this much read coverage before making a call.",
+    "kind": "string",
+    "tasks": 3
+   },
+   {
+    "name": "media_supplement_list",
+    "means": "Compounds added to the medium before a model is solved. Declared identically by build_model, gapfill_model, predict_phenotype and run_fba.",
+    "kind": "string",
+    "tasks": 4
+   },
+   {
+    "name": "custom_bound_list",
+    "means": "Flux bounds overriding the model's own, shared by the same four modelling tasks.",
+    "kind": "string",
+    "tasks": 4
+   },
+   {
+    "name": "target_reaction",
+    "means": "The reaction a modelling task optimises or tests.",
+    "kind": "string",
+    "tasks": 3
+   },
+   {
+    "name": "reaction_ko_list",
+    "means": "Reactions knocked out before solving.",
+    "kind": "string",
+    "tasks": 3
+   },
+   {
+    "name": "feature_ko_list",
+    "means": "Genes knocked out before solving.",
+    "kind": "string",
+    "tasks": 3
+   },
+   {
+    "name": "minimum_target_flux",
+    "means": "The flux the target reaction must reach for a solution to count.",
+    "kind": "string",
+    "tasks": 3
+   },
+   {
+    "name": "method",
+    "means": "Which algorithm variant a generic matrix or clustering operation runs.",
+    "kind": "enum",
+    "tasks": 4
+   },
+   {
+    "name": "dimension",
+    "means": "Whether a matrix operation applies to rows or to columns.",
+    "kind": "enum",
+    "tasks": 4
+   }
+  ]
+ },
+ "workflows": {
+  "shapes": 1633,
+  "copies": 2407,
+  "canonical": 631,
+  "names": 83,
+  "curve": [
+   [
+    1,
+    5.65
+   ],
+   [
+    2,
+    9.971
+   ],
+   [
+    3,
+    12.921
+   ],
+   [
+    4,
+    15.33
+   ],
+   [
+    5,
+    17.698
+   ],
+   [
+    6,
+    19.9
+   ],
+   [
+    7,
+    22.019
+   ],
+   [
+    8,
+    23.889
+   ],
+   [
+    9,
+    25.717
+   ],
+   [
+    10,
+    27.212
+   ],
+   [
+    11,
+    28.708
+   ],
+   [
+    12,
+    30.162
+   ],
+   [
+    13,
+    31.491
+   ],
+   [
+    14,
+    32.613
+   ],
+   [
+    15,
+    33.735
+   ],
+   [
+    16,
+    34.815
+   ],
+   [
+    17,
+    35.812
+   ],
+   [
+    18,
+    36.768
+   ],
+   [
+    19,
+    37.723
+   ],
+   [
+    20,
+    38.679
+   ],
+   [
+    21,
+    39.51
+   ],
+   [
+    22,
+    40.299
+   ],
+   [
+    23,
+    41.088
+   ],
+   [
+    24,
+    41.753
+   ],
+   [
+    25,
+    42.418
+   ],
+   [
+    26,
+    43.083
+   ],
+   [
+    27,
+    43.706
+   ],
+   [
+    28,
+    44.329
+   ],
+   [
+    29,
+    44.952
+   ],
+   [
+    30,
+    45.575
+   ],
+   [
+    31,
+    46.199
+   ],
+   [
+    32,
+    46.78
+   ],
+   [
+    33,
+    47.32
+   ],
+   [
+    34,
+    47.86
+   ],
+   [
+    35,
+    48.4
+   ],
+   [
+    36,
+    48.941
+   ],
+   [
+    37,
+    49.439
+   ],
+   [
+    38,
+    49.938
+   ],
+   [
+    39,
+    50.436
+   ],
+   [
+    40,
+    50.893
+   ],
+   [
+    41,
+    51.309
+   ],
+   [
+    42,
+    51.724
+   ],
+   [
+    43,
+    52.14
+   ],
+   [
+    44,
+    52.555
+   ],
+   [
+    45,
+    52.971
+   ],
+   [
+    46,
+    53.386
+   ],
+   [
+    47,
+    53.76
+   ],
+   [
+    48,
+    54.134
+   ],
+   [
+    49,
+    54.508
+   ],
+   [
+    50,
+    54.882
+   ],
+   [
+    51,
+    55.256
+   ],
+   [
+    52,
+    55.629
+   ],
+   [
+    53,
+    56.003
+   ],
+   [
+    54,
+    56.377
+   ],
+   [
+    55,
+    56.71
+   ],
+   [
+    56,
+    57.042
+   ],
+   [
+    57,
+    57.374
+   ],
+   [
+    58,
+    57.707
+   ],
+   [
+    59,
+    57.998
+   ],
+   [
+    60,
+    58.288
+   ],
+   [
+    61,
+    58.579
+   ],
+   [
+    62,
+    58.87
+   ],
+   [
+    63,
+    59.161
+   ],
+   [
+    64,
+    59.452
+   ],
+   [
+    65,
+    59.742
+   ],
+   [
+    66,
+    60.033
+   ],
+   [
+    67,
+    60.283
+   ],
+   [
+    68,
+    60.532
+   ],
+   [
+    69,
+    60.781
+   ],
+   [
+    70,
+    61.03
+   ],
+   [
+    71,
+    61.28
+   ],
+   [
+    72,
+    61.529
+   ],
+   [
+    73,
+    61.778
+   ],
+   [
+    74,
+    62.027
+   ],
+   [
+    75,
+    62.277
+   ],
+   [
+    76,
+    62.526
+   ],
+   [
+    77,
+    62.775
+   ],
+   [
+    78,
+    63.025
+   ],
+   [
+    79,
+    63.274
+   ],
+   [
+    80,
+    63.523
+   ],
+   [
+    81,
+    63.731
+   ],
+   [
+    82,
+    63.939
+   ],
+   [
+    83,
+    64.146
+   ],
+   [
+    84,
+    64.354
+   ],
+   [
+    85,
+    64.562
+   ],
+   [
+    86,
+    64.769
+   ],
+   [
+    87,
+    64.977
+   ],
+   [
+    88,
+    65.185
+   ],
+   [
+    89,
+    65.393
+   ],
+   [
+    90,
+    65.6
+   ],
+   [
+    91,
+    65.808
+   ],
+   [
+    92,
+    66.016
+   ],
+   [
+    93,
+    66.224
+   ],
+   [
+    94,
+    66.431
+   ],
+   [
+    95,
+    66.639
+   ],
+   [
+    96,
+    66.847
+   ],
+   [
+    97,
+    67.054
+   ],
+   [
+    98,
+    67.262
+   ],
+   [
+    99,
+    67.47
+   ],
+   [
+    100,
+    67.678
+   ],
+   [
+    101,
+    67.885
+   ],
+   [
+    102,
+    68.052
+   ],
+   [
+    103,
+    68.218
+   ],
+   [
+    104,
+    68.384
+   ],
+   [
+    105,
+    68.55
+   ],
+   [
+    106,
+    68.716
+   ],
+   [
+    107,
+    68.882
+   ],
+   [
+    108,
+    69.049
+   ],
+   [
+    109,
+    69.215
+   ],
+   [
+    110,
+    69.381
+   ],
+   [
+    111,
+    69.547
+   ],
+   [
+    112,
+    69.713
+   ],
+   [
+    113,
+    69.88
+   ],
+   [
+    114,
+    70.046
+   ],
+   [
+    115,
+    70.212
+   ],
+   [
+    116,
+    70.378
+   ],
+   [
+    117,
+    70.544
+   ],
+   [
+    118,
+    70.71
+   ],
+   [
+    119,
+    70.877
+   ],
+   [
+    120,
+    71.043
+   ],
+   [
+    121,
+    71.209
+   ],
+   [
+    122,
+    71.375
+   ],
+   [
+    123,
+    71.541
+   ],
+   [
+    124,
+    71.708
+   ],
+   [
+    125,
+    71.874
+   ],
+   [
+    126,
+    72.04
+   ],
+   [
+    127,
+    72.165
+   ],
+   [
+    128,
+    72.289
+   ],
+   [
+    129,
+    72.414
+   ],
+   [
+    130,
+    72.538
+   ],
+   [
+    131,
+    72.663
+   ],
+   [
+    132,
+    72.788
+   ],
+   [
+    133,
+    72.912
+   ],
+   [
+    134,
+    73.037
+   ],
+   [
+    135,
+    73.162
+   ],
+   [
+    136,
+    73.286
+   ],
+   [
+    137,
+    73.411
+   ],
+   [
+    138,
+    73.536
+   ],
+   [
+    139,
+    73.66
+   ],
+   [
+    140,
+    73.785
+   ],
+   [
+    141,
+    73.909
+   ],
+   [
+    142,
+    74.034
+   ],
+   [
+    143,
+    74.159
+   ],
+   [
+    144,
+    74.283
+   ],
+   [
+    145,
+    74.408
+   ],
+   [
+    146,
+    74.533
+   ],
+   [
+    147,
+    74.657
+   ],
+   [
+    148,
+    74.782
+   ],
+   [
+    149,
+    74.907
+   ],
+   [
+    150,
+    75.031
+   ],
+   [
+    151,
+    75.156
+   ],
+   [
+    152,
+    75.28
+   ],
+   [
+    153,
+    75.405
+   ],
+   [
+    154,
+    75.53
+   ],
+   [
+    155,
+    75.654
+   ],
+   [
+    156,
+    75.779
+   ],
+   [
+    157,
+    75.904
+   ],
+   [
+    158,
+    76.028
+   ],
+   [
+    159,
+    76.153
+   ],
+   [
+    160,
+    76.278
+   ],
+   [
+    161,
+    76.402
+   ],
+   [
+    162,
+    76.527
+   ],
+   [
+    163,
+    76.651
+   ],
+   [
+    164,
+    76.776
+   ],
+   [
+    165,
+    76.901
+   ],
+   [
+    166,
+    76.984
+   ],
+   [
+    167,
+    77.067
+   ],
+   [
+    168,
+    77.15
+   ],
+   [
+    169,
+    77.233
+   ],
+   [
+    170,
+    77.316
+   ],
+   [
+    171,
+    77.399
+   ],
+   [
+    172,
+    77.482
+   ],
+   [
+    173,
+    77.565
+   ],
+   [
+    174,
+    77.649
+   ],
+   [
+    175,
+    77.732
+   ],
+   [
+    176,
+    77.815
+   ],
+   [
+    177,
+    77.898
+   ],
+   [
+    178,
+    77.981
+   ],
+   [
+    179,
+    78.064
+   ],
+   [
+    180,
+    78.147
+   ],
+   [
+    181,
+    78.23
+   ],
+   [
+    182,
+    78.313
+   ],
+   [
+    183,
+    78.396
+   ],
+   [
+    184,
+    78.479
+   ],
+   [
+    185,
+    78.563
+   ],
+   [
+    186,
+    78.646
+   ],
+   [
+    187,
+    78.729
+   ],
+   [
+    188,
+    78.812
+   ],
+   [
+    189,
+    78.895
+   ],
+   [
+    190,
+    78.978
+   ],
+   [
+    191,
+    79.061
+   ],
+   [
+    192,
+    79.144
+   ],
+   [
+    193,
+    79.227
+   ],
+   [
+    194,
+    79.31
+   ],
+   [
+    195,
+    79.393
+   ],
+   [
+    196,
+    79.477
+   ],
+   [
+    197,
+    79.56
+   ],
+   [
+    198,
+    79.643
+   ],
+   [
+    199,
+    79.726
+   ],
+   [
+    200,
+    79.809
+   ],
+   [
+    201,
+    79.892
+   ],
+   [
+    202,
+    79.975
+   ],
+   [
+    203,
+    80.058
+   ],
+   [
+    204,
+    80.141
+   ],
+   [
+    205,
+    80.224
+   ],
+   [
+    206,
+    80.307
+   ],
+   [
+    207,
+    80.391
+   ],
+   [
+    208,
+    80.474
+   ],
+   [
+    209,
+    80.557
+   ],
+   [
+    210,
+    80.64
+   ],
+   [
+    211,
+    80.723
+   ],
+   [
+    212,
+    80.806
+   ],
+   [
+    213,
+    80.889
+   ],
+   [
+    214,
+    80.972
+   ],
+   [
+    215,
+    81.055
+   ],
+   [
+    216,
+    81.138
+   ],
+   [
+    217,
+    81.221
+   ],
+   [
+    218,
+    81.305
+   ],
+   [
+    219,
+    81.388
+   ],
+   [
+    220,
+    81.471
+   ],
+   [
+    221,
+    81.554
+   ],
+   [
+    222,
+    81.637
+   ],
+   [
+    223,
+    81.72
+   ],
+   [
+    224,
+    81.803
+   ],
+   [
+    225,
+    81.886
+   ],
+   [
+    226,
+    81.969
+   ],
+   [
+    227,
+    82.052
+   ],
+   [
+    228,
+    82.135
+   ],
+   [
+    229,
+    82.219
+   ],
+   [
+    230,
+    82.302
+   ],
+   [
+    231,
+    82.385
+   ],
+   [
+    232,
+    82.468
+   ],
+   [
+    233,
+    82.551
+   ],
+   [
+    234,
+    82.634
+   ],
+   [
+    235,
+    82.717
+   ],
+   [
+    236,
+    82.8
+   ],
+   [
+    237,
+    82.883
+   ],
+   [
+    238,
+    82.966
+   ],
+   [
+    239,
+    83.049
+   ],
+   [
+    240,
+    83.133
+   ],
+   [
+    241,
+    83.216
+   ],
+   [
+    242,
+    83.299
+   ],
+   [
+    243,
+    83.382
+   ],
+   [
+    244,
+    83.465
+   ],
+   [
+    245,
+    83.548
+   ],
+   [
+    246,
+    83.631
+   ],
+   [
+    247,
+    83.714
+   ],
+   [
+    248,
+    83.797
+   ],
+   [
+    249,
+    83.88
+   ],
+   [
+    250,
+    83.963
+   ],
+   [
+    251,
+    84.047
+   ],
+   [
+    252,
+    84.13
+   ],
+   [
+    253,
+    84.213
+   ],
+   [
+    254,
+    84.296
+   ],
+   [
+    255,
+    84.379
+   ],
+   [
+    256,
+    84.42
+   ],
+   [
+    257,
+    84.462
+   ],
+   [
+    258,
+    84.504
+   ],
+   [
+    259,
+    84.545
+   ],
+   [
+    260,
+    84.587
+   ],
+   [
+    261,
+    84.628
+   ],
+   [
+    262,
+    84.67
+   ],
+   [
+    263,
+    84.711
+   ],
+   [
+    264,
+    84.753
+   ],
+   [
+    265,
+    84.794
+   ],
+   [
+    266,
+    84.836
+   ],
+   [
+    267,
+    84.877
+   ],
+   [
+    268,
+    84.919
+   ],
+   [
+    269,
+    84.961
+   ],
+   [
+    270,
+    85.002
+   ],
+   [
+    271,
+    85.044
+   ],
+   [
+    272,
+    85.085
+   ],
+   [
+    273,
+    85.127
+   ],
+   [
+    274,
+    85.168
+   ],
+   [
+    275,
+    85.21
+   ],
+   [
+    276,
+    85.251
+   ],
+   [
+    277,
+    85.293
+   ],
+   [
+    278,
+    85.334
+   ],
+   [
+    279,
+    85.376
+   ],
+   [
+    280,
+    85.418
+   ],
+   [
+    281,
+    85.459
+   ],
+   [
+    282,
+    85.501
+   ],
+   [
+    283,
+    85.542
+   ],
+   [
+    284,
+    85.584
+   ],
+   [
+    285,
+    85.625
+   ],
+   [
+    286,
+    85.667
+   ],
+   [
+    287,
+    85.708
+   ],
+   [
+    288,
+    85.75
+   ],
+   [
+    289,
+    85.791
+   ],
+   [
+    290,
+    85.833
+   ],
+   [
+    291,
+    85.875
+   ],
+   [
+    292,
+    85.916
+   ],
+   [
+    293,
+    85.958
+   ],
+   [
+    294,
+    85.999
+   ],
+   [
+    295,
+    86.041
+   ],
+   [
+    296,
+    86.082
+   ],
+   [
+    297,
+    86.124
+   ],
+   [
+    298,
+    86.165
+   ],
+   [
+    299,
+    86.207
+   ],
+   [
+    300,
+    86.248
+   ],
+   [
+    301,
+    86.29
+   ],
+   [
+    302,
+    86.332
+   ],
+   [
+    303,
+    86.373
+   ],
+   [
+    304,
+    86.415
+   ],
+   [
+    305,
+    86.456
+   ],
+   [
+    306,
+    86.498
+   ],
+   [
+    307,
+    86.539
+   ],
+   [
+    308,
+    86.581
+   ],
+   [
+    309,
+    86.622
+   ],
+   [
+    310,
+    86.664
+   ],
+   [
+    311,
+    86.705
+   ],
+   [
+    312,
+    86.747
+   ],
+   [
+    313,
+    86.789
+   ],
+   [
+    314,
+    86.83
+   ],
+   [
+    315,
+    86.872
+   ],
+   [
+    316,
+    86.913
+   ],
+   [
+    317,
+    86.955
+   ],
+   [
+    318,
+    86.996
+   ],
+   [
+    319,
+    87.038
+   ],
+   [
+    320,
+    87.079
+   ],
+   [
+    321,
+    87.121
+   ],
+   [
+    322,
+    87.162
+   ],
+   [
+    323,
+    87.204
+   ],
+   [
+    324,
+    87.246
+   ],
+   [
+    325,
+    87.287
+   ],
+   [
+    326,
+    87.329
+   ],
+   [
+    327,
+    87.37
+   ],
+   [
+    328,
+    87.412
+   ],
+   [
+    329,
+    87.453
+   ],
+   [
+    330,
+    87.495
+   ],
+   [
+    331,
+    87.536
+   ],
+   [
+    332,
+    87.578
+   ],
+   [
+    333,
+    87.619
+   ],
+   [
+    334,
+    87.661
+   ],
+   [
+    335,
+    87.703
+   ],
+   [
+    336,
+    87.744
+   ],
+   [
+    337,
+    87.786
+   ],
+   [
+    338,
+    87.827
+   ],
+   [
+    339,
+    87.869
+   ],
+   [
+    340,
+    87.91
+   ],
+   [
+    341,
+    87.952
+   ],
+   [
+    342,
+    87.993
+   ],
+   [
+    343,
+    88.035
+   ],
+   [
+    344,
+    88.076
+   ],
+   [
+    345,
+    88.118
+   ],
+   [
+    346,
+    88.16
+   ],
+   [
+    347,
+    88.201
+   ],
+   [
+    348,
+    88.243
+   ],
+   [
+    349,
+    88.284
+   ],
+   [
+    350,
+    88.326
+   ],
+   [
+    351,
+    88.367
+   ],
+   [
+    352,
+    88.409
+   ],
+   [
+    353,
+    88.45
+   ],
+   [
+    354,
+    88.492
+   ],
+   [
+    355,
+    88.533
+   ],
+   [
+    356,
+    88.575
+   ],
+   [
+    357,
+    88.617
+   ],
+   [
+    358,
+    88.658
+   ],
+   [
+    359,
+    88.7
+   ],
+   [
+    360,
+    88.741
+   ],
+   [
+    361,
+    88.783
+   ],
+   [
+    362,
+    88.824
+   ],
+   [
+    363,
+    88.866
+   ],
+   [
+    364,
+    88.907
+   ],
+   [
+    365,
+    88.949
+   ],
+   [
+    366,
+    88.99
+   ],
+   [
+    367,
+    89.032
+   ],
+   [
+    368,
+    89.074
+   ],
+   [
+    369,
+    89.115
+   ],
+   [
+    370,
+    89.157
+   ],
+   [
+    371,
+    89.198
+   ],
+   [
+    372,
+    89.24
+   ],
+   [
+    373,
+    89.281
+   ],
+   [
+    374,
+    89.323
+   ],
+   [
+    375,
+    89.364
+   ],
+   [
+    376,
+    89.406
+   ],
+   [
+    377,
+    89.447
+   ],
+   [
+    378,
+    89.489
+   ],
+   [
+    379,
+    89.531
+   ],
+   [
+    380,
+    89.572
+   ],
+   [
+    381,
+    89.614
+   ],
+   [
+    382,
+    89.655
+   ],
+   [
+    383,
+    89.697
+   ],
+   [
+    384,
+    89.738
+   ],
+   [
+    385,
+    89.78
+   ],
+   [
+    386,
+    89.821
+   ],
+   [
+    387,
+    89.863
+   ],
+   [
+    388,
+    89.904
+   ],
+   [
+    389,
+    89.946
+   ],
+   [
+    390,
+    89.988
+   ],
+   [
+    391,
+    90.029
+   ],
+   [
+    392,
+    90.071
+   ],
+   [
+    393,
+    90.112
+   ],
+   [
+    394,
+    90.154
+   ],
+   [
+    395,
+    90.195
+   ],
+   [
+    396,
+    90.237
+   ],
+   [
+    397,
+    90.278
+   ],
+   [
+    398,
+    90.32
+   ],
+   [
+    399,
+    90.361
+   ],
+   [
+    400,
+    90.403
+   ],
+   [
+    401,
+    90.445
+   ],
+   [
+    402,
+    90.486
+   ],
+   [
+    403,
+    90.528
+   ],
+   [
+    404,
+    90.569
+   ],
+   [
+    405,
+    90.611
+   ],
+   [
+    406,
+    90.652
+   ],
+   [
+    407,
+    90.694
+   ],
+   [
+    408,
+    90.735
+   ],
+   [
+    409,
+    90.777
+   ],
+   [
+    410,
+    90.818
+   ],
+   [
+    411,
+    90.86
+   ],
+   [
+    412,
+    90.902
+   ],
+   [
+    413,
+    90.943
+   ],
+   [
+    414,
+    90.985
+   ],
+   [
+    415,
+    91.026
+   ],
+   [
+    416,
+    91.068
+   ],
+   [
+    417,
+    91.109
+   ],
+   [
+    418,
+    91.151
+   ],
+   [
+    419,
+    91.192
+   ],
+   [
+    420,
+    91.234
+   ],
+   [
+    421,
+    91.275
+   ],
+   [
+    422,
+    91.317
+   ],
+   [
+    423,
+    91.359
+   ],
+   [
+    424,
+    91.4
+   ],
+   [
+    425,
+    91.442
+   ],
+   [
+    426,
+    91.483
+   ],
+   [
+    427,
+    91.525
+   ],
+   [
+    428,
+    91.566
+   ],
+   [
+    429,
+    91.608
+   ],
+   [
+    430,
+    91.649
+   ],
+   [
+    431,
+    91.691
+   ],
+   [
+    432,
+    91.732
+   ],
+   [
+    433,
+    91.774
+   ],
+   [
+    434,
+    91.816
+   ],
+   [
+    435,
+    91.857
+   ],
+   [
+    436,
+    91.899
+   ],
+   [
+    437,
+    91.94
+   ],
+   [
+    438,
+    91.982
+   ],
+   [
+    439,
+    92.023
+   ],
+   [
+    440,
+    92.065
+   ],
+   [
+    441,
+    92.106
+   ],
+   [
+    442,
+    92.148
+   ],
+   [
+    443,
+    92.189
+   ],
+   [
+    444,
+    92.231
+   ],
+   [
+    445,
+    92.273
+   ],
+   [
+    446,
+    92.314
+   ],
+   [
+    447,
+    92.356
+   ],
+   [
+    448,
+    92.397
+   ],
+   [
+    449,
+    92.439
+   ],
+   [
+    450,
+    92.48
+   ],
+   [
+    451,
+    92.522
+   ],
+   [
+    452,
+    92.563
+   ],
+   [
+    453,
+    92.605
+   ],
+   [
+    454,
+    92.646
+   ],
+   [
+    455,
+    92.688
+   ],
+   [
+    456,
+    92.73
+   ],
+   [
+    457,
+    92.771
+   ],
+   [
+    458,
+    92.813
+   ],
+   [
+    459,
+    92.854
+   ],
+   [
+    460,
+    92.896
+   ],
+   [
+    461,
+    92.937
+   ],
+   [
+    462,
+    92.979
+   ],
+   [
+    463,
+    93.02
+   ],
+   [
+    464,
+    93.062
+   ],
+   [
+    465,
+    93.103
+   ],
+   [
+    466,
+    93.145
+   ],
+   [
+    467,
+    93.187
+   ],
+   [
+    468,
+    93.228
+   ],
+   [
+    469,
+    93.27
+   ],
+   [
+    470,
+    93.311
+   ],
+   [
+    471,
+    93.353
+   ],
+   [
+    472,
+    93.394
+   ],
+   [
+    473,
+    93.436
+   ],
+   [
+    474,
+    93.477
+   ],
+   [
+    475,
+    93.519
+   ],
+   [
+    476,
+    93.56
+   ],
+   [
+    477,
+    93.602
+   ],
+   [
+    478,
+    93.644
+   ],
+   [
+    479,
+    93.685
+   ],
+   [
+    480,
+    93.727
+   ],
+   [
+    481,
+    93.768
+   ],
+   [
+    482,
+    93.81
+   ],
+   [
+    483,
+    93.851
+   ],
+   [
+    484,
+    93.893
+   ],
+   [
+    485,
+    93.934
+   ],
+   [
+    486,
+    93.976
+   ],
+   [
+    487,
+    94.017
+   ],
+   [
+    488,
+    94.059
+   ],
+   [
+    489,
+    94.101
+   ],
+   [
+    490,
+    94.142
+   ],
+   [
+    491,
+    94.184
+   ],
+   [
+    492,
+    94.225
+   ],
+   [
+    493,
+    94.267
+   ],
+   [
+    494,
+    94.308
+   ],
+   [
+    495,
+    94.35
+   ],
+   [
+    496,
+    94.391
+   ],
+   [
+    497,
+    94.433
+   ],
+   [
+    498,
+    94.474
+   ],
+   [
+    499,
+    94.516
+   ],
+   [
+    500,
+    94.558
+   ],
+   [
+    501,
+    94.599
+   ],
+   [
+    502,
+    94.641
+   ],
+   [
+    503,
+    94.682
+   ],
+   [
+    504,
+    94.724
+   ],
+   [
+    505,
+    94.765
+   ],
+   [
+    506,
+    94.807
+   ],
+   [
+    507,
+    94.848
+   ],
+   [
+    508,
+    94.89
+   ],
+   [
+    509,
+    94.931
+   ],
+   [
+    510,
+    94.973
+   ],
+   [
+    511,
+    95.015
+   ],
+   [
+    512,
+    95.056
+   ],
+   [
+    513,
+    95.098
+   ],
+   [
+    514,
+    95.139
+   ],
+   [
+    515,
+    95.181
+   ],
+   [
+    516,
+    95.222
+   ],
+   [
+    517,
+    95.264
+   ],
+   [
+    518,
+    95.305
+   ],
+   [
+    519,
+    95.347
+   ],
+   [
+    520,
+    95.388
+   ],
+   [
+    521,
+    95.43
+   ],
+   [
+    522,
+    95.472
+   ],
+   [
+    523,
+    95.513
+   ],
+   [
+    524,
+    95.555
+   ],
+   [
+    525,
+    95.596
+   ],
+   [
+    526,
+    95.638
+   ],
+   [
+    527,
+    95.679
+   ],
+   [
+    528,
+    95.721
+   ],
+   [
+    529,
+    95.762
+   ],
+   [
+    530,
+    95.804
+   ],
+   [
+    531,
+    95.845
+   ],
+   [
+    532,
+    95.887
+   ],
+   [
+    533,
+    95.929
+   ],
+   [
+    534,
+    95.97
+   ],
+   [
+    535,
+    96.012
+   ],
+   [
+    536,
+    96.053
+   ],
+   [
+    537,
+    96.095
+   ],
+   [
+    538,
+    96.136
+   ],
+   [
+    539,
+    96.178
+   ],
+   [
+    540,
+    96.219
+   ],
+   [
+    541,
+    96.261
+   ],
+   [
+    542,
+    96.302
+   ],
+   [
+    543,
+    96.344
+   ],
+   [
+    544,
+    96.386
+   ],
+   [
+    545,
+    96.427
+   ],
+   [
+    546,
+    96.469
+   ],
+   [
+    547,
+    96.51
+   ],
+   [
+    548,
+    96.552
+   ],
+   [
+    549,
+    96.593
+   ],
+   [
+    550,
+    96.635
+   ],
+   [
+    551,
+    96.676
+   ],
+   [
+    552,
+    96.718
+   ],
+   [
+    553,
+    96.759
+   ],
+   [
+    554,
+    96.801
+   ],
+   [
+    555,
+    96.843
+   ],
+   [
+    556,
+    96.884
+   ],
+   [
+    557,
+    96.926
+   ],
+   [
+    558,
+    96.967
+   ],
+   [
+    559,
+    97.009
+   ],
+   [
+    560,
+    97.05
+   ],
+   [
+    561,
+    97.092
+   ],
+   [
+    562,
+    97.133
+   ],
+   [
+    563,
+    97.175
+   ],
+   [
+    564,
+    97.216
+   ],
+   [
+    565,
+    97.258
+   ],
+   [
+    566,
+    97.3
+   ],
+   [
+    567,
+    97.341
+   ],
+   [
+    568,
+    97.383
+   ],
+   [
+    569,
+    97.424
+   ],
+   [
+    570,
+    97.466
+   ],
+   [
+    571,
+    97.507
+   ],
+   [
+    572,
+    97.549
+   ],
+   [
+    573,
+    97.59
+   ],
+   [
+    574,
+    97.632
+   ],
+   [
+    575,
+    97.673
+   ],
+   [
+    576,
+    97.715
+   ],
+   [
+    577,
+    97.757
+   ],
+   [
+    578,
+    97.798
+   ],
+   [
+    579,
+    97.84
+   ],
+   [
+    580,
+    97.881
+   ],
+   [
+    581,
+    97.923
+   ],
+   [
+    582,
+    97.964
+   ],
+   [
+    583,
+    98.006
+   ],
+   [
+    584,
+    98.047
+   ],
+   [
+    585,
+    98.089
+   ],
+   [
+    586,
+    98.13
+   ],
+   [
+    587,
+    98.172
+   ],
+   [
+    588,
+    98.214
+   ],
+   [
+    589,
+    98.255
+   ],
+   [
+    590,
+    98.297
+   ],
+   [
+    591,
+    98.338
+   ],
+   [
+    592,
+    98.38
+   ],
+   [
+    593,
+    98.421
+   ],
+   [
+    594,
+    98.463
+   ],
+   [
+    595,
+    98.504
+   ],
+   [
+    596,
+    98.546
+   ],
+   [
+    597,
+    98.587
+   ],
+   [
+    598,
+    98.629
+   ],
+   [
+    599,
+    98.671
+   ],
+   [
+    600,
+    98.712
+   ],
+   [
+    601,
+    98.754
+   ],
+   [
+    602,
+    98.795
+   ],
+   [
+    603,
+    98.837
+   ],
+   [
+    604,
+    98.878
+   ],
+   [
+    605,
+    98.92
+   ],
+   [
+    606,
+    98.961
+   ],
+   [
+    607,
+    99.003
+   ],
+   [
+    608,
+    99.044
+   ],
+   [
+    609,
+    99.086
+   ],
+   [
+    610,
+    99.128
+   ],
+   [
+    611,
+    99.169
+   ],
+   [
+    612,
+    99.211
+   ],
+   [
+    613,
+    99.252
+   ],
+   [
+    614,
+    99.294
+   ],
+   [
+    615,
+    99.335
+   ],
+   [
+    616,
+    99.377
+   ],
+   [
+    617,
+    99.418
+   ],
+   [
+    618,
+    99.46
+   ],
+   [
+    619,
+    99.501
+   ],
+   [
+    620,
+    99.543
+   ],
+   [
+    621,
+    99.585
+   ],
+   [
+    622,
+    99.626
+   ],
+   [
+    623,
+    99.668
+   ],
+   [
+    624,
+    99.709
+   ],
+   [
+    625,
+    99.751
+   ],
+   [
+    626,
+    99.792
+   ],
+   [
+    627,
+    99.834
+   ],
+   [
+    628,
+    99.875
+   ],
+   [
+    629,
+    99.917
+   ],
+   [
+    630,
+    99.958
+   ],
+   [
+    631,
+    100.0
+   ]
+  ],
+  "top": [
+   {
+    "name": "taxonomy_from_reads",
+    "tasks": [
+     "annotate",
+     "assemble",
+     "classify_taxa"
+    ],
+    "copies": 136,
+    "shapes": 20,
+    "typed": true
+   },
+   {
+    "name": "fba_from_genome",
+    "tasks": [
+     "build_model",
+     "run_fba"
+    ],
+    "copies": 104,
+    "shapes": 21,
+    "typed": true
+   },
+   {
+    "name": "genome_from_assembly",
+    "tasks": [
+     "annotate"
+    ],
+    "copies": 71,
+    "shapes": 24,
+    "typed": true
+   },
+   {
+    "name": "reads_from_reads",
+    "tasks": [
+     "clean_reads",
+     "import_reads"
+    ],
+    "copies": 58,
+    "shapes": 26,
+    "typed": true
+   },
+   {
+    "name": "model_from_reads",
+    "tasks": [
+     "annotate",
+     "assemble",
+     "bin",
+     "build_model",
+     "build_tree",
+     "clean_reads",
+     "extract_bins",
+     "import_reads",
+     "qc_bins"
+    ],
+    "copies": 57,
+    "shapes": 32,
+    "typed": true
+   },
+   {
+    "name": "model_from_assembly",
+    "tasks": [
+     "annotate",
+     "build_model"
+    ],
+    "copies": 53,
+    "shapes": 36,
+    "typed": true
+   },
+   {
+    "name": "matrix_from_reads",
+    "tasks": [
+     "align_reads",
+     "differential_expression",
+     "quantify_expression"
+    ],
+    "copies": 51,
+    "shapes": 19,
+    "typed": true
+   },
+   {
+    "name": "model_from_reads",
+    "tasks": [
+     "annotate",
+     "assemble",
+     "bin",
+     "build_model",
+     "build_tree",
+     "extract_bins",
+     "qc_bins"
+    ],
+    "copies": 45,
+    "shapes": 20,
+    "typed": true
+   },
+   {
+    "name": "taxonomy_from_matrix",
+    "tasks": [
+     "classify_taxa",
+     "import_matrix"
+    ],
+    "copies": 44,
+    "shapes": 7,
+    "typed": true
+   },
+   {
+    "name": "fba_from_assembly",
+    "tasks": [
+     "annotate",
+     "build_model",
+     "run_fba"
+    ],
+    "copies": 36,
+    "shapes": 22,
+    "typed": true
+   },
+   {
+    "name": "tree_from_assembly",
+    "tasks": [
+     "annotate",
+     "build_tree"
+    ],
+    "copies": 36,
+    "shapes": 17,
+    "typed": true
+   },
+   {
+    "name": "genome_from_assembly",
+    "tasks": [
+     "annotate",
+     "bin",
+     "classify_taxa",
+     "extract_bins",
+     "qc_bins",
+     "refine_bins"
+    ],
+    "copies": 35,
+    "shapes": 33,
+    "typed": true
+   },
+   {
+    "name": "model_from_assembly",
+    "tasks": [
+     "annotate",
+     "bin",
+     "build_model",
+     "build_tree",
+     "extract_bins",
+     "qc_bins"
+    ],
+    "copies": 32,
+    "shapes": 16,
+    "typed": true
+   },
+   {
+    "name": "genome_from_assembly",
+    "tasks": [
+     "annotate",
+     "bin",
+     "classify_taxa",
+     "extract_bins",
+     "qc_bins"
+    ],
+    "copies": 27,
+    "shapes": 25,
+    "typed": true
+   },
+   {
+    "name": null,
+    "tasks": [],
+    "copies": 27,
+    "shapes": 18,
+    "typed": false
+   },
+   {
+    "name": "genome_from_assembly",
+    "tasks": [
+     "annotate",
+     "bin",
+     "extract_bins",
+     "qc_bins",
+     "refine_bins"
+    ],
+    "copies": 26,
+    "shapes": 18,
+    "typed": true
+   },
+   {
+    "name": "alignment_from_reads",
+    "tasks": [
+     "align_reads"
+    ],
+    "copies": 24,
+    "shapes": 15,
+    "typed": false
+   },
+   {
+    "name": "assembly_from_reads",
+    "tasks": [
+     "assemble",
+     "import_reads"
+    ],
+    "copies": 23,
+    "shapes": 16,
+    "typed": true
+   },
+   {
+    "name": "genome_from_reads",
+    "tasks": [
+     "annotate",
+     "assemble"
+    ],
+    "copies": 23,
+    "shapes": 15,
+    "typed": true
+   },
+   {
+    "name": "taxonomy_from_reads",
+    "tasks": [
+     "assemble",
+     "classify_taxa"
+    ],
+    "copies": 23,
+    "shapes": 2,
+    "typed": true
+   },
+   {
+    "name": "fba_from_assembly",
+    "tasks": [
+     "annotate",
+     "build_model",
+     "gapfill_model",
+     "run_fba"
+    ],
+    "copies": 20,
+    "shapes": 18,
+    "typed": true
+   },
+   {
+    "name": "fba_from_genome",
+    "tasks": [
+     "build_model",
+     "gapfill_model",
+     "run_fba"
+    ],
+    "copies": 19,
+    "shapes": 16,
+    "typed": true
+   },
+   {
+    "name": "feature_set_from_assembly",
+    "tasks": [
+     "annotate",
+     "search_homologs"
+    ],
+    "copies": 19,
+    "shapes": 13,
+    "typed": true
+   },
+   {
+    "name": "model_from_assembly",
+    "tasks": [
+     "annotate",
+     "bin",
+     "build_model",
+     "classify_taxa",
+     "extract_bins",
+     "qc_bins",
+     "refine_bins"
+    ],
+    "copies": 16,
+    "shapes": 16,
+    "typed": true
+   },
+   {
+    "name": "fba_from_media",
+    "tasks": [
+     "build_model",
+     "edit_media",
+     "run_fba"
+    ],
+    "copies": 16,
+    "shapes": 11,
+    "typed": true
+   }
+  ],
+  "by_size": [
+   [
+    0,
+    1
+   ],
+   [
+    1,
+    19
+   ],
+   [
+    2,
+    74
+   ],
+   [
+    3,
+    91
+   ],
+   [
+    4,
+    122
+   ],
+   [
+    5,
+    98
+   ],
+   [
+    6,
+    84
+   ],
+   [
+    7,
+    53
+   ],
+   [
+    8,
+    30
+   ],
+   [
+    9,
+    29
+   ],
+   [
+    10,
+    14
+   ],
+   [
+    11,
+    6
+   ],
+   [
+    12,
+    4
+   ],
+   [
+    13,
+    5
+   ],
+   [
+    15,
+    1
+   ]
+  ]
+ },
+ "gaps": {
+  "untyped_verbs": [
+   {
+    "task": "qc_reads",
+    "canonical": "kb_fastqc/runFastQC",
+    "apps": 4,
+    "copies": 467
+   },
+   {
+    "task": "qc_assembly",
+    "canonical": "kb_quast/run_QUAST_app",
+    "apps": 3,
+    "copies": 92
+   },
+   {
+    "task": "annotate_domains",
+    "canonical": "kb_phylogenomics/run_DomainAnnotation_Sets",
+    "apps": 3,
+    "copies": 50
+   },
+   {
+    "task": "qc_bins",
+    "canonical": "kb_Msuite/run_checkM_lineage_wf",
+    "apps": 2,
+    "copies": 702
+   },
+   {
+    "task": "extract_bins",
+    "canonical": "MetagenomeUtils/extract_bins_as_assemblies",
+    "apps": 2,
+    "copies": 589
+   },
+   {
+    "task": "align_reads",
+    "canonical": "kb_hisat2/align_reads_using_hisat2",
+    "apps": 7,
+    "copies": 140
+   },
+   {
+    "task": "qc_alignment",
+    "canonical": "kb_QualiMap/run_QualiMap",
+    "apps": 1,
+    "copies": 4
+   },
+   {
+    "task": "quantify_expression",
+    "canonical": "kb_stringtie/run_stringtie",
+    "apps": 9,
+    "copies": 80
+   },
+   {
+    "task": "enrichment",
+    "canonical": "kb_functional_enrichment_1/functional_enrichment_go_term",
+    "apps": 1,
+    "copies": 26
+   },
+   {
+    "task": "test_statistics",
+    "canonical": "GenericsAPI/perform_simper",
+    "apps": 3,
+    "copies": 5
+   },
+   {
+    "task": "call_variants",
+    "canonical": "kb_meta_decoder/call_snps",
+    "apps": 2,
+    "copies": 1
+   },
+   {
+    "task": "export",
+    "canonical": "kb_staging_exporter/export_to_staging",
+    "apps": 3,
+    "copies": 19
+   },
+   {
+    "task": "view",
+    "canonical": "CGViewAdvanced/run_CGViewAdvanced",
+    "apps": 144,
+    "copies": 67
+   }
+  ],
+  "no_workspace_type": [
+   "taxonomy"
+  ],
+  "corpus_apps_absent_from_catalog": 57
+ }
+}</script>
+<script>
+const D = JSON.parse(document.getElementById("report-data").textContent);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const n = (v) => v.toLocaleString("en-US");
+
+$("fetched").textContent = D.census_date;
+$("naxes").textContent = D.types.axes;
+
+/* -- the four collapses -- */
+$("collapse").innerHTML = D.funnels.map((f) => {
+  const pct = Math.max(1.2, 100 * f.after / f.before);
+  const ratio = (f.before / f.after).toFixed(1);
+  return `<div class="crow">
+    <div class="axis">${esc(f.axis)}</div>
+    <div class="ctrack">
+      <div class="cbar"><div class="fill" style="width:${pct}%"></div>
+        <span class="ratio num">${ratio}&times; fewer</span></div>
+      <div class="clabels">
+        <span class="after"><span class="num">${n(f.after)}</span> ${esc(f.after_label)}</span>
+        <span class="before"><span class="num">${n(f.before)}</span> ${esc(f.before_label)}</span>
+      </div>
+      <div class="cnote">${esc(f.note)}</div>
+    </div></div>`;
+}).join("");
+
+/* -- the verb table -- */
+(() => {
+  const order = Object.keys(D.groups);
+  const rows = [];
+  rows.push(`<thead><tr>
+    <th>Verb</th><th class="n">Apps</th><th>Canonical method</th><th class="n">Copies</th>
+    <th>Consumes &rarr; produces</th><th class="n">Knobs</th></tr></thead><tbody>`);
+  for (const g of order) {
+    const inGroup = D.verbs.filter((v) => v.group === g);
+    if (!inGroup.length) continue;
+    rows.push(`<tr class="grouphead"><td colspan="6">${esc(g)} &mdash; ${esc(D.groups[g])}</td></tr>`);
+    for (const v of inGroup) {
+      const tags = [];
+      if (v.untyped) tags.push('<span class="tag untyped">no typed output</span>');
+      if (v.plumbing) tags.push('<span class="tag plumb">plumbing</span>');
+      rows.push(`<tr>
+        <td class="verb">${esc(v.task)}${tags.length ? "<br>" + tags.join(" ") : ""}</td>
+        <td class="n">${v.apps}</td>
+        <td class="id">${esc(v.canonical)}</td>
+        <td class="n">${n(v.copies)}</td>
+        <td class="io">${esc(v.consumes.join(", ") || "nothing")}<span class="arrow">&rarr;</span>${esc(v.produces.join(", "))}</td>
+        <td class="n">${v.knobs || ""}</td></tr>`);
+    }
+  }
+  rows.push("</tbody>");
+  $("verbtable").innerHTML = rows.join("");
+})();
+
+$("nontasks").innerHTML = `<div class="tablewrap"><table><tbody>${
+  D.non_tasks.map((t) => `<tr><td class="verb">${esc(t.name)}</td>
+    <td class="n">${t.apps}</td><td>${esc(t.means)}</td></tr>`).join("")}</tbody></table></div>`;
+
+/* -- entity absorption -- */
+(() => {
+  const rows = D.types.absorbed.filter(([, c]) => c > 1);
+  const max = rows[0][1];
+  $("entitytable").innerHTML = `<thead><tr><th>Entity</th><th class="n">Types</th>
+    <th class="magcell">Share of the 121</th><th>Entity</th><th class="n">Types</th>
+    <th class="magcell">&nbsp;</th></tr></thead><tbody>` +
+    (() => {
+      const half = Math.ceil(rows.length / 2);
+      let out = "";
+      for (let i = 0; i < half; i++) {
+        const cell = (r) => r ? `<td class="verb">${esc(r[0])}</td><td class="n">${r[1]}</td>
+          <td class="magcell"><div class="mag"><i style="width:${100 * r[1] / max}%"></i></div></td>`
+          : `<td></td><td></td><td></td>`;
+        out += `<tr>${cell(rows[i])}${cell(rows[i + half])}</tr>`;
+      }
+      return out;
+    })() + "</tbody>";
+})();
+
+/* -- union collapse -- */
+(() => {
+  const u = D.types.unions;
+  const segs = [
+    ["one entity, an axis left free", u.entity, "var(--entity)"],
+    ["one declared family", u.family, "var(--family)"],
+    ["genuinely heterogeneous", u.none, "var(--warn)"],
+  ];
+  $("unionstack").innerHTML = segs.map(([, v, c]) =>
+    `<span style="flex:${v};background:${c}"></span>`).join("");
+  $("unionkey").innerHTML = segs.map(([label, v, c]) =>
+    `<div><span class="swatch" style="background:${c}"></span>
+     <span><b class="num">${v}</b> &nbsp;${esc(label)}</span></div>`).join("");
+  $("families").innerHTML = `<div class="tablewrap"><table><thead><tr>
+    <th>Family</th><th>What it is</th></tr></thead><tbody>` +
+    Object.entries(D.types.family_means).map(([k, v]) =>
+      `<tr><td class="verb">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") +
+    "</tbody></table></div>";
+})();
+
+/* -- parameter dispositions -- */
+(() => {
+  const total = D.params.declared;
+  const max = Math.max(...D.params.dispositions.map((d) => d.declarations));
+  $("disptable").innerHTML = `<thead><tr><th>Disposition</th><th class="n">Declarations</th>
+    <th class="magcell"></th><th class="n">Names</th><th>What it is</th><th>Belongs in</th>
+    </tr></thead><tbody>` +
+    D.params.dispositions.map((d) => `<tr>
+      <td class="verb">${esc(d.name)}</td>
+      <td class="n">${n(d.declarations)}</td>
+      <td class="magcell"><div class="mag"><i style="width:${100 * d.declarations / max}%;background:${d.name === "knob" ? "var(--entity)" : "var(--seq-2)"}"></i></div></td>
+      <td class="n">${d.names}</td>
+      <td>${esc(d.means)}</td>
+      <td style="color:var(--ink3)">${esc(d.home)}</td></tr>`).join("") + "</tbody>";
+  $("configsum").innerHTML = `Of ${n(total)} declared parameters, ${n(D.params.knobs)} are knobs at
+    all. Keeping only the knobs of each verb&rsquo;s canonical method, and dropping the plumbing
+    verbs, leaves <b class="num">${D.params.curated}</b> config fields over
+    <b class="num">${D.params.curated_names}</b> distinct names in
+    <b class="num">${D.params.config_types}</b> config types &mdash; a median of four fields each.`;
+  $("commontable").innerHTML = `<thead><tr><th>Knob</th><th class="n">Tasks</th><th>Kind</th>
+    <th>What it sets</th></tr></thead><tbody>` +
+    D.params.common.map((c) => `<tr><td class="verb">${esc(c.name)}</td>
+      <td class="n">${c.tasks}</td><td class="id">${esc(c.kind)}</td>
+      <td>${esc(c.means)}</td></tr>`).join("") + "</tbody>";
+})();
+
+/* -- coverage curve -- */
+(() => {
+  const pts = D.workflows.curve;
+  const W = 1000, H = 340, L = 52, R = 22, T = 16, B = 40;
+  const px = (i) => L + (i / pts.length) * (W - L - R);
+  const py = (v) => T + (1 - v / 100) * (H - T - B);
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${px(p[0]).toFixed(1)},${py(p[1]).toFixed(1)}`).join("");
+  const area = `M${px(0).toFixed(1)},${py(0).toFixed(1)}` + path.slice(1) +
+               `L${px(pts.length).toFixed(1)},${py(0).toFixed(1)}Z`;
+  const marks = [25, 50, 80, 90].map((f) => {
+    const hit = pts.find((p) => p[1] >= f);
+    return { f, rank: hit[0], y: py(f), x: px(hit[0]) };
+  });
+  const yticks = [0, 25, 50, 75, 100];
+  const xticks = [0, 100, 200, 300, 400, 500, 600];
+  $("curvewrap").innerHTML = `
+  <svg viewBox="0 0 ${W} ${H}" role="img"
+       aria-label="Cumulative share of narrative copies covered as canonical workflows are added in rank order.">
+    <g font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--ink3)">
+      ${yticks.map((t) => `<g><line x1="${L}" x2="${W - R}" y1="${py(t)}" y2="${py(t)}"
+        stroke="var(--rule)" stroke-width="1"/>
+        <text x="${L - 10}" y="${py(t) + 4}" text-anchor="end">${t}%</text></g>`).join("")}
+      ${xticks.map((t) => `<text x="${px(t)}" y="${H - B + 22}" text-anchor="middle">${t}</text>`).join("")}
+    </g>
+    <path d="${area}" fill="var(--seq-1)" opacity="0.45"/>
+    <path d="${path}" fill="none" stroke="var(--entity)" stroke-width="2"
+          stroke-linejoin="round" stroke-linecap="round"/>
+    ${marks.map((m) => `<g>
+      <line x1="${L}" x2="${m.x}" y1="${m.y}" y2="${m.y}" stroke="var(--warn)"
+            stroke-width="1" stroke-dasharray="3 3"/>
+      <line x1="${m.x}" x2="${m.x}" y1="${m.y}" y2="${py(0)}" stroke="var(--warn)"
+            stroke-width="1" stroke-dasharray="3 3"/>
+      <circle cx="${m.x}" cy="${m.y}" r="4.5" fill="var(--warn)" stroke="var(--surface)"
+              stroke-width="2"/>
+      <text x="${m.x + 11}" y="${m.y + (m.f < 70 ? 19 : -11)}"
+            font-family="IBM Plex Sans Condensed, sans-serif"
+            font-size="13" font-weight="600" fill="var(--ink2)">${m.rank} workflows = ${m.f}%</text>
+    </g>`).join("")}
+    <text x="${(L + W - R) / 2}" y="${H - 2}" text-anchor="middle"
+          font-family="IBM Plex Sans Condensed, sans-serif" font-size="12.5"
+          fill="var(--ink3)" letter-spacing="0.06em">CANONICAL WORKFLOWS, RANKED BY NARRATIVE COPIES</text>
+    <rect id="hitarea" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
+  </svg><div class="tip" id="tip"></div>`;
+  const svg = $("curvewrap").querySelector("svg");
+  const tip = $("tip");
+  const wrap = $("curvewrap");
+  svg.addEventListener("pointermove", (e) => {
+    const box = svg.getBoundingClientRect();
+    const vx = ((e.clientX - box.left) / box.width) * W;
+    if (vx < L || vx > W - R) { tip.classList.remove("on"); return; }
+    const i = Math.min(pts.length - 1, Math.max(0, Math.round(((vx - L) / (W - L - R)) * pts.length) - 1));
+    const p = pts[i];
+    tip.textContent = `${p[0]} workflows → ${p[1].toFixed(1)}% of copies`;
+    tip.classList.add("on");
+    const wb = wrap.getBoundingClientRect();
+    tip.style.left = Math.min(wb.width - tip.offsetWidth - 4, Math.max(0, e.clientX - wb.left + 12)) + "px";
+    tip.style.top = Math.max(0, e.clientY - wb.top - 34) + "px";
+  });
+  svg.addEventListener("pointerleave", () => tip.classList.remove("on"));
+})();
+
+/* -- top workflows -- */
+$("wftable").innerHTML = `<thead><tr><th class="n">Copies</th><th class="n">Shapes</th>
+  <th>Proposed name</th><th>Core tasks</th><th></th></tr></thead><tbody>` +
+  D.workflows.top.slice(0, 20).filter((w) => w.name).map((w) => `<tr>
+    <td class="n">${w.copies}</td><td class="n">${w.shapes}</td>
+    <td class="verb">${esc(w.name)}</td>
+    <td class="io" style="white-space:normal">${esc(w.tasks.join(" + "))}</td>
+    <td>${w.typed ? "" : '<span class="tag untyped">untyped end</span>'}</td></tr>`).join("") +
+  "</tbody>";
+
+/* -- gaps -- */
+$("gaplist").innerHTML = D.gaps.untyped_verbs.map((g) =>
+  `<div class="gap"><span class="verb">${esc(g.task)}</span>
+   <span class="who">${esc(g.canonical)}</span></div>`).join("");
+$("gapsum").innerHTML = `Beyond those thirteen, one proposed role has no KBase workspace type
+  behind it at all: <code>${esc(D.gaps.no_workspace_type.join(", "))}</code>. Every classifier in
+  the catalog reports its assignment and stores nothing, so a taxonomic classification cannot be
+  named as a target. A further <b class="num">${D.gaps.corpus_apps_absent_from_catalog}</b> apps
+  appear in the narrative corpus and no longer exist in the catalog, so no verb can be assigned to
+  them at all.`;
+
+/* -- file list -- */
+$("files").innerHTML = [
+  ["tasks.yml", "the 54 verbs, their proposed signatures and the rules that assign apps to them"],
+  ["app_tasks.jsonl", "one row per catalog app: verb, evidence, narrative copies, canonical flag"],
+  ["types.yml", "the entities, the twelve property axes and the seven families"],
+  ["type_map.yml / .jsonl", "every workspace type on the grid, and every union resolved"],
+  ["task_io.jsonl", "each verb's proposed signature beside what its apps actually declare"],
+  ["config.yml", "the dispositions, the normalisation rules and the shared knob vocabulary"],
+  ["param_map.jsonl", "one row per declared parameter: normalised name, verb, disposition"],
+  ["workflows.jsonl", "one row per canonical workflow, with its member shapes and copies"],
+  ["check.py", "22 assertions, each joining back to catalog/ or curation/r1/"],
+].map(([f, d]) => `<div class="filerow"><span class="f">${esc(f)}</span>
+  <span class="d">${esc(d)}</span></div>`).join("");
+</script>

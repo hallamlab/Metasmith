@@ -1,0 +1,11 @@
+[Unit]
+Description=Run msm-comebin-watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

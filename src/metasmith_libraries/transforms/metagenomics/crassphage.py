@@ -16,7 +16,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 4)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             bbmap.sh -Xmx6g \

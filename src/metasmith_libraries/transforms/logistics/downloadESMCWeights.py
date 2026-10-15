@@ -13,7 +13,7 @@ def protocol(context: ExecutionContext):
     i300 = context.Output(w_300m)
     i600 = context.Output(w_600m)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             pip install --quiet --no-cache-dir huggingface_hub

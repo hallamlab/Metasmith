@@ -15,7 +15,7 @@ PREDICTF_MODEL_PASS   = "6oHaiWQQY9"
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             set -e

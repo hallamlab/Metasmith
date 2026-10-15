@@ -12,6 +12,7 @@ from metasmith.python_api import (
     TargetBuilder,
     Runtime,
 )
+from metasmith.python_api import record_library
 
 REPO = Path(__file__).resolve().parents[3]
 MLIB = REPO / "src" / "metasmith_libraries"
@@ -73,7 +74,9 @@ def plan(work: Path):
             at = work / dtype.replace("::", "_")
             at.mkdir(parents=True, exist_ok=True)
         inputs.AddItem(at, dtype)
-    inputs.Save()
+    # Synthetic placeholders, authored here and used nowhere else, so
+    # writing them down is the whole of their record.
+    inputs = record_library(inputs)
 
     resources = [
         DataInstanceLibrary.Load(MLIB / "resources" / "env"),

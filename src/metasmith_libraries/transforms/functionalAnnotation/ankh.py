@@ -27,7 +27,7 @@ def protocol(context: ExecutionContext):
 
     context.LocalShell(f"mkdir -p weights && tar -xzf {iw.local} -C weights")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[
             (context.external_cwd/"weights", "/weights"),

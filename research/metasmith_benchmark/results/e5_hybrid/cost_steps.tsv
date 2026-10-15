@@ -1,0 +1,149 @@
+sample	dataset	step	wall_h	cpus	cpu_h	max_rss_gb	req_gb	at_cap	job
+SRR32696698	Pratama Nanopore	bbduk_pratama	0.10	4	0.4	16.0	16	True	62448960
+SRR32696698	Pratama Nanopore	flye	1.58	16	25.4	39.8	128	False	62448950
+SRR32696698	Pratama Nanopore	megahit	2.17	16	34.7	31.1	64	False	62449966
+SRR32696698	Pratama Nanopore	opera_ms	2.24	16	35.8	64.0	64	True	62484433
+SRR32696698	Pratama Nanopore	polca	0.63	16	10.0	48.0	48	True	62471156
+SRR32696698	Pratama Nanopore	quast	0.01	4	0.1	4.7	16	False	62499867
+SRR32696707	Pratama Nanopore	bbduk_pratama	0.13	4	0.5	16.0	16	True	62448693
+SRR32696707	Pratama Nanopore	flye	2.49	16	39.8	45.5	128	False	62448689
+SRR32696707	Pratama Nanopore	megahit	4.01	16	64.1	61.2	64	False	62449773
+SRR32696707	Pratama Nanopore	opera_ms	2.47	16	39.6	64.0	64	True	62484431
+SRR32696707	Pratama Nanopore	polca	0.80	16	12.8	48.0	48	True	62471152
+SRR32696707	Pratama Nanopore	quast	0.02	4	0.1	7.5	16	False	62499940
+marine_long_sample_3	marine PacBio	bbduk	0.09	4	0.3	12.8	16	False	62526432
+marine_long_sample_3	marine PacBio	flye	3.74	16	59.8	51.3	64	False	62448952
+marine_long_sample_3	marine PacBio	megahit	1.25	16	20.0	13.6	64	False	62526883
+marine_long_sample_3	marine PacBio	metaquast	1.07	32	34.1	85.6	128	False	62552048
+marine_long_sample_3	marine PacBio	opera_ms	0.93	16	14.8	36.0	64	False	62530952
+marine_long_sample_3	marine PacBio	polca	0.30	16	4.8	25.4	48	False	62526831
+marine_long_sample_3	marine PacBio	quast	0.02	4	0.1	3.3	16	False	62534973
+marine_long_sample_3	marine PacBio	seqkit_reads	0.03	4	0.1	1.0	8	False	62526371
+plant_associated_long_nano_sample_10	plant Nanopore	bbduk	0.11	4	0.4	12.8	16	False	62526411
+plant_associated_long_nano_sample_10	plant Nanopore	flye	0.65	16	10.4	33.9	64	False	62448951
+plant_associated_long_nano_sample_10	plant Nanopore	megahit	0.55	16	8.9	9.4	64	False	62526887
+plant_associated_long_nano_sample_10	plant Nanopore	metaquast	0.34	32	10.8	125.7	128	True	62551857
+plant_associated_long_nano_sample_10	plant Nanopore	opera_ms	0.52	16	8.3	28.1	64	False	62530989
+plant_associated_long_nano_sample_10	plant Nanopore	polca	0.35	16	5.6	26.3	48	False	62526834
+plant_associated_long_nano_sample_10	plant Nanopore	quast	0.02	4	0.1	1.9	16	False	62535026
+plant_associated_long_nano_sample_10	plant Nanopore	seqkit_reads	0.04	4	0.1	0.4	8	False	62526372
+plant_associated_long_nano_sample_11	plant Nanopore	bbduk	0.10	4	0.4	12.8	16	False	62526429
+plant_associated_long_nano_sample_11	plant Nanopore	flye	0.61	16	9.8	33.0	64	False	62448954
+plant_associated_long_nano_sample_11	plant Nanopore	megahit	0.51	16	8.2	10.0	64	False	62526884
+plant_associated_long_nano_sample_11	plant Nanopore	metaquast	0.33	32	10.4	124.8	128	False	62552045
+plant_associated_long_nano_sample_11	plant Nanopore	opera_ms	0.36	16	5.7	27.5	64	False	62530972
+plant_associated_long_nano_sample_11	plant Nanopore	polca	0.41	16	6.5	26.2	48	False	62526830
+plant_associated_long_nano_sample_11	plant Nanopore	quast	0.01	4	0.0	2.4	16	False	62535021
+plant_associated_long_nano_sample_11	plant Nanopore	seqkit_reads	0.03	4	0.1	1.0	8	False	62526373
+plant_associated_long_pacbio_sample_14	plant PacBio	bbduk	0.10	4	0.4	12.8	16	False	62526433
+plant_associated_long_pacbio_sample_14	plant PacBio	flye	2.88	16	46.0	59.6	64	False	62448953
+plant_associated_long_pacbio_sample_14	plant PacBio	megahit	0.70	16	11.2	11.0	64	False	62526885
+plant_associated_long_pacbio_sample_14	plant PacBio	metaquast	0.33	32	10.6	128.0	128	True	62552047
+plant_associated_long_pacbio_sample_14	plant PacBio	opera_ms	0.38	16	6.0	27.2	64	False	62531099
+plant_associated_long_pacbio_sample_14	plant PacBio	polca	0.33	16	5.2	32.7	48	False	62526832
+plant_associated_long_pacbio_sample_14	plant PacBio	quast	0.01	4	0.1	2.3	16	False	62535023
+plant_associated_long_pacbio_sample_14	plant PacBio	seqkit_reads	0.03	4	0.1	0.4	8	False	62526374
+plant_associated_long_pacbio_sample_18	plant PacBio	bbduk	0.09	4	0.4	13.2	16	False	62526434
+plant_associated_long_pacbio_sample_18	plant PacBio	flye	4.16	16	66.6	50.9	64	False	62448955
+plant_associated_long_pacbio_sample_18	plant PacBio	megahit	0.56	16	9.0	8.6	64	False	62526886
+plant_associated_long_pacbio_sample_18	plant PacBio	metaquast	0.40	32	12.8	128.0	128	True	62552046
+plant_associated_long_pacbio_sample_18	plant PacBio	opera_ms	0.37	16	6.0	28.8	64	False	62531098
+plant_associated_long_pacbio_sample_18	plant PacBio	polca	0.35	16	5.6	33.2	48	False	62526833
+plant_associated_long_pacbio_sample_18	plant PacBio	quast	0.01	4	0.0	3.3	16	False	62535022
+plant_associated_long_pacbio_sample_18	plant PacBio	seqkit_reads	0.03	4	0.1	0.4	8	False	62526375
+strain_long_sample_15	strain PacBio	bbduk	0.05	4	0.2	9.3	16	False	62526421
+strain_long_sample_15	strain PacBio	flye	1.76	16	28.2	22.2	64	False	62448956
+strain_long_sample_15	strain PacBio	megahit	0.31	16	4.9	3.7	64	False	62526882
+strain_long_sample_15	strain PacBio	metaquast	4.67	32	149.5	89.0	128	False	62552106
+strain_long_sample_15	strain PacBio	opera_ms	0.21	16	3.3	13.3	64	False	62530968
+strain_long_sample_15	strain PacBio	polca	0.16	16	2.6	13.0	48	False	62526829
+strain_long_sample_15	strain PacBio	quast	0.01	4	0.0	1.3	16	False	62535017
+strain_long_sample_15	strain PacBio	seqkit_reads	0.01	4	0.1	1.1	8	False	62526376
+strain_long_sample_17	strain PacBio	bbduk	0.04	4	0.2	9.5	16	False	62526423
+strain_long_sample_17	strain PacBio	flye	1.53	16	24.5	24.5	64	False	62448957
+strain_long_sample_17	strain PacBio	megahit	0.23	16	3.6	4.3	64	False	62526878
+strain_long_sample_17	strain PacBio	metaquast	4.09	32	131.0	88.1	128	False	62552108
+strain_long_sample_17	strain PacBio	opera_ms	0.21	16	3.4	13.5	64	False	62530963
+strain_long_sample_17	strain PacBio	polca	0.15	16	2.4	12.4	48	False	62526825
+strain_long_sample_17	strain PacBio	quast	0.02	4	0.1	1.1	16	False	62535019
+strain_long_sample_17	strain PacBio	seqkit_reads	0.02	4	0.1	0.9	8	False	62526377
+strain_long_sample_19	strain PacBio	bbduk	0.04	4	0.2	9.3	16	False	62526430
+strain_long_sample_19	strain PacBio	flye	1.45	16	23.3	25.2	64	False	62448958
+strain_long_sample_19	strain PacBio	megahit	0.27	16	4.4	4.4	64	False	62526877
+strain_long_sample_19	strain PacBio	metaquast	4.13	32	132.1	75.6	128	False	62552049
+strain_long_sample_19	strain PacBio	opera_ms	0.13	16	2.0	12.6	64	False	62530969
+strain_long_sample_19	strain PacBio	polca	0.13	16	2.1	12.5	48	False	62526824
+strain_long_sample_19	strain PacBio	quast	0.01	4	0.0	1.0	16	False	62535012
+strain_long_sample_19	strain PacBio	seqkit_reads	0.03	4	0.1	0.5	8	False	62526378
+strain_long_sample_24	strain PacBio	bbduk	0.05	4	0.2	9.4	16	False	62526422
+strain_long_sample_24	strain PacBio	flye	1.92	16	30.7	23.3	64	False	62448959
+strain_long_sample_24	strain PacBio	megahit	0.22	16	3.5	3.6	64	False	62526880
+strain_long_sample_24	strain PacBio	metaquast	4.66	32	149.2	92.0	128	False	62552107
+strain_long_sample_24	strain PacBio	opera_ms	0.15	16	2.4	13.2	64	False	62530962
+strain_long_sample_24	strain PacBio	polca	0.14	16	2.2	12.6	48	False	62526827
+strain_long_sample_24	strain PacBio	quast	0.01	4	0.0	1.6	16	False	62535013
+strain_long_sample_24	strain PacBio	seqkit_reads	0.01	4	0.1	0.6	8	False	62526379
+strain_long_sample_4	strain PacBio	bbduk	0.04	4	0.2	9.3	16	False	62526426
+strain_long_sample_4	strain PacBio	flye	1.91	16	30.5	21.6	64	False	62449943
+strain_long_sample_4	strain PacBio	megahit	0.35	16	5.6	5.3	64	False	62526875
+strain_long_sample_4	strain PacBio	metaquast	4.63	32	148.0	96.3	128	False	62552109
+strain_long_sample_4	strain PacBio	opera_ms	0.20	16	3.3	13.4	64	False	62530970
+strain_long_sample_4	strain PacBio	polca	0.14	16	2.3	12.8	48	False	62526822
+strain_long_sample_4	strain PacBio	quast	0.02	4	0.1	1.3	16	False	62535018
+strain_long_sample_4	strain PacBio	seqkit_reads	0.02	4	0.1	0.4	8	False	62526380
+strain_long_sample_76	strain PacBio	bbduk	0.04	4	0.1	9.5	16	False	62526424
+strain_long_sample_76	strain PacBio	flye	1.98	16	31.7	21.6	64	False	62449944
+strain_long_sample_76	strain PacBio	megahit	0.22	16	3.6	4.1	64	False	62526873
+strain_long_sample_76	strain PacBio	metaquast	4.83	32	154.6	110.7	128	False	62552110
+strain_long_sample_76	strain PacBio	opera_ms	0.21	16	3.4	13.0	64	False	62530961
+strain_long_sample_76	strain PacBio	polca	0.13	16	2.0	12.6	48	False	62526820
+strain_long_sample_76	strain PacBio	quast	0.01	4	0.0	1.5	16	False	62535020
+strain_long_sample_76	strain PacBio	seqkit_reads	0.02	4	0.1	0.4	8	False	62526381
+strain_long_sample_86	strain PacBio	bbduk	0.04	4	0.1	10.0	16	False	62526428
+strain_long_sample_86	strain PacBio	flye	1.21	16	19.4	27.8	64	False	62449945
+strain_long_sample_86	strain PacBio	megahit	0.23	16	3.8	5.0	64	False	62526874
+strain_long_sample_86	strain PacBio	metaquast	3.45	32	110.4	75.7	128	False	62552112
+strain_long_sample_86	strain PacBio	opera_ms	0.15	16	2.4	13.6	64	False	62530964
+strain_long_sample_86	strain PacBio	polca	0.17	16	2.7	12.6	48	False	62526821
+strain_long_sample_86	strain PacBio	quast	0.01	4	0.0	1.1	16	False	62535014
+strain_long_sample_86	strain PacBio	seqkit_reads	0.02	4	0.1	0.4	8	False	62526382
+strain_long_sample_9	strain PacBio	bbduk	0.04	4	0.2	9.3	16	False	62526425
+strain_long_sample_9	strain PacBio	flye	1.71	16	27.4	23.0	64	False	62449946
+strain_long_sample_9	strain PacBio	megahit	0.25	16	4.1	4.1	64	False	62526879
+strain_long_sample_9	strain PacBio	metaquast	4.19	32	134.2	97.0	128	False	62552111
+strain_long_sample_9	strain PacBio	opera_ms	0.17	16	2.8	13.2	64	False	62530966
+strain_long_sample_9	strain PacBio	polca	0.14	16	2.2	12.7	48	False	62526826
+strain_long_sample_9	strain PacBio	quast	0.02	4	0.1	1.2	16	False	62535015
+strain_long_sample_9	strain PacBio	seqkit_reads	0.02	4	0.1	0.4	8	False	62526383
+strain_long_sample_93	strain PacBio	bbduk	0.05	4	0.2	10.0	16	False	62526420
+strain_long_sample_93	strain PacBio	flye	1.58	16	25.3	24.1	64	False	62449947
+strain_long_sample_93	strain PacBio	megahit	0.23	16	3.7	4.2	64	False	62526881
+strain_long_sample_93	strain PacBio	metaquast	4.39	32	140.5	86.7	128	False	62552113
+strain_long_sample_93	strain PacBio	opera_ms	0.12	16	2.0	12.6	64	False	62530965
+strain_long_sample_93	strain PacBio	polca	0.14	16	2.2	12.1	48	False	62526828
+strain_long_sample_93	strain PacBio	quast	0.01	4	0.0	1.9	16	False	62535011
+strain_long_sample_93	strain PacBio	seqkit_reads	0.01	4	0.0	0.7	8	False	62526384
+strain_long_sample_97	strain PacBio	bbduk	0.04	4	0.2	9.4	16	False	62526427
+strain_long_sample_97	strain PacBio	flye	1.78	16	28.5	24.3	64	False	62449948
+strain_long_sample_97	strain PacBio	megahit	0.35	16	5.6	4.7	64	False	62526876
+strain_long_sample_97	strain PacBio	metaquast	4.61	32	147.4	96.3	128	False	62552114
+strain_long_sample_97	strain PacBio	opera_ms	0.20	16	3.2	12.9	64	False	62530971
+strain_long_sample_97	strain PacBio	polca	0.13	16	2.1	13.1	48	False	62526823
+strain_long_sample_97	strain PacBio	quast	0.01	4	0.0	1.6	16	False	62535016
+strain_long_sample_97	strain PacBio	seqkit_reads	0.02	4	0.1	0.4	8	False	62526385
+toy_humangut_long_sample_14	toy humangut Nanopore	bbduk	0.12	4	0.5	13.2	16	False	62526435
+toy_humangut_long_sample_14	toy humangut Nanopore	flye	0.78	16	12.4	33.5	64	False	62449949
+toy_humangut_long_sample_14	toy humangut Nanopore	megahit	0.54	16	8.7	7.1	64	False	62526836
+toy_humangut_long_sample_14	toy humangut Nanopore	metaquast	0.71	32	22.8	128.0	128	True	62552115
+toy_humangut_long_sample_14	toy humangut Nanopore	opera_ms	0.49	16	7.9	29.4	64	False	62530973
+toy_humangut_long_sample_14	toy humangut Nanopore	polca	0.25	16	4.1	30.5	48	False	62526818
+toy_humangut_long_sample_14	toy humangut Nanopore	quast	0.01	4	0.0	3.1	16	False	62535025
+toy_humangut_long_sample_14	toy humangut Nanopore	seqkit_reads	0.03	4	0.1	0.4	8	False	62526386
+toy_humangut_long_sample_5	toy humangut Nanopore	bbduk	0.11	4	0.4	12.7	16	False	62526431
+toy_humangut_long_sample_5	toy humangut Nanopore	flye	0.52	16	8.2	34.4	64	False	62448688
+toy_humangut_long_sample_5	toy humangut Nanopore	megahit	0.27	16	4.3	6.7	64	False	62526888
+toy_humangut_long_sample_5	toy humangut Nanopore	metaquast	0.92	32	29.6	128.0	128	True	62551769
+toy_humangut_long_sample_5	toy humangut Nanopore	opera_ms	0.46	16	7.4	29.0	64	False	62530967
+toy_humangut_long_sample_5	toy humangut Nanopore	polca	0.24	16	3.8	30.7	48	False	62526835
+toy_humangut_long_sample_5	toy humangut Nanopore	quast	0.02	4	0.1	2.6	16	False	62535024
+toy_humangut_long_sample_5	toy humangut Nanopore	seqkit_reads	0.03	4	0.1	0.4	8	False	62526362

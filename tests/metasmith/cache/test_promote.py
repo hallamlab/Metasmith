@@ -15,7 +15,10 @@ from metasmith.models.workflow.payload import build_entry
 KEY = "1e20" + "ef" * 32
 META = StepCacheMeta(
     order=1, transform_key="trA", signature="sig", step_name="trA", cacheable=True,
-    slot_files=[{"dtype_key": "step_a", "ext": ".txt", "branch_idx": 0, "slot_id": "a" * 64}],
+    slot_files=[{
+        "dtype_key": "step_a", "dtype_name": "mock::step_a", "ext": ".txt",
+        "branch_idx": 0, "slot_id": "a" * 64,
+    }],
     slot_channels={"seed_dep": "seed"},
 )
 
@@ -57,6 +60,29 @@ def test_an_existing_shard_wins(tmp_path):
     assert records[0]["status"] == "exists"
     assert (shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt").read_text() == "first"
     assert not list(cache_root.glob("*.tmp"))
+
+
+def test_an_evicted_shard_is_replaced(tmp_path):
+    from metasmith.caching.invocation import probe
+    from metasmith.caching.promote import tombstone_shard
+
+    cache_root = tmp_path / "task_cache"
+    promote_members(
+        cwd=_task_dir(tmp_path, "t1", "first"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+    tombstone_shard(cache_root, KEY)
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
+
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t2", "second"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+
+    assert records[0]["status"] == "promoted"
+    assert probe(cache_root, bytes.fromhex(KEY)) is not None
+    assert (shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt").read_text() == "second"
+    assert not list(cache_root.glob("*.tmp")) and not list(cache_root.glob("*.dead"))
 
 
 def test_a_failed_member_is_recorded_and_not_promoted(tmp_path):
@@ -206,3 +232,36 @@ def test_gc_tombstone_delay(tmp_path):
     assert not (cache_root / key_hex[:2] / key_hex[2:]).exists(), (
         "output_root should have been unlinked after grace elapsed"
     )
+
+
+def test_a_promoted_file_names_its_type(tmp_path):
+    from metasmith.caching.invocation import read_manifest
+
+    cache_root = tmp_path / "task_cache"
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t1"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+    assert records[0]["status"] == "promoted"
+    manifest = read_manifest(shard_dir(cache_root, KEY))
+    assert manifest is not None
+    assert [f["dtype_name"] for f in manifest["files"]] == ["mock::step_a"]
+
+
+def test_a_slot_with_no_name_promotes_anyway(tmp_path):
+    # Shards written before the compiler carried a name are still readable;
+    # what they cannot say is which type they hold.
+    from dataclasses import replace
+    from metasmith.caching.invocation import read_manifest
+
+    meta = replace(META, slot_files=[
+        {"dtype_key": "step_a", "ext": ".txt", "branch_idx": 0, "slot_id": "a" * 64},
+    ])
+    cache_root = tmp_path / "task_cache"
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t1"), entries=[_entry()], meta=meta,
+        cache_root=cache_root, successes=[True],
+    )
+    assert records[0]["status"] == "promoted"
+    manifest = read_manifest(shard_dir(cache_root, KEY))
+    assert [f["dtype_name"] for f in manifest["files"]] == [""]

@@ -39,9 +39,7 @@ def protocol(context: ExecutionContext):
                 --out-dir long_reads_assembly
             mv long_reads_assembly/assembly.fasta {iout.container}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     
     return ExecutionResult(
         manifest=[

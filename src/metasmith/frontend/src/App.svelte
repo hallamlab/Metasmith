@@ -30,10 +30,15 @@
   import NewWorkflow from './components/NewWorkflow.svelte'
   import ShareIn from './components/ShareIn.svelte'
   import StatusDot from './components/StatusDot.svelte'
+  import TourLayer from './components/TourLayer.svelte'
+  import TourButton from './components/TourButton.svelte'
+  import TutorialView from './views/TutorialView.svelte'
+  import { TUTORIALS } from './lib/tutorials/index.js'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
   import AgentView from './views/AgentView.svelte'
+  import DataView from './views/DataView.svelte'
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
   // The wordmark's own M *is* the logo mark, so this replaces the whole word
@@ -145,6 +150,8 @@
     ]
   })
 
+  const tutorialItems = TUTORIALS.map((t) => ({ id: t.id, t }))
+
   let agentItems = $derived(
     app.agents.map((a) => ({ id: a.name, agent: a, dim: !!a.archived_at })),
   )
@@ -252,7 +259,7 @@
 </script>
 
 <div class="shell">
-  <header>
+  <header data-tour="header">
     <div class="brand">
       <img class="wordmark" src={wordmark} alt="Metasmith" />
       {#if app.project}<span class="ver mono">{app.project.version}</span>{/if}
@@ -260,7 +267,12 @@
 
     <nav>
       {#each SECTIONS as s}
-        <button class="tab" class:on={app.section === s.id} onclick={() => selectSection(s.id)}>
+        <button
+          class="tab"
+          class:on={app.section === s.id}
+          onclick={() => selectSection(s.id)}
+          data-tour={`tab-${s.id}`}
+        >
           {s.label}
         </button>
       {/each}
@@ -279,6 +291,8 @@
         <CopyButton text={app.project.root} label="copy the project path" />
       {/if}
     </div>
+
+    <TourButton />
 
     <!-- the glyph is the theme you would switch *to*, not the one showing, and
          the title says so. Outside the project check for the same reason the
@@ -320,7 +334,22 @@
   {/if}
 
   <div class="body">
-    {#if app.section === 'ssh'}
+    {#if app.section === 'tutorials'}
+      <Rail
+        title="tutorials"
+        items={tutorialItems}
+        selected={sel ?? TUTORIALS[0]?.id}
+        onselect={(id) => select('tutorials', id)}
+        empty="no tutorials"
+      >
+        {#snippet row(item)}
+          <div class="grow">
+            <div class="truncate">{item.t.title}</div>
+            <div class="small muted">{item.t.steps.length} steps · {item.t.duration}</div>
+          </div>
+        {/snippet}
+      </Rail>
+    {:else if app.section === 'ssh'}
       <Rail
         title="hosts"
         items={sshItems}
@@ -378,7 +407,7 @@
       >
         {#snippet actions()}
           <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
-          <button class="small" disabled={creating} onclick={newAgent}>+ agent</button>
+          <button class="small" disabled={creating} onclick={newAgent} data-tour="new-agent">+ agent</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -407,6 +436,29 @@
           </div>
         {/snippet}
       </Rail>
+    {:else if app.section === 'data'}
+      <!-- The same agents as the tab before it, because a store is an agent's.
+           Deliberately not a second list to keep in step: one rail of agents,
+           read here for what each one holds. -->
+      <Rail
+        title="stores"
+        items={agentItems}
+        selected={sel}
+        onselect={(id) => select('data', id)}
+        empty="deploy an agent and its store appears here"
+      >
+        {#snippet row(item)}
+          <div class="spread">
+            <div class="grow truncate">
+              {item.agent.sort_name || item.agent.name}
+              <div class="small muted mono truncate" title={item.agent.home}>
+                {item.agent.home}
+              </div>
+            </div>
+            {#if item.agent.home_type !== 'DIRECT'}<span class="tag">remote</span>{/if}
+          </div>
+        {/snippet}
+      </Rail>
     {:else if app.section === 'workflows'}
       <Rail
         title="workflows"
@@ -420,7 +472,7 @@
       >
         {#snippet actions()}
           <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
-          <button class="small" onclick={() => (choosing = true)}>+ workflow</button>
+          <button class="small" onclick={() => (choosing = true)} data-tour="new-workflow">+ workflow</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -503,14 +555,18 @@
          scroll container and becomes a plain row -- the view scrolls its own
          column, the panel scrolls its own list. Every other view is unchanged. -->
     <main class:flush={PANELLED.has(app.section) && sel}>
-      <!-- Nothing selected draws nothing. Each of these four held a heading, a
+      <!-- Nothing selected draws nothing. Each of these held a heading, a
            paragraph of prose about what the section is for, and two of them a
            second `new` button beside the one already in the rail's header. It
            is the screen you see for a moment on the way to a selection, so
            nobody reads it -- and the duplicate button made "new agent" a thing
            in two places that had to be kept in step. The rail is the section's
            own explanation. -->
-      {#if app.section === 'ssh'}
+      {#if app.section === 'tutorials'}
+        {#if sel ?? TUTORIALS[0]}
+          {#key sel}<TutorialView id={sel ?? TUTORIALS[0].id} />{/key}
+        {/if}
+      {:else if app.section === 'ssh'}
         {#if sel === 'new'}
           <SshNew />
         {:else if sel === 'editor'}
@@ -521,6 +577,10 @@
       {:else if app.section === 'agents'}
         {#if sel}
           {#key sel}<AgentView name={sel} />{/key}
+        {/if}
+      {:else if app.section === 'data'}
+        {#if sel}
+          {#key sel}<DataView name={sel} />{/key}
         {/if}
       {:else if app.section === 'workflows'}
         {#if sel}
@@ -542,6 +602,8 @@
 {#if choosing}
   <NewWorkflow onclose={() => (choosing = false)} />
 {/if}
+
+<TourLayer />
 
 <style>
   .shell { display: flex; flex-direction: column; height: 100vh; }

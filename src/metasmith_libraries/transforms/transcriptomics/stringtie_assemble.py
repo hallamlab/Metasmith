@@ -17,9 +17,7 @@ def protocol(context: ExecutionContext):
                 -l SAMPLE \
                 -p {threads}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     context.LocalShell(f"mv output.gtf {iout.local}")
     return ExecutionResult(
         manifest=[

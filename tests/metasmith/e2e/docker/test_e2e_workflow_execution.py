@@ -605,6 +605,8 @@ class TestWorkflowGeneration:
 
         lib.AddItem(Path("sample_00/output.bam"), "mock::bam")
         lib.Save()
+        # Read it back: a plan refuses a given whose identity this process minted.
+        lib = DataInstanceLibrary.Load(lib.location)
 
         tr_lib_path = temp_dir / "tr_satisfied"
         transforms = {

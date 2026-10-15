@@ -186,10 +186,12 @@ and stages the binaries into `src/metasmith/engine/`. That directory is
 generated, never committed, and shipped as package data — because unlike the
 relay, the solver runs **locally at plan time** in whatever process is planning,
 so the agent-deploy path never sees it. `-bp` and `-bc` refuse to run without
-all four. The refusal matters more here than for the relay: a wheel with no
-engine still plans, on the Python solver, just slower — so the failure is
-invisible unless something checks. "Just slower" is now literal and large:
-7.5s versus 1.1s on `metagenomics_from_paired_reads`, for the same plan. `-bel` is the dev-loop build (host toolchain,
+all four, and that refusal is now the only thing between a packaging slip and a
+wheel that cannot plan at all. There used to be a Python solver behind it, so a
+missing engine meant "correct and about 7x slower" and the failure was invisible
+unless something checked. The Python solver is gone: a missing engine now raises.
+
+`-bel` is the dev-loop build (host toolchain,
 host target only); it writes a `BUILD_KIND` marker the guard reads, because
 nothing about a Linux ELF says whether it was linked against musl or against the
 build machine's glibc.
@@ -198,7 +200,9 @@ build machine's glibc.
 It was DVC-tracked briefly so sibling worktrees could share one cross-build. DVC
 materialises outputs as read-only hardlinks and does not carry the exec bit, so
 the binaries checked out mode 444, the handshake failed with a permission error,
-and every plan in every worktree fell back to the Python solver. The mode is not
+and every plan in every worktree fell back to the Python solver — which is one of
+the reasons that fallback no longer exists. The same accident today stops the
+planner instead of silently slowing it. The mode is not
 repaired by packaging either: 444 survives an sdist unchanged and normalises to
 644 in a wheel. `_assert_solver_engine` now checks the exec bit, and each scope
 builds its own stage; `MSM_SOLVER_TARGET_DIR` (default
@@ -248,11 +252,18 @@ Then:
 
 1. Push `release` (and `dev`) and the annotated version tag to **origin** (the
    fork): `git push origin release dev && git push origin vX.Y.Z`.
-2. Open a **new PR** from the fork's `release` into `hallamlab:release`, titled
-   for the version. A maintainer with upstream write access merges it. There is
-   no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
-   0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
-   and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
+2. Check `gh pr list --repo hallamlab/Metasmith --state open` first, then open a
+   **new PR** from the fork's `release` into `hallamlab:release`, titled for the
+   version. A maintainer with upstream write access merges it. A merged PR
+   closes, so a *closed* one is never reusable (#63 → 0.17.1, #64 → 0.18.3,
+   #65 → 0.18.8), and treating a closed one as still open is how 0.20.0 and
+   0.20.1 shipped to quay and anaconda without ever reaching upstream.
+
+   **CAUTION** An *unmerged* PR from `release` stays open across releases, and
+   GitHub refuses a second PR for the same head and base. Pushing the branch
+   silently moves that PR onto the new commits. Retitle it and rewrite its body
+   for the version now shipping, and say in the body which earlier version it
+   also still carries. 0.23.0 met #68 open at 0.22.1 this way.
 3. Drive both published artifacts as a **consumer**, not as the builder. Every
    guard above reads the local build — `-uc` installs from `file://conda_build`
    and `-ud` inspects the image docker already holds — so nothing so far has

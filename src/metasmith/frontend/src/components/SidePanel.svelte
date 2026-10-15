@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte'
   import {
     panelState,
     setPanelOpen,
@@ -33,6 +34,8 @@
     top = null,
     topDefault = PANEL_TOP_DEFAULT,
     fill = false,
+    // true or false to open every mount that way whatever was remembered
+    startOpen = null,
     children,
   } = $props()
 
@@ -43,6 +46,8 @@
   // panel's id never changes for a mounted panel, and what it returns is a
   // `$state` object, so nothing reactive is lost by asking for it once.
   const st = panelState(id, topDefault)
+  const opening = untrack(() => startOpen)
+  if (opening !== null) st.open = !!opening
 
   // reassigned when the panel is folded and unfolded, so it has to be reactive
   let el = $state(null)

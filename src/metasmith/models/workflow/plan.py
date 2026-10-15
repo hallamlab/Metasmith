@@ -3,12 +3,14 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterable, Mapping, Sequence
 
 import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
-from ..dag_renderer import DagRenderer, Label, LabelMode, NodeKind
+from ..dag_renderer import DagMode, DagRenderer, Label, LabelMode, NodeKind
+from ..paths import is_deferred
 from ..libraries import (
     DataInstance, DataInstanceLibrary, DataInstanceLibraryView,
     TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,
@@ -19,6 +21,77 @@ from ..solver import (
 )
 from .diagnostics import PlanHint, _diagnose_plan_failure
 from .steps import WorkflowStep, WorkflowTarget
+
+
+class GivenNotImportedError(ValueError):
+    """A given's identity was minted here rather than read from a record."""
+
+
+# A given's identity has to be a record, not something this process worked out.
+# `stat_leaf_id` folds the absolute path and the mtime of whatever this process
+# can see, so it moves when the file is touched, and it is invented outright
+# when the path belongs to another host -- which is every input of a run driven
+# from a workstation. `_mint_leaf_id` marks what it invented, `Pack` does not
+# carry the mark, and so the question "did somebody register this here, or did
+# it come from somewhere that already knew?" survives exactly one process.
+#
+# A deferred path is exempt. There is nothing at it yet, so there is nothing to
+# import, and its id is its own name rather than a reading of a filesystem.
+# `StageWorkflow.RefuseIfDeferred` is what catches one that never got a source.
+_OFFENDERS_SHOWN = 20
+
+_NOT_IMPORTED = """\
+a plan's givens are references to data a pool already holds, and {n} of these {is_} not:
+{items}
+Import each one on the agent that will run the plan, then reference it by name:
+
+  metasmith data import <path> --dtype <NS::TYPE> --name <name> --agent-home <home>
+  given = agent.GivenLibrary(["<name>", ...], location=<dir>)
+
+Registering a path here mints an identity from the filesystem this process can
+see. It moves when the file is touched, and it is invented outright when the
+path lives on another host -- which is why the plan key moved on every
+submission and why -resume found nothing. An import assigns an identity once
+and the pool records it, so referencing one costs nothing and never moves."""
+
+
+def _was_minted_here(inst: DataInstance) -> bool:
+    lib = inst.parent_lib
+    meta = getattr(lib, "instance_meta", {}).get(inst.path)
+    return bool(meta and meta.get("minted"))
+
+
+def _refuse_unminted_givens(instances: list[DataInstance]) -> None:
+    """Refuse a given this process registered instead of referencing.
+
+    Scoped to the given path on purpose. A transform registers its own
+    products and its deferred slots in its own library, and those are mints by
+    construction -- they are outputs, not givens, and nothing here sees them.
+    """
+    offenders: list[DataInstance] = []
+    seen: set[str] = set()
+    for inst in instances:
+        if is_deferred(inst.path) or not _was_minted_here(inst):
+            continue
+        # One path can carry several endpoints, and each is its own instance.
+        # The caller has one thing to fix, so name it once.
+        if inst.instance_id in seen:
+            continue
+        seen.add(inst.instance_id)
+        offenders.append(inst)
+    if not offenders:
+        return
+    shown = [
+        f"  [{inst.ResolvePath()}] as [{inst.dtype_name}]"
+        for inst in offenders[:_OFFENDERS_SHOWN]
+    ]
+    if len(offenders) > _OFFENDERS_SHOWN:
+        shown.append(f"  ... and {len(offenders) - _OFFENDERS_SHOWN} more")
+    raise GivenNotImportedError(_NOT_IMPORTED.format(
+        n=len(offenders),
+        is_="is" if len(offenders) == 1 else "are",
+        items="\n".join(shown),
+    ))
 
 
 def CollectSolverInputs(
@@ -63,6 +136,10 @@ def CollectSolverInputs(
             eps.update(lib_eps)
         if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
         given_endpoints.append(eps)
+
+    _refuse_unminted_givens(
+        [inst for insts in given_map.values() for inst in insts]
+    )
 
     transform2inst: dict[Transform, TransformInstance] = {}
     inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
@@ -229,7 +306,7 @@ class WorkflowPlan:
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         target_names: list[str],
         target_model: Transform,
-        max_iter: int=256, max_refine: int=256, seed: int=42,
+        max_iter: int=256, max_refine: int|None=None, seed: int=42,
     ):
         given_map, given_endpoints, transform2inst, inst2trlib = CollectSolverInputs(
             given, transforms,
@@ -468,20 +545,33 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None, given_root: bool = False) -> DagRenderer:
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
                 return ns
             return name
 
-        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background)
-        r.add_node(NodeKind.TRANSFORM, "given")
+        # A library may declare its own environments (bench::checkm2.env), outside the env namespace.
+        def _hidden(name: str) -> bool:
+            return _get_ns(name) in blacklist_namespaces or ("env" in blacklist_namespaces and name.endswith(".env"))
+
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, blacklist=blacklist, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
+        def _type_label(dtype_name: str) -> Label:
+            if "::" in dtype_name:
+                ns, name = dtype_name.split("::", maxsplit=1)
+                if not show_namespaces:
+                    return Label(name=name)
+                return Label(name=name, namespace=ns, full=dtype_name)
+            return Label(name=dtype_name, full=dtype_name)
+
+        if given_root:
+            r.add_node(NodeKind.TRANSFORM, "given")
 
         given_inst_names: set[str] = set()
         k2names: dict[Endpoint, set[str]] = {}
         for x in self.given:
-            if _get_ns(x.dtype_name) in blacklist_namespaces: continue
+            if _hidden(x.dtype_name): continue
             k2names[x.dtype] = k2names.get(x.dtype, set()) | {x.dtype_name}
         parents: set[Endpoint] = set()
         for e in k2names:
@@ -491,10 +581,10 @@ class WorkflowPlan:
         for p in parents:
             if p not in k2names: continue
             for inst in k2names[p]:
-                if _get_ns(inst) in blacklist_namespaces: continue
+                if _hidden(inst): continue
                 shown_parents.add(inst)
         for e, insts_all in k2names.items():
-            insts = [i for i in insts_all if _get_ns(i) not in blacklist_namespaces]
+            insts = [i for i in insts_all if not _hidden(i)]
             if len(insts) == 0: continue
             for inst_name in insts:
                 for p in e.parents:
@@ -502,15 +592,41 @@ class WorkflowPlan:
                     pinsts = [i for i in k2names[p] if i in shown_parents] # type: ignore
                     for pname in pinsts:
                         r.add_edge(pname, inst_name)
-                r.add_edge("given", inst_name)
+                r.add_node(NodeKind.DATA, inst_name, _type_label(inst_name), dtype=e)
+                if given_root:
+                    r.add_edge("given", inst_name)
+                else:
+                    r.mark_given(inst_name)
                 given_inst_names.add(inst_name)
+
+        given_ids = {x.instance_id for x in self.given}
+
+        def _data_node(x) -> str:
+            """The node a data instance draws as.
+
+            A given is one node per TYPE. Its instance ids are per-sample leaf
+            ids, so a 208-sample plan would otherwise put 208 nodes where the
+            plan means one input.
+
+            Everything a step makes is one node per INSTANCE, because that id is
+            the slot, and a slot is structural: one per branch, and the same
+            whether the plan carries one sample or two hundred. Keying those by
+            type name too is what drew two arms binning their own assembly as a
+            single `binning_bam` fed by both aligners and read by both binners
+            -- a join neither arm runs.
+            """
+            if x.instance_id in given_ids:
+                return x.dtype_name
+            r.add_node(NodeKind.DATA, x.instance_id, _type_label(x.dtype_name), dtype=x.dtype)
+            return x.instance_id
 
         for step in self.steps:
             transform_name = f"{step.order} {step.transform.name}"
+            tool = step.transform.name or step.transform.GetKey()
             r.add_node(NodeKind.TRANSFORM, transform_name, Label(
-                name=step.transform.name or step.transform.GetKey(),
+                name=tool,
                 namespace=f"step {step.order}" if show_step_order else "",
-                full=transform_name,
+                full=transform_name if show_step_order else tool,
             ))
             inputs, outputs = [], []
             for acc, deps in [
@@ -519,15 +635,46 @@ class WorkflowPlan:
             ]:
                 for d in deps:
                     insts = step.dependency_map[d]
-                    inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
-                    if len(inst_names) == 0: continue
-                    acc += list(inst_names)
+                    nodes = {
+                        _data_node(x) for x in insts
+                        if not _hidden(x.dtype_name)
+                    }
+                    if len(nodes) == 0: continue
+                    acc += list(nodes)
             for name in inputs:
                 r.add_edge(name, transform_name)
             for name in outputs:
                 r.add_edge(transform_name, name)
+            # What the tool asks for, rather than what this step bound it to.
+            # The legend draws a transform once, and a requirement met by a
+            # subtype at four different steps is still one requirement -- only
+            # the library knows the declared name, since a Dependency carries
+            # properties and no name of its own. A dep that signs with lineage
+            # is not in the library under any name; leaving it out is right,
+            # because it is not what the transform declared either.
+            _lib = getattr(step, "transform_library", None)
+            if _lib is not None:
+                named: dict[str, Endpoint] = {}
+                def _named(deps):
+                    out = []
+                    for d in deps:
+                        t = Endpoint(d.properties)
+                        try:
+                            n = _lib.GetName(t)
+                        except KeyError:
+                            continue
+                        if n and not _hidden(n):
+                            out.append(n)
+                            named[n] = t
+                    return out
+                r.declare(
+                    transform_name,
+                    _named(step.transform.model.requires),
+                    _named([d for g in step.transform.model.produces for d in g]),
+                    named,
+                )
 
-        target_names = {x.instance.dtype_name for x in self.targets}
+        target_names = {_data_node(x.instance) for x in self.targets}
         for inst_name in given_inst_names:
             if inst_name in target_names: continue
             if r.out_degree(inst_name) == 0:
@@ -539,19 +686,27 @@ class WorkflowPlan:
             r.mark(NodeKind.TARGET, target)
         if target_sink:
             r.add_node(NodeKind.TRANSFORM, "target")
-            for target in {x.instance.dtype_name for x in self.targets}:
+            for target in target_names:
                 r.add_edge(target, "target")
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None, given_root: bool = False):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
             show_step_order=show_step_order,
+            show_namespaces=show_namespaces,
             label_mode=label_mode,
             target_sink=target_sink,
             colour=colour,
             theme=theme,
             background=background,
+            mode=mode,
+            blacklist=blacklist,
+            legend_columns=legend_columns,
+            monochrome=monochrome,
+            colour_palette=colour_palette,
+            colour_overrides=colour_overrides,
+            given_root=given_root,
         ).render(path_base, format)

@@ -47,8 +47,15 @@ Two sources of identity:
   post-execution promote: ``instance_id = lineage_key(...)`` over the
   transform's static metadata + input identities. Two workspaces running
   the same leaf-less transform produce the same output instance_id.
-- **Imported** (``origin="imported"``) — carried through by
-  ``msm data import-library`` (see below).
+- **Imported** (``origin="imported"``) — data the user already has,
+  registered under a declared type by ``msm data import`` (see below).
+  **Structural**: ``multihash(kind ‖ dtype ‖ name)``, where the name
+  defaults to the absolute path. Nothing is stat'd, walked or read, so a
+  folder of six hundred thousand files costs what one file costs — the
+  same reason the declared type carries the trust, since the type *is*
+  the structural input. Deliberately outside the cache epoch: a product
+  is re-derivable and an epoch bump may strand it, but an import may be
+  the only copy.
 
 Per-transform ``cacheable``
 ============================================================
@@ -92,34 +99,58 @@ diagnosing a cache-correlated bug without editing transforms.
    result, check the agent log for the ``cache probe`` line rather than
    assuming the variable took effect.
 
-Cross-workspace library import
+Importing data
 ============================================================
 
-The ``msm data import-library`` op transfers a library from one
-workspace into another and, in the destination, upserts every imported
-``origin in {"lineage","imported"}`` DataInstance as an
-``origin="imported"`` cache row. ``origin="leaf"`` entries are **not**
-upserted — leaf identities are unique-per-AddItem and not
-cache-meaningful::
+The pool is the store *and* the index, so registering data is the same
+act a run performs when it records a product. Both go through one
+function, ``caching/admission.py``, which is the only code that resolves
+a shard, writes a manifest or computes a size.
 
-    # In workspace A
-    msm data save-as ./db.xgdb file:///shared/db_export
+``msm data import PATH --dtype NS::TYPE``
+    Register a file or folder as a pool instance, in the store at
+    ``--agent-home``'s ``task_cache/``. Nothing is copied, moved or read.
+    Add ``--tag`` to label it, ``--parent`` to record what it descends
+    from, and ``--name`` to fix an identity that survives a move.
+    Importing one path under one type twice is one entry. Under a
+    different type or ``--name`` it is two, because those are two
+    declarations.
 
-    # In workspace B
-    msm data import-library file:///shared/db_export ./db.xgdb \
-        --cache-root ~/.metasmith/agent_home/task_cache
+``msm data forget INSTANCE_ID``
+    Drop the entry. The bytes were never the pool's, so nothing here can
+    remove them, and ``--delete`` removes only the shard's manifest. It
+    refuses a product: ``msm cache gc`` reclaims those, because it knows
+    they can be re-derived.
 
-A subsequent workflow in B that consumes the imported library will
-cache-hit the import-bearing steps and execute only the downstream
-deltas.
+``msm data import-library URI DEST --cache-root ROOT``
+    A different verb: fetch a whole library image and register the
+    entries it already carries.
+
+.. warning::
+
+   An imported entry does **not** produce a cache hit. A hit substitutes
+   for a *step*, and it needs the shard's ``out/`` files, which an import
+   never places. What an import buys is that the data is in the index:
+   the store projects as a ``DataInstanceLibrary``
+   (``caching/projection.py``), and that projection is what the planner
+   reads inputs from. Earlier revisions of this page claimed the hit. The
+   code has never supported it.
 
 ``msm cache`` and ``msm status``
 ============================================================
 
 ``msm cache list``
-    Print every non-tombstoned cache entry (key, transform_key, origin,
-    size, last_hit_at, hit_count). Pass ``--include-tombstoned`` to also
-    list entries pending physical delete.
+    One row per file the store holds, not per entry — a step with two
+    products is one entry and two instances, and the instance is what you
+    sort against. Filter by ``--origin``, ``--run``, ``--tag`` or
+    ``--dtype``, group by any of those or by ``day``, and sort five ways.
+    ``--agent-home`` names the store; without it the root resolves
+    against the current directory. ``--include-tombstoned`` also lists
+    entries pending physical delete.
+
+``msm cache tag KEY TAG...``
+    Label an entry so ``list --tag`` and ``--group-by tag`` can find it.
+    ``--remove`` drops the tags given, ``--replace`` sets them.
 
 ``msm cache gc --older-than SECONDS [--max-size BYTES] [--delete]``
     Two-phase garbage collector. Tombstones any entry whose
@@ -127,7 +158,9 @@ deltas.
     enough entries to bring total size under ``--max-size``. By default
     tombstones only; pass ``--delete`` to also physically unlink any
     entry whose tombstone is past the 24h grace period
-    (``--grace SECONDS`` to override).
+    (``--grace SECONDS`` to override). It never touches an import, which
+    may be the user's only copy, and it refuses to delete a path outside
+    the cache root, reporting the rows it refused.
 
 ``msm cache explain KEY``
     Decode the entry's CBOR manifest and surface its full lineage chain,

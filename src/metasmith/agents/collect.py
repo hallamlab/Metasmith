@@ -129,10 +129,10 @@ def CollectResults(
             produced[pf.file_instance_id] = pf
 
     published = _published_index(output_path)
-    registered: dict[str, Path] = {}
+    registered: dict[str, Path | None] = {}
     resolving: list[str] = []
 
-    def _register(fid: str) -> Path:
+    def _register(fid: str) -> Path | None:
         if fid in registered:
             return registered[fid]
         if fid in resolving:
@@ -144,18 +144,22 @@ def CollectResults(
         if pf is None:
             inst = inst_id2inst.get(fid)
             if inst is None:
-                raise KeyError(
+                # A producer that exited 0 without its record reaching the work
+                # dir leaves no trace event. Only its children's edge to it is lost.
+                Log.Warn(
                     f"parent instance [{fid}] is neither a file this run "
                     "produced nor an input it was given; the trace names a "
-                    "file nothing accounts for"
+                    "file nothing accounts for, so its children lose that edge"
                 )
+                registered[fid] = None
+                return None
             path = output.AddItem(path=inst.ResolvePath(), dtype=inst.dtype_name)
             registered[fid] = path
             return path
 
         resolving.append(fid)
         try:
-            parents = sorted({_register(parent) for parent in pf.parents})
+            parents = sorted({p for p in map(_register, pf.parents) if p is not None})
         finally:
             resolving.pop()
 

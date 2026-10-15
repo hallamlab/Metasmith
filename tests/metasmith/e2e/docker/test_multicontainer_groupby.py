@@ -49,7 +49,8 @@ def container_inputs(temp_dir, container_types) -> DataInstanceLibrary:
         f.write_text(f"docker://example/{tool}:latest\n")
         lib.AddItem(Path(f"{tool}.oci"), f"mock::{name}")
     lib.Save()
-    return lib
+    # Read it back: a plan refuses a given whose identity this process minted.
+    return DataInstanceLibrary.Load(lib.location)
 
 
 def _make_plan(container_types, container_inputs, temp_dir, n: int) -> WorkflowPlan:

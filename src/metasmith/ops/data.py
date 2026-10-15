@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from ..hashing import KeyGenerator
+from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import DEFERRED
 from ..models.remote import Source
@@ -204,6 +206,39 @@ def add_item(
     if save:
         lib.Save()
     return {"library": str(library_path), "path": str(rec_path), "dtype": dtype}
+
+
+def cite_pool_item(
+    library_path: str,
+    host_path: str,
+    dtype: str,
+    *,
+    instance_id: str,
+    origin: str = "imported",
+    lineage_payload: bytes | None = None,
+    parents: list[str] | None = None,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
+    """Register a pool entry in a library, keeping the identity the pool gave it.
+
+    The path is the agent's. Nothing here opens it, and nothing re-derives the
+    identity -- an import assigned it, and re-deriving would be inventing a
+    second answer to a question the pool has already answered.
+    """
+    lib = _lib_for(library_path, lib)
+    rec_path = lib.RegisterItem(
+        Path(host_path), dtype,
+        instance_id=instance_id, origin=origin,
+        lineage_payload=lineage_payload,
+        parents=[Path(x) for x in (parents or [])],
+    )
+    if save:
+        lib.Save()
+    return {
+        "library": str(library_path), "path": str(rec_path), "dtype": dtype,
+        "instance_id": instance_id, "origin": origin,
+    }
 
 
 def add_value(
@@ -474,30 +509,54 @@ def import_library(
     dest = Path(dest_path).resolve()
     lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
 
-    from ..caching.layout import (
-        MANIFEST_NAME,
-        default_cache_root,
-        imported_shard_dir,
-    )
+    from ..caching.layout import default_cache_root
 
     if cache_root is None:
         cache_root_path = default_cache_root(dest.parent)
     else:
         cache_root_path = Path(cache_root).resolve()
-    cache_root_path.mkdir(parents=True, exist_ok=True)
 
-    from ..caching.store import CacheStore, encode_manifest
+    admitted = admit_library_items(lib, cache_root_path)
+    return {
+        "library": str(lib.location),
+        "src": src_uri,
+        "item_count": len(lib.manifest),
+        "imported_cache_entries": admitted["admitted"],
+        "skipped_leaf_entries": admitted["skipped_leaf"],
+        "cache_root": str(cache_root_path),
+    }
 
-    store = CacheStore.open(cache_root_path)
+
+def admit_library_items(
+    lib: DataInstanceLibrary,
+    cache_root: Path,
+    *,
+    paths: list[Path] | None = None,
+    include_leaves: bool = False,
+) -> dict:
+    """Register a library's items in the pool, through the pool's write door.
+
+    The item keeps its bytes where they are. What enters the store is the
+    entry: the item's identity, the name of its type, where it sits, and the
+    identities it descends from. Nothing is stat'd beyond the one call that
+    asks how big it is, and nothing is walked -- a folder of six hundred
+    thousand files costs what a single file costs.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit
+    from ..caching.store import CacheStore
+
+    cache_root = Path(cache_root)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    store = CacheStore.open(cache_root)
     try:
-        upserts = 0
+        admitted = 0
         skipped_leaf = 0
-        for path in lib.manifest:
+        for path in (paths if paths is not None else list(lib.manifest)):
             meta = lib.instance_meta.get(path)
             if meta is None:
                 continue
             origin = meta.get("origin", "leaf")
-            if origin == "leaf":
+            if origin == "leaf" and not include_leaves:
                 skipped_leaf += 1
                 continue
             instance_id_hex = meta.get("instance_id")
@@ -507,44 +566,344 @@ def import_library(
                 key = bytes.fromhex(instance_id_hex)
             except ValueError:
                 continue
-            lineage_payload = meta.get("lineage_payload") or b""
-            output_dir = imported_shard_dir(cache_root_path, instance_id_hex)
-            output_root_rel = str(output_dir.relative_to(cache_root_path))
-            output_dir.mkdir(parents=True, exist_ok=True)
-            payload = encode_manifest(
-                cache_key=key,
-                transform_key="",
-                signature="",
-                lineage_payload=lineage_payload,
-                output_files=[{"relpath": str(path)}],
-                out_identities={},
-                index_payload=[],
-            )
-            (output_dir / MANIFEST_NAME).write_bytes(payload)
-            size_bytes = 0
-            try:
-                size_bytes = (lib.location / path).stat().st_size
-            except OSError:
-                pass
-            store.upsert(
+            inst = lib.Get(path)
+            written = admit(
+                cache_root=cache_root,
                 key=key,
-                transform_key="",
-                payload=payload,
-                output_root=output_root_rel,
-                size_bytes=size_bytes,
-                origin="imported",
+                origin=IMPORTED,
+                files=[PoolFile(
+                    dtype_name=inst.dtype_name,
+                    dtype_key=inst.dtype.key,
+                    abspath=str(inst.ResolvePath()),
+                    slot_id=instance_id_hex,
+                    parents=_parent_ids(lib, path),
+                    size=_shallow_size(inst.ResolvePath()),
+                )],
+                lineage_payload=meta.get("lineage_payload") or b"",
+                store=store,
             )
-            upserts += 1
+            if written.status != "failed":
+                admitted += 1
+    finally:
+        store.close()
+    return {
+        "cache_root": str(cache_root),
+        "admitted": admitted,
+        "skipped_leaf": skipped_leaf,
+    }
+
+
+def _parent_ids(lib: DataInstanceLibrary, path: Path) -> list[str]:
+    ids = []
+    for pm in lib.parents.get(path, []):
+        if pm.path not in lib.manifest:
+            continue
+        ids.append(lib.Get(pm.path).instance_id)
+    return sorted(set(ids))
+
+
+def _shallow_size(path: Path) -> int:
+    # One stat, never a walk. A directory reports its own entry size, which is
+    # not what it holds -- the alternative is a tree walk on every import, and
+    # that is the cost this whole design exists to refuse.
+    try:
+        return int(Path(path).stat().st_size)
+    except OSError:
+        return 0
+
+
+def resolve_store_root(
+    agent_home: str | None = None, cache_root: str | None = None,
+) -> Path:
+    """Which pool a store verb acts on.
+
+    The pool lives at an agent's home, because that is where a run's products
+    land. An explicit root wins; otherwise the named agent's, otherwise
+    $AGENT_HOME's.
+    """
+    from ..caching.layout import default_cache_root
+
+    if cache_root is not None:
+        return Path(cache_root).resolve()
+    home = agent_home or os.environ.get("AGENT_HOME")
+    if not home:
+        raise ValueError(
+            "no store: pass --agent-home or --cache-root, or set AGENT_HOME. "
+            "The pool lives at an agent's home."
+        )
+    return default_cache_root(Path(home).resolve())
+
+
+def _resolve_dtype(dtype: str, type_library_paths: list[str] | None):
+    """The endpoint a type name refers to, when anything here can say.
+
+    Given type libraries, an unresolvable name is refused: the caller asked for
+    the check. Given none, the name is taken as declared -- the type is the
+    user's statement of what the file is, and this command never opens the file
+    to second-guess it.
+    """
+    from ..models.libraries import DataTypeLibrary
+
+    if not type_library_paths:
+        return None, False
+    libs = {}
+    for raw in type_library_paths:
+        ns, _sep, tp = str(raw).partition("=")
+        if not tp:
+            ns, tp = "", ns
+        tp = Path(tp).resolve()
+        libs[ns or tp.stem] = DataTypeLibrary.Load(tp)
+    if "::" not in dtype:
+        raise ValueError(f"[{dtype}] is not in the format <namespace>::<type>")
+    ns, name = dtype.split("::", 1)
+    if ns not in libs:
+        raise ValueError(
+            f"namespace [{ns}] is not among the type libraries given: "
+            f"{sorted(libs)}"
+        )
+    if name not in libs[ns]:
+        raise ValueError(f"type [{name}] is not in [{ns}]")
+    return libs[ns][name], True
+
+
+# Path segments that name storage a site expects to delete. A pool under one of
+# them is a delete scheduled against the meaning of every shard built on it.
+_IMPERMANENT = ("scratch", "tmp", "temp")
+
+
+def pool_retention_warning(root: Path) -> str | None:
+    """What an operator needs to hear before the pool is worth anything.
+
+    An imported identity is assigned, so losing the pool loses the only record
+    of what every shard keyed on an import refers to. The pool is not a cache of
+    a calculation and cannot be rebuilt by re-importing: a re-import is a new
+    act and mints new identities, which match nothing that survived.
+
+    So the pool has to outlive the shards, and that makes WHERE it lives a
+    correctness question rather than an operational preference. Scratch
+    filesystems delete on age since creation, not since access, so a pool under
+    one has a delete already scheduled against it -- and the failure is silent
+    and arrives long after the mistake, which is the reason this speaks up at
+    the moment the first thing is imported rather than in a document.
+    """
+    parts = {p.lower() for p in Path(root).parts}
+    hit = sorted(parts & set(_IMPERMANENT))
+    if not hit:
+        return None
+    return (
+        f"the pool at [{root}] sits under [{'/'.join(hit)}]. An imported "
+        "identity is assigned, not derived, so it cannot be rebuilt: if this "
+        "path is purged, every shard keyed on an import here becomes "
+        "unreadable and re-importing mints identities that match none of them. "
+        "Put the agent home on storage that is not swept, or accept that this "
+        "campaign's reuse ends when the path does."
+    )
+
+
+def record_library(lib):
+    """Write a library down and read it back, so its ids become a record.
+
+    A plan refuses a given whose identity the calling process minted, because
+    an invented identity moves on every submission and takes the run directory
+    with it. Saving and loading is what turns a declaration into a record.
+
+    Right for a declaration that is authored once and whose ids nothing will
+    ever reuse: a template's placeholders, a diagram's synthetic inputs, a
+    probe. **Wrong for a campaign's real inputs** -- it will not stop the ids
+    moving the next time the declaration is rebuilt, because nothing outside
+    the file remembers them. Those belong in a pool: see `Agent.PoolGivens`.
+    """
+    from ..models.libraries import DataInstanceLibrary
+
+    lib.Save()
+    recorded = DataInstanceLibrary.Load(lib.location)
+    # index.yml keeps a copy of each type library, not where it came from, and a
+    # template packs the source path. Without this a --rebuild cannot save.
+    recorded._type_sources = dict(lib._type_sources)
+    return recorded
+
+
+def import_item(
+    path: str,
+    dtype: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    tags: list[str] | None = None,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Register a file or folder the user already has as a pool instance.
+
+    Nothing is copied, moved or read. The item keeps its bytes where they are
+    and the pool records what it is: a freshly minted identity, the type, the
+    name it was given, where it sits, and what it descends from.
+
+    Every call is a separate act and mints a separate identity. Importing one
+    path twice is therefore two entries, which is how a caller says a second
+    declaration is a second thing, and two files handed the same name stay two
+    things rather than collapsing into one. `mint_import_id` carries the whole
+    argument; it reverses what this function used to do.
+
+    An import is a setup act, performed once against a pool. A driver
+    references what is already there and never calls this, which is why an
+    assigned identity costs nothing in cache hits.
+
+    The pool's lifetime is its campaign's. A minted identity cannot be rebuilt,
+    so every shard keyed on this import dies when the pool does, reuse never
+    crosses a campaign boundary, and a measurement comparing two batches needs
+    both of them inside the agent home's retention window.
+    """
+    from ..caching.admission import IMPORTED, PoolFile, admit, mint_import_id
+
+    root = resolve_store_root(agent_home, cache_root)
+    target = Path(path).expanduser().resolve()
+    endpoint, resolved = _resolve_dtype(dtype, type_library_paths)
+    label = name if name is not None else str(target)
+    key_hex = mint_import_id(dtype, label)
+    arrival_ns = time.time_ns()
+    # Once per pool, at the act that first gives it something to lose.
+    if not (root / "cache.sqlite").exists():
+        warning = pool_retention_warning(root)
+        if warning:
+            Log.Warn(warning)
+
+    parent_ids = _resolve_parent_ids(root, parents or [])
+    written = admit(
+        cache_root=root,
+        key=bytes.fromhex(key_hex),
+        origin=IMPORTED,
+        files=[PoolFile(
+            dtype_name=dtype,
+            dtype_key=endpoint.key if endpoint is not None else "",
+            abspath=str(target),
+            slot_id=key_hex,
+            parents=parent_ids,
+            size=_shallow_size(target),
+        )],
+        name=label,
+        imported_at=arrival_ns,
+        tags=tuple(tags or ()),
+    )
+    return {
+        "cache_root": str(root),
+        "path": str(target),
+        "dtype": dtype,
+        "name": label,
+        "instance_id": key_hex,
+        "type_resolved": resolved,
+        "parents": parent_ids,
+        "tags": sorted(set(tags or ())),
+        "status": written.status,
+    }
+
+
+def _resolve_parent_ids(cache_root: Path, parents: list[str]) -> list[str]:
+    """Parents named by instance id, or by a path already in the store.
+
+    A path names the newest entry that claims it, because an import of a path
+    already imported supersedes the earlier declaration. Name the id to reach
+    an older one.
+    """
+    if not parents:
+        return []
+    by_path = store_ids_by_path(cache_root)
+    known = set(by_path.values())
+    out = []
+    for p in parents:
+        if p in known:
+            out.append(p)
+            continue
+        resolved = by_path.get(str(Path(p).expanduser().resolve()))
+        if resolved is None:
+            raise ValueError(
+                f"[{p}] is neither an instance id nor a path in the store at "
+                f"[{cache_root}]. A parent must already be in the pool, or the "
+                "edge it records points at nothing."
+            )
+        out.append(resolved)
+    return sorted(set(out))
+
+
+def store_ids_by_path(cache_root: Path) -> dict:
+    """Every file the store indexes, by where it sits. Needs no type library.
+
+    One path can be claimed by several entries now that an import mints a fresh
+    identity each time, so the newest claim wins -- the same rule the projection
+    applies, for the same reason.
+    """
+    from ..caching.admission import manifest_arrival_ns, manifest_files
+    from ..caching.store import CacheStore, decode_manifest
+
+    root = Path(cache_root)
+    if not (root / "cache.sqlite").exists():
+        return {}
+    store = CacheStore.open(root)
+    try:
+        best: dict[str, tuple] = {}
+        for entry in store.iter_entries():
+            try:
+                manifest = decode_manifest(entry.payload)
+            except Exception:
+                continue
+            arrival = manifest_arrival_ns(manifest, entry.created_at)
+            for f in manifest_files(manifest):
+                iid = f.InstanceId()
+                rank = (arrival, iid)
+                path = str(f.Resolve(entry.output_root))
+                if path not in best or rank > best[path][0]:
+                    best[path] = (rank, iid)
+        return {path: iid for path, (_rank, iid) in best.items()}
     finally:
         store.close()
 
+
+def forget_item(
+    instance_id: str,
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+    delete: bool = False,
+) -> dict:
+    """Drop an imported entry from the pool.
+
+    Only the entry. The bytes were never the pool's -- an import indexes a file
+    where the user put it -- so there is nothing here that could delete them,
+    and `--delete` removes the shard, which holds only the manifest.
+    """
+    import shutil as _shutil
+
+    from ..caching.admission import IMPORTED, shard_for
+    from ..caching.store import CacheStore
+
+    root = resolve_store_root(agent_home, cache_root)
+    key = bytes.fromhex(instance_id)
+    store = CacheStore.open(root)
+    try:
+        entry = store.probe(key)
+        if entry is None:
+            return {"cache_root": str(root), "key": instance_id, "found": False}
+        if entry.origin != IMPORTED:
+            raise ValueError(
+                f"[{instance_id}] is a product, not an import. A product is "
+                "reclaimed by `metasmith cache gc`, which knows it can be "
+                "re-derived."
+            )
+        store.tombstone(key)
+        shard = shard_for(root, instance_id, IMPORTED)
+        removed = False
+        if delete and shard.is_dir() and shard.is_relative_to(root):
+            _shutil.rmtree(shard)
+            removed = True
+    finally:
+        store.close()
     return {
-        "library": str(lib.location),
-        "src": src_uri,
-        "item_count": len(lib.manifest),
-        "imported_cache_entries": upserts,
-        "skipped_leaf_entries": skipped_leaf,
-        "cache_root": str(cache_root_path),
+        "cache_root": str(root),
+        "key": instance_id,
+        "found": True,
+        "tombstoned": True,
+        "shard_removed": removed,
     }
 
 

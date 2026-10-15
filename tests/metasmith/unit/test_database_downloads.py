@@ -40,18 +40,6 @@ class _RecordedPath:
 
 
 @dataclass
-class _Dispatch:
-    commands: list[str]
-
-    def ifContainerDo(self, env=None, cmd="", **kw):
-        self.commands.append(cmd)
-        return self
-
-    def ifVirtualEnvDo(self, env=None, cmd="", **kw):
-        return self
-
-
-@dataclass
 class _RecordingContext:
     """Every surface the logistics protocols touch, and nothing else."""
 
@@ -66,8 +54,8 @@ class _RecordingContext:
             local=self.external_cwd / name, container=Path("/ws") / name,
         )
 
-    def ExecWithEnv(self) -> _Dispatch:
-        return _Dispatch(self.commands)
+    def ExecWithEnv(self, env=None, cmd="", **kw):
+        self.commands.append(cmd)
 
     def LocalShell(self, cmd: str, **kw):
         self.local_shell_calls.append(cmd)

@@ -144,3 +144,82 @@ def deploy(agent_path: str, assertive: bool = False, on_phase=None) -> dict:
         "home": agent.home.address,
         "real_path": str(agent.real_path) if agent.real_path else None,
     }
+
+
+def read_pool(
+    agent_path: str,
+    *,
+    origin: str | None = None,
+    dtype: str | None = None,
+    tag: str | None = None,
+    name: str | None = None,
+    refs: list[str] | None = None,
+    timeout: int = 120,
+) -> dict:
+    """The agent's pool, read where it sits.
+
+    With `refs`, the entries those names or ids point at, in the order asked,
+    and a refusal naming the import call for anything the pool does not hold.
+    """
+    agent = Agent.Load(Path(agent_path))
+    out = agent.ReadPool(
+        origin=origin, dtype=dtype, tag=tag, name=name, timeout=timeout,
+    )
+    if refs:
+        out = dict(out)
+        out["entries"] = agent.ResolvePoolRefs(refs, entries=out["entries"])
+        out["refs"] = list(refs)
+    return out
+
+
+def import_to_pool(
+    agent_path: str,
+    path: str,
+    dtype: str,
+    *,
+    name: str | None = None,
+    parents: list[str] | None = None,
+    tags: list[str] | None = None,
+    timeout: int = 300,
+) -> dict:
+    """Record one item in the agent's pool, where that item already sits."""
+    return Agent.Load(Path(agent_path)).ImportToPool(
+        path, dtype, name=name, parents=parents, tags=tags, timeout=timeout,
+    )
+
+
+def tag_pool_entry(
+    agent_path: str,
+    key_hex: str,
+    tags: list[str],
+    *,
+    replace: bool = False,
+    remove: bool = False,
+    timeout: int = 120,
+) -> dict:
+    return Agent.Load(Path(agent_path)).TagPoolEntry(
+        key_hex, tags, replace=replace, remove=remove, timeout=timeout,
+    )
+
+
+def forget_pool_entry(
+    agent_path: str,
+    instance_id: str,
+    *,
+    delete: bool = False,
+    timeout: int = 120,
+) -> dict:
+    return Agent.Load(Path(agent_path)).ForgetPoolEntry(
+        instance_id, delete=delete, timeout=timeout,
+    )
+
+
+def resolve_pool_refs(
+    agent_path: str, refs: list[str], *, entries: list | None = None,
+) -> list[dict]:
+    """The entries those names or ids point at, in the order asked.
+
+    `entries` is a pool listing the caller already has, which is how a caller
+    resolving many references pays for one read rather than one per reference.
+    """
+    return Agent.Load(Path(agent_path)).ResolvePoolRefs(refs, entries=entries)

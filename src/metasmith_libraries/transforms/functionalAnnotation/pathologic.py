@@ -55,7 +55,7 @@ with open("/ws/0.pf", "w") as f:
     context.LocalShell("mkdir -p ws")
     context.LocalShell("cat > _build_pf.py << 'PYEOF'\n" + build_pf + "\nPYEOF\n")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         binds=[(context.external_cwd / "ws", "/ws")],
         cmd=(

@@ -1,0 +1,482 @@
+manifest:
+  /scratch/phyberos/metagem/PRJEB9718/ERR969462/ERR969462.fastq.gz:
+    instance_id: 1e20e37f791f0d12ec8b354d51088b0d2e8a95562b5704e428f44ce6e3afa8fd5e97
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969462_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969463/ERR969463.fastq.gz:
+    instance_id: 1e20bf91ad1d27ab0e45466542d0380585be101a1e5a5f62a3530e9f3e6b867b524c
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969463_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969464/ERR969464.fastq.gz:
+    instance_id: 1e2093dc981101d4d397a1b9d383533033d8144307a21ad63b134a81cff14eac51aa
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969464_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969465/ERR969465.fastq.gz:
+    instance_id: 1e20b62975cd3a7632321c799525b02e818a8d359d6b4acccf44948f11f330cbb729
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969465_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969466/ERR969466.fastq.gz:
+    instance_id: 1e20168df019b947d449217f1c341cd09c563726d1332f52aa3345b48d1557c71bf8
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969466_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969467/ERR969467.fastq.gz:
+    instance_id: 1e2031f20fb849407c15653e2c16cc750e1b7d3f032483b23add125ec83f3a13c0a2
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969467_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969468/ERR969468.fastq.gz:
+    instance_id: 1e20f037ffbdbda75465f8f7c34383f5485bc7eb76e3f05691b06cc882607b67155b
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969468_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969469/ERR969469.fastq.gz:
+    instance_id: 1e20dfc5af29b2900840e2c4e82d1f261cff4bba6976726c45499f05af5758de05c6
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969469_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969470/ERR969470.fastq.gz:
+    instance_id: 1e20ad677cccd53a3d17cead54c28ae25715315baa015952f8c1320c591e8e3b32af
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969470_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969471/ERR969471.fastq.gz:
+    instance_id: 1e20e6fc86a7fb39497207f4d3c1150f3d1019f13cd7ea04c60c0f321b43134a7bb7
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969471_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969472/ERR969472.fastq.gz:
+    instance_id: 1e20a4b62beac0fa2caea2b5e8c5a28dbf5a282a466844823c4afdf739a569b6ffeb
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969472_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969473/ERR969473.fastq.gz:
+    instance_id: 1e20202a513d4dc84887f14676d0e5669b6adbf1280ad6c740ad6d120023dbc51e88
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969473_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969474/ERR969474.fastq.gz:
+    instance_id: 1e2006d8d5483635d27102ee54ce452100a85f0def4d549dac0005b460c4f6a9394d
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969474_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969475/ERR969475.fastq.gz:
+    instance_id: 1e205a878aca0ecf75a12b44d24b572f4d9136a878c5304e1fd3de1e1479e248f220
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969475_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969476/ERR969476.fastq.gz:
+    instance_id: 1e205430c1b6c7a3c008495f28e96b9ecff9f8ed7550ff1f850f3843ac8e3a9d9152
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969476_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969477/ERR969477.fastq.gz:
+    instance_id: 1e20bd83de9297e550c951527d183136824f4f9fba9e216eb78709d50b2dddab70fc
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969477_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969478/ERR969478.fastq.gz:
+    instance_id: 1e2001babc9d763e9404551bad26366b1542f85d7910540678812cacc97ea405cf42
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969478_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969479/ERR969479.fastq.gz:
+    instance_id: 1e20d0b2afdb5a184fc35e674e74ef77332774c241d70ae0ae1211d619285fb33834
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969479_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969480/ERR969480.fastq.gz:
+    instance_id: 1e205f84841c8879e7a917abc3c929a4ed46144d7bbabbbfe160e736b48649f5295b
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969480_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969481/ERR969481.fastq.gz:
+    instance_id: 1e20f1e13f187584bc89c93eac57931307865ee94fc04d7ad51f271cc408fcccf811
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969481_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969482/ERR969482.fastq.gz:
+    instance_id: 1e20c02269600c3799a41eaa08358e189d1366e64a8aeb5c3c22bbb43bc7d836da8c
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969482_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969483/ERR969483.fastq.gz:
+    instance_id: 1e207a48eeebf3eae6e3a033095999a509185f602ebd85b4707b115393750787924d
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969483_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969484/ERR969484.fastq.gz:
+    instance_id: 1e20ccfcd35024f2df68e5f184a83069859d921b537ed904999faa0d35104f78c92d
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969484_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969485/ERR969485.fastq.gz:
+    instance_id: 1e201a78d63ec8d7a778499455774c167f45bb713d3a0407000cb6f335551ab6778b
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969485_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969486/ERR969486.fastq.gz:
+    instance_id: 1e201641d2007a820c4be9db522b43848a6353442a6239cd4e55c702e3dc761aaf92
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969486_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969487/ERR969487.fastq.gz:
+    instance_id: 1e2008474405957962ae0fa5cdc2b7556a920365656c4123a349ecb24ca735334027
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969487_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969488/ERR969488.fastq.gz:
+    instance_id: 1e20a0f293ce0f0b72ad9d70475e358d8e15a1d65db166432390b120ff251d85568d
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969488_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969489/ERR969489.fastq.gz:
+    instance_id: 1e20484aad8287726e1747b0bf325f81cf1197e0d555b79a0549972f375a79a782c5
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969489_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969490/ERR969490.fastq.gz:
+    instance_id: 1e20e89b7a1cdf11d82b797f13f71f31a4eb43016aa76df0fca5be690c3b920cf6e3
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969490_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969491/ERR969491.fastq.gz:
+    instance_id: 1e2032eb38eb99b6244ce0473d3ca285daecd9a2ea9b1505738910bf222085e6d6aa
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969491_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969492/ERR969492.fastq.gz:
+    instance_id: 1e20fb411271d962cbaaec02249f046ae9e1914ef796502d9970bff55a7600f275bc
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969492_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969493/ERR969493.fastq.gz:
+    instance_id: 1e20414101e9c657be1982ee0247023c556ac8d1095fdd6617d77a86c8c76d7d6620
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969493_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969494/ERR969494.fastq.gz:
+    instance_id: 1e20f4fb13d44fc76ceb4508ec83f6494ee94636b4f895b0d3aafa39d7d9a8e748c8
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969494_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969495/ERR969495.fastq.gz:
+    instance_id: 1e2073c47eb9e0fd355a0661bc27dc76514fa11f15108a36049a7bf30ac62fc09f6d
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969495_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969496/ERR969496.fastq.gz:
+    instance_id: 1e207a6ddfbccba70533a6e1806783827311775e499ba06cd71d1df0604a61f2dafe
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969496_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969497/ERR969497.fastq.gz:
+    instance_id: 1e20752b1280a7507e1d94c8b543db1615dc3396d78d2634ea554078c7ffc925c5e8
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969497_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969498/ERR969498.fastq.gz:
+    instance_id: 1e20b16f9bbeb82d251b7ab3f93dba2f7330763c10c3fa20eae6e63979fb6af78da3
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969498_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969499/ERR969499.fastq.gz:
+    instance_id: 1e20558a150988c9fa5c42b927f25d12446a8d513d078a0395509d9ea53eddcf57ea
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969499_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969500/ERR969500.fastq.gz:
+    instance_id: 1e20a6ab869efef425b5c5d2ea2ceda58a30e0ee0d6a43db2ff158d676f31d8e92b3
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969500_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969501/ERR969501.fastq.gz:
+    instance_id: 1e20a8a3520c61c00a6ed203617cfdd29c2aa56f4718e216acc4c763b4269c51170d
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969501_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969502/ERR969502.fastq.gz:
+    instance_id: 1e208126ce3ae8a8247faf1209412534945a087c9c7ae8f96d338ee02f604a400976
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969502_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969503/ERR969503.fastq.gz:
+    instance_id: 1e206089266274190afbe0ab45e603f33c899271f6122751b8c28a212e7e09b40289
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969503_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969504/ERR969504.fastq.gz:
+    instance_id: 1e2094d027292f52c5cfe4502c5b6279808c5641c5d29880044766198029e7b21627
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969504_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969505/ERR969505.fastq.gz:
+    instance_id: 1e20a94909fee53b270f5757d5efe8b3b94a1b855bfa8457e669a71667dcad940d7b
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969505_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969506/ERR969506.fastq.gz:
+    instance_id: 1e20e540c055f44ef835a38a7452da324b2c9a5e9c6064657fc80cc206ec36ed23ec
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969506_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969507/ERR969507.fastq.gz:
+    instance_id: 1e20b2f5873ae4db03ba6061dfcdd98d362ee9a86006691fd0f74d0743568b71fcfb
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969507_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969508/ERR969508.fastq.gz:
+    instance_id: 1e20843004d477a7603be958b7d22e3ba466cadf12c1c76546c085d58214cc5310fc
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969508_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  /scratch/phyberos/metagem/PRJEB9718/ERR969509/ERR969509.fastq.gz:
+    instance_id: 1e200b0fdefdd61d4d3ea48185bfffbdc6ea4d293580eb37324b121e6a78bcfc8ea1
+    origin: leaf
+    parents:
+      Hz0mNOmGMOu5@korem2015_ERR969509_read_metadata.json: sequences::read_metadata
+    type: sequences::short_reads_se
+  korem2015_ERR969462_read_metadata.json:
+    instance_id: 1e2032a9d20f5e87bcb31f55485e84eeb91d1db52181e179ae0732205f7d00176a7d
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969463_read_metadata.json:
+    instance_id: 1e208dcbedf58351bb462d531c01476e9908d3db41083f513f7a9470ab539577bd64
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969464_read_metadata.json:
+    instance_id: 1e20c8b51c3c06f2e147c4b19f049e82099bb80657cd16531ca2282a550740635b82
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969465_read_metadata.json:
+    instance_id: 1e207d53adcc26c8b5ef5a782796f979481abf3fe2f1447cf1e67841529840759fe8
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969466_read_metadata.json:
+    instance_id: 1e202a518293a103c4982fa46cd896b3727a11a459cbc1b9009a42d03c4d61f71810
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969467_read_metadata.json:
+    instance_id: 1e203cad45f327c0a5b8fffc986e4966a443e3fcca5452f590b4e30a5fae8a2618b1
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969468_read_metadata.json:
+    instance_id: 1e20d0d1c71a5a3f13d944611b11a703e0fc5b862f4107928f378c72c5e75a553957
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969469_read_metadata.json:
+    instance_id: 1e206603d10bd59353df7cf1c01ff6b4fa6aeb81164f73fd0bdddce4cba5985c85ad
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969470_read_metadata.json:
+    instance_id: 1e20cd98761ffc432f85a9bba7088cf5fab5acd72d5778618f1d36572ab7849ca868
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969471_read_metadata.json:
+    instance_id: 1e206c709d798b4d2e32052acf236af9cdf2604119831f41b7ecf4be9da3cecd668b
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969472_read_metadata.json:
+    instance_id: 1e205e7b3f980650a0b6938849bd00d9ab8871e09096fd7c32e38d1d95edae0a496b
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969473_read_metadata.json:
+    instance_id: 1e204080cd82a050caea97d580df34cde3bad844974f2b351bff1b87f636bd4d5a2d
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969474_read_metadata.json:
+    instance_id: 1e2030cda2cb7889a135f5ab67a350458bac86389db906e8d28b3777c9f5fd2add6d
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969475_read_metadata.json:
+    instance_id: 1e20e389b6a73474616734aa6a440edb7eee7586c0b46addc822b460f167198ba018
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969476_read_metadata.json:
+    instance_id: 1e209ceea142677480b282e00cedb95f274b651c64a4862c26442bf088f643794f2f
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969477_read_metadata.json:
+    instance_id: 1e2001fe5df69986aa5d45da50a5138733e3c460451fa5c4aca4756837a69b2d3ccd
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969478_read_metadata.json:
+    instance_id: 1e20f7da73e1afef71d4c66ec5336bbecb1dccca16195947593b5281110857342978
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969479_read_metadata.json:
+    instance_id: 1e2027d9c5d4d381188e98f987624eab2cac94ef280193f2434aa9677a80370cfdac
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969480_read_metadata.json:
+    instance_id: 1e2079c4145092d5ce53bdefea33b71ae86f37d7930a5c4591ed2ddd7a6b9ae07b40
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969481_read_metadata.json:
+    instance_id: 1e2005e50824406e579cc5f1d5a18a6739ad1c89f2145c36fbc2eede5ae6c737958a
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969482_read_metadata.json:
+    instance_id: 1e20f0181d732c9f49e885543f50fe258d711b7f0d44cd49d3235bcd13fa577c3005
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969483_read_metadata.json:
+    instance_id: 1e207d695ec387616efe76a124f4fca9b35684bf66371bb65c7687751b9a107b8c7c
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969484_read_metadata.json:
+    instance_id: 1e20986799db744b3a1862c516b66e29544cefcaf6e2ae20d29a5ad35e055bbeff07
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969485_read_metadata.json:
+    instance_id: 1e205b89eaf383fbb4cc53b928415ed71ffbf37046401706a98d0567cecce0ab2143
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969486_read_metadata.json:
+    instance_id: 1e209bf64634d7641f5cb496d68ade9a893b6bea85e80150e58cbfaf366f0dce5c8d
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969487_read_metadata.json:
+    instance_id: 1e20a9984e6fb6f5fb46ad05ec09cb4896bb42c5c93f7220423cbe365f311bff18ed
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969488_read_metadata.json:
+    instance_id: 1e204ae31b93e5a04c30238d67cee9ae3ab48b9ab8a4b32391f9759780376990c263
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969489_read_metadata.json:
+    instance_id: 1e20942160bea2d9e5840906beb3f6ddabd5aeb8df9786ed6fcd52974b90964a619e
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969490_read_metadata.json:
+    instance_id: 1e20e71dbb598102c73bafdb87f0cc5dec00b1978f0d7a9c5665fb1725bc867234a2
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969491_read_metadata.json:
+    instance_id: 1e202888246730c2944ab30fe1dec270e36238b823e0d6e228c0b121b9d24c9fc9cd
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969492_read_metadata.json:
+    instance_id: 1e20da9763c6a43948141602903128f005767890a762aa2457bd7317d35807f2345e
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969493_read_metadata.json:
+    instance_id: 1e20b876c5d1c501d1b76610934da94ebaa2bf57ea45e241ea91b55d232258c72afb
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969494_read_metadata.json:
+    instance_id: 1e20f80232856bb40ea584796ed3b5cb12f86ed4634065a7d207625aeac75b22d1ec
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969495_read_metadata.json:
+    instance_id: 1e200f8a3a3e1d0a20479139d08f66d4fa23af0d935661709c29b2c7b9b22bdc2a0d
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969496_read_metadata.json:
+    instance_id: 1e20c3e66c89d45907118fe5ae9850cab5c982e4e231f7b8fd6963c6b3921147da47
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969497_read_metadata.json:
+    instance_id: 1e206bc64768f1b4ffdda6736f17d733fd87594d6b718bb3de406180a12f757b0dac
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969498_read_metadata.json:
+    instance_id: 1e207c5ed8af127298d51cd3914126b3f4981aa9c4296cf53f9591c3ca418805a8b9
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969499_read_metadata.json:
+    instance_id: 1e2060faa0638788b5e5cdd2a0aa34187a16f66295ff0c236a669b05339ccd592099
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969500_read_metadata.json:
+    instance_id: 1e208e3f98adb3266a9c60f7bb2bf28a7c2f08cc35e55e9a23b2e5d58364644ce621
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969501_read_metadata.json:
+    instance_id: 1e201e45829547c6f10a1c8a66e4c0658232e2985b5ca8111eeac9c7e2cb950ae34c
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969502_read_metadata.json:
+    instance_id: 1e20d1d470f4964b8e3769db2c8495dea233b68c957496830e48e5b0d1d7dcbffc65
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969503_read_metadata.json:
+    instance_id: 1e2031de427d6c39892ad7e204d016bacb529a333cf93ae268f95a44ca3c971046e2
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969504_read_metadata.json:
+    instance_id: 1e20e7dd62cc03a5c52238a9553b74841f3350faa1fd8ae3b252eef71f7185a0d9b6
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969505_read_metadata.json:
+    instance_id: 1e207459d2fe0dbac09acc7c54f561629e67886cf809d6a37b2b1d1a13ee9358ace2
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969506_read_metadata.json:
+    instance_id: 1e200279de97c3e53391407640122fa3368e041cb9fc7dbf039e7063e4934204496a
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969507_read_metadata.json:
+    instance_id: 1e2066181548783faddf5f4cefcd8aac370e10632cb15b2520f387a8468a8fe34b5f
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969508_read_metadata.json:
+    instance_id: 1e20af9277e99b241985321e6da1b49228c44173b2ce26a639999c28bf1f117a3e84
+    origin: leaf
+    type: sequences::read_metadata
+  korem2015_ERR969509_read_metadata.json:
+    instance_id: 1e20d511606346ffc4a29b252eb0ec4fe41e7e35ecf874cd145c65176389cb762ddb
+    origin: leaf
+    type: sequences::read_metadata
+schema: v1

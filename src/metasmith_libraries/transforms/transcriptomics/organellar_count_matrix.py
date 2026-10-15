@@ -26,7 +26,7 @@ def protocol(context: ExecutionContext):
         for p in gff_paths:
             f.write(f"{p.container}\n")
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"pip install -q pysam && python {ihelp.container}/organellar_count_matrix.py {manifest} {gff_manifest} {iout.container}",
     )

@@ -14,11 +14,13 @@ _SINK = GeneratorDials(
     product_group_density=0.5, target_lineage=1.0, max_requirements=3,
 )
 
+# 9391 joined this list when PUCT landed. It was the one instance the weighted
+# rule stopped reaching at all, and the plan the new selection finds for it is
+# sound under `check_plan(strict=True)` -- so it belongs here rather than in a
+# test asserting the search cannot get there.
 FORMERLY_UNSOUND = [
-    (f"sink-{s}", s, _SINK) for s in (6503, 6807, 8575, 9087, 9375, 9927)
+    (f"sink-{s}", s, _SINK) for s in (6503, 6807, 8575, 9087, 9375, 9391, 9927)
 ]
-
-UNREACHED = ("sink-9391", 9391, _SINK)
 
 
 @pytest.mark.parametrize(
@@ -26,19 +28,10 @@ UNREACHED = ("sink-9391", 9391, _SINK)
 )
 def test_a_cyclic_transform_graph_yields_a_runnable_plan(name, seed, dials):
     problem = generate_problem(seed, dials, name=name)
-    verdict = check_plan(problem, problem.solve())
-    assert verdict.ok, verdict.violations
-
-
-def test_the_instance_the_search_no_longer_reaches_says_so():
-    name, seed, dials = UNREACHED
-    problem = generate_problem(seed, dials, name=name)
     solution = problem.solve()
-    assert not solution.complete, (
-        "sink-9391 reports a complete solve -- if the search genuinely reaches it"
-        " again, move it back into FORMERLY_UNSOUND rather than relaxing this"
-    )
-    assert not any(s.transform is problem.target for s in solution.dependency_plan)
+    assert solution.complete, f"{name} is no longer reached by the search"
+    verdict = check_plan(problem, solution)
+    assert verdict.ok, verdict.violations
 
 
 def test_an_unsatisfiable_target_is_reported_as_unsolved():

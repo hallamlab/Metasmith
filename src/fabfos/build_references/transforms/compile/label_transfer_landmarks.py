@@ -283,25 +283,19 @@ def protocol(context: ExecutionContext):
 
     # Both halves run in the ProteinBERT image. It carries numpy/pandas, and running the
     # slice somewhere else would mean staging the bridge across two environments.
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _pool_select.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _pool_select.py")
+    context.ExecWithEnv(env=image, cmd="python3 _pool_select.py")
 
     threads = context.params.get("cpus", 4)
     _cmd = f"""
         pbert run -i _pool.faa -o pbert_output \
             --threads {threads} --protein_size 512 --model_batch 1024 -x 1
     """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
 
     assemble = ASSEMBLE.format(pool=ipool.container, table_name=TABLE_NAME,
                                source_name=SOURCE_NAME)
     context.LocalShell("cat > _pool_assemble.py << 'PYEOF'\n" + assemble + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _pool_assemble.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _pool_assemble.py")
+    context.ExecWithEnv(env=image, cmd="python3 _pool_assemble.py")
 
     ok = all((ipool.local / n).exists() for n in (TABLE_NAME, SOURCE_NAME))
     return ExecutionResult(

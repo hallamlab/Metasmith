@@ -1,0 +1,46 @@
+=== interleaved/ layout ===
+total 16
+drwxr-x---  4 phyberos phyberos 4096 Sep 12 22:40 .
+drwxr-x--- 12 phyberos phyberos 4096 Sep 13 00:47 ..
+drwxr-x---  2 phyberos phyberos 4096 Sep 12 22:48 reads_2019
+drwxr-x---  2 phyberos phyberos 4096 Sep 12 23:25 reads_2022
+--- /scratch/phyberos/pratama2026/interleaved/reads_2019/ : 64 files, 377129154977 bytes
+total 368291564
+drwxr-x--- 2 phyberos phyberos        4096 Sep 12 22:48 .
+drwxr-x--- 4 phyberos phyberos        4096 Sep 12 22:40 ..
+-rw-r----- 1 phyberos phyberos 10350654301 Sep 12 22:09 ERR3858110.fastq.gz
+--- /scratch/phyberos/pratama2026/interleaved/reads_2022/ : 68 files, 366910756889 bytes
+total 358312632
+drwxr-x--- 2 phyberos phyberos        4096 Sep 12 23:25 .
+drwxr-x--- 4 phyberos phyberos        4096 Sep 12 22:40 ..
+-rw-r----- 1 phyberos phyberos 10519912931 Sep 12 22:43 SRR32696677.fastq.gz
+
+=== five import shards: what is inside out/ ===
+--- /scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/2002d748f97a53a616d6a1cdef180ee80881227f86fd7b4a085543ad50e45af4d3/
+drwxr-x--- 2 phyberos phyberos 4096 Sep 13 01:58 .
+drwxr-x--- 3 phyberos phyberos 4096 Sep 13 01:58 ..
+--- /scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/20037cc9cccd7749d84e0cad783f6ffe258e1a9709771d1940f0b5e0f2fbb14ef8/
+drwxr-x--- 2 phyberos phyberos 4096 Sep 13 01:58 .
+drwxr-x--- 3 phyberos phyberos 4096 Sep 13 01:58 ..
+--- /scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/2003ee029de9ad44a9da37df1d7569518c099b7a641535d8d7a842c0b04bfb84d5/
+drwxr-x--- 2 phyberos phyberos 4096 Sep 13 01:59 .
+drwxr-x--- 3 phyberos phyberos 4096 Sep 13 01:59 ..
+--- /scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/2005d258a69f6f6f73ccc499f18ff431b7dbaca0e181a7b0c149ed3fa090d50ddf/
+drwxr-x--- 2 phyberos phyberos 4096 Sep 13 01:58 .
+drwxr-x--- 3 phyberos phyberos 4096 Sep 13 01:58 ..
+--- /scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/200648ae63500c08a2beb89a65279d310111f7a06ae8895ce4848e2568b455a34e/
+drwxr-x--- 2 phyberos phyberos 4096 Sep 13 01:58 .
+drwxr-x--- 3 phyberos phyberos 4096 Sep 13 01:58 ..
+
+=== every distinct directory an import shard's out/ resolves into ===
+    243 
+-- and as plain files (not symlinks), if any --
+523	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/20e95a9eb5e038eda3b3bae2e496e37a4c3ea3bc0d4f1e19090794e24ca478d49a/manifest.cbor
+512	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/20d3d0c5e7275607f28820a5e6be40735512f1c8e69aee0196e2e67d80426161b7/manifest.cbor
+523	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/208398ed5445b76bc01c4dde728dcf424a1ae6d668957cd9cf13e0e5959aa4accf/manifest.cbor
+506	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/2062c0e042eede14bcdc13c121c458d0fa9f18bf6ed2c3328ebf2df6b0c8029416/manifest.cbor
+508	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/20d56bbbaa8695958704076940bfd2dd00bdc6dd8b488d5ef9fad013feb7eb2214/manifest.cbor
+512	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/2026da8e5d8f1309f47555c8e6c57c467f90798d6f06d1562b40dc1241674516a8/manifest.cbor
+523	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/200b913b4e3b2e7b233cae6be5acc30cc02a4b69db5aee0426980b8436147baab2/manifest.cbor
+506	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/20a90c0fd3a3f652d888f450943c1f7e6bf0191b0c74aec15edf3141b7414be0a6/manifest.cbor
+total entries under imported/*/*/out: 486

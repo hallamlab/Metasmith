@@ -15,9 +15,7 @@ def protocol(context: ExecutionContext):
             mkdir -p {iout.container}
             metaphlan --install --bowtie2db {iout.container} {threads_arg}
         """
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

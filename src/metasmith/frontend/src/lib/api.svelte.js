@@ -77,7 +77,7 @@ export class ApiService {
     let res
     let text
     try {
-      res = await fetch(`/api${path}`, opts)
+      res = await fetch(`api${path}`, opts)
       text = await res.text()
     } catch {
       // fetch only rejects when the request never completed: the server is
@@ -107,7 +107,7 @@ export class ApiService {
 
   /** Follow a background job's log. Returns a stop function. */
   stream(jobId, onLine, onEnd) {
-    const source = new EventSource(`/api/jobs/${jobId}/stream`)
+    const source = new EventSource(`api/jobs/${jobId}/stream`)
     source.onmessage = (e) => {
       try {
         onLine(JSON.parse(e.data).line)
@@ -178,7 +178,7 @@ export class ApiService {
    * yellow, and the cheapest route in the backend so a timer can hold it. */
   async pulse() {
     try {
-      await fetch('/api/health', { cache: 'no-store' })
+      await fetch('api/health', { cache: 'no-store' })
       this.#markOnline()
     } catch {
       this.online = false

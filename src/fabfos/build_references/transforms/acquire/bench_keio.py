@@ -70,9 +70,7 @@ def protocol(context: ExecutionContext):
         tables=repr(TABLES),
     )
     context.LocalShell("cat > _bench_keio.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd="python3 _bench_keio.py") \
-        .ifVirtualEnvDo(env=image, cmd="python3 _bench_keio.py")
+    context.ExecWithEnv(env=image, cmd="python3 _bench_keio.py")
 
     n = sum(1 for p in (iout.local / "supp").glob("*") if p.is_file())
     Log.Info(f"keio: {n} supplementary files")

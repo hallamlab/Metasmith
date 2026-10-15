@@ -192,7 +192,7 @@
 <circle cx="379.7" cy="760.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
 <text x="392.2" y="754.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
 <text x="392.2" y="764.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">host_filtered_short_reads</text></g>
-<g><title>5 megahit</title>
+<g><title>4 megahit</title>
 <polygon points="188.5,790.0 199.2,790.0 193.8,799.2" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
 <text x="392.2" y="799.3" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">megahit</text></g>
 <g><title>sequences::megahit_assembly</title>
@@ -203,7 +203,7 @@
 <circle cx="193.8" cy="863.5" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
 <text x="392.2" y="858.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
 <text x="392.2" y="868.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">megahit_assembly_graph</text></g>
-<g><title>4 spades</title>
+<g><title>5 spades</title>
 <polygon points="374.4,893.4 385.1,893.4 379.7,902.6" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
 <text x="392.2" y="902.7" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">spades</text></g>
 <g><title>sequences::spades_assembly_graph</title>

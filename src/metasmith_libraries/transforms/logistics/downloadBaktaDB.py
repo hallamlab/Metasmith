@@ -9,7 +9,7 @@ db    = model.AddProduct(lib.GetType("annotation::bakta_db"))
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
 
-    context.ExecWithEnv().ifContainerDo(
+    context.ExecWithEnv(
         env=image,
         cmd=f"""
             mkdir -p {idb.container}

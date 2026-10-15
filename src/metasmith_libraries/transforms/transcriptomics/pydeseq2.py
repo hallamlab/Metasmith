@@ -21,9 +21,7 @@ def protocol(context: ExecutionContext):
             f.write(f"{sample_name}\t{p.container}\n")
 
     _cmd = f"python {ihelp.container}/pydeseq2.py {manifest} {iout.container}"
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=_cmd) \
-        .ifVirtualEnvDo(env=image, cmd=_cmd)
+    context.ExecWithEnv(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[
             {

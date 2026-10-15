@@ -22,6 +22,9 @@ from metasmith.ops import inputs as op_inputs
 from metasmith.ops import workspace as op_workspace
 
 from tests.metasmith.e2e.docker.conftest import create_transform_library
+from metasmith.gui.api import _pool_resolver
+from metasmith.gui.store import ProjectError
+from metasmith.ops import data as op_data
 
 pytestmark = pytest.mark.gui
 
@@ -1309,7 +1312,7 @@ class TestDagTheme:
         ink = client.get("/api/dag/theme").get_json()
         assert set(ink) == {"light", "dark"}
         for theme in ink.values():
-            assert set(theme["styles"]) == {"transform", "data", "target"}
+            assert set(theme["styles"]) == {"transform", "data", "target", "given"}
             assert theme["plate"]["background"] and theme["plate"]["edge"]
 
     def test_a_style_carries_what_a_browser_has_to_draw_with(self, client):
@@ -1317,7 +1320,7 @@ class TestDagTheme:
         st = ink["light"]["styles"]
         assert st["transform"]["shape"] == "triangle_down"
         assert st["data"]["shape"] == "circle" and not st["data"]["solid"]
-        assert st["target"]["solid"] and st["target"]["stroke_width"] > st["data"]["stroke_width"]
+        assert st["target"]["solid"] and st["given"] == st["target"]
 
     def test_only_the_colours_differ_between_the_two(self, client):
         ink = client.get("/api/dag/theme").get_json()
@@ -2775,3 +2778,206 @@ class TestValueRowFields:
             mload.return_value.ListWorkflowRuns.return_value = []
             r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
         assert r.status_code == 202, r.get_json()
+
+
+class TestAgentStore:
+    """The Data tab's backend. Every route hands straight to `ops/`, so what is
+    checked here is that the tab can ask the four questions and nothing more."""
+
+    def _agent(self, client, tmp_path, name="smith"):
+        home = tmp_path / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        client.post("/api/agents", json={"name": name, "home": str(home)})
+        return home
+
+    def test_an_empty_store_is_not_an_error(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        body = client.get("/api/agents/smith/store").get_json()
+        assert body["entries"] == []
+
+    def test_import_then_list_group_and_tag(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        f = tmp_path / "ref.fa"
+        f.write_text(">x\n")
+
+        r = client.post("/api/agents/smith/store/import", json={
+            "path": str(f), "dtype": "cf::seed", "tags": ["refs"],
+        })
+        assert r.status_code == 200, r.get_json()
+        key = r.get_json()["instance_id"]
+
+        body = client.get("/api/agents/smith/store?group_by=run").get_json()
+        assert [e["path"] for e in body["entries"]] == [str(f)]
+        assert list(body["groups"]) == ["(imported)"]
+        assert body["entries"][0]["tags"] == ["refs"]
+
+        r = client.post(
+            f"/api/agents/smith/store/entries/{key}/tags",
+            json={"tags": ["v2"], "replace": True},
+        )
+        assert r.get_json()["tags"] == ["v2"]
+
+        filtered = client.get("/api/agents/smith/store?tag=v2").get_json()
+        assert len(filtered["entries"]) == 1
+        assert client.get("/api/agents/smith/store?tag=refs").get_json()["entries"] == []
+
+    def test_forget_leaves_the_data_alone(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        f = tmp_path / "ref.fa"
+        f.write_text(">x\n")
+        key = client.post("/api/agents/smith/store/import", json={
+            "path": str(f), "dtype": "cf::seed",
+        }).get_json()["instance_id"]
+
+        r = client.delete(f"/api/agents/smith/store/entries/{key}?delete=1")
+        assert r.get_json()["tombstoned"]
+        assert f.read_text() == ">x\n"
+        assert client.get("/api/agents/smith/store").get_json()["entries"] == []
+
+    def test_an_import_without_a_type_is_refused(self, client, tmp_path):
+        self._agent(client, tmp_path)
+        r = client.post("/api/agents/smith/store/import", json={"path": "/tmp/x"})
+        assert r.status_code >= 400
+        assert "type" in r.get_json()["error"]
+
+    def test_a_remote_agents_store_is_read_where_it_sits(self, client, tmp_path):
+        # The tab no longer refuses a home on another host: it asks that host's
+        # own metasmith. There is no host called `elsewhere` here, so what comes
+        # back is a failed read that names the pool and the host -- which is the
+        # right complaint, and a different one from "we will not look".
+        client.post("/api/agents", json={
+            "name": "far", "home": "ssh://elsewhere:/home/msm",
+        })
+        r = client.get("/api/agents/far/store")
+        assert r.status_code >= 400
+        error = r.get_json()["error"]
+        assert "could not read the pool" in error
+        assert "ssh://elsewhere:/home/msm" in error
+        assert "another host" not in error
+
+    def test_an_unknown_agent_says_so(self, client):
+        r = client.get("/api/agents/nobody/store")
+        assert r.status_code >= 400
+        assert "no agent" in r.get_json()["error"]
+
+
+class TestGivensFromThePool:
+    """An input row that cites a pool entry instead of naming a path.
+
+    The point of the whole pool: the identity comes from the import, so the
+    plan key does not move between one build and the next, and the client
+    never has to be able to stat the file it is planning against.
+    """
+
+    def _pooled(self, client, tmp_path, name="ref", dtype="mock::assembly"):
+        home = tmp_path / "pool_home"
+        home.mkdir(parents=True, exist_ok=True)
+        client.post("/api/agents", json={"name": "smith", "home": str(home)})
+        f = tmp_path / f"{name}.fa"
+        f.write_text(">x\nACGT\n")
+        r = client.post("/api/agents/smith/store/import", json={
+            "path": str(f), "dtype": dtype, "name": name,
+        })
+        assert r.status_code == 200, r.get_json()
+        return r.get_json()
+
+    def _row(self, rid, ref, agent="smith"):
+        return {
+            "id": rid, "mode": "pool", "agent": agent, "ref": ref,
+            "path": "", "name": "", "value": "", "dtype": "", "parents": [],
+        }
+
+    def test_a_cited_entry_keeps_the_identity_the_import_assigned(
+        self, client, tmp_path,
+    ):
+        record = self._pooled(client, tmp_path)
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        op_inputs.sync(
+            lib_path, [self._row("r0", "ref")],
+            resolve_pool=_pool_resolver(project),
+        )
+
+        lib = op_data.load_data_lib(lib_path)
+        [path] = list(lib.manifest)
+        assert str(path) == record["path"]
+        assert lib.instance_meta[path]["instance_id"] == record["instance_id"]
+        assert lib.instance_meta[path]["origin"] == "imported"
+
+    def test_the_type_comes_from_the_import_not_the_row(self, client, tmp_path):
+        self._pooled(client, tmp_path, dtype="mock::reads")
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        row = self._row("r0", "ref") | {"dtype": "mock::assembly"}
+        op_inputs.sync(lib_path, [row], resolve_pool=_pool_resolver(project))
+
+        lib = op_data.load_data_lib(lib_path)
+        assert set(lib.manifest.values()) == {"mock::reads"}
+
+    def test_syncing_twice_does_not_move_the_identity(self, client, tmp_path):
+        record = self._pooled(client, tmp_path)
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        rows = [self._row("r0", "ref")]
+        for _ in range(2):
+            op_inputs.sync(lib_path, rows, resolve_pool=_pool_resolver(project))
+        lib = op_data.load_data_lib(lib_path)
+        assert [m["instance_id"] for m in lib.instance_meta.values()] == [
+            record["instance_id"]
+        ]
+
+    def test_a_name_the_pool_never_held_is_refused_by_name(self, client, tmp_path):
+        self._pooled(client, tmp_path)
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        with pytest.raises(ValueError) as excinfo:
+            op_inputs.sync(
+                lib_path, [self._row("r0", "nothing/here")],
+                resolve_pool=_pool_resolver(project),
+            )
+        assert "metasmith data import" in str(excinfo.value)
+
+    def test_a_row_that_does_not_say_whose_pool_is_refused(self, client, tmp_path):
+        self._pooled(client, tmp_path)
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        row = self._row("r0", "ref", agent="")
+        assert any("whose pool" in m for m in op_inputs.problems([row]))
+        with pytest.raises(AssertionError) as excinfo:
+            op_inputs.sync(lib_path, [row], resolve_pool=_pool_resolver(project))
+        assert "whose pool" in str(excinfo.value)
+
+    def test_an_agent_this_project_does_not_have_is_named(self, client, tmp_path):
+        self._pooled(client, tmp_path)
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        with pytest.raises(ProjectError) as excinfo:
+            op_inputs.sync(
+                lib_path, [self._row("r0", "ref", agent="nobody")],
+                resolve_pool=_pool_resolver(project),
+            )
+        assert "no such agent" in str(excinfo.value)
+
+    def test_a_pool_row_with_no_reader_is_refused_rather_than_guessed(
+        self, client, tmp_path,
+    ):
+        self._pooled(client, tmp_path)
+        wf = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib_path = str(project.input_library_path(wf))
+
+        with pytest.raises(AssertionError) as excinfo:
+            op_inputs.sync(lib_path, [self._row("r0", "ref")])
+        assert "read a pool" in str(excinfo.value)

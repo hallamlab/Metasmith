@@ -31,9 +31,7 @@ def protocol(context: ExecutionContext):
         f'nvidia-smi -L 2>&1 || echo "no gpu visible in tool environment"; '
         f'}} > {out_path.container} 2>&1'
     )
-    context.ExecWithEnv() \
-        .ifContainerDo(env=image, cmd=cmd) \
-        .ifVirtualEnvDo(env=image, cmd=cmd)
+    context.ExecWithEnv(env=image, cmd=cmd)
     return ExecutionResult(
         manifest=[{out: out_path.local}],
         success=out_path.local.exists(),
