@@ -45,6 +45,7 @@ def main(root: Path):
                          n_pwy_tsv, mean_score])
     out = root / "inventory"
     out.mkdir(exist_ok=True)
+    (out / "pgdb_models.tsv").unlink(missing_ok=True)
     with open(out / "pgdb_models.tsv", "w") as f:
         w = csv.writer(f, delimiter="\t", lineterminator="\n")
         w.writerow(["dataset", "sample", "subject", "level", "reactions", "reactions_with_gene",

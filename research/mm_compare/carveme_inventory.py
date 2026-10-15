@@ -49,6 +49,8 @@ def main(root: Path):
     cols = ["dataset", "sample", "subject", "reactions", "reactions_with_gene_rule", "exchange_reactions",
             "genes", "metabolites", "reactions_with_ec", "reactions_with_metacyc", "reactions_with_mnxr",
             "memote_total"]
+    for f in ("carveme_models.tsv", "carveme_reactions.tsv.gz"):
+        (out / f).unlink(missing_ok=True)
     with open(out / "carveme_models.tsv", "w") as fm, gzip.open(out / "carveme_reactions.tsv.gz", "wt") as fr:
         wm = csv.writer(fm, delimiter="\t", lineterminator="\n")
         wr = csv.writer(fr, delimiter="\t", lineterminator="\n")
