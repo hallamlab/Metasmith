@@ -485,7 +485,11 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # products into its work dir under the member's position. Nextflow then
         # publishes and traces it like any other task, and no scheduler saw it.
         # No `stub:` block: under `-stub` the copy is still the twin's whole job,
-        # and a touched stand-in cannot serve a directory product.
+        # and a touched stand-in cannot serve a directory product. `array 0` and
+        # `scratch false` override a Slurm preset's catch-all `process` settings, as
+        # its `xlocalx` block does: the local executor refuses a job array at compile
+        # time, killing the run before any task starts, and a login node's scratch is
+        # a tmpfs that turns every link into a copy charged to the user's memory.
         process_name = NextflowProcessName(step.order, step.transform.name)
         twin_name = CachedProcessName(process_name)
         _used, produced_archetypes = get_io_signature(step)
@@ -493,6 +497,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
         src = [
             f"process {twin_name}"+" {",
             TAB+"executor 'local'",
+            TAB+"array 0",
+            TAB+"scratch false",
             TAB+"cache false",
             "input:",
             TAB+"tuple val(index), val(sources)",
