@@ -1,0 +1,6 @@
+outs:
+- md5: 28e489fb936206406dd653e7cd4ccc20.dir
+  size: 156020
+  nfiles: 54
+  hash: md5
+  path: sharknado

@@ -75,6 +75,24 @@ def hydrocarbon():
     }
 
 
+def sharknado():
+    d = SRC / "sharknado"
+    jgi = d / "LineP/RawData/Joint_Genome_Institute"
+    libraries = []
+    for t in sorted((jgi / "Illumina_metagenomes").rglob("Metagenome_Report_Tables/Table_3_library_information.txt")):
+        libraries.append(dict(line.split("=", 1) for line in t.read_text().splitlines() if "=" in line))
+    plates = [pd.read_csv(f, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+              for f in sorted((jgi / "Illumina_iTags").glob("P26_*sample_data.csv"))]
+    return {
+        "saanich_metagenome": pd.read_csv(d / "Saanich/SaanichInlet_metagenome_SharknadoFile_map.csv", dtype=str,
+                                          keep_default_na=False),
+        "linep_metagenome": pd.DataFrame(libraries),
+        "amp_linep_jgi_itags": pd.concat(plates, ignore_index=True),
+        "amp_saanich_jgi_itags": read_tsv(d / "Saanich/RawData/Joint_Genome_Institute/Illumina_iTags/"
+                                                "sample_name_metadata_updated_ALL.tsv", header=None),
+    }
+
+
 # --- genomes -------------------------------------------------------------------------------
 
 JGI_FIELD = re.compile(r"^(\S.*?)\s{2,}(.*)$")
@@ -141,7 +159,9 @@ def aspire_crosswalk():
     }
 
 
-BUILDERS = [cami, metagem, single_sources, hydrocarbon, farmad_sags, fosmids, aspire_crosswalk]
+BUILDERS = [cami, metagem, single_sources, hydrocarbon, sharknado, farmad_sags, fosmids, aspire_crosswalk]
+# Sources with no header row are written without one.
+HEADERLESS = {"amp_saanich_jgi_itags"}
 
 
 def main():
@@ -155,7 +175,7 @@ def main():
             assert did not in tables, f"{did} is built twice"
             tables[did] = df
     for did, df in sorted(tables.items()):
-        df.to_csv(OUT / f"{did}.tsv", sep="\t", index=False)
+        df.to_csv(OUT / f"{did}.tsv", sep="\t", index=False, header=did not in HEADERLESS)
         print(f"{did}\t{len(df)}")
     for did in sorted(known - set(tables)):
         print(f"{did}\t-")
