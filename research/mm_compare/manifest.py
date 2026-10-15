@@ -37,7 +37,7 @@ def rows(repo: Path):
         ryan, e5 = s["ryan_sample"], s["e5_sample"]
         key = json.loads((mm / "ryan_pgdb_pwy" / ryan / "compact-results.json").read_text())["resume_key"]
         for p in pgdbs.get(ryan, []):
-            yield ("cami_hmp", ryan, e5, p, "pathway_tools", rel(mm / "ryan_pgdb_tables" / f"{ryan}.reactions.tsv.gz"),
+            yield ("cami_hmp", ryan, e5, p, "pathway_tools:ryan_metapathways", rel(mm / "ryan_pgdb_tables" / f"{ryan}.reactions.tsv.gz"),
                    PGDB.format(sample=ryan, key=key[:12]))
         for m in mags.get(e5, []):
             yield ("cami_hmp", ryan, e5, m, "carveme", rel(mm / "e5_hmp_carveme" / e5 / m / "carveme_sbml.xml"), CARVEME_E5)
@@ -58,9 +58,11 @@ def rows(repo: Path):
         b = json.loads((build / "BUILD_denovo.json").read_text())
         yield ("ecoli", st, st, st, "fabfos_4lane", rel(build / "gpr_denovo.parquet"),
                GPR_ECOLI.format(key=Path(b["source"]).name.split("__")[0]))
-        pgdb = mm / "ecoli_pgdb" / st
-        if pgdb.exists():
-            yield ("ecoli", st, st, st, "pathway_tools", rel(pgdb), (pgdb / "PROVENANCE").read_text().strip())
+        for route in sorted(d for d in (mm / "ecoli_pgdb").iterdir() if d.is_dir()):
+            tables = route / f"{st}.reactions.tsv.gz"
+            if tables.exists():
+                yield ("ecoli", st, st, st, f"pathway_tools:{route.name}", rel(tables),
+                       f"see {rel(route / 'PROVENANCE')}")
 
 
 def main(repo: Path):

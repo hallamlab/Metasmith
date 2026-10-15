@@ -13,6 +13,9 @@ import pandas as pd
 
 METHODS = {"pgdb": "Pathway Tools", "carveme": "CarveMe", "gpr": "fabfos 4-lane"}
 LANES = ("clean", "kofam", "pbert", "uniref50")
+STRAINS = ("k12", "w3110", "bw25113", "dh1", "dh10b", "epi300")
+PGDB_ROUTES = {"biocyc": "BioCyc, prebuilt", "metasmith_pathologic": "metasmith pathologic",
+               "metapathways": "MetaPathways 3.5.1"}
 
 
 def fmt(v, digits=0):
@@ -44,24 +47,36 @@ def iqr(s, digits=0):
 def ecoli_section(cm, gp):
     cm = cm[cm.dataset == "ecoli"].set_index("subject")
     gp = gp[gp.dataset == "ecoli"].set_index("subject")
-    order = ["k12", "w3110", "bw25113", "dh1", "dh10b", "epi300"]
     rows = []
-    for s in order:
+    for s in STRAINS:
         c, g = cm.loc[s], gp.loc[s]
         rows.append([f"<b>{s}</b>", fmt(int(g.orfs)),
                      fmt(int(c.reactions)), fmt(int(c.reactions_with_gene_rule)), fmt(int(c.genes)),
                      fmt(int(c.metabolites)), fmt(c.memote_total, 3),
                      fmt(int(g.orfs_with_call)), fmt(int(g.calls)), fmt(int(g.mnxr)),
-                     *(fmt(int(g[f"{l}_mnxr"])) for l in LANES),
-                     fmt(None)])
+                     *(fmt(int(g[f"{l}_mnxr"])) for l in LANES)])
     head = ["strain", "proteins",
             "reactions", "with gene rule", "genes", "metabolites", "MEMOTE",
-            "ORFs with a call", "calls", "distinct MNXR", *(f"{l} MNXR" for l in LANES),
-            "PGDB"]
+            "ORFs with a call", "calls", "distinct MNXR", *(f"{l} MNXR" for l in LANES)]
     groups = ('<tr class="group"><th></th><th></th><th colspan="5" class="carveme">CarveMe</th>'
-              '<th colspan="7" class="gpr">fabfos 4-lane</th><th class="pgdb">Pathway Tools</th></tr>')
+              '<th colspan="7" class="gpr">fabfos 4-lane</th></tr>')
     t = table(head, rows, "num")
     return t.replace("<thead>", f"<thead>{groups}", 1)
+
+
+def ecoli_pgdb_section(pg):
+    pg = pg[pg.dataset == "ecoli"].set_index(["route", "subject"])
+    rows = []
+    for s in STRAINS:
+        row = [f"<b>{s}</b>"]
+        for r in PGDB_ROUTES:
+            x = pg.loc[(r, s)] if (r, s) in pg.index else None
+            row += [fmt(None) if x is None else fmt(int(x[c])) for c in ("reactions", "reactions_with_gene", "pathways")]
+        rows.append(row)
+    head = ["strain", *(["reactions", "with a gene", "pathways"] * len(PGDB_ROUTES))]
+    groups = '<tr class="group"><th></th>' + "".join(
+        f'<th colspan="3" class="pgdb">{n}</th>' for n in PGDB_ROUTES.values()) + "</tr>"
+    return table(head, rows, "num").replace("<thead>", f"<thead>{groups}", 1)
 
 
 def cami_summary(cm, pg, gp):
@@ -166,11 +181,38 @@ Both read the same proteins, the RefSeq proteome in E. coli and E5's MAG ORFs on
 needs no mapping. 83% of CarveMe's model genes carry at least one 4-lane call (median over 757 MAGs; 84% in
 E. coli). ProteinBERT reaches the most of them (73%), UniRef50 the fewest (39%). The reverse is lower: 35% of
 the ORFs the 4-lane calls are CarveMe model genes (48% in E. coli), because the 4-lane calls every ORF
-it can and CarveMe keeps only the genes its carved network uses. MetaPathways calls its own ORFs, so a
-PGDB's gene ids will differ.</li>
+it can and CarveMe keeps only the genes its carved network uses.</li>
 <li><b>On the CAMI MAGs the 4-lane behaves as it does on E. coli.</b> Per MAG, 62% of ORFs get a call
 (59–64% interquartile), giving a median of 6,500 distinct MNXR against CarveMe's 1,360 reactions. A median 23% of a
 MAG's CarveMe MNXR appear among its 4-lane MNXR, the same floor as in E. coli.</li>
+<li><b>The E. coli PGDBs come from three routes, and none is Ryan's CAMI configuration.</b> BioCyc holds
+prebuilt PGDBs for three strains only: EcoCyc 27.0 for K-12, curated, and computational tier-3 PGDBs for DH10B
+(built 2020, Pathway Tools 24.0) and W3110 (built 2010, Pathway Tools 14.5, on an older genome record). The
+metasmith <code>pathologic</code> transform feeds the RefSeq proteome's DeepEC, KOfam and UniRef50 EC calls to
+PathoLogic. MetaPathways 3.5.1 calls its own ORFs from the genome and annotates them against SwissProt alone,
+because its MetaCyc reference needs a BioCyc login. Ryan's CAMI run used SwissProt and MetaCyc. Both de novo
+routes ran Pathway Tools 27.0. BioCyc's pathway counts are every pathway frame, super-pathways included, and the
+de novo counts are PathoLogic's evidence list, so pathway counts do not compare across routes.</li>
+<li><b>The metasmith pathologic transform had never produced a PGDB.</b> It failed five ways before its first
+PGDB: a missing image tag, a missing Python dependency, a missing dump function, a mount collision with the
+engine's task directory and no writable PGDB or home directory. The last fault let every step exit 0: DeepEC
+writes <code>EC:1.1.1.1</code>, PathoLogic reads only bare EC numbers, and the PGDBs came out with 4,300+
+genes and no reactions. Check a PGDB's reaction count, not the run's exit status.</li>
+<li><b>The two de novo routes agree on about half their gene-linked reactions.</b> By MetaCyc reaction frame,
+MetaPathways and the metasmith route share 1,220–1,250 gene-linked reactions per strain (Jaccard 0.53–0.54).
+Against EcoCyc's 2,218 for K-12, MetaPathways recovers 57%, the metasmith route 46%, and the MetaCyc ids on
+CarveMe's gene-ruled reactions 31%. Against the tier-3 BioCyc PGDBs both routes sit at Jaccard 0.36–0.45. Part
+of each gap is naming: Pathway Tools versions and MetaCyc releases differ between routes.</li>
+<li><b>The PGDB routes see strain differences too, and the metasmith route sees EPI300's parent.</b> Strain
+pairs differ by 3–61 gene-linked reactions in either de novo route. The metasmith route puts EPI300 next to
+DH10B by a wide margin (3, against 17 or more). MetaPathways does not single the pair out (15, tied with K-12
+against DH1), because its ORF calls do not repeat exactly between near-identical genomes. Over the 15 pairs,
+MetaPathways ranks the differences like the 4-lane (Spearman 0.78) and like CarveMe (0.57). The metasmith route
+agrees less with either (0.49 and 0.34).</li>
+<li><b>The metasmith PGDB shares gene ids with CarveMe and the 4-lane.</b> It reads the same RefSeq proteome, and
+PathoLogic only upper-cases the ids and strips their punctuation. 90% of its enzyme genes carry a 4-lane call
+and 56% are CarveMe model genes. MetaPathways' gene ids are its own ORFs (<code>C1-G1</code>, …). Their genome
+coordinates are in the kept <code>.pf</code> input, so a coordinate match can link them to RefSeq genes.</li>
 <li><b>Pooling a sample's MAGs into one 4-lane run changed nothing.</b> One MAG (3,041 ORFs) run alone
 gave the same CLEAN, KOfam and UniRef50 calls as its share of the pooled sample, with identical scores.
 ProteinBERT swapped 32 of 5,411 calls and moved scores by at most 1e-6, the lane's known non-determinism.
@@ -261,6 +303,7 @@ def main(repo: Path, out: Path):
     cm = pd.read_csv(inv / "carveme_models.tsv", sep="\t")
     pg = pd.read_csv(inv / "pgdb_models.tsv", sep="\t")
     gp = pd.read_csv(inv / "gpr_models.tsv", sep="\t")
+    pg_cami = pg[pg.dataset == "cami_hmp"]
     cami_gpr = (gp.dataset == "cami_hmp").any()
     page = f"""<title>Metabolic Reconstruction Inventory</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -279,7 +322,7 @@ def main(repo: Path, out: Path):
   <h2>The three methods</h2>
   <div class="methods">
     <div class="method">{tag("pgdb")}
-      <dl><dt>Output</dt><dd>A Pathway Tools PGDB per genome and per community, from Ryan's MetaPathways run</dd>
+      <dl><dt>Output</dt><dd>A Pathway Tools PGDB per genome and per community, from Ryan's MetaPathways run. In E. coli, by three routes</dd>
       <dt>Speaks</dt><dd>MetaCyc reaction and pathway frames, EC numbers</dd>
       <dt>Counted</dt><dd>reactions, reactions with a gene, genes with a reaction, pathways</dd>
       <dt>Own score</dt><dd>PathoLogic pathway score (<code>PWY_SCORE</code>)</dd></dl></div>
@@ -301,15 +344,17 @@ def main(repo: Path, out: Path):
   <p>The small-perturbation arm: six lab strains of one species, each from its RefSeq proteome. CarveMe and the
   4-lane read the same proteins, so their gene ids match.</p>
   {ecoli_section(cm, gp)}
-  <p class="note">The E. coli PGDBs are not built yet. Choosing their pipeline is open.</p>
+  <p>Pathway Tools PGDBs by three routes. BioCyc has prebuilt PGDBs for three of the strains. The two de novo
+  routes ran on all six.</p>
+  {ecoli_pgdb_section(pg)}
 </section>
 
 <section>
   <h2>CAMI II samples</h2>
   <p>49 samples in two studies: airways, skin and urogenital (29) and gastrointestinal and oral (20). The PGDBs
   describe the gold-standard genomes. CarveMe and the 4-lane describe the MAGs E5 binned from reads.</p>
-  {cami_summary(cm, pg, gp)}
-  <details><summary>Per sample</summary>{cami_samples(sm, cm, pg, gp)}</details>
+  {cami_summary(cm, pg_cami, gp)}
+  <details><summary>Per sample</summary>{cami_samples(sm, cm, pg_cami, gp)}</details>
   {"" if cami_gpr else '<p class="note">The 4-lane run on the CAMI MAGs is in progress on fir. Its counts land here when it finishes.</p>'}
 </section>
 
@@ -323,6 +368,7 @@ def main(repo: Path, out: Path):
   <ul class="paths">
     <li><code>data/mm_compare/manifest.tsv</code>: one row per output, with path and provenance</li>
     <li><code>data/mm_compare/inventory/</code>: the per-subject counts on this page</li>
+    <li><code>data/mm_compare/ecoli_pgdb/&lt;route&gt;/</code>: the E. coli PGDBs as flat tables, with a <code>PROVENANCE</code> per route</li>
     <li><code>data/mm_compare/gpr_4lane/</code>: the CAMI 4-lane calls, one table per sample with a <code>mag</code> column</li>
     <li><code>data/mm_compare/probes/</code>: the tables behind the findings above</li>
     <li><code>research/mm_compare/</code>: the scripts that fetched, ran and counted</li>

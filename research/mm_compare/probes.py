@@ -10,6 +10,10 @@ Writes data/mm_compare/probes/:
   cami_sample_overlap.tsv  per sample, CarveMe's MetaCyc and EC ids (all MAGs) inside the community PGDB's
   cami_gpr_vs_carveme.tsv  per MAG, the 4-lane and CarveMe on the same ORFs (once the 4-lane tables exist)
   gene_overlap.tsv         per model, CarveMe's genes against the ORFs the 4-lane called, by ORF id
+  ecoli_pgdb_routes.tsv    per strain and PGDB route pair, the overlap of gene-linked MetaCyc reactions,
+                           and each route's and CarveMe's recall of EcoCyc's for K-12
+  ecoli_pgdb_strain_pairs.tsv  per strain pair, each PGDB route's set difference
+  ecoli_pgdb_genes.tsv     the metasmith PGDB's enzyme genes against CarveMe's and the 4-lane's, by protein id
 Prints the headline numbers.
 """
 import gzip
@@ -174,6 +178,72 @@ def gene_overlap(repo, mm, out):
     print(d.groupby("dataset").median(numeric_only=True).round(3).T.to_string())
 
 
+def tsv(path):
+    return pd.read_csv(path, sep="\t", dtype=str)
+
+
+def ecoli_pgdb(repo, mm, out):
+    pg = mm / "ecoli_pgdb"
+    routes = sorted(d.name for d in pg.iterdir() if d.is_dir())
+    linked = {(r, s): set(tsv(pg / r / f"{s}.reaction_genes.tsv.gz").reaction)
+              for r in routes for s in STRAINS if (pg / r / f"{s}.reaction_genes.tsv.gz").exists()}
+    rx = pd.read_csv(mm / "inventory" / "carveme_reactions.tsv.gz", sep="\t")
+    rx = rx[rx.dataset == "ecoli"]
+    carve = {s: ids(rx[(rx.subject == s) & (rx.gene_rule == 1)].metacyc) for s in STRAINS}
+
+    rows = []
+    for s in STRAINS:
+        have = [r for r in routes if (r, s) in linked]
+        for a, b in itertools.combinations(have, 2):
+            A, B = linked[(a, s)], linked[(b, s)]
+            rows.append({"strain": s, "a": a, "b": b, "a_reactions": len(A), "b_reactions": len(B),
+                         "shared": len(A & B), "jaccard": len(A & B) / len(A | B)})
+        for r in have:
+            A = linked[(r, s)]
+            rows.append({"strain": s, "a": r, "b": "carveme_metacyc", "a_reactions": len(A),
+                         "b_reactions": len(carve[s]), "shared": len(A & carve[s]),
+                         "jaccard": len(A & carve[s]) / len(A | carve[s])})
+    routes_df = pd.DataFrame(rows)
+    eco = linked.get(("biocyc", "k12"), set())
+    recall = [{"strain": "k12", "a": r, "b": "ecocyc_recall", "a_reactions": len(linked[(r, "k12")]),
+               "b_reactions": len(eco), "shared": len(linked[(r, "k12")] & eco),
+               "jaccard": len(linked[(r, "k12")] & eco) / len(eco)}
+              for r in routes if r != "biocyc" and (r, "k12") in linked]
+    recall.append({"strain": "k12", "a": "carveme_metacyc", "b": "ecocyc_recall", "a_reactions": len(carve["k12"]),
+                   "b_reactions": len(eco), "shared": len(carve["k12"] & eco),
+                   "jaccard": len(carve["k12"] & eco) / len(eco)})
+    routes_df = pd.concat([routes_df, pd.DataFrame(recall)], ignore_index=True)
+    routes_df.to_csv(out / "ecoli_pgdb_routes.tsv", sep="\t", index=False)
+    print(routes_df.round(3).to_string(index=False))
+
+    full = [r for r in routes if all((r, s) in linked for s in STRAINS)]
+    pairs = pd.DataFrame([{"pair": f"{a}-{b}", **{r: len(linked[(r, a)] ^ linked[(r, b)]) for r in full}}
+                          for a, b in itertools.combinations(STRAINS, 2)])
+    prior = out / "ecoli_strain_pairs.tsv"
+    if prior.exists():
+        pairs = pairs.merge(pd.read_csv(prior, sep="\t")[["pair", "carveme_gene_ruled", "4lane_all"]], on="pair")
+    pairs.to_csv(out / "ecoli_pgdb_strain_pairs.tsv", sep="\t", index=False)
+    print(pairs.sort_values(full[0]).to_string(index=False))
+    print(pairs.drop(columns="pair").rank().corr().round(2).to_string())
+
+    if "metasmith_pathologic" in routes:
+        runs = repo / "data" / "fabfos" / "runs"
+        grows = []
+        for s in STRAINS:
+            pgdb_genes = {re.sub(r"[^A-Z0-9]", "", g.upper())
+                          for g in tsv(pg / "metasmith_pathologic" / f"{s}.reaction_genes.tsv.gz").gene}
+            cm = {re.sub(r"[^A-Z0-9]", "", g.upper()) for g in carveme_genes(mm / "ecoli_carveme" / s / "carveme_sbml.xml")}
+            lane = {re.sub(r"[^A-Z0-9]", "", o.upper())
+                    for o in pd.read_parquet(runs / f"e_coli_{s}" / "gpr" / "gpr_denovo.parquet", columns=["orf"]).orf}
+            grows.append({"strain": s, "pgdb_enzyme_genes": len(pgdb_genes), "carveme_genes": len(cm),
+                          "4lane_orfs": len(lane), "pgdb_in_carveme": len(pgdb_genes & cm) / len(pgdb_genes),
+                          "carveme_in_pgdb": len(pgdb_genes & cm) / len(cm),
+                          "pgdb_in_4lane": len(pgdb_genes & lane) / len(pgdb_genes)})
+        g = pd.DataFrame(grows)
+        g.to_csv(out / "ecoli_pgdb_genes.tsv", sep="\t", index=False)
+        print(g.round(3).to_string(index=False))
+
+
 def main(repo: Path):
     mm = repo / "data" / "mm_compare"
     out = mm / "probes"
@@ -184,6 +254,7 @@ def main(repo: Path):
     cami(mm, out)
     cami_gpr(mm, out)
     gene_overlap(repo, mm, out)
+    ecoli_pgdb(repo, mm, out)
 
 
 if __name__ == "__main__":
