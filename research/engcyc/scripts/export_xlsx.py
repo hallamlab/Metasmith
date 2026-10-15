@@ -2,9 +2,9 @@
 
     python export_xlsx.py <out_dir>
 
-<out_dir>/manifest.xlsx holds the manifest, a locations sheet with one row per location,
-and an about sheet. Each metadata table becomes <out_dir>/<dataset_id>.xlsx, and the
-manifest's metadata_table cell links to that file. A column whose cells exceed Excel's
+<out_dir>/main.xlsx holds the manifest, a locations sheet with one row per location,
+and an about sheet. Each metadata table becomes <out_dir>/metadata/<dataset_id>.xlsx, and
+the manifest's metadata_table cell links to that file. A column whose cells exceed Excel's
 32,767-character limit is left out and listed on the about sheet.
 """
 import datetime as dt
@@ -25,6 +25,7 @@ HEADERLESS = {"amp_saanich_jgi_itags.tsv"}
 EXCEL_CELL_LIMIT = 32767
 NUMBER = re.compile(r"^-?(0|[1-9]\d{0,14})(\.\d+)?$")
 WRAP_COLUMNS = {"description", "existing_results", "notes"}
+SUBFOLDER = "metadata"
 
 FONT = Font(name="Arial", size=10)
 HEAD = Font(name="Arial", size=10, bold=True, color="FFFFFF")
@@ -77,12 +78,12 @@ def export_table(table, out_dir):
     ws = wb.active
     ws.title = name
     write_sheet(ws, df.drop(columns=too_long), header=header)
-    wb.save(out_dir / f"{name}.xlsx")
+    wb.save(out_dir / SUBFOLDER / f"{name}.xlsx")
     return [(name, str(c)) for c in too_long]
 
 
 def main(out_dir):
-    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / SUBFOLDER).mkdir(parents=True, exist_ok=True)
     manifest = pd.read_csv(MANIFEST, sep="\t", dtype=str, keep_default_na=False)
     sheet = manifest.drop(columns="locations")
     sheet["metadata_table"] = sheet.metadata_table.str.replace(r"\.tsv$", ".xlsx", regex=True)
@@ -99,7 +100,7 @@ def main(out_dir):
     for row in range(2, ws.max_row + 1):
         link = ws.cell(row=row, column=link_col)
         if link.value:
-            link.hyperlink, link.font = link.value, LINK
+            link.hyperlink, link.font = f"{SUBFOLDER}/{link.value}", LINK
     write_sheet(wb.create_sheet("locations"), locations(manifest))
 
     dropped = []
@@ -114,7 +115,7 @@ def main(out_dir):
         [f"Exported {dt.date.today().isoformat()} from branch engcyc/dev, commit {commit}."],
         ["The manifest sheet lists one dataset per row. The locations sheet lists every place each dataset lives, one row per place."],
         ["A node is a machine or storage service. worker-01 paths are on the Sharknado_Backup volume."],
-        ["Each dataset's metadata is in its own file in this folder, named in the metadata_table column."],
+        [f"Each dataset's metadata is in its own file in the {SUBFOLDER} subfolder, named in the metadata_table column."],
         ["Each metadata file is a copy of the metadata that already existed for that dataset, with its original columns."],
         ["A dataset with an empty metadata_table had no metadata to copy."],
         ["The source of truth is the DVC-pinned TSVs under data/engcyc/. Edits made here do not flow back."],
@@ -127,8 +128,8 @@ def main(out_dir):
     for row in about.iter_rows(min_row=2):
         row[0].font = FONT
     about.column_dimensions["A"].width = 120
-    wb.save(out_dir / "manifest.xlsx")
-    print(f"{out_dir}: manifest.xlsx and {len(list(filter(None, manifest.metadata_table)))} metadata files, "
+    wb.save(out_dir / "main.xlsx")
+    print(f"{out_dir}: main.xlsx and {len(list(filter(None, manifest.metadata_table)))} metadata files, "
           f"dropped {dropped}")
 
 
