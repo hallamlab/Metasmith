@@ -39,7 +39,7 @@ for r in pl.read_parquet("{iann.container}").iter_rows(named=True):
     by_orf.setdefault(str(r["orf_id"]), []).append((str(r["kind"]), str(r["value"])))
 
 EMIT = {{
-    "EC":       lambda v: ("EC",     v),
+    "EC":       lambda v: ("EC",     v.removeprefix("EC:")),
     "GO":       lambda v: ("DBLINK", "GO:" + v.split(":",1)[-1]),
     "KEGG":     lambda v: ("DBLINK", "KEGG:" + v),
     "UNIPROT":  lambda v: ("DBLINK", "UNIPROT:" + v),

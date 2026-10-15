@@ -3,11 +3,14 @@
 
     dat_flatten.py <out dir> <strain>=<dat dir> ...
 
-Reads reactions, enzrxns, proteins, genes and pathways .dat files. Pathways are every pathway
-frame, with its REACTION-LIST. Genes carry ACCESSION-1, the locus tag (a b-number in EcoCyc).
+Reads reactions, enzrxns, proteins, genes and pathways .dat files from <dat dir>. Pathways come
+from ../reports/pwy-evidence-list.dat when PathoLogic wrote one, the source pgdb_extract.py reads,
+and otherwise from every pathway frame with its REACTION-LIST, as for a curated PGDB. Genes carry
+ACCESSION-1, the locus tag (a b-number in EcoCyc).
 """
 import csv
 import gzip
+import re
 import sys
 from pathlib import Path
 
@@ -56,8 +59,17 @@ def flatten(strain, d, out):
     write(out / f"{strain}.genes.tsv.gz", ["pgdb", "gene", "name", "accession_1"],
           [(strain, g["UNIQUE-ID"][0], "|".join(g.get("COMMON-NAME", [])), "|".join(g.get("ACCESSION-1", [])))
            for g in frames(d / "genes.dat")])
-    write(out / f"{strain}.pathways.tsv.gz", ["pgdb", "pathway", "evidenced_reactions"],
-          [(strain, p["UNIQUE-ID"][0], "|".join(p.get("REACTION-LIST", []))) for p in frames(d / "pathways.dat")])
+    evidence = d.parent / "reports" / "pwy-evidence-list.dat"
+    if evidence.exists():
+        pwys = []
+        for line in evidence.read_text(encoding="latin-1").splitlines():
+            if line.startswith("("):
+                ids = re.findall(r'"([^"]+)"', line)
+                if ids:
+                    pwys.append((strain, ids[0], "|".join(ids[1:])))
+    else:
+        pwys = [(strain, p["UNIQUE-ID"][0], "|".join(p.get("REACTION-LIST", []))) for p in frames(d / "pathways.dat")]
+    write(out / f"{strain}.pathways.tsv.gz", ["pgdb", "pathway", "evidenced_reactions"], pwys)
 
 
 def main():
