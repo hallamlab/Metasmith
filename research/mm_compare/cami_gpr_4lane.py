@@ -82,6 +82,9 @@ def main() -> int:
     ap.add_argument("--run", action="store_true")
     ap.add_argument("--preflight", action="store_true")
     ap.add_argument("--retrieve", action="store_true")
+    ap.add_argument("--deploy", action="store_true",
+                    help="deploy the agent home first. Then delete setup_commands from its lib/agent.yml "
+                         "before --run, or every task dies 'relay MISSING'")
     ap.add_argument("--timeout-hours", type=float, default=72.0)
     a = ap.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)
@@ -109,11 +112,14 @@ def main() -> int:
         retrieve(FIR_HOST, agent.GetResultSource(task).GetPath(), out)
         check_tasks(FIR_HOST, AGENT_HOME, key)
         return 0 if TARGET in landed_products(out, [TARGET]) else 2
+    if a.deploy:
+        agent.Deploy()
+        print("deployed: strip setup_commands from lib/agent.yml, then --run")
+        return 0
     if not a.run:
         print("plan only. Add --preflight or --run.")
         return 0
 
-    agent.Deploy()
     provision_dev_overlay_remote(FIR_HOST, AGENT_HOME)
     if preflight(FIR_HOST, AGENT_HOME, CONTAINER, envs_from_plan(task), mlib=MLIB):
         return 4

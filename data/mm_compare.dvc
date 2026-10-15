@@ -1,6 +1,6 @@
 outs:
-- md5: 56556459d06c10f449133a79d435e3a1.dir
-  size: 5556390844
-  nfiles: 3093
+- md5: e8ba43a37e5ad7b9d9f22be5644d8c41.dir
+  size: 6297027014
+  nfiles: 8794
   hash: md5
   path: mm_compare
