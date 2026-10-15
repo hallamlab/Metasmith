@@ -11,7 +11,7 @@ use std::io::{self, Write, BufReader, BufRead};
 use std::time::Duration;
 use std::thread;
 use gethostname::gethostname;
-use users::get_current_username;
+use users::{get_current_uid, get_current_username};
 use nix::unistd::{fork, setsid, ForkResult};
 use nix::sys::signal::{signal, SigHandler, SIGCHLD};
 
@@ -104,9 +104,12 @@ fn setup_workspace(local_link_path: &Path, is_local: bool) -> io::Result<()> {
     let host = gethostname()
         .into_string()
         .unwrap_or_else(|_| "unknown_host".to_string());
+    // A static musl binary cannot reach NSS, so on LDAP-backed clusters the name
+    // lookup fails for everyone; the uid keeps each user's workspace their own.
     let username = get_current_username()
         .and_then(|name| name.into_string().ok())
-        .unwrap_or_else(|| "unknown_user".to_string());
+        .or_else(|| env::var("USER").ok().filter(|u| !u.is_empty()))
+        .unwrap_or_else(|| format!("uid{}", get_current_uid()));
     let tmp_dir = env::var("TMPDIR")
         .unwrap_or_else(|_| "/tmp".to_string());
 
