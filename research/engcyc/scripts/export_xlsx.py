@@ -1,9 +1,10 @@
-"""Write the manifest and every metadata table into one Excel workbook for sharing.
+"""Write the manifest and the metadata tables as Excel files for sharing.
 
-    python export_xlsx.py <out.xlsx>
+    python export_xlsx.py <out_dir>
 
-Sheet one is the manifest. Each metadata table follows on a sheet named by its dataset_id,
-and the manifest's metadata_table cell links to it. A column whose cells exceed Excel's
+<out_dir>/manifest.xlsx holds the manifest, a locations sheet with one row per location,
+and an about sheet. Each metadata table becomes <out_dir>/<dataset_id>.xlsx, and the
+manifest's metadata_table cell links to that file. A column whose cells exceed Excel's
 32,767-character limit is left out and listed on the about sheet.
 """
 import datetime as dt
@@ -16,7 +17,6 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.hyperlink import Hyperlink
 
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = ROOT / "data/engcyc/manifest.tsv"
@@ -24,7 +24,7 @@ METADATA = ROOT / "data/engcyc/metadata"
 HEADERLESS = {"amp_saanich_jgi_itags.tsv"}
 EXCEL_CELL_LIMIT = 32767
 NUMBER = re.compile(r"^-?(0|[1-9]\d{0,14})(\.\d+)?$")
-WRAP_COLUMNS = {"description", "existing_results", "notes", "locations"}
+WRAP_COLUMNS = {"description", "existing_results", "notes"}
 
 FONT = Font(name="Arial", size=10)
 HEAD = Font(name="Arial", size=10, bold=True, color="FFFFFF")
@@ -57,31 +57,54 @@ def write_sheet(ws, df, header=True, wrap=()):
         ws.auto_filter.ref = ws.dimensions
 
 
-def main(out):
+def locations(manifest):
+    rows = []
+    for did, locs in zip(manifest.dataset_id, manifest.locations):
+        for loc in filter(None, locs.split("; ")):
+            node, _, path = loc.partition(":")
+            rows.append({"dataset_id": did, "node": node, "path": path})
+    return pd.DataFrame(rows, columns=["dataset_id", "node", "path"])
+
+
+def export_table(table, out_dir):
+    """Write one metadata table as <dataset_id>.xlsx and return the columns left out."""
+    header = table not in HEADERLESS
+    df = pd.read_csv(METADATA / table, sep="\t", dtype=str, keep_default_na=False,
+                     header=0 if header else None)
+    too_long = [c for c in df.columns if df[c].map(len).max() > EXCEL_CELL_LIMIT]
+    name = table.removesuffix(".tsv")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = name
+    write_sheet(ws, df.drop(columns=too_long), header=header)
+    wb.save(out_dir / f"{name}.xlsx")
+    return [(name, str(c)) for c in too_long]
+
+
+def main(out_dir):
+    out_dir.mkdir(parents=True, exist_ok=True)
     manifest = pd.read_csv(MANIFEST, sep="\t", dtype=str, keep_default_na=False)
+    sheet = manifest.drop(columns="locations")
+    sheet["metadata_table"] = sheet.metadata_table.str.replace(r"\.tsv$", ".xlsx", regex=True)
+
     wb = Workbook()
     ws = wb.active
     ws.title = "manifest"
-    write_sheet(ws, manifest, wrap=WRAP_COLUMNS)
-    ws.column_dimensions[get_column_letter(list(manifest.columns).index("size_bytes") + 1)].width = 18
-    for c in ws[get_column_letter(list(manifest.columns).index("size_bytes") + 1)][1:]:
+    write_sheet(ws, sheet, wrap=WRAP_COLUMNS)
+    size_col = get_column_letter(list(sheet.columns).index("size_bytes") + 1)
+    ws.column_dimensions[size_col].width = 18
+    for c in ws[size_col][1:]:
         c.number_format = "#,##0"
+    link_col = list(sheet.columns).index("metadata_table") + 1
+    for row in range(2, ws.max_row + 1):
+        link = ws.cell(row=row, column=link_col)
+        if link.value:
+            link.hyperlink, link.font = link.value, LINK
+    write_sheet(wb.create_sheet("locations"), locations(manifest))
 
     dropped = []
-    link_col = list(manifest.columns).index("metadata_table") + 1
-    for i, table in enumerate(manifest.metadata_table, start=2):
-        if not table:
-            continue
-        header = table not in HEADERLESS
-        df = pd.read_csv(METADATA / table, sep="\t", dtype=str, keep_default_na=False,
-                         header=0 if header else None)
-        too_long = [c for c in df.columns if df[c].map(len).max() > EXCEL_CELL_LIMIT]
-        dropped += [(table, str(c)) for c in too_long]
-        name = table.removesuffix(".tsv")
-        write_sheet(wb.create_sheet(name), df.drop(columns=too_long), header=header)
-        link = ws.cell(row=i, column=link_col)
-        link.hyperlink = Hyperlink(ref=link.coordinate, location=f"'{name}'!A1")
-        link.font = LINK
+    for table in filter(None, manifest.metadata_table):
+        dropped += export_table(table, out_dir)
 
     commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
                             capture_output=True, text=True).stdout.strip()
@@ -89,21 +112,24 @@ def main(out):
     lines = [
         ["Engcyc candidate datasets"],
         [f"Exported {dt.date.today().isoformat()} from branch engcyc/dev, commit {commit}."],
-        ["The manifest sheet lists one dataset per row. Its metadata_table cell links to that dataset's sheet."],
-        ["Each dataset sheet is a copy of the metadata that already existed for it, with its original columns."],
+        ["The manifest sheet lists one dataset per row. The locations sheet lists every place each dataset lives, one row per place."],
+        ["A node is a machine or storage service. worker-01 paths are on the Sharknado_Backup volume."],
+        ["Each dataset's metadata is in its own file in this folder, named in the metadata_table column."],
+        ["Each metadata file is a copy of the metadata that already existed for that dataset, with its original columns."],
         ["A dataset with an empty metadata_table had no metadata to copy."],
         ["The source of truth is the DVC-pinned TSVs under data/engcyc/. Edits made here do not flow back."],
     ]
-    lines += [[f"Left out: column {c} of {t}, because its cells exceed Excel's {EXCEL_CELL_LIMIT:,}-character limit."]
+    lines += [[f"Left out: column {c} of {t}.xlsx, because its cells exceed Excel's {EXCEL_CELL_LIMIT:,}-character limit."]
               for t, c in dropped]
     for line in lines:
         about.append(line)
     about["A1"].font = Font(name="Arial", size=12, bold=True)
     for row in about.iter_rows(min_row=2):
         row[0].font = FONT
-    about.column_dimensions["A"].width = 110
-    wb.save(out)
-    print(f"{out}: {len(wb.sheetnames)} sheets, dropped {dropped}")
+    about.column_dimensions["A"].width = 120
+    wb.save(out_dir / "manifest.xlsx")
+    print(f"{out_dir}: manifest.xlsx and {len(list(filter(None, manifest.metadata_table)))} metadata files, "
+          f"dropped {dropped}")
 
 
 if __name__ == "__main__":

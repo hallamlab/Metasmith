@@ -57,7 +57,9 @@ def single_sources():
         "pratama2026": read_tsv(ROOT / "research/pratama2026/runs.tsv"),
         "cyanoverse": pd.read_csv(SRC / "capella/cyanoverse_reads.csv", dtype=str, keep_default_na=False),
         "gmcf3495_lung": read_tsv(SRC / "chinook/gmcf3495/manifest.tsv"),
-        "revio_2024": pd.read_csv(SRC / "chinook/revio_2024/metadata.csv", dtype=str, keep_default_na=False),
+        "amp_lung_spark": read_tsv(SRC / "chinook/lung_spark/metadata_updated.tsv"),
+        "amp_lung_lumins": read_tsv(SRC / "chinook/lung_lumens/Complete_LuMINS_Metadata.tsv"),
+        "amp_lung_host_depletion": read_tsv(SRC / "chinook/lung_host_depletion/HD_metadata_final.tsv"),
         "amp_cyano_prjna801777": read_tsv(ROOT / "research/aspire/campaigns/cyano_r1/samples.tsv"),
         "amp_nostoc_anabaena": pd.read_csv(SRC / "aspire/Nostoc_Anabaena_Metadata.csv", dtype=str,
                                            keep_default_na=False, encoding="utf-8-sig"),
@@ -71,7 +73,18 @@ def hydrocarbon():
     reads = ~h.description.astype(str).str.contains("fosmid", case=False)
     return {
         "scadc_metagenome": h[reads & (h.library == "SCADC")],
-        "hydrocarbon_metagenomes": h[reads & h.library.isin(["TOLDC", "NAPDC", "CO182", "CO183"])],
+        "toldc_metagenome": h[reads & (h.library == "TOLDC")],
+        "napdc_metagenome": h[reads & (h.library == "NAPDC")],
+        "coalbed_metagenomes": h[reads & h.library.isin(["CO182", "CO183"])],
+    }
+
+
+def revio_2024():
+    m = pd.read_csv(SRC / "chinook/revio_2024/metadata.csv", dtype=str, keep_default_na=False)
+    return {
+        "revio_2024_metagenomes": m[m.type == "Metagenome"],
+        "revio_2024_isolates": m[m.type == "Isolate"],
+        "revio_2024_fosmids": m[m.type == "FosmidLibrary"],
     }
 
 
@@ -159,7 +172,7 @@ def aspire_crosswalk():
     }
 
 
-BUILDERS = [cami, metagem, single_sources, hydrocarbon, sharknado, farmad_sags, fosmids, aspire_crosswalk]
+BUILDERS = [cami, metagem, single_sources, hydrocarbon, revio_2024, sharknado, farmad_sags, fosmids, aspire_crosswalk]
 # Sources with no header row are written without one.
 HEADERLESS = {"amp_saanich_jgi_itags"}
 
