@@ -54,6 +54,29 @@ def test_a_warm_run_points_its_products_into_shards(tmp_path, virtual_runtime):
             assert Path(cell).is_relative_to(cache_root), f"{suffix} served from {cell}"
 
 
+def test_a_member_with_no_record_costs_only_its_own_lineage(tmp_path, virtual_runtime, monkeypatch):
+    # On a shared filesystem the copy of a task's record out of node scratch can
+    # fail while the task still exits 0. Its consumer then names a parent that no
+    # trace event produced.
+    from metasmith.caching import promote
+
+    real = promote._record_files
+
+    def _drop_one_step_a(workspace):
+        files = real(workspace)
+        dropped = next(p for p in files if '"step_name":"trA"' in p.read_text())
+        return [p for p in files if p != dropped]
+
+    monkeypatch.setattr(promote, "_record_files", _drop_one_step_a)
+    run = capture_run(virtual_runtime, parallel_then_group.build_task(tmp_path))
+
+    log = (run.workspace / LOG_DIR / AgentPaths.MAIN_LOG_FILE).read_text()
+    assert "post-run step [collect results] failed" not in log, log
+    assert "nothing accounts for" in log
+    [outputs] = [l for l in log.splitlines() if "] outputs for [" in l]
+    assert "[0] outputs" not in outputs, outputs
+
+
 def test_a_failed_collect_still_ends_on_one_failed_sentinel(tmp_path, virtual_runtime, monkeypatch):
     def _raise(**_):
         raise RuntimeError("collect exploded")
