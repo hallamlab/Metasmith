@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -125,14 +127,17 @@ write("pathways.csv", ["pathway", "evidenced_reactions"], pwys)
     context.LocalShell("cat > _dump.py << 'PYEOF'\n" + dump + "\nPYEOF\n")
     context.ExecWithEnv(env=pyenv, cmd="python3 _build_pf.py")
 
+    # The engine already mounts the task directory at /ws, so the task's ws/ is /ws/ws.
     # The image is read-only, and PathoLogic builds the PGDB under
-    # /data/ptools-local/pgdbs before the wrapper moves it to -o.
+    # /data/ptools-local/pgdbs before the wrapper moves it to -o. Pathway Tools refuses
+    # to start without a HOME it can read, which --no-home takes away.
     context.ExecWithEnv(
         env=image,
-        binds=[(context.external_cwd / "ws", "/ws"),
-               (context.external_cwd / "ws" / "pgdbs", "/data/ptools-local/pgdbs")],
-        cmd=f"pathologic -i /ws/{PF_NAME} -o /ws/cyc --silent",
+        binds=[(context.external_cwd / "ws" / "pgdbs", "/data/ptools-local/pgdbs")],
+        cmd=f"mkdir -p /ws/ws/home && export HOME=/ws/ws/home && pathologic -i /ws/ws/{PF_NAME} -o /ws/ws/cyc --silent",
     )
+    # The wrapper exits 0 whether or not Pathway Tools built anything.
+    built = Path("ws/cyc/data/reactions.dat").exists()
 
     context.ExecWithEnv(env=pyenv, cmd="python3 _dump.py")
     context.LocalShell(f"tar czf {iarchive.local} -C ws/cyc .")
@@ -145,7 +150,7 @@ write("pathways.csv", ["pathway", "evidenced_reactions"], pwys)
                 tables:  itables.local,
             },
         ],
-        success=iarchive.local.exists() and itables.local.exists(),
+        success=built and iarchive.local.exists() and itables.local.exists(),
     )
 
 
