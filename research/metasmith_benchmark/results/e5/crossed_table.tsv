@@ -1,0 +1,1050 @@
+corpus	study	lane	cell	source	reads	metric	value
+metagem	bissett_base	mag	new	E5	short	runs	46
+metagem	bissett_base	mag	new	E5	short	runs_with_mags	46
+metagem	bissett_base	mag	new	E5	short	mags	370
+metagem	bissett_base	mag	new	E5	short	hq	33
+metagem	bissett_base	mag	new	E5	short	mq	274
+metagem	bissett_base	mag	new	E5	short	lq	63
+metagem	bissett_base	mag	new	E5	short	completeness_q1	63.5775
+metagem	bissett_base	mag	new	E5	short	completeness_median	74.64
+metagem	bissett_base	mag	new	E5	short	completeness_q3	84.9675
+metagem	bissett_base	mag	new	E5	short	contamination_q1	2.2725
+metagem	bissett_base	mag	new	E5	short	contamination_median	4.275
+metagem	bissett_base	mag	new	E5	short	contamination_q3	7.3075
+metagem	bissett_base	mag	new	E5	short	genome_size_mb_median	2.28218
+metagem	bissett_base	mag	new	E5	short	contig_n50_median	4032
+metagem	bissett_base	gem	e1_e4	E5	short	models	370
+metagem	bissett_base	gem	e1_e4	E5	short	reactions_q1	1032.25
+metagem	bissett_base	gem	e1_e4	E5	short	reactions_median	1497
+metagem	bissett_base	gem	e1_e4	E5	short	reactions_q3	1742.25
+metagem	bissett_base	gem	e1_e4	E5	short	metabolites_q1	753.75
+metagem	bissett_base	gem	e1_e4	E5	short	metabolites_median	1030.5
+metagem	bissett_base	gem	e1_e4	E5	short	metabolites_q3	1170.25
+metagem	bissett_base	gem	e1_e4	E5	short	genes_q1	404.75
+metagem	bissett_base	gem	e1_e4	E5	short	genes_median	638
+metagem	bissett_base	gem	e1_e4	E5	short	genes_q3	801
+metagem	bissett_base	gem	e1_e4	E5	short	memote_total_q1	0.696465
+metagem	bissett_base	gem	e1_e4	E5	short	memote_total_median	0.859239
+metagem	bissett_base	gem	e1_e4	E5	short	memote_total_q3	0.867488
+metagem	bissett_base	gem	e1_e4	E5	short	memote_consistency_q1	0.488623
+metagem	bissett_base	gem	e1_e4	E5	short	memote_consistency_median	0.908397
+metagem	bissett_base	gem	e1_e4	E5	short	memote_consistency_q3	0.92645
+metagem	bissett_base	gem	e1_e4	E5	short	memote_annotation_rxn_median	0.777103
+metagem	bissett_base	gem	e1_e4	E5	short	memote_annotation_gene_median	0.333333
+metagem	karlsson2013	mag	new	E5	short	runs	145
+metagem	karlsson2013	mag	new	E5	short	runs_with_mags	145
+metagem	karlsson2013	mag	new	E5	short	mags	3782
+metagem	karlsson2013	mag	new	E5	short	hq	2072
+metagem	karlsson2013	mag	new	E5	short	mq	1501
+metagem	karlsson2013	mag	new	E5	short	lq	209
+metagem	karlsson2013	mag	new	E5	short	completeness_q1	83.5625
+metagem	karlsson2013	mag	new	E5	short	completeness_median	93.295
+metagem	karlsson2013	mag	new	E5	short	completeness_q3	99.04
+metagem	karlsson2013	mag	new	E5	short	contamination_q1	0.6725
+metagem	karlsson2013	mag	new	E5	short	contamination_median	1.77
+metagem	karlsson2013	mag	new	E5	short	contamination_q3	3.3375
+metagem	karlsson2013	mag	new	E5	short	genome_size_mb_median	2.22772
+metagem	karlsson2013	mag	new	E5	short	contig_n50_median	17691
+metagem	karlsson2013	gem	e1_e4	E5	short	models	3782
+metagem	karlsson2013	gem	e1_e4	E5	short	reactions_q1	1080.25
+metagem	karlsson2013	gem	e1_e4	E5	short	reactions_median	1212
+metagem	karlsson2013	gem	e1_e4	E5	short	reactions_q3	1316.75
+metagem	karlsson2013	gem	e1_e4	E5	short	metabolites_q1	728
+metagem	karlsson2013	gem	e1_e4	E5	short	metabolites_median	806
+metagem	karlsson2013	gem	e1_e4	E5	short	metabolites_q3	867
+metagem	karlsson2013	gem	e1_e4	E5	short	genes_q1	457
+metagem	karlsson2013	gem	e1_e4	E5	short	genes_median	538
+metagem	karlsson2013	gem	e1_e4	E5	short	genes_q3	622
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_total_q1	0.700534
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_total_median	0.82646
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_total_q3	0.865884
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_consistency_q1	0.499093
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_consistency_median	0.906248
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_consistency_q3	0.928462
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_annotation_rxn_median	0.778756
+metagem	karlsson2013	gem	e1_e4	E5	short	memote_annotation_gene_median	0.333333
+metagem	korem2015	mag	new	E5	short	runs	48
+metagem	korem2015	mag	new	E5	short	runs_with_mags	48
+metagem	korem2015	mag	new	E5	short	mags	153
+metagem	korem2015	mag	new	E5	short	hq	70
+metagem	korem2015	mag	new	E5	short	mq	58
+metagem	korem2015	mag	new	E5	short	lq	25
+metagem	korem2015	mag	new	E5	short	completeness_q1	61.95
+metagem	korem2015	mag	new	E5	short	completeness_median	83.84
+metagem	korem2015	mag	new	E5	short	completeness_q3	99.87
+metagem	korem2015	mag	new	E5	short	contamination_q1	0.05
+metagem	korem2015	mag	new	E5	short	contamination_median	0.32
+metagem	korem2015	mag	new	E5	short	contamination_q3	1.04
+metagem	korem2015	mag	new	E5	short	genome_size_mb_median	1.96648
+metagem	korem2015	mag	new	E5	short	contig_n50_median	36812
+metagem	korem2015	gem	e1_e4	E5	short	models	153
+metagem	korem2015	gem	e1_e4	E5	short	reactions_q1	927
+metagem	korem2015	gem	e1_e4	E5	short	reactions_median	1299
+metagem	korem2015	gem	e1_e4	E5	short	reactions_q3	1434
+metagem	korem2015	gem	e1_e4	E5	short	metabolites_q1	656
+metagem	korem2015	gem	e1_e4	E5	short	metabolites_median	898
+metagem	korem2015	gem	e1_e4	E5	short	metabolites_q3	1000
+metagem	korem2015	gem	e1_e4	E5	short	genes_q1	362
+metagem	korem2015	gem	e1_e4	E5	short	genes_median	460
+metagem	korem2015	gem	e1_e4	E5	short	genes_q3	579
+metagem	korem2015	gem	e1_e4	E5	short	memote_total_q1	0.699575
+metagem	korem2015	gem	e1_e4	E5	short	memote_total_median	0.827686
+metagem	korem2015	gem	e1_e4	E5	short	memote_total_q3	0.862952
+metagem	korem2015	gem	e1_e4	E5	short	memote_consistency_q1	0.50159
+metagem	korem2015	gem	e1_e4	E5	short	memote_consistency_median	0.906008
+metagem	korem2015	gem	e1_e4	E5	short	memote_consistency_q3	0.925959
+metagem	korem2015	gem	e1_e4	E5	short	memote_annotation_rxn_median	0.774466
+metagem	korem2015	gem	e1_e4	E5	short	memote_annotation_gene_median	0.333333
+metagem	li2019	mag	new	E5	short	runs	6
+metagem	li2019	mag	new	E5	short	runs_with_mags	6
+metagem	li2019	mag	new	E5	short	mags	150
+metagem	li2019	mag	new	E5	short	hq	59
+metagem	li2019	mag	new	E5	short	mq	75
+metagem	li2019	mag	new	E5	short	lq	16
+metagem	li2019	mag	new	E5	short	completeness_q1	79.4325
+metagem	li2019	mag	new	E5	short	completeness_median	89.365
+metagem	li2019	mag	new	E5	short	completeness_q3	96.485
+metagem	li2019	mag	new	E5	short	contamination_q1	1.07
+metagem	li2019	mag	new	E5	short	contamination_median	2.515
+metagem	li2019	mag	new	E5	short	contamination_q3	4.9475
+metagem	li2019	mag	new	E5	short	genome_size_mb_median	2.93671
+metagem	li2019	mag	new	E5	short	contig_n50_median	10838
+metagem	li2019	gem	e1_e4	E5	short	models	150
+metagem	li2019	gem	e1_e4	E5	short	reactions_q1	1520.5
+metagem	li2019	gem	e1_e4	E5	short	reactions_median	1759.5
+metagem	li2019	gem	e1_e4	E5	short	reactions_q3	1934
+metagem	li2019	gem	e1_e4	E5	short	metabolites_q1	1028
+metagem	li2019	gem	e1_e4	E5	short	metabolites_median	1179.5
+metagem	li2019	gem	e1_e4	E5	short	metabolites_q3	1325.25
+metagem	li2019	gem	e1_e4	E5	short	genes_q1	628.5
+metagem	li2019	gem	e1_e4	E5	short	genes_median	748
+metagem	li2019	gem	e1_e4	E5	short	genes_q3	855.5
+metagem	li2019	gem	e1_e4	E5	short	memote_total_q1	0.693315
+metagem	li2019	gem	e1_e4	E5	short	memote_total_median	0.851782
+metagem	li2019	gem	e1_e4	E5	short	memote_total_q3	0.860379
+metagem	li2019	gem	e1_e4	E5	short	memote_consistency_q1	0.481458
+metagem	li2019	gem	e1_e4	E5	short	memote_consistency_median	0.897413
+metagem	li2019	gem	e1_e4	E5	short	memote_consistency_q3	0.913753
+metagem	li2019	gem	e1_e4	E5	short	memote_annotation_rxn_median	0.772441
+metagem	li2019	gem	e1_e4	E5	short	memote_annotation_gene_median	0.333333
+cami	marine	mag	e1_e4	E5	pacbio	runs	10
+cami	marine	mag	e1_e4	E5	pacbio	runs_with_mags	10
+cami	marine	mag	e1_e4	E5	pacbio	mags	37
+cami	marine	mag	e1_e4	E5	pacbio	hq	0
+cami	marine	mag	e1_e4	E5	pacbio	mq	12
+cami	marine	mag	e1_e4	E5	pacbio	lq	25
+cami	marine	mag	e1_e4	E5	pacbio	completeness_q1	45.14
+cami	marine	mag	e1_e4	E5	pacbio	completeness_median	60.87
+cami	marine	mag	e1_e4	E5	pacbio	completeness_q3	75.26
+cami	marine	mag	e1_e4	E5	pacbio	contamination_q1	3.82
+cami	marine	mag	e1_e4	E5	pacbio	contamination_median	5.91
+cami	marine	mag	e1_e4	E5	pacbio	contamination_q3	10.56
+cami	marine	mag	e1_e4	E5	pacbio	genome_size_mb_median	3.94788
+cami	marine	mag	e1_e4	E5	pacbio	contig_n50_median	6588
+cami	marine	gem	new	E5	pacbio	models	37
+cami	marine	gem	new	E5	pacbio	reactions_q1	1076
+cami	marine	gem	new	E5	pacbio	reactions_median	1395
+cami	marine	gem	new	E5	pacbio	reactions_q3	1718
+cami	marine	gem	new	E5	pacbio	metabolites_q1	729
+cami	marine	gem	new	E5	pacbio	metabolites_median	937
+cami	marine	gem	new	E5	pacbio	metabolites_q3	1141
+cami	marine	gem	new	E5	pacbio	genes_q1	408
+cami	marine	gem	new	E5	pacbio	genes_median	663
+cami	marine	gem	new	E5	pacbio	genes_q3	915
+cami	marine	gem	new	E5	pacbio	memote_total_q1	0.695973
+cami	marine	gem	new	E5	pacbio	memote_total_median	0.825884
+cami	marine	gem	new	E5	pacbio	memote_total_q3	0.865057
+cami	marine	gem	new	E5	pacbio	memote_consistency_q1	0.491195
+cami	marine	gem	new	E5	pacbio	memote_consistency_median	0.881389
+cami	marine	gem	new	E5	pacbio	memote_consistency_q3	0.923439
+cami	marine	gem	new	E5	pacbio	memote_annotation_rxn_median	0.773015
+cami	marine	gem	new	E5	pacbio	memote_annotation_gene_median	0.333333
+cami	plant_associated	mag	e1_e4	E5	hybrid	runs	21
+cami	plant_associated	mag	e1_e4	E5	hybrid	runs_with_mags	21
+cami	plant_associated	mag	e1_e4	E5	hybrid	mags	238
+cami	plant_associated	mag	e1_e4	E5	hybrid	hq	80
+cami	plant_associated	mag	e1_e4	E5	hybrid	mq	108
+cami	plant_associated	mag	e1_e4	E5	hybrid	lq	50
+cami	plant_associated	mag	e1_e4	E5	hybrid	completeness_q1	61.6525
+cami	plant_associated	mag	e1_e4	E5	hybrid	completeness_median	87.495
+cami	plant_associated	mag	e1_e4	E5	hybrid	completeness_q3	96.4225
+cami	plant_associated	mag	e1_e4	E5	hybrid	contamination_q1	1.155
+cami	plant_associated	mag	e1_e4	E5	hybrid	contamination_median	2.56
+cami	plant_associated	mag	e1_e4	E5	hybrid	contamination_q3	4.695
+cami	plant_associated	mag	e1_e4	E5	hybrid	genome_size_mb_median	6.1581
+cami	plant_associated	mag	e1_e4	E5	hybrid	contig_n50_median	64914.5
+cami	plant_associated	gem	new	E5	hybrid	models	238
+cami	plant_associated	gem	new	E5	hybrid	reactions_q1	2208
+cami	plant_associated	gem	new	E5	hybrid	reactions_median	2411
+cami	plant_associated	gem	new	E5	hybrid	reactions_q3	2580.75
+cami	plant_associated	gem	new	E5	hybrid	metabolites_q1	1456
+cami	plant_associated	gem	new	E5	hybrid	metabolites_median	1554
+cami	plant_associated	gem	new	E5	hybrid	metabolites_q3	1638.75
+cami	plant_associated	gem	new	E5	hybrid	genes_q1	1098
+cami	plant_associated	gem	new	E5	hybrid	genes_median	1317
+cami	plant_associated	gem	new	E5	hybrid	genes_q3	1436.75
+cami	plant_associated	gem	new	E5	hybrid	memote_total_q1	0.683668
+cami	plant_associated	gem	new	E5	hybrid	memote_total_median	0.687042
+cami	plant_associated	gem	new	E5	hybrid	memote_total_q3	0.691386
+cami	plant_associated	gem	new	E5	hybrid	memote_consistency_q1	0.459943
+cami	plant_associated	gem	new	E5	hybrid	memote_consistency_median	0.468913
+cami	plant_associated	gem	new	E5	hybrid	memote_consistency_q3	0.478352
+cami	plant_associated	gem	new	E5	hybrid	memote_annotation_rxn_median	0.766513
+cami	plant_associated	gem	new	E5	hybrid	memote_annotation_gene_median	0.333333
+pratama	pratama_hybrid	mag	new	E5	hybrid	runs	17
+pratama	pratama_hybrid	mag	new	E5	hybrid	runs_with_mags	17
+pratama	pratama_hybrid	mag	new	E5	hybrid	mags	2138
+pratama	pratama_hybrid	mag	new	E5	hybrid	hq	655
+pratama	pratama_hybrid	mag	new	E5	hybrid	mq	1129
+pratama	pratama_hybrid	mag	new	E5	hybrid	lq	354
+pratama	pratama_hybrid	mag	new	E5	hybrid	completeness_q1	73.505
+pratama	pratama_hybrid	mag	new	E5	hybrid	completeness_median	87.61
+pratama	pratama_hybrid	mag	new	E5	hybrid	completeness_q3	95.2075
+pratama	pratama_hybrid	mag	new	E5	hybrid	contamination_q1	1.2525
+pratama	pratama_hybrid	mag	new	E5	hybrid	contamination_median	2.94
+pratama	pratama_hybrid	mag	new	E5	hybrid	contamination_q3	5.8975
+pratama	pratama_hybrid	mag	new	E5	hybrid	genome_size_mb_median	1.03582
+pratama	pratama_hybrid	mag	new	E5	hybrid	contig_n50_median	20292
+pratama	pratama_hybrid	gem	new	E5	hybrid	models	2138
+pratama	pratama_hybrid	gem	new	E5	hybrid	reactions_q1	575.25
+pratama	pratama_hybrid	gem	new	E5	hybrid	reactions_median	770.5
+pratama	pratama_hybrid	gem	new	E5	hybrid	reactions_q3	1274
+pratama	pratama_hybrid	gem	new	E5	hybrid	metabolites_q1	458
+pratama	pratama_hybrid	gem	new	E5	hybrid	metabolites_median	621
+pratama	pratama_hybrid	gem	new	E5	hybrid	metabolites_q3	911
+pratama	pratama_hybrid	gem	new	E5	hybrid	genes_q1	107
+pratama	pratama_hybrid	gem	new	E5	hybrid	genes_median	158
+pratama	pratama_hybrid	gem	new	E5	hybrid	genes_q3	494.75
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_total_q1	0.83471
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_total_median	0.841942
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_total_q3	0.865114
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_consistency_q1	0.913782
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_consistency_median	0.935442
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_consistency_q3	0.945142
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_annotation_rxn_median	0.774538
+pratama	pratama_hybrid	gem	new	E5	hybrid	memote_annotation_gene_median	0.333333
+pratama	pratama_short	mag	new	E5	short	runs	48
+pratama	pratama_short	mag	new	E5	short	runs_with_mags	48
+pratama	pratama_short	mag	new	E5	short	mags	4875
+pratama	pratama_short	mag	new	E5	short	hq	1787
+pratama	pratama_short	mag	new	E5	short	mq	2496
+pratama	pratama_short	mag	new	E5	short	lq	592
+pratama	pratama_short	mag	new	E5	short	completeness_q1	77.395
+pratama	pratama_short	mag	new	E5	short	completeness_median	89.11
+pratama	pratama_short	mag	new	E5	short	completeness_q3	95.51
+pratama	pratama_short	mag	new	E5	short	contamination_q1	0.92
+pratama	pratama_short	mag	new	E5	short	contamination_median	2.39
+pratama	pratama_short	mag	new	E5	short	contamination_q3	5.02
+pratama	pratama_short	mag	new	E5	short	genome_size_mb_median	0.769341
+pratama	pratama_short	mag	new	E5	short	contig_n50_median	7703
+pratama	pratama_short	gem	new	E5	short	models	4875
+pratama	pratama_short	gem	new	E5	short	reactions_q1	530.5
+pratama	pratama_short	gem	new	E5	short	reactions_median	664
+pratama	pratama_short	gem	new	E5	short	reactions_q3	864
+pratama	pratama_short	gem	new	E5	short	metabolites_q1	429
+pratama	pratama_short	gem	new	E5	short	metabolites_median	539
+pratama	pratama_short	gem	new	E5	short	metabolites_q3	686
+pratama	pratama_short	gem	new	E5	short	genes_q1	89
+pratama	pratama_short	gem	new	E5	short	genes_median	118
+pratama	pratama_short	gem	new	E5	short	genes_q3	185
+pratama	pratama_short	gem	new	E5	short	memote_total_q1	0.835545
+pratama	pratama_short	gem	new	E5	short	memote_total_median	0.840493
+pratama	pratama_short	gem	new	E5	short	memote_total_q3	0.864177
+pratama	pratama_short	gem	new	E5	short	memote_consistency_q1	0.928818
+pratama	pratama_short	gem	new	E5	short	memote_consistency_median	0.940763
+pratama	pratama_short	gem	new	E5	short	memote_consistency_q3	0.947896
+pratama	pratama_short	gem	new	E5	short	memote_annotation_rxn_median	0.774055
+pratama	pratama_short	gem	new	E5	short	memote_annotation_gene_median	0.333333
+cami	strain	mag	e1_e4	E5	pacbio	runs	100
+cami	strain	mag	e1_e4	E5	pacbio	runs_with_mags	40
+cami	strain	mag	e1_e4	E5	pacbio	mags	46
+cami	strain	mag	e1_e4	E5	pacbio	hq	0
+cami	strain	mag	e1_e4	E5	pacbio	mq	10
+cami	strain	mag	e1_e4	E5	pacbio	lq	36
+cami	strain	mag	e1_e4	E5	pacbio	completeness_q1	52.05
+cami	strain	mag	e1_e4	E5	pacbio	completeness_median	66.265
+cami	strain	mag	e1_e4	E5	pacbio	completeness_q3	77.3825
+cami	strain	mag	e1_e4	E5	pacbio	contamination_q1	6.865
+cami	strain	mag	e1_e4	E5	pacbio	contamination_median	15.52
+cami	strain	mag	e1_e4	E5	pacbio	contamination_q3	23.6475
+cami	strain	mag	e1_e4	E5	pacbio	genome_size_mb_median	3.46551
+cami	strain	mag	e1_e4	E5	pacbio	contig_n50_median	7862
+cami	strain	gem	new	E5	pacbio	models	46
+cami	strain	gem	new	E5	pacbio	reactions_q1	998.75
+cami	strain	gem	new	E5	pacbio	reactions_median	1122.5
+cami	strain	gem	new	E5	pacbio	reactions_q3	1297.25
+cami	strain	gem	new	E5	pacbio	metabolites_q1	678.5
+cami	strain	gem	new	E5	pacbio	metabolites_median	757
+cami	strain	gem	new	E5	pacbio	metabolites_q3	883.25
+cami	strain	gem	new	E5	pacbio	genes_q1	560.75
+cami	strain	gem	new	E5	pacbio	genes_median	666.5
+cami	strain	gem	new	E5	pacbio	genes_q3	833
+cami	strain	gem	new	E5	pacbio	memote_total_q1	0.694874
+cami	strain	gem	new	E5	pacbio	memote_total_median	0.70087
+cami	strain	gem	new	E5	pacbio	memote_total_q3	0.709208
+cami	strain	gem	new	E5	pacbio	memote_consistency_q1	0.485647
+cami	strain	gem	new	E5	pacbio	memote_consistency_median	0.501956
+cami	strain	gem	new	E5	pacbio	memote_consistency_q3	0.519264
+cami	strain	gem	new	E5	pacbio	memote_annotation_rxn_median	0.77416
+cami	strain	gem	new	E5	pacbio	memote_annotation_gene_median	0.333333
+metagem	sunagawa2015	mag	new	E5	short	runs	246
+metagem	sunagawa2015	mag	new	E5	short	runs_with_mags	246
+metagem	sunagawa2015	mag	new	E5	short	mags	9975
+metagem	sunagawa2015	mag	new	E5	short	hq	1886
+metagem	sunagawa2015	mag	new	E5	short	mq	6143
+metagem	sunagawa2015	mag	new	E5	short	lq	1946
+metagem	sunagawa2015	mag	new	E5	short	completeness_q1	68.32
+metagem	sunagawa2015	mag	new	E5	short	completeness_median	81.51
+metagem	sunagawa2015	mag	new	E5	short	completeness_q3	90.455
+metagem	sunagawa2015	mag	new	E5	short	contamination_q1	1.735
+metagem	sunagawa2015	mag	new	E5	short	contamination_median	3.87
+metagem	sunagawa2015	mag	new	E5	short	contamination_q3	6.98
+metagem	sunagawa2015	mag	new	E5	short	genome_size_mb_median	1.67602
+metagem	sunagawa2015	mag	new	E5	short	contig_n50_median	6684
+metagem	sunagawa2015	gem	e1_e4	E5	short	models	9971
+metagem	sunagawa2015	gem	e1_e4	E5	short	reactions_q1	1037.5
+metagem	sunagawa2015	gem	e1_e4	E5	short	reactions_median	1345
+metagem	sunagawa2015	gem	e1_e4	E5	short	reactions_q3	1658
+metagem	sunagawa2015	gem	e1_e4	E5	short	metabolites_q1	758
+metagem	sunagawa2015	gem	e1_e4	E5	short	metabolites_median	952
+metagem	sunagawa2015	gem	e1_e4	E5	short	metabolites_q3	1152
+metagem	sunagawa2015	gem	e1_e4	E5	short	genes_q1	331
+metagem	sunagawa2015	gem	e1_e4	E5	short	genes_median	478
+metagem	sunagawa2015	gem	e1_e4	E5	short	genes_q3	652
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_total_q1	0.828278
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_total_median	0.858726
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_total_q3	0.865353
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_consistency_q1	0.897667
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_consistency_median	0.914815
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_consistency_q3	0.926668
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_annotation_rxn_median	0.774268
+metagem	sunagawa2015	gem	e1_e4	E5	short	memote_annotation_gene_median	0.333333
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	runs	29
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	runs_with_mags	29
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	mags	381
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	hq	232
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	mq	132
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	lq	17
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	completeness_q1	88.33
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	completeness_median	96.62
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	completeness_q3	99.94
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	contamination_q1	0.83
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	contamination_median	2.35
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	contamination_q3	4.45
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	genome_size_mb_median	2.39395
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	contig_n50_median	28322
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	models	381
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	reactions_q1	1122
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	reactions_median	1310
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	reactions_q3	1588
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	metabolites_q1	750
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	metabolites_median	874
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	metabolites_q3	1067
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	genes_q1	520
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	genes_median	684
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	genes_q3	784
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_total_q1	0.697391
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_total_median	0.701832
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_total_q3	0.863428
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_consistency_q1	0.491067
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_consistency_median	0.501411
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_consistency_q3	0.918648
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_annotation_rxn_median	0.774584
+cami	toy_hmp_airskinurogenital	gem	new	E5	short	memote_annotation_gene_median	0.333333
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	runs	20
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	runs_with_mags	20
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	mags	376
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	hq	225
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	mq	132
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	lq	19
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	completeness_q1	88.3
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	completeness_median	95.905
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	completeness_q3	99.96
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	contamination_q1	0.73
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	contamination_median	2.325
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	contamination_q3	4.19
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	genome_size_mb_median	2.41614
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	contig_n50_median	28385.5
+cami	toy_hmp_gastrooral	gem	new	E5	short	models	376
+cami	toy_hmp_gastrooral	gem	new	E5	short	reactions_q1	1245.75
+cami	toy_hmp_gastrooral	gem	new	E5	short	reactions_median	1395
+cami	toy_hmp_gastrooral	gem	new	E5	short	reactions_q3	1599.5
+cami	toy_hmp_gastrooral	gem	new	E5	short	metabolites_q1	837.5
+cami	toy_hmp_gastrooral	gem	new	E5	short	metabolites_median	927
+cami	toy_hmp_gastrooral	gem	new	E5	short	metabolites_q3	1041.75
+cami	toy_hmp_gastrooral	gem	new	E5	short	genes_q1	534
+cami	toy_hmp_gastrooral	gem	new	E5	short	genes_median	640.5
+cami	toy_hmp_gastrooral	gem	new	E5	short	genes_q3	775
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_total_q1	0.694701
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_total_median	0.828451
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_total_q3	0.864567
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_consistency_q1	0.489075
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_consistency_median	0.894066
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_consistency_q3	0.921814
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_annotation_rxn_median	0.776429
+cami	toy_hmp_gastrooral	gem	new	E5	short	memote_annotation_gene_median	0.333333
+cami	toy_humangut	mag	e1_e4	E5	hybrid	runs	20
+cami	toy_humangut	mag	e1_e4	E5	hybrid	runs_with_mags	20
+cami	toy_humangut	mag	e1_e4	E5	hybrid	mags	517
+cami	toy_humangut	mag	e1_e4	E5	hybrid	hq	364
+cami	toy_humangut	mag	e1_e4	E5	hybrid	mq	117
+cami	toy_humangut	mag	e1_e4	E5	hybrid	lq	36
+cami	toy_humangut	mag	e1_e4	E5	hybrid	completeness_q1	88.49
+cami	toy_humangut	mag	e1_e4	E5	hybrid	completeness_median	98.96
+cami	toy_humangut	mag	e1_e4	E5	hybrid	completeness_q3	99.97
+cami	toy_humangut	mag	e1_e4	E5	hybrid	contamination_q1	0.2
+cami	toy_humangut	mag	e1_e4	E5	hybrid	contamination_median	0.53
+cami	toy_humangut	mag	e1_e4	E5	hybrid	contamination_q3	1.62
+cami	toy_humangut	mag	e1_e4	E5	hybrid	genome_size_mb_median	2.98432
+cami	toy_humangut	mag	e1_e4	E5	hybrid	contig_n50_median	144598
+cami	toy_humangut	gem	new	E5	hybrid	models	517
+cami	toy_humangut	gem	new	E5	hybrid	reactions_q1	1234
+cami	toy_humangut	gem	new	E5	hybrid	reactions_median	1344
+cami	toy_humangut	gem	new	E5	hybrid	reactions_q3	1519
+cami	toy_humangut	gem	new	E5	hybrid	metabolites_q1	809
+cami	toy_humangut	gem	new	E5	hybrid	metabolites_median	884
+cami	toy_humangut	gem	new	E5	hybrid	metabolites_q3	995
+cami	toy_humangut	gem	new	E5	hybrid	genes_q1	567
+cami	toy_humangut	gem	new	E5	hybrid	genes_median	657
+cami	toy_humangut	gem	new	E5	hybrid	genes_q3	740
+cami	toy_humangut	gem	new	E5	hybrid	memote_total_q1	0.698872
+cami	toy_humangut	gem	new	E5	hybrid	memote_total_median	0.705454
+cami	toy_humangut	gem	new	E5	hybrid	memote_total_q3	0.864914
+cami	toy_humangut	gem	new	E5	hybrid	memote_consistency_q1	0.494848
+cami	toy_humangut	gem	new	E5	hybrid	memote_consistency_median	0.509794
+cami	toy_humangut	gem	new	E5	hybrid	memote_consistency_q3	0.921439
+cami	toy_humangut	gem	new	E5	hybrid	memote_annotation_rxn_median	0.778112
+cami	toy_humangut	gem	new	E5	hybrid	memote_annotation_gene_median	0.333333
+cami	toy_mousegut	mag	e1_e4	E5	short	runs	49
+cami	toy_mousegut	mag	e1_e4	E5	short	runs_with_mags	49
+cami	toy_mousegut	mag	e1_e4	E5	short	mags	1049
+cami	toy_mousegut	mag	e1_e4	E5	short	hq	660
+cami	toy_mousegut	mag	e1_e4	E5	short	mq	356
+cami	toy_mousegut	mag	e1_e4	E5	short	lq	33
+cami	toy_mousegut	mag	e1_e4	E5	short	completeness_q1	89.75
+cami	toy_mousegut	mag	e1_e4	E5	short	completeness_median	97.45
+cami	toy_mousegut	mag	e1_e4	E5	short	completeness_q3	99.88
+cami	toy_mousegut	mag	e1_e4	E5	short	contamination_q1	0.57
+cami	toy_mousegut	mag	e1_e4	E5	short	contamination_median	1.99
+cami	toy_mousegut	mag	e1_e4	E5	short	contamination_q3	4.49
+cami	toy_mousegut	mag	e1_e4	E5	short	genome_size_mb_median	2.74795
+cami	toy_mousegut	mag	e1_e4	E5	short	contig_n50_median	25183
+cami	toy_mousegut	gem	new	E5	short	models	1049
+cami	toy_mousegut	gem	new	E5	short	reactions_q1	1214
+cami	toy_mousegut	gem	new	E5	short	reactions_median	1340
+cami	toy_mousegut	gem	new	E5	short	reactions_q3	1511
+cami	toy_mousegut	gem	new	E5	short	metabolites_q1	792
+cami	toy_mousegut	gem	new	E5	short	metabolites_median	883
+cami	toy_mousegut	gem	new	E5	short	metabolites_q3	976
+cami	toy_mousegut	gem	new	E5	short	genes_q1	507
+cami	toy_mousegut	gem	new	E5	short	genes_median	618
+cami	toy_mousegut	gem	new	E5	short	genes_q3	737
+cami	toy_mousegut	gem	new	E5	short	memote_total_q1	0.698249
+cami	toy_mousegut	gem	new	E5	short	memote_total_median	0.704983
+cami	toy_mousegut	gem	new	E5	short	memote_total_q3	0.864495
+cami	toy_mousegut	gem	new	E5	short	memote_consistency_q1	0.4941
+cami	toy_mousegut	gem	new	E5	short	memote_consistency_median	0.508588
+cami	toy_mousegut	gem	new	E5	short	memote_consistency_q3	0.920732
+cami	toy_mousegut	gem	new	E5	short	memote_annotation_rxn_median	0.777265
+cami	toy_mousegut	gem	new	E5	short	memote_annotation_gene_median	0.333333
+metagem	bissett_base	viral	new	E5	short	runs	46
+metagem	bissett_base	viral	new	E5	short	votus	2604
+metagem	bissett_base	viral	new	E5	short	votus_per_run	56.6087
+metagem	bissett_base	viral	new	E5	short	checkv_complete	3
+metagem	bissett_base	viral	new	E5	short	checkv_high	3
+metagem	bissett_base	viral	new	E5	short	checkv_medium	7
+metagem	bissett_base	viral	new	E5	short	checkv_low	380
+metagem	bissett_base	viral	new	E5	short	checkv_not_determined	2211
+metagem	bissett_base	viral	new	E5	short	proviruses	15
+metagem	bissett_base	viral	new	E5	short	singletons	2006
+metagem	bissett_base	viral	new	E5	short	length_kb_q1	5.36
+metagem	bissett_base	viral	new	E5	short	length_kb_median	5.9455
+metagem	bissett_base	viral	new	E5	short	length_kb_q3	7.132
+metagem	bissett_base	viral	new	E5	short	completeness_q1	4.75
+metagem	bissett_base	viral	new	E5	short	completeness_median	8
+metagem	bissett_base	viral	new	E5	short	completeness_q3	12.8
+metagem	karlsson2013	viral	new	E5	short	runs	145
+metagem	karlsson2013	viral	new	E5	short	votus	50163
+metagem	karlsson2013	viral	new	E5	short	votus_per_run	345.952
+metagem	karlsson2013	viral	new	E5	short	checkv_complete	355
+metagem	karlsson2013	viral	new	E5	short	checkv_high	1555
+metagem	karlsson2013	viral	new	E5	short	checkv_medium	2656
+metagem	karlsson2013	viral	new	E5	short	checkv_low	25907
+metagem	karlsson2013	viral	new	E5	short	checkv_not_determined	19690
+metagem	karlsson2013	viral	new	E5	short	proviruses	3039
+metagem	karlsson2013	viral	new	E5	short	singletons	22764
+metagem	karlsson2013	viral	new	E5	short	length_kb_q1	6.223
+metagem	karlsson2013	viral	new	E5	short	length_kb_median	8.573
+metagem	karlsson2013	viral	new	E5	short	length_kb_q3	14.455
+metagem	karlsson2013	viral	new	E5	short	completeness_q1	10.03
+metagem	karlsson2013	viral	new	E5	short	completeness_median	16.67
+metagem	karlsson2013	viral	new	E5	short	completeness_q3	31.95
+metagem	korem2015	viral	new	E5	short	runs	48
+metagem	korem2015	viral	new	E5	short	votus	343
+metagem	korem2015	viral	new	E5	short	votus_per_run	7.14583
+metagem	korem2015	viral	new	E5	short	checkv_complete	2
+metagem	korem2015	viral	new	E5	short	checkv_high	4
+metagem	korem2015	viral	new	E5	short	checkv_medium	13
+metagem	korem2015	viral	new	E5	short	checkv_low	175
+metagem	korem2015	viral	new	E5	short	checkv_not_determined	149
+metagem	korem2015	viral	new	E5	short	proviruses	19
+metagem	korem2015	viral	new	E5	short	singletons	125
+metagem	korem2015	viral	new	E5	short	length_kb_q1	6.044
+metagem	korem2015	viral	new	E5	short	length_kb_median	7.916
+metagem	korem2015	viral	new	E5	short	length_kb_q3	12.5515
+metagem	korem2015	viral	new	E5	short	completeness_q1	8.645
+metagem	korem2015	viral	new	E5	short	completeness_median	14.62
+metagem	korem2015	viral	new	E5	short	completeness_q3	27.68
+metagem	li2019	viral	new	E5	short	runs	6
+metagem	li2019	viral	new	E5	short	votus	2261
+metagem	li2019	viral	new	E5	short	votus_per_run	376.833
+metagem	li2019	viral	new	E5	short	checkv_complete	33
+metagem	li2019	viral	new	E5	short	checkv_high	28
+metagem	li2019	viral	new	E5	short	checkv_medium	63
+metagem	li2019	viral	new	E5	short	checkv_low	1369
+metagem	li2019	viral	new	E5	short	checkv_not_determined	768
+metagem	li2019	viral	new	E5	short	proviruses	26
+metagem	li2019	viral	new	E5	short	singletons	629
+metagem	li2019	viral	new	E5	short	length_kb_q1	5.83
+metagem	li2019	viral	new	E5	short	length_kb_median	7.36
+metagem	li2019	viral	new	E5	short	length_kb_q3	10.851
+metagem	li2019	viral	new	E5	short	completeness_q1	8.01
+metagem	li2019	viral	new	E5	short	completeness_median	12.74
+metagem	li2019	viral	new	E5	short	completeness_q3	20.02
+cami	marine	viral	new	E5	pacbio	runs	10
+cami	marine	viral	new	E5	pacbio	votus	44017
+cami	marine	viral	new	E5	pacbio	votus_per_run	4401.7
+cami	marine	viral	new	E5	pacbio	checkv_complete	0
+cami	marine	viral	new	E5	pacbio	checkv_high	6
+cami	marine	viral	new	E5	pacbio	checkv_medium	13
+cami	marine	viral	new	E5	pacbio	checkv_low	1157
+cami	marine	viral	new	E5	pacbio	checkv_not_determined	42841
+cami	marine	viral	new	E5	pacbio	proviruses	10
+cami	marine	viral	new	E5	pacbio	singletons	41856
+cami	marine	viral	new	E5	pacbio	length_kb_q1	5.416
+cami	marine	viral	new	E5	pacbio	length_kb_median	6.015
+cami	marine	viral	new	E5	pacbio	length_kb_q3	6.993
+cami	marine	viral	new	E5	pacbio	completeness_q1	4.7475
+cami	marine	viral	new	E5	pacbio	completeness_median	9.44
+cami	marine	viral	new	E5	pacbio	completeness_q3	14.3375
+cami	plant_associated	viral	new	E5	hybrid	runs	21
+cami	plant_associated	viral	new	E5	hybrid	votus	7203
+cami	plant_associated	viral	new	E5	hybrid	votus_per_run	343
+cami	plant_associated	viral	new	E5	hybrid	checkv_complete	24
+cami	plant_associated	viral	new	E5	hybrid	checkv_high	166
+cami	plant_associated	viral	new	E5	hybrid	checkv_medium	227
+cami	plant_associated	viral	new	E5	hybrid	checkv_low	1183
+cami	plant_associated	viral	new	E5	hybrid	checkv_not_determined	5603
+cami	plant_associated	viral	new	E5	hybrid	proviruses	230
+cami	plant_associated	viral	new	E5	hybrid	singletons	5981
+cami	plant_associated	viral	new	E5	hybrid	length_kb_q1	6.502
+cami	plant_associated	viral	new	E5	hybrid	length_kb_median	9.284
+cami	plant_associated	viral	new	E5	hybrid	length_kb_q3	15.007
+cami	plant_associated	viral	new	E5	hybrid	completeness_q1	12.1
+cami	plant_associated	viral	new	E5	hybrid	completeness_median	23.71
+cami	plant_associated	viral	new	E5	hybrid	completeness_q3	51.8075
+pratama	pratama	viral	e1_e4	E5	short+hybrid	runs	65
+pratama	pratama	viral	e1_e4	E5	short+hybrid	votus	178976
+pratama	pratama	viral	e1_e4	E5	short+hybrid	votus_per_run	2753.48
+pratama	pratama	viral	e1_e4	E5	short+hybrid	checkv_complete	1358
+pratama	pratama	viral	e1_e4	E5	short+hybrid	checkv_high	1424
+pratama	pratama	viral	e1_e4	E5	short+hybrid	checkv_medium	5349
+pratama	pratama	viral	e1_e4	E5	short+hybrid	checkv_low	99616
+pratama	pratama	viral	e1_e4	E5	short+hybrid	checkv_not_determined	71229
+pratama	pratama	viral	e1_e4	E5	short+hybrid	proviruses	2865
+pratama	pratama	viral	e1_e4	E5	short+hybrid	singletons	49791
+pratama	pratama	viral	e1_e4	E5	short+hybrid	length_kb_q1	5.944
+pratama	pratama	viral	e1_e4	E5	short+hybrid	length_kb_median	7.61
+pratama	pratama	viral	e1_e4	E5	short+hybrid	length_kb_q3	11.755
+pratama	pratama	viral	e1_e4	E5	short+hybrid	completeness_q1	6.76
+pratama	pratama	viral	e1_e4	E5	short+hybrid	completeness_median	11.91
+pratama	pratama	viral	e1_e4	E5	short+hybrid	completeness_q3	20.75
+cami	strain	viral	new	E5	pacbio	runs	100
+cami	strain	viral	new	E5	pacbio	votus	177726
+cami	strain	viral	new	E5	pacbio	votus_per_run	1777.26
+cami	strain	viral	new	E5	pacbio	checkv_complete	2
+cami	strain	viral	new	E5	pacbio	checkv_high	39
+cami	strain	viral	new	E5	pacbio	checkv_medium	291
+cami	strain	viral	new	E5	pacbio	checkv_low	20245
+cami	strain	viral	new	E5	pacbio	checkv_not_determined	157149
+cami	strain	viral	new	E5	pacbio	proviruses	275
+cami	strain	viral	new	E5	pacbio	singletons	160849
+cami	strain	viral	new	E5	pacbio	length_kb_q1	5.478
+cami	strain	viral	new	E5	pacbio	length_kb_median	6.144
+cami	strain	viral	new	E5	pacbio	length_kb_q3	7.196
+cami	strain	viral	new	E5	pacbio	completeness_q1	8.84
+cami	strain	viral	new	E5	pacbio	completeness_median	12.88
+cami	strain	viral	new	E5	pacbio	completeness_q3	17.05
+metagem	sunagawa2015	viral	new	E5	short	runs	246
+metagem	sunagawa2015	viral	new	E5	short	votus	225110
+metagem	sunagawa2015	viral	new	E5	short	votus_per_run	915.081
+metagem	sunagawa2015	viral	new	E5	short	checkv_complete	453
+metagem	sunagawa2015	viral	new	E5	short	checkv_high	908
+metagem	sunagawa2015	viral	new	E5	short	checkv_medium	2453
+metagem	sunagawa2015	viral	new	E5	short	checkv_low	168684
+metagem	sunagawa2015	viral	new	E5	short	checkv_not_determined	52612
+metagem	sunagawa2015	viral	new	E5	short	proviruses	4190
+metagem	sunagawa2015	viral	new	E5	short	singletons	51537
+metagem	sunagawa2015	viral	new	E5	short	length_kb_q1	5.828
+metagem	sunagawa2015	viral	new	E5	short	length_kb_median	7.245
+metagem	sunagawa2015	viral	new	E5	short	length_kb_q3	10.59
+metagem	sunagawa2015	viral	new	E5	short	completeness_q1	2.98
+metagem	sunagawa2015	viral	new	E5	short	completeness_median	4.83
+metagem	sunagawa2015	viral	new	E5	short	completeness_q3	11.3
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	runs	29
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	votus	3414
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	votus_per_run	117.724
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	checkv_complete	9
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	checkv_high	133
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	checkv_medium	196
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	checkv_low	1948
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	checkv_not_determined	1128
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	proviruses	250
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	singletons	1498
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	length_kb_q1	6.07225
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	length_kb_median	7.884
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	length_kb_q3	12.5117
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	completeness_q1	11.77
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	completeness_median	17.675
+cami	toy_hmp_airskinurogenital	viral	new	E5	short	completeness_q3	33.0175
+cami	toy_hmp_gastrooral	viral	new	E5	short	runs	20
+cami	toy_hmp_gastrooral	viral	new	E5	short	votus	3761
+cami	toy_hmp_gastrooral	viral	new	E5	short	votus_per_run	188.05
+cami	toy_hmp_gastrooral	viral	new	E5	short	checkv_complete	15
+cami	toy_hmp_gastrooral	viral	new	E5	short	checkv_high	106
+cami	toy_hmp_gastrooral	viral	new	E5	short	checkv_medium	234
+cami	toy_hmp_gastrooral	viral	new	E5	short	checkv_low	2045
+cami	toy_hmp_gastrooral	viral	new	E5	short	checkv_not_determined	1361
+cami	toy_hmp_gastrooral	viral	new	E5	short	proviruses	250
+cami	toy_hmp_gastrooral	viral	new	E5	short	singletons	1657
+cami	toy_hmp_gastrooral	viral	new	E5	short	length_kb_q1	5.991
+cami	toy_hmp_gastrooral	viral	new	E5	short	length_kb_median	7.912
+cami	toy_hmp_gastrooral	viral	new	E5	short	length_kb_q3	12.505
+cami	toy_hmp_gastrooral	viral	new	E5	short	completeness_q1	10.6475
+cami	toy_hmp_gastrooral	viral	new	E5	short	completeness_median	16.81
+cami	toy_hmp_gastrooral	viral	new	E5	short	completeness_q3	31
+cami	toy_humangut	viral	new	E5	hybrid	runs	20
+cami	toy_humangut	viral	new	E5	hybrid	votus	29011
+cami	toy_humangut	viral	new	E5	hybrid	votus_per_run	1450.55
+cami	toy_humangut	viral	new	E5	hybrid	checkv_complete	70
+cami	toy_humangut	viral	new	E5	hybrid	checkv_high	595
+cami	toy_humangut	viral	new	E5	hybrid	checkv_medium	773
+cami	toy_humangut	viral	new	E5	hybrid	checkv_low	5355
+cami	toy_humangut	viral	new	E5	hybrid	checkv_not_determined	22218
+cami	toy_humangut	viral	new	E5	hybrid	proviruses	619
+cami	toy_humangut	viral	new	E5	hybrid	singletons	23382
+cami	toy_humangut	viral	new	E5	hybrid	length_kb_q1	6.3325
+cami	toy_humangut	viral	new	E5	hybrid	length_kb_median	8.523
+cami	toy_humangut	viral	new	E5	hybrid	length_kb_q3	13.397
+cami	toy_humangut	viral	new	E5	hybrid	completeness_q1	8.16
+cami	toy_humangut	viral	new	E5	hybrid	completeness_median	17.66
+cami	toy_humangut	viral	new	E5	hybrid	completeness_q3	42.11
+cami	toy_mousegut	viral	new	E5	short	runs	49
+cami	toy_mousegut	viral	new	E5	short	votus	7266
+cami	toy_mousegut	viral	new	E5	short	votus_per_run	148.286
+cami	toy_mousegut	viral	new	E5	short	checkv_complete	11
+cami	toy_mousegut	viral	new	E5	short	checkv_high	112
+cami	toy_mousegut	viral	new	E5	short	checkv_medium	267
+cami	toy_mousegut	viral	new	E5	short	checkv_low	3258
+cami	toy_mousegut	viral	new	E5	short	checkv_not_determined	3618
+cami	toy_mousegut	viral	new	E5	short	proviruses	350
+cami	toy_mousegut	viral	new	E5	short	singletons	3349
+cami	toy_mousegut	viral	new	E5	short	length_kb_q1	5.94
+cami	toy_mousegut	viral	new	E5	short	length_kb_median	7.547
+cami	toy_mousegut	viral	new	E5	short	length_kb_q3	11.6205
+cami	toy_mousegut	viral	new	E5	short	completeness_q1	9.03
+cami	toy_mousegut	viral	new	E5	short	completeness_median	14.995
+cami	toy_mousegut	viral	new	E5	short	completeness_q3	26.1925
+pratama	pratama	viral	e1_e4	E5	short+hybrid	matched	120136
+pratama	pratama	viral	e1_e4	E5	short+hybrid	recovered	172153
+pratama	pratama	viral	e1_e4	E5	short+hybrid	recovery_pct	66.92
+pratama	pratama	viral	e1_e4	E5	short+hybrid	paired_median_identity	98.44
+pratama	pratama	viral	e1_e4	E5	short+hybrid	recovery_hybrid_pct	37.19
+pratama	pratama	viral	e1_e4	E5	short+hybrid	recovery_megahit_pct	75.95
+pratama	pratama	viral	e1_e4	E5	short+hybrid	recovery_spades_pct	66.11
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	votus	172295
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	matched	123599
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	recovered	168336
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	recovery_pct	65.4
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	paired_median_identity	98.88
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	recovery_spades_pct	60.7
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	recovery_megahit_pct	78.3
+pratama	pratama	viral	e1_e4	E3_R3	short+hybrid	recovery_hybrid_pct	36
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	votus	243186
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	matched	196547
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	recovered	202053
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	recovery_pct	78.5
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	paired_median_identity	99.05
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	recovery_spades_pct	72.2
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	recovery_megahit_pct	81.8
+pratama	pratama	viral	e1_e4	E3_R0	short+hybrid	recovery_hybrid_pct	89.8
+pratama	pratama	viral	e1_e4	Pratama2026	short+hybrid	votus	257252
+cami	marine	mag	e1_e4	E1	short	runs_with_mags	10
+cami	marine	mag	e1_e4	E1	short	mags	319
+cami	marine	mag	e1_e4	E1	short	hq	156
+cami	marine	mag	e1_e4	E1	short	mq	145
+cami	marine	mag	e1_e4	E1	short	lq	18
+cami	marine	mag	e1_e4	E1	short	completeness_q1	79.195
+cami	marine	mag	e1_e4	E1	short	completeness_median	95.18
+cami	marine	mag	e1_e4	E1	short	completeness_q3	99.98
+cami	marine	mag	e1_e4	E1	short	contamination_q1	0.68
+cami	marine	mag	e1_e4	E1	short	contamination_median	2.33
+cami	marine	mag	e1_e4	E1	short	contamination_q3	4.805
+cami	marine	mag	e1_e4	E1	short	genome_size_mb_median	3.02232
+cami	marine	mag	e1_e4	E1	short	contig_n50_median	9889
+cami	marine	mag	e1_e4	E1	short	amber_f1_bp_median	0.173365
+cami	marine	mag	e1_e4	E1	short	amber_samples	10
+cami	plant_associated	mag	e1_e4	E1	long	runs_with_mags	21
+cami	plant_associated	mag	e1_e4	E1	long	mags	144
+cami	plant_associated	mag	e1_e4	E1	long	hq	40
+cami	plant_associated	mag	e1_e4	E1	long	mq	71
+cami	plant_associated	mag	e1_e4	E1	long	lq	33
+cami	plant_associated	mag	e1_e4	E1	long	completeness_q1	62.6025
+cami	plant_associated	mag	e1_e4	E1	long	completeness_median	77.935
+cami	plant_associated	mag	e1_e4	E1	long	completeness_q3	95.0425
+cami	plant_associated	mag	e1_e4	E1	long	contamination_q1	0.425
+cami	plant_associated	mag	e1_e4	E1	long	contamination_median	1.62
+cami	plant_associated	mag	e1_e4	E1	long	contamination_q3	3.1025
+cami	plant_associated	mag	e1_e4	E1	long	genome_size_mb_median	6.15678
+cami	plant_associated	mag	e1_e4	E1	long	contig_n50_median	279000
+cami	plant_associated	mag	e1_e4	E1	long	amber_f1_bp_median	0.116136
+cami	plant_associated	mag	e1_e4	E1	long	amber_samples	21
+cami	strain	mag	e1_e4	E1	short	runs_with_mags	100
+cami	strain	mag	e1_e4	E1	short	mags	462
+cami	strain	mag	e1_e4	E1	short	hq	268
+cami	strain	mag	e1_e4	E1	short	mq	174
+cami	strain	mag	e1_e4	E1	short	lq	20
+cami	strain	mag	e1_e4	E1	short	completeness_q1	84.36
+cami	strain	mag	e1_e4	E1	short	completeness_median	95.89
+cami	strain	mag	e1_e4	E1	short	completeness_q3	99.98
+cami	strain	mag	e1_e4	E1	short	contamination_q1	1.29
+cami	strain	mag	e1_e4	E1	short	contamination_median	2.795
+cami	strain	mag	e1_e4	E1	short	contamination_q3	4.51
+cami	strain	mag	e1_e4	E1	short	genome_size_mb_median	2.5278
+cami	strain	mag	e1_e4	E1	short	contig_n50_median	9947.5
+cami	strain	mag	e1_e4	E1	short	amber_f1_bp_median	0.030146
+cami	strain	mag	e1_e4	E1	short	amber_samples	100
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	runs_with_mags	29
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	mags	391
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	hq	241
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	mq	133
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	lq	17
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	completeness_q1	88.39
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	completeness_median	95.9
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	completeness_q3	99.91
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	contamination_q1	0.915
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	contamination_median	2.7
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	contamination_q3	4.545
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	genome_size_mb_median	2.44599
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	contig_n50_median	27579
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	amber_f1_bp_median	0.288477
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E1	short	amber_samples	29
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	runs_with_mags	20
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	mags	380
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	hq	231
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	mq	123
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	lq	26
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	completeness_q1	88.64
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	completeness_median	96.365
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	completeness_q3	99.96
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	contamination_q1	0.7975
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	contamination_median	2.28
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	contamination_q3	4.305
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	genome_size_mb_median	2.43903
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	contig_n50_median	27888.5
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	amber_f1_bp_median	0.372031
+cami	toy_hmp_gastrooral	mag	e1_e4	E1	short	amber_samples	20
+cami	toy_humangut	mag	e1_e4	E1	long	runs_with_mags	20
+cami	toy_humangut	mag	e1_e4	E1	long	mags	423
+cami	toy_humangut	mag	e1_e4	E1	long	hq	218
+cami	toy_humangut	mag	e1_e4	E1	long	mq	169
+cami	toy_humangut	mag	e1_e4	E1	long	lq	36
+cami	toy_humangut	mag	e1_e4	E1	long	completeness_q1	78.805
+cami	toy_humangut	mag	e1_e4	E1	long	completeness_median	91.92
+cami	toy_humangut	mag	e1_e4	E1	long	completeness_q3	99.535
+cami	toy_humangut	mag	e1_e4	E1	long	contamination_q1	0.305
+cami	toy_humangut	mag	e1_e4	E1	long	contamination_median	1.09
+cami	toy_humangut	mag	e1_e4	E1	long	contamination_q3	2.825
+cami	toy_humangut	mag	e1_e4	E1	long	genome_size_mb_median	2.98027
+cami	toy_humangut	mag	e1_e4	E1	long	contig_n50_median	164250
+cami	toy_humangut	mag	e1_e4	E1	long	amber_f1_bp_median	0.290144
+cami	toy_humangut	mag	e1_e4	E1	long	amber_samples	20
+cami	toy_mousegut	mag	e1_e4	E1	short	runs_with_mags	49
+cami	toy_mousegut	mag	e1_e4	E1	short	mags	1042
+cami	toy_mousegut	mag	e1_e4	E1	short	hq	671
+cami	toy_mousegut	mag	e1_e4	E1	short	mq	336
+cami	toy_mousegut	mag	e1_e4	E1	short	lq	35
+cami	toy_mousegut	mag	e1_e4	E1	short	completeness_q1	90.2925
+cami	toy_mousegut	mag	e1_e4	E1	short	completeness_median	98.04
+cami	toy_mousegut	mag	e1_e4	E1	short	completeness_q3	99.93
+cami	toy_mousegut	mag	e1_e4	E1	short	contamination_q1	0.64
+cami	toy_mousegut	mag	e1_e4	E1	short	contamination_median	2.04
+cami	toy_mousegut	mag	e1_e4	E1	short	contamination_q3	4.5175
+cami	toy_mousegut	mag	e1_e4	E1	short	genome_size_mb_median	2.755
+cami	toy_mousegut	mag	e1_e4	E1	short	contig_n50_median	24668
+cami	toy_mousegut	mag	e1_e4	E1	short	amber_f1_bp_median	0.201818
+cami	toy_mousegut	mag	e1_e4	E1	short	amber_samples	49
+cami	marine	mag	e1_e4	E2	short	runs_with_mags	10
+cami	marine	mag	e1_e4	E2	short	mags	314
+cami	marine	mag	e1_e4	E2	short	hq	160
+cami	marine	mag	e1_e4	E2	short	mq	140
+cami	marine	mag	e1_e4	E2	short	lq	14
+cami	marine	mag	e1_e4	E2	short	completeness_q1	82.0625
+cami	marine	mag	e1_e4	E2	short	completeness_median	95.89
+cami	marine	mag	e1_e4	E2	short	completeness_q3	99.98
+cami	marine	mag	e1_e4	E2	short	contamination_q1	0.6425
+cami	marine	mag	e1_e4	E2	short	contamination_median	2.275
+cami	marine	mag	e1_e4	E2	short	contamination_q3	4.61
+cami	marine	mag	e1_e4	E2	short	genome_size_mb_median	3.09932
+cami	marine	mag	e1_e4	E2	short	contig_n50_median	10045
+cami	marine	mag	e1_e4	E2	short	amber_f1_bp_median	0.18692
+cami	marine	mag	e1_e4	E2	short	amber_samples	10
+cami	plant_associated	mag	e1_e4	E2	long	runs_with_mags	21
+cami	plant_associated	mag	e1_e4	E2	long	mags	152
+cami	plant_associated	mag	e1_e4	E2	long	hq	41
+cami	plant_associated	mag	e1_e4	E2	long	mq	75
+cami	plant_associated	mag	e1_e4	E2	long	lq	36
+cami	plant_associated	mag	e1_e4	E2	long	completeness_q1	55.86
+cami	plant_associated	mag	e1_e4	E2	long	completeness_median	80.525
+cami	plant_associated	mag	e1_e4	E2	long	completeness_q3	93.73
+cami	plant_associated	mag	e1_e4	E2	long	contamination_q1	0.495
+cami	plant_associated	mag	e1_e4	E2	long	contamination_median	1.385
+cami	plant_associated	mag	e1_e4	E2	long	contamination_q3	3.26
+cami	plant_associated	mag	e1_e4	E2	long	genome_size_mb_median	6.20261
+cami	plant_associated	mag	e1_e4	E2	long	contig_n50_median	272200
+cami	plant_associated	mag	e1_e4	E2	long	amber_f1_bp_median	0.114285
+cami	plant_associated	mag	e1_e4	E2	long	amber_samples	21
+cami	strain	mag	e1_e4	E2	short	runs_with_mags	100
+cami	strain	mag	e1_e4	E2	short	mags	464
+cami	strain	mag	e1_e4	E2	short	hq	271
+cami	strain	mag	e1_e4	E2	short	mq	164
+cami	strain	mag	e1_e4	E2	short	lq	29
+cami	strain	mag	e1_e4	E2	short	completeness_q1	84.7975
+cami	strain	mag	e1_e4	E2	short	completeness_median	95.715
+cami	strain	mag	e1_e4	E2	short	completeness_q3	99.97
+cami	strain	mag	e1_e4	E2	short	contamination_q1	1.21
+cami	strain	mag	e1_e4	E2	short	contamination_median	2.735
+cami	strain	mag	e1_e4	E2	short	contamination_q3	4.375
+cami	strain	mag	e1_e4	E2	short	genome_size_mb_median	2.49935
+cami	strain	mag	e1_e4	E2	short	contig_n50_median	10142
+cami	strain	mag	e1_e4	E2	short	amber_f1_bp_median	0.0306729
+cami	strain	mag	e1_e4	E2	short	amber_samples	100
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	runs_with_mags	29
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	mags	399
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	hq	237
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	mq	140
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	lq	22
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	completeness_q1	87.18
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	completeness_median	95.41
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	completeness_q3	99.905
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	contamination_q1	0.875
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	contamination_median	2.65
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	contamination_q3	4.335
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	genome_size_mb_median	2.38657
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	contig_n50_median	24527
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	amber_f1_bp_median	0.264602
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E2	short	amber_samples	29
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	runs_with_mags	20
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	mags	391
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	hq	236
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	mq	127
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	lq	28
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	completeness_q1	88.16
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	completeness_median	96.67
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	completeness_q3	99.95
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	contamination_q1	0.845
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	contamination_median	2.29
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	contamination_q3	4.405
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	genome_size_mb_median	2.46896
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	contig_n50_median	26763
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	amber_f1_bp_median	0.392679
+cami	toy_hmp_gastrooral	mag	e1_e4	E2	short	amber_samples	20
+cami	toy_humangut	mag	e1_e4	E2	long	runs_with_mags	20
+cami	toy_humangut	mag	e1_e4	E2	long	mags	415
+cami	toy_humangut	mag	e1_e4	E2	long	hq	197
+cami	toy_humangut	mag	e1_e4	E2	long	mq	179
+cami	toy_humangut	mag	e1_e4	E2	long	lq	39
+cami	toy_humangut	mag	e1_e4	E2	long	completeness_q1	78.605
+cami	toy_humangut	mag	e1_e4	E2	long	completeness_median	90.96
+cami	toy_humangut	mag	e1_e4	E2	long	completeness_q3	99.35
+cami	toy_humangut	mag	e1_e4	E2	long	contamination_q1	0.29
+cami	toy_humangut	mag	e1_e4	E2	long	contamination_median	1.02
+cami	toy_humangut	mag	e1_e4	E2	long	contamination_q3	2.525
+cami	toy_humangut	mag	e1_e4	E2	long	genome_size_mb_median	2.93252
+cami	toy_humangut	mag	e1_e4	E2	long	contig_n50_median	163955
+cami	toy_humangut	mag	e1_e4	E2	long	amber_f1_bp_median	0.293865
+cami	toy_humangut	mag	e1_e4	E2	long	amber_samples	20
+cami	toy_mousegut	mag	e1_e4	E2	short	runs_with_mags	49
+cami	toy_mousegut	mag	e1_e4	E2	short	mags	1046
+cami	toy_mousegut	mag	e1_e4	E2	short	hq	675
+cami	toy_mousegut	mag	e1_e4	E2	short	mq	337
+cami	toy_mousegut	mag	e1_e4	E2	short	lq	34
+cami	toy_mousegut	mag	e1_e4	E2	short	completeness_q1	89.65
+cami	toy_mousegut	mag	e1_e4	E2	short	completeness_median	97.885
+cami	toy_mousegut	mag	e1_e4	E2	short	completeness_q3	99.92
+cami	toy_mousegut	mag	e1_e4	E2	short	contamination_q1	0.62
+cami	toy_mousegut	mag	e1_e4	E2	short	contamination_median	1.99
+cami	toy_mousegut	mag	e1_e4	E2	short	contamination_q3	4.3775
+cami	toy_mousegut	mag	e1_e4	E2	short	genome_size_mb_median	2.70345
+cami	toy_mousegut	mag	e1_e4	E2	short	contig_n50_median	24828.5
+cami	toy_mousegut	mag	e1_e4	E2	short	amber_f1_bp_median	0.203932
+cami	toy_mousegut	mag	e1_e4	E2	short	amber_samples	49
+cami	marine	mag	e1_e4	E5	pacbio	amber_f1_bp_median	0.0173445
+cami	marine	mag	e1_e4	E5	pacbio	amber_samples	10
+cami	plant_associated	mag	e1_e4	E5	hybrid	amber_f1_bp_median	0.133474
+cami	plant_associated	mag	e1_e4	E5	hybrid	amber_samples	21
+cami	strain	mag	e1_e4	E5	pacbio	amber_f1_bp_median	0.0121029
+cami	strain	mag	e1_e4	E5	pacbio	amber_samples	40
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	amber_f1_bp_median	0.266185
+cami	toy_hmp_airskinurogenital	mag	e1_e4	E5	short	amber_samples	29
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	amber_f1_bp_median	0.373261
+cami	toy_hmp_gastrooral	mag	e1_e4	E5	short	amber_samples	20
+cami	toy_humangut	mag	e1_e4	E5	hybrid	amber_f1_bp_median	0.21977
+cami	toy_humangut	mag	e1_e4	E5	hybrid	amber_samples	20
+cami	toy_mousegut	mag	e1_e4	E5	short	amber_f1_bp_median	0.199009
+cami	toy_mousegut	mag	e1_e4	E5	short	amber_samples	49
+metagem	bissett_base	mag	new	metaGEM		mags	274
+metagem	karlsson2013	mag	new	metaGEM		mags	4134
+metagem	korem2015	mag	new	metaGEM		mags	154
+metagem	li2019	mag	new	metaGEM		mags	172
+metagem	sunagawa2015	mag	new	metaGEM		mags	9371
+metagem	bissett_base	gem	e1_e4	E4		models	274
+metagem	bissett_base	gem	e1_e4	E4		reactions_q1	952
+metagem	bissett_base	gem	e1_e4	E4		reactions_median	1373
+metagem	bissett_base	gem	e1_e4	E4		reactions_q3	1646
+metagem	bissett_base	gem	e1_e4	E4		metabolites_q1	706
+metagem	bissett_base	gem	e1_e4	E4		metabolites_median	958
+metagem	bissett_base	gem	e1_e4	E4		metabolites_q3	1128
+metagem	bissett_base	gem	e1_e4	E4		genes_q1	368
+metagem	bissett_base	gem	e1_e4	E4		genes_median	525
+metagem	bissett_base	gem	e1_e4	E4		genes_q3	719
+metagem	bissett_base	gem	e1_e4	E4		memote_total_q1	0.699576
+metagem	bissett_base	gem	e1_e4	E4		memote_total_median	0.861071
+metagem	bissett_base	gem	e1_e4	E4		memote_total_q3	0.86954
+metagem	bissett_base	gem	e1_e4	E4		memote_consistency_q1	0.497797
+metagem	bissett_base	gem	e1_e4	E4		memote_consistency_median	0.913935
+metagem	bissett_base	gem	e1_e4	E4		memote_consistency_q3	0.930557
+metagem	bissett_base	gem	e1_e4	E4		memote_annotation_rxn_median	0.777927
+metagem	bissett_base	gem	e1_e4	E4		memote_annotation_gene_median	0.333333
+metagem	bissett_base	gem	e1_e4	metaGEM		models	269
+metagem	bissett_base	gem	e1_e4	metaGEM		reactions_q1	910
+metagem	bissett_base	gem	e1_e4	metaGEM		reactions_median	1349
+metagem	bissett_base	gem	e1_e4	metaGEM		reactions_q3	1576
+metagem	bissett_base	gem	e1_e4	metaGEM		metabolites_q1	705
+metagem	bissett_base	gem	e1_e4	metaGEM		metabolites_median	989
+metagem	bissett_base	gem	e1_e4	metaGEM		metabolites_q3	1118
+metagem	bissett_base	gem	e1_e4	metaGEM		genes_q1	357
+metagem	bissett_base	gem	e1_e4	metaGEM		genes_median	504
+metagem	bissett_base	gem	e1_e4	metaGEM		genes_q3	686
+metagem	karlsson2013	gem	e1_e4	E4		models	4133
+metagem	karlsson2013	gem	e1_e4	E4		reactions_q1	1088
+metagem	karlsson2013	gem	e1_e4	E4		reactions_median	1215
+metagem	karlsson2013	gem	e1_e4	E4		reactions_q3	1325
+metagem	karlsson2013	gem	e1_e4	E4		metabolites_q1	733
+metagem	karlsson2013	gem	e1_e4	E4		metabolites_median	809
+metagem	karlsson2013	gem	e1_e4	E4		metabolites_q3	872
+metagem	karlsson2013	gem	e1_e4	E4		genes_q1	458
+metagem	karlsson2013	gem	e1_e4	E4		genes_median	539.5
+metagem	karlsson2013	gem	e1_e4	E4		genes_q3	626
+metagem	karlsson2013	gem	e1_e4	E4		memote_total_q1	0.701076
+metagem	karlsson2013	gem	e1_e4	E4		memote_total_median	0.830059
+metagem	karlsson2013	gem	e1_e4	E4		memote_total_q3	0.867144
+metagem	karlsson2013	gem	e1_e4	E4		memote_consistency_q1	0.499936
+metagem	karlsson2013	gem	e1_e4	E4		memote_consistency_median	0.910616
+metagem	karlsson2013	gem	e1_e4	E4		memote_consistency_q3	0.928943
+metagem	karlsson2013	gem	e1_e4	E4		memote_annotation_rxn_median	0.778798
+metagem	karlsson2013	gem	e1_e4	E4		memote_annotation_gene_median	0.333333
+metagem	karlsson2013	gem	e1_e4	metaGEM		models	4127
+metagem	karlsson2013	gem	e1_e4	metaGEM		reactions_q1	1212
+metagem	karlsson2013	gem	e1_e4	metaGEM		reactions_median	1336
+metagem	karlsson2013	gem	e1_e4	metaGEM		reactions_q3	1465
+metagem	karlsson2013	gem	e1_e4	metaGEM		metabolites_q1	887
+metagem	karlsson2013	gem	e1_e4	metaGEM		metabolites_median	963
+metagem	karlsson2013	gem	e1_e4	metaGEM		metabolites_q3	1048
+metagem	karlsson2013	gem	e1_e4	metaGEM		genes_q1	452
+metagem	karlsson2013	gem	e1_e4	metaGEM		genes_median	527.5
+metagem	karlsson2013	gem	e1_e4	metaGEM		genes_q3	618
+metagem	korem2015	gem	e1_e4	E4		models	154
+metagem	korem2015	gem	e1_e4	E4		reactions_q1	964
+metagem	korem2015	gem	e1_e4	E4		reactions_median	1356
+metagem	korem2015	gem	e1_e4	E4		reactions_q3	1613.5
+metagem	korem2015	gem	e1_e4	E4		metabolites_q1	660
+metagem	korem2015	gem	e1_e4	E4		metabolites_median	934.5
+metagem	korem2015	gem	e1_e4	E4		metabolites_q3	1026.75
+metagem	korem2015	gem	e1_e4	E4		genes_q1	435.25
+metagem	korem2015	gem	e1_e4	E4		genes_median	557
+metagem	korem2015	gem	e1_e4	E4		genes_q3	741.5
+metagem	korem2015	gem	e1_e4	E4		memote_total_q1	0.701538
+metagem	korem2015	gem	e1_e4	E4		memote_total_median	0.705597
+metagem	korem2015	gem	e1_e4	E4		memote_total_q3	0.861482
+metagem	korem2015	gem	e1_e4	E4		memote_consistency_q1	0.500047
+metagem	korem2015	gem	e1_e4	E4		memote_consistency_median	0.510648
+metagem	korem2015	gem	e1_e4	E4		memote_consistency_q3	0.910105
+metagem	korem2015	gem	e1_e4	E4		memote_annotation_rxn_median	0.774192
+metagem	korem2015	gem	e1_e4	E4		memote_annotation_gene_median	0.333333
+metagem	korem2015	gem	e1_e4	metaGEM		models	154
+metagem	korem2015	gem	e1_e4	metaGEM		reactions_q1	1422
+metagem	korem2015	gem	e1_e4	metaGEM		reactions_median	1499
+metagem	korem2015	gem	e1_e4	metaGEM		reactions_q3	1691.75
+metagem	korem2015	gem	e1_e4	metaGEM		metabolites_q1	1055
+metagem	korem2015	gem	e1_e4	metaGEM		metabolites_median	1116
+metagem	korem2015	gem	e1_e4	metaGEM		metabolites_q3	1180.75
+metagem	korem2015	gem	e1_e4	metaGEM		genes_q1	418.25
+metagem	korem2015	gem	e1_e4	metaGEM		genes_median	551
+metagem	korem2015	gem	e1_e4	metaGEM		genes_q3	744.5
+metagem	li2019	gem	e1_e4	E4		models	172
+metagem	li2019	gem	e1_e4	E4		reactions_q1	1497
+metagem	li2019	gem	e1_e4	E4		reactions_median	1747
+metagem	li2019	gem	e1_e4	E4		reactions_q3	1910.25
+metagem	li2019	gem	e1_e4	E4		metabolites_q1	1032.5
+metagem	li2019	gem	e1_e4	E4		metabolites_median	1192
+metagem	li2019	gem	e1_e4	E4		metabolites_q3	1312.25
+metagem	li2019	gem	e1_e4	E4		genes_q1	571.75
+metagem	li2019	gem	e1_e4	E4		genes_median	692.5
+metagem	li2019	gem	e1_e4	E4		genes_q3	828.25
+metagem	li2019	gem	e1_e4	E4		memote_total_q1	0.693142
+metagem	li2019	gem	e1_e4	E4		memote_total_median	0.853012
+metagem	li2019	gem	e1_e4	E4		memote_total_q3	0.858719
+metagem	li2019	gem	e1_e4	E4		memote_consistency_q1	0.479826
+metagem	li2019	gem	e1_e4	E4		memote_consistency_median	0.89817
+metagem	li2019	gem	e1_e4	E4		memote_consistency_q3	0.908564
+metagem	li2019	gem	e1_e4	E4		memote_annotation_rxn_median	0.769414
+metagem	li2019	gem	e1_e4	E4		memote_annotation_gene_median	0.333333
+metagem	li2019	gem	e1_e4	metaGEM		models	172
+metagem	li2019	gem	e1_e4	metaGEM		reactions_q1	1451
+metagem	li2019	gem	e1_e4	metaGEM		reactions_median	1638
+metagem	li2019	gem	e1_e4	metaGEM		reactions_q3	1852
+metagem	li2019	gem	e1_e4	metaGEM		metabolites_q1	1055.75
+metagem	li2019	gem	e1_e4	metaGEM		metabolites_median	1152
+metagem	li2019	gem	e1_e4	metaGEM		metabolites_q3	1289.5
+metagem	li2019	gem	e1_e4	metaGEM		genes_q1	562.75
+metagem	li2019	gem	e1_e4	metaGEM		genes_median	681.5
+metagem	li2019	gem	e1_e4	metaGEM		genes_q3	811.25
+metagem	sunagawa2015	gem	e1_e4	E4		models	9364
+metagem	sunagawa2015	gem	e1_e4	E4		reactions_q1	1091.25
+metagem	sunagawa2015	gem	e1_e4	E4		reactions_median	1355
+metagem	sunagawa2015	gem	e1_e4	E4		reactions_q3	1659.75
+metagem	sunagawa2015	gem	e1_e4	E4		metabolites_q1	786
+metagem	sunagawa2015	gem	e1_e4	E4		metabolites_median	963
+metagem	sunagawa2015	gem	e1_e4	E4		metabolites_q3	1159
+metagem	sunagawa2015	gem	e1_e4	E4		genes_q1	335
+metagem	sunagawa2015	gem	e1_e4	E4		genes_median	451
+metagem	sunagawa2015	gem	e1_e4	E4		genes_q3	630
+metagem	sunagawa2015	gem	e1_e4	E4		memote_total_q1	0.827531
+metagem	sunagawa2015	gem	e1_e4	E4		memote_total_median	0.859077
+metagem	sunagawa2015	gem	e1_e4	E4		memote_total_q3	0.865642
+metagem	sunagawa2015	gem	e1_e4	E4		memote_consistency_q1	0.897739
+metagem	sunagawa2015	gem	e1_e4	E4		memote_consistency_median	0.915179
+metagem	sunagawa2015	gem	e1_e4	E4		memote_consistency_q3	0.926454
+metagem	sunagawa2015	gem	e1_e4	E4		memote_annotation_rxn_median	0.77454
+metagem	sunagawa2015	gem	e1_e4	E4		memote_annotation_gene_median	0.333333
+metagem	sunagawa2015	gem	e1_e4	metaGEM		models	9365
+metagem	sunagawa2015	gem	e1_e4	metaGEM		reactions_q1	1115
+metagem	sunagawa2015	gem	e1_e4	metaGEM		reactions_median	1341
+metagem	sunagawa2015	gem	e1_e4	metaGEM		reactions_q3	1560
+metagem	sunagawa2015	gem	e1_e4	metaGEM		metabolites_q1	861
+metagem	sunagawa2015	gem	e1_e4	metaGEM		metabolites_median	1007
+metagem	sunagawa2015	gem	e1_e4	metaGEM		metabolites_q3	1135
+metagem	sunagawa2015	gem	e1_e4	metaGEM		genes_q1	347
+metagem	sunagawa2015	gem	e1_e4	metaGEM		genes_median	461
+metagem	sunagawa2015	gem	e1_e4	metaGEM		genes_q3	619

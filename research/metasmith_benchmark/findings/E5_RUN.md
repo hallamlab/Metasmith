@@ -9,6 +9,8 @@ This file records E5's full run over every CAMI, Pratama 2026 and metaGEM sample
 - `results/e5/mags_closed.tsv` holds every MAG with its CheckM2 quality, model size and MEMOTE scores.
 - `results/e5/amber_*` holds the supplementary AMBER table on E5's CAMI bins.
 - `results/e5/cleanup.tsv` lists every deletion on fir with the copy that made it safe.
+- `results/e5/votu_quality.tsv.gz` holds every vOTU representative of the 13 catalogues with its CheckV row and cluster size. A representative with `trimmed` 1 is a provirus that CheckV cut from a host contig. It carries its parent contig's CheckV row.
+- `results/e5/crossed_table.tsv` holds every corpus and lane cell. Its E5 rows sit beside the E1–E4 and published values for the three cells E1–E4 cover (`cell` is `e1_e4`). `crossed_table.py` builds it from the tables above and from E1, E2 and E4's own tables.
 
 `findings/E5_HYBRID_PILOT.md` records the pilot that chose the hybrid lane. `findings/E3_ABLATION.md` on `feat/engine/bench-E3` records the Pratama assembler ladder that confirmed it.
 
