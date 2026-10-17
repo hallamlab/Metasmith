@@ -3,4 +3,4 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - metabuli=1.1.0
+  - metabuli=1.2.0

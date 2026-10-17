@@ -19,6 +19,7 @@ def FetchCommand(
     tries: int = _TRIES,
     timeout_s: int = _STALL_TIMEOUT_S,
     label: str | None = None,
+    md5: str | None = None,
 ) -> str:
     """Shell that puts `dest` in place from the first of `urls` that answers.
 
@@ -28,6 +29,9 @@ def FetchCommand(
     It **narrates**: `--progress=dot:giga` puts a line in `.command.log` for
     every gigabyte, so a seventeen-minute fetch is visibly a fetch rather than
     a hang.
+
+    With `md5`, a whole `.part` whose checksum differs is deleted and the step
+    fails, because a resumed transfer can be the right size and still wrong.
 
     It **gives up**: a stalled transfer is abandoned after `timeout_s` of
     silence and retried at most `tries` times, instead of being waited on
@@ -54,12 +58,20 @@ def FetchCommand(
     fail = (
         f'{{ echo "every source for {what} failed" >&2; exit 1; }}'
     )
+    verify = [] if md5 is None else [
+        f'    if [ "$(md5sum {part} | cut -d" " -f1)" != "{md5}" ]; then',
+        f'        echo "{what} does not match md5 {md5}; discarding it" >&2',
+        f'        rm -f {part}',
+        f'        exit 1',
+        f'    fi',
+    ]
     return "\n".join([
         f'if [ -s {dest} ]; then',
         f'    echo "{what} is already here; not fetching it again"',
         f'else',
         *[f"    {a} || \\" for a in attempts],
         f"    {fail}",
+        *verify,
         f"    mv {part} {dest}",
         f'fi',
     ])

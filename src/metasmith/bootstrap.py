@@ -79,6 +79,15 @@ def DeployFromContainer(workspace: Path, architecture: str, system: str):
 
     Log.Info("deployment complete")
 
+_MEMORY_UNITS = {"B": 1/1024**3, "KB": 1/1024**2, "MB": 1/1024, "GB": 1, "TB": 1024, "PB": 1024**2}
+
+
+def _memory_gb(text: str) -> int | None:
+    m = re.fullmatch(r"\s*([\d.]+)\s*([KMGTP]?B)?\s*", text)
+    if m is None: return None
+    return max(1, int(float(m.group(1)) * _MEMORY_UNITS[m.group(2) or "GB"]))
+
+
 def _parse_path(
     p: Path,
     *,
@@ -523,6 +532,10 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                     if i>=len(_vals): break
                     v = _vals[i]
                     if v.lower() == "null": continue
+                    if k == "memory":
+                        gb = _memory_gb(v)
+                        if gb is not None: params[k] = gb
+                        continue
                     try:
                         vals = re.findall(r"\d+", v)
                         if len(vals)==0: continue
