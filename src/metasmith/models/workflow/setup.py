@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from .plan import WorkflowPlan
 from .steps import WorkflowTarget
 from .task import WorkflowTask
@@ -35,6 +37,15 @@ def setup_subplan(task: WorkflowTask) -> WorkflowTask:
             kept_orders.add(step.order)
     if not kept:
         raise NoSetupStepsError(f"no step of [{task.GetKey()}] runs without a sample")
+
+    # The bootstrap and the runner find step N at steps[N-1], so the slice is numbered
+    # 1..n again. Copies, because the full plan is staged from the same step objects.
+    renumbered = []
+    for order, step in enumerate(kept, start=1):
+        twin = copy.copy(step)
+        twin.order = order
+        renumbered.append(twin)
+    kept = renumbered
 
     consumed = {inst.instance_id for step in kept for inst in step.uses}
     targets = [
