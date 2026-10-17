@@ -83,6 +83,7 @@ class Gpus(Enum):
     REQUIRED = "required"
 
 GPU_LABEL = "gpu"
+LOCAL_LABEL = "local"
 
 @dataclass
 class Gpu:
@@ -129,36 +130,61 @@ class Resources:
             return f"{field}{joiner}{val}"
         return [x for x in [
             _parse_res(self.cpus, "<x>", "cpus", "<x>"),
-            _parse_res(
-                self.memory, "<x>", "memory",
-                "{"+f" (2**(task.attempt-1)) * (<x> as MemoryUnit) "+"}",
-                "<x>",
-            ),
-            # CAUTION the retry ladder doubles duration as well as memory, so a base of B reaches
-            # B * 2^(attempts-1) on its last rung. A cluster that refuses over-long jobs AT SUBMIT
-            # TIME then rejects those upper rungs outright -- and an ignored SUBMISSION failure
-            # decrements nextflow's running-task counter with no matching increment, so the monitor
-            # never sees the queue drain and the whole run wedges. Measured on fir, which caps every
-            # job at 7.0 days regardless of partition: a 48 h base asked 192 h and 384 h on rungs 3
-            # and 4, both refused, leaving runs at runningCount -6 and -7.
-            # The ceiling therefore comes from params, not from a constant, because codegen runs in
-            # the AGENT process and a driver-side setting would never reach it; `params` is readable
-            # from a directive closure (the rendered config already uses params.process.tries).
-            # The Elvis default keeps this behaviour-preserving wherever no ceiling is set.
-            #
-            # BOTH spellings are read, and that is not belt-and-braces -- either one alone is dead.
-            # `RunWorkflow(params=<dict>)` passes every key through a parser that splits ANY key
-            # containing an underscore into nested maps, so `{"process": {"max_duration": "24h"}}`
-            # reaches the params file as `process: {max: {duration: 24h}}` and a closure reading
-            # `params.process.max_duration` sees null. That is exactly how E3's vConTACT3 ladder
-            # reached an 8-day rung with a 7-day ceiling set: the clamp was written but never armed,
-            # sbatch refused the submission, and the ignored failure wedged the run. A params FILE
-            # (`params=<Path>`) bypasses that parser, so the flat spelling is what a file delivers.
-            # Keep both until the parser stops splitting underscores.
+            _parse_res(self.memory, "<x>", "memory", MemoryLadder("<x>"), "<x>"),
             _parse_res(
                 self.duration, "<x>", "time",
-                "<x>" if (self.duration is not None and self.duration.unlimited)
-                else "{"+f" [(2**(task.attempt-1)) * (<x> as Duration), ((params.process?.max_duration ?: params.process?.max?.duration ?: '3650days') as Duration)].min() "+"}",
+                "<x>" if (self.duration is not None and self.duration.unlimited) else TimeLadder("<x>"),
                 "<x>",
             ),
         ] if x is not None]
+
+
+# Exit codes as Nextflow's task wrapper reports them. 137 is a SIGKILL, which is what the
+# cgroup OOM killer sends, and 125 a container runtime that died for want of memory. 140 is
+# the USR2 Slurm sends 30 s before the time limit (`--signal B:USR2@30`), which interrupts the
+# wrapper's `wait` with 128+12. 143 is a SIGTERM from a preemption or a node drain, and
+# MAX_VALUE a job that vanished without writing an exit code. Any other code is the tool's own
+# answer, and asking again gets the same one.
+OOM_EXITS = (125, 137)
+TIMEOUT_EXITS = (140,)
+RETRY_EXITS = OOM_EXITS + TIMEOUT_EXITS + (143,)
+
+# Ceilings read at task time, from params, so a run's params file can set them. `maxDuration`
+# is the spelling to use: `RunWorkflow(params=<dict>)` splits every underscored key into nested
+# maps, so `max_duration` arrives as `max.duration`, and a params file delivers it flat. Both
+# old spellings stay readable for the drivers that set them.
+MAX_MEMORY = "params.process?.maxMemory ?: '1024 TB'"
+MAX_DURATION = (
+    "params.process?.maxDuration ?: params.process?.max_duration"
+    " ?: params.process?.max?.duration ?: '3650days'"
+)
+
+
+def _ladder(base: str, unit: str, trace_field: str, doubling_exits: tuple[int, ...], cap: str) -> str:
+    # Each attempt starts from what the previous one asked for, so memory and time climb
+    # independently, each only on the exit code that names it. Every rung, the first included,
+    # is clamped: a scheduler refuses an over-long or oversized job at submit, and Nextflow
+    # wedges on an ignored submit failure (its running-task count goes negative).
+    codes = ", ".join(str(c) for c in doubling_exits)
+    return (
+        "{ def p = task.attempt > 1 ? task.previousTrace : null;"
+        f" def want = p?.{trace_field} == null ? ({base} as {unit})"
+        f" : ((p.exit as Integer) in [{codes}] ? 2 : 1) * new {unit}(p.{trace_field} as long);"
+        f" [want, (({cap}) as {unit})].min() }}"
+    )
+
+
+def MemoryLadder(base: str, cap: str = MAX_MEMORY) -> str:
+    return _ladder(base, "MemoryUnit", "memory", OOM_EXITS, cap)
+
+
+def TimeLadder(base: str, cap: str = MAX_DURATION) -> str:
+    return _ladder(base, "Duration", "time", TIMEOUT_EXITS, cap)
+
+
+def RetryStrategy(tries: str = "params.process.tries") -> str:
+    codes = ", ".join(str(c) for c in RETRY_EXITS)
+    return (
+        f"{{ (task.exitStatus in [{codes}] || task.exitStatus == Integer.MAX_VALUE)"
+        f" && task.attempt < {tries} ? 'retry' : 'ignore' }}"
+    )

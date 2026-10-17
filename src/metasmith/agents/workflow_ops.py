@@ -13,7 +13,7 @@ from ..constants import AgentPaths, MODULE_PATH
 from ..env import ContainerDef, Environment, Rootfs, Runtime
 from ..logging import Log
 from ..models.libraries import (
-    DataInstanceLibrary, DataInstanceLibraryView, Gpu, Resources,
+    DataInstanceLibrary, DataInstanceLibraryView, Gpu, LOCAL_LABEL, Resources,
     TransformInstanceLibrary, TransformInstanceLibraryView,
 )
 from ..models.remote import GlobusSource, Logistics, Source
@@ -82,6 +82,94 @@ def _render_executor_config(executor: dict|None) -> list[str]:
         lines.append(f"{TAB}{key} = {rendered}")
     lines += ["}", ""]
     return lines
+
+
+def SplitParamKeys(d: dict) -> dict:
+    parsed = {}
+    for k, v in d.items():
+        k = str(k)
+        if isinstance(v, dict):
+            v = SplitParamKeys(v)
+        stacks = [x for x in k.split("_") if x != ""] if "_" in k else [k]
+        if len(stacks)>1:
+            _d_curr = parsed
+            for _k in stacks[:-1]:
+                _nxt = _d_curr.get(_k)
+                if not isinstance(_nxt, dict): _nxt = {}
+                _d_curr[_k] = _nxt
+                _d_curr = _nxt
+            _d_curr[stacks[-1]] = v
+        else:
+            parsed[stacks[0]] = v
+    return parsed
+
+
+# nproc, then MemTotal, then the tightest memory.max on this shell's cgroup path. A login
+# node's user slice caps memory well below what `free` reports (16 GiB per user on fir).
+HOST_SIZE_PROBE = (
+    "nproc; free -b | awk '/^Mem:/{print $2}'; "
+    "d=/sys/fs/cgroup$(awk -F: '$1==\"0\"{print $3}' /proc/self/cgroup 2>/dev/null); m=max; "
+    "while [ -n \"$d\" ] && [ \"$d\" != /sys/fs/cgroup ] && [ \"$d\" != / ]; do "
+    "v=$(cat \"$d/memory.max\" 2>/dev/null); "
+    "case \"$v\" in ''|max) ;; *) if [ \"$m\" = max ] || [ \"$v\" -lt \"$m\" ]; then m=$v; fi ;; esac; "
+    "d=$(dirname \"$d\"); done; echo $m"
+)
+HOST_MEMORY_SHARE = 0.85
+# A login node is shared, so local steps under a scheduler preset get at most this many cpus
+# unless the run's params.localExecutor.cpus says otherwise.
+SCHEDULER_LOCAL_CPUS = 8
+
+
+def ParseHostSize(lines: list[str]) -> "tuple[int, int] | None":
+    lines = [x.strip() for x in lines if x.strip()]
+    if len(lines) < 2: return None
+    try:
+        cpus, mem = int(lines[0]), int(lines[1])
+    except ValueError:
+        return None
+    if len(lines) > 2 and lines[2].isdigit():
+        mem = min(mem, int(lines[2]))
+    return cpus, mem
+
+
+def _slurm_memory_gb(spec: str) -> "float | None":
+    m = re.fullmatch(r"\s*([\d.]+)\s*([KMGT]?)B?\s*", spec.upper())
+    if m is None: return None
+    scale = {"K": 1/1024**2, "M": 1/1024, "": 1/1024, "G": 1, "T": 1024}[m.group(2)]
+    return float(m.group(1))*scale
+
+
+def _render_local_executor(
+    local_params: dict|None, host: "tuple[int, int] | None", driver_job: "tuple[int, float] | None",
+) -> list[str]:
+    # Under a scheduler preset the flat `executor.cpus`/`executor.memory` bound only the local
+    # executor, which runs the `local` steps on the driver's host. The preset's own
+    # `params.localExecutor` reads are fixed before the params file merges, so the size is
+    # appended here, from the host the driver will run on.
+    local_params = local_params if isinstance(local_params, dict) else {}
+    if driver_job is not None:
+        cpus, gb = driver_job[0], driver_job[1]*HOST_MEMORY_SHARE
+    elif host is not None:
+        cpus = min(max(1, host[0]-1), SCHEDULER_LOCAL_CPUS)
+        gb = host[1]/(1024**3)*HOST_MEMORY_SHARE
+    else:
+        cpus, gb = None, None
+    if local_params.get("cpus") is not None: cpus = int(local_params["cpus"])
+    memory = local_params.get("memory")
+    if memory is None and gb is not None: memory = f"{max(1, int(gb))} GB"
+    if cpus is None and memory is None: return []
+    body = "; ".join(x for x in [
+        None if cpus is None else f"cpus = {cpus}",
+        None if memory is None else f"memory = '{memory}'",
+    ] if x)
+    return ["", f"executor {{ {body} }}", ""]
+
+
+def _render_process_literals(process_params: dict|None) -> list[str]:
+    # `array` sizes the job arrays when the process is compiled, so it cannot be a closure
+    # reading params at task time the way every other preset key is.
+    if not isinstance(process_params, dict) or process_params.get("array") is None: return []
+    return ["", f"process {{ array = {int(process_params['array'])} }}", ""]
 
 
 class _WorkflowOps:
@@ -418,26 +506,7 @@ class _WorkflowOps:
                 parsed_params: dict = {}
                 if isinstance(params, dict):
                     params_local = temp_dir/AgentPaths.NXF_PARAMS
-                    def _parse(d: dict):
-                        parsed = {}
-                        for k, v in d.items():
-                            k = str(k)
-                            if isinstance(v, dict):
-                                v = _parse(v)
-                            stacks = [x for x in k.split("_") if x != ""] if "_" in k else [k]
-                            if len(stacks)>1:
-                                _d_curr = parsed
-                                for _k in stacks[:-1]:
-                                    _nxt = _d_curr.get(_k)
-                                    if not isinstance(_nxt, dict): _nxt = {}
-                                    _d_curr[_k] = _nxt
-                                    _d_curr = _nxt
-                                _d_curr[stacks[-1]] = v
-                            else:
-                                parsed[stacks[0]] = v
-                        return parsed
-
-                    parsed_params = _parse(params)
+                    parsed_params = SplitParamKeys(params)
                     with open(params_local, "w") as f:
                         yaml.safe_dump(parsed_params, f)
                     params_source = Source.FromLocal(params_local)
@@ -454,39 +523,38 @@ class _WorkflowOps:
                 # that, fall back to the stem for callers that pass
                 # nextflow_config/local.nf directly.
                 _is_local = is_local_preset if is_local_preset is not None else config_file.stem == "local"
+                _host = ParseHostSize(sh_remote.Exec(
+                    HOST_SIZE_PROBE, history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="sizing the host",
+                ).out)
                 if _is_local:
                     # The local preset's `executor` block is a static guess (see
                     # nextflow_config/local.nf) -- it has no way to know what the
-                    # box actually has. `free -b`/`nproc` on the executing host
-                    # itself, appended here, overrides that guess with the real
-                    # number every run. One remote round trip, no interpreter
-                    # start on the far end.
-                    def _detect_host_resources() -> "tuple[int, int] | None":
-                        probe = sh_remote.Exec(
-                            "nproc && free -b | awk '/^Mem:/{print $2}'",
-                            history=True, quiet=True,
-                        )
-                        lines = [x.strip() for x in probe.out if x.strip()]
-                        if len(lines) < 2: return None
-                        try:
-                            return int(lines[0]), int(lines[1])
-                        except ValueError:
-                            return None
-                    detected = _detect_host_resources()
-                    if detected:
-                        host_cpus, host_mem_bytes = detected
+                    # box actually has. The executing host's own size, appended
+                    # here, overrides that guess with the real number every run.
+                    if _host:
+                        host_cpus, host_mem_bytes = _host
                         # headroom so nextflow's own pool doesn't compete with
                         # the OS and whatever else is running on the box for the
                         # last core or last slice of memory
                         cpus = max(1, host_cpus - 1)
-                        mem_gb = max(1, int(host_mem_bytes / (1024**3) * 0.85))
+                        mem_gb = max(1, int(host_mem_bytes / (1024**3) * HOST_MEMORY_SHARE))
                         with open(local_config, "a") as f:
                             f.write(f"\nexecutor {{ cpus = {cpus}; memory = '{mem_gb} GB' }}\n")
                     else:
                         Log.Warn("could not detect the local host's real cpus/memory; keeping the preset's static guess")
+                else:
+                    _driver_job = None
+                    if os.environ.get("METASMITH_DRIVER_SLURM"):
+                        _gb = _slurm_memory_gb(os.environ.get("METASMITH_DRIVER_SLURM_MEM", "8G"))
+                        _driver_job = (int(os.environ.get("METASMITH_DRIVER_SLURM_CPUS", "2")), _gb or 8.0)
+                    local_lines = _render_local_executor(parsed_params.get("localExecutor"), _host, _driver_job)
+                    if local_lines:
+                        with open(local_config, "a") as f:
+                            f.write("\n".join(local_lines))
                 # An explicit `params.executor` (e.g. a GUI-set override) is meant to
-                # win over both the preset's static guess and the free -b/nproc
-                # auto-detect above -- append it last so its later assignment binds,
+                # win over both the preset's static guess and the detected size
+                # above -- append it last so its later assignment binds,
                 # rather than relying on `params.executor.cpus` inside the preset's
                 # own `executor {}` block, which reads correctly at runtime but is
                 # evaluated too early (before -params-file is merged) to ever apply.
@@ -494,6 +562,10 @@ class _WorkflowOps:
                 if executor_lines:
                     with open(local_config, "a") as f:
                         f.write("\n".join(executor_lines))
+                process_lines = _render_process_literals(parsed_params.get("process"))
+                if process_lines:
+                    with open(local_config, "a") as f:
+                        f.write("\n".join(process_lines))
                 if gpu_planned:
                     is_scheduler = "slurmAccount" in local_config.read_text()
                     gpu_lines = _render_gpu_config(gpu_planned, gpus, is_scheduler)
@@ -505,8 +577,16 @@ class _WorkflowOps:
                 # before the launcher is triggered, so a plan that cannot be
                 # scheduled here says so instead of being discovered an hour in.
                 _resources = _read_step_resources(sh_remote, workspace)
+                if _is_local:
+                    _on_this_host, _knob = None, "executor"
+                else:
+                    _on_this_host = {
+                        proc for proc, step in env_doc.get("steps", {}).items()
+                        if LOCAL_LABEL in (step.get("labels") or [])
+                    }
+                    _knob = "localExecutor"
                 _caps = check_launch(
-                    local_config.read_text(), _resources, bool(_is_local),
+                    local_config.read_text(), _resources, _on_this_host, _knob,
                 )
                 if _caps:
                     with open(local_config, "a") as f:

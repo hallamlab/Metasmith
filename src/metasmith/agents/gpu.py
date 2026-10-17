@@ -103,7 +103,7 @@ def _render_gpu_config(planned: dict[str, int], device: Gpu|None, scheduler: boo
             extra = '(params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "")'
             lines += [
                 TAB+f"withName: '{process}' "+"{",
-                TAB+TAB+f'clusterOptions = {base} + " {device.MakeRequestFlag(n)}" + {extra}',
+                TAB+TAB+f'clusterOptions = {{ {base} + " {device.MakeRequestFlag(n)}" + {extra} }}',
                 TAB+"}",
             ]
     lines += ["}", ""]

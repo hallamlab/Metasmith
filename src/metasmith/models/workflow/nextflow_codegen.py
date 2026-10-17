@@ -355,6 +355,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "process": process_name,
             "runs": None if _scan is None else len(_scan.runs),
             "envs": _read_env_declarations(step),
+            "labels": list(step.transform.labels),
         }
         duration_is_strict = res is not None and res.duration is not None and res.duration.strict
         memory_is_strict = res is not None and res.memory is not None and res.memory.strict

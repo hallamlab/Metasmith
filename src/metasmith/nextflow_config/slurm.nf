@@ -14,18 +14,23 @@ params {
         queueSize = 100
         submitRateLimit = '1/5sec'
         pollInterval = '10sec'
-        stageInMode = 'symlink'             // some intermediates are large reference databases and should not be copied
     }
 
+    // Local steps run on the driver's host. A launch sizes the local executor from that host's
+    // cgroup, and `cpus` caps it, because a login node is shared.
     localExecutor {
-        queueSize = 4
         memory = '8 GB'
-        cpus = 8                            // for local steps
+        cpus = 8
     }
 
     process {
         scratch = '${SLURM_TMPDIR:-${TMPDIR:-/tmp}}'
-        tries = 2
+        tries = 3
+        // Every attempt is clamped to these, a per-step override included: Slurm refuses a job
+        // over the site's limits at submit. fir caps every job at 7 days, and its largest
+        // CPU nodes hold 768 GB.
+        maxDuration = '7days'
+        maxMemory = '750 GB'
         array = 100
         cpus = 4
         memory = '16 GB'                    // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#memoryunit
@@ -62,7 +67,6 @@ env {
 executor {
     queueSize = params.executor.queueSize
     pollInterval = params.executor.pollInterval
-    stageInMode = params.executor.stageInMode
 
     retry {
         maxAttempts = 99999                 // controlled per process
@@ -93,6 +97,7 @@ executor {
     // queueSize is deliberately NOT set: a flat `executor.queueSize` would apply to the
     // SLURM executor as well and clobber the 100 set above. `executor.cpus` bounds local
     // concurrency implicitly instead -- 8 cpus against 4-cpu steps is two at a time.
+    // These lines only hold until launch, which appends the sized block (see params above).
     cpus = params.localExecutor.cpus
     memory = params.localExecutor.memory
 }
@@ -112,37 +117,35 @@ workflow {
 
 process {
     cache = 'lenient'
+    stageInMode = 'symlink'                 // some inputs are large reference databases and must not be copied
 
-    errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
-        task.attempt<params.process.tries? 'retry' : 'ignore'
-    }
+    // A nested param (`params.process.cpus`) read outside a closure is fixed when the config is
+    // parsed, before `-params-file` is merged, so a run's params never reached it. Every key a
+    // run may set is therefore a closure, read at task time. `array` cannot be one, and launch
+    // appends it as a literal instead. The ladders are rendered by `models/libraries/resources.py`,
+    // which pins this text in a unit test.
+    errorStrategy = { (task.exitStatus in [125, 137, 140, 143] || task.exitStatus == Integer.MAX_VALUE) && task.attempt < params.process.tries ? 'retry' : 'ignore' }
+    maxRetries = 99                         // errorStrategy owns the limit
+    maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
 
-    cpus = params.process.cpus
-    memory = {                              // difficult to combine smarts for time and memory; error codes not reliable
-        task.attempt==1? params.process.memory : 2*(params.process.memory as MemoryUnit)
-        
-    }
-    time = {                                // limit scaling of request time since can also fail for other reasons
-        task.attempt==1? params.process.time : 2*(params.process.time as Duration)
-    }
-    
+    cpus = { params.process.cpus }
+    memory = { def p = task.attempt > 1 ? task.previousTrace : null; def want = p?.memory == null ? (params.process.memory as MemoryUnit) : ((p.exit as Integer) in [125, 137] ? 2 : 1) * new MemoryUnit(p.memory as long); [want, ((params.process?.maxMemory ?: '1024 TB') as MemoryUnit)].min() }
+    time = { def p = task.attempt > 1 ? task.previousTrace : null; def want = p?.time == null ? (params.process.time as Duration) : ((p.exit as Integer) in [140] ? 2 : 1) * new Duration(p.time as long); [want, ((params.process?.maxDuration ?: params.process?.max_duration ?: params.process?.max?.duration ?: '3650days') as Duration)].min() }
+
     executor = 'slurm'
-    scratch = params.process.scratch        // use worker node's local hard drive, if set
+    scratch = { params.process.scratch }    // use worker node's local hard drive, if set
     // --nodes=1: one compute node per job submission
     // --ntasks=1: this seems to affect some parallelization behaviour of SLURM,
     //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM
     //      from doing something unexpected, like duplicating jobs.
     //      not sure if this is needed
-    clusterOptions = (params.process.clusterOptions ?: "--nodes=1 --ntasks=1 --account=${params.slurmAccount}") + (params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "")
-
-    maxRetries = params.process.tries+2     // this must be larger than errorStrategy
-    maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
+    clusterOptions = { (params.process.clusterOptions ?: "--nodes=1 --ntasks=1 --account=${params.slurmAccount}") + (params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "") }
     array = params.process.array            // batch jobs for the same tool
 
     withLabel: 'xlocalx' {
         executor = 'local'
         array = 0                           // local executor does not support job arrays
         scratch = false                     // login node doesn't have SLURM_TMPDIR
-        errorStrategy = 'ignore'            // no retry when local
+        errorStrategy = { task.attempt < 2 ? 'retry' : 'ignore' }  // a download's failure is usually the network's
     }
 }
