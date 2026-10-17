@@ -90,6 +90,54 @@ def _assert_engine_runs_library(sh_remote, task) -> None:
     )
 
 
+# Keys the engine itself reads from a run's params, beside those the preset and
+# the plan's transforms read.
+ENGINE_PARAM_KEYS = frozenset({
+    "executor", "localExecutor", "process", "slurmAccount", "hostName", "workspace",
+    "home", "output", "testSpread", "bootstrap_def", "gpus", "rootfs",
+})
+_PRESET_PARAM = re.compile(r"\bparams\.([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _plan_param_keys(task) -> "list[str]|None":
+    keys: set[str] = set()
+    for step in task.plan.steps:
+        scan = getattr(step.transform, "_env_scan", None)
+        if scan is None or scan.param_keys_dynamic:
+            return None
+        keys |= scan.param_keys
+    return sorted(keys)
+
+
+def _unread_params(given: dict, plan_keys: list[str], preset_text: str) -> list[str]:
+    known = set(ENGINE_PARAM_KEYS) | set(plan_keys) | set(_PRESET_PARAM.findall(preset_text))
+    # A driver spells a nested key with underscores, and the engine nests it again.
+    prefixes = {x[:-1] for x in known if x.endswith("*")}
+    def _read(k: str) -> bool:
+        if any(k.startswith(p) for p in prefixes): return True
+        return k in known or any(k.startswith(f"{x}_") or x.startswith(f"{k}_") for x in known)
+    return sorted(str(k) for k in given if not _read(str(k)))
+
+
+def _warn_unread_params(sh_remote, workspace: Path, given: dict, preset_text: str) -> None:
+    import json as _json
+    res = sh_remote.Exec(
+        f"cat {workspace/AgentPaths.INTERNALS/AgentPaths.PARAM_KEYS_FILE} 2>/dev/null",
+        history=True, quiet=True,
+        idle_timeout=PROBE_TIMEOUT, what="reading the params the plan reads",
+    )
+    try:
+        plan_keys = _json.loads("\n".join(res.out) or "null")
+    except ValueError:
+        return
+    if not isinstance(plan_keys, list): return
+    for k in _unread_params(given, plan_keys, preset_text):
+        Log.Warn(
+            f"run param [{k}] is read by no transform in this plan, by the preset or by the "
+            f"engine, so it changes nothing; check its spelling"
+        )
+
+
 def _read_step_resources(sh_remote, workspace: Path) -> str:
     # The per-step requests a stage wrote. A workspace staged before this file
     # existed simply has nothing to check, which is not an error.
@@ -407,6 +455,13 @@ class _WorkflowOps:
                 raise RuntimeError(
                     f"staging [{task._key}] failed on the agent (exit {sres.exit_code}):\n{tail}"
                 )
+            import json as _json
+            keys_file = remote_work_path / AgentPaths.INTERNALS / AgentPaths.PARAM_KEYS_FILE
+            sh_remote.Exec(
+                f"cat > {keys_file} <<'MSM_PARAM_KEYS'\n{_json.dumps(_plan_param_keys(task))}\nMSM_PARAM_KEYS",
+                history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="recording the params the plan reads",
+            )
             launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
             res = sh_remote.Exec(
                 f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True,
@@ -584,6 +639,8 @@ class _WorkflowOps:
                 idle_timeout=PROBE_TIMEOUT, what="checking the staged workspace",
             )
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+            if _given:
+                _warn_unread_params(sh_remote, workspace, _given, Path(config_file).read_text())
 
             def _detect_gpu_on_target() -> str:
                 probe = sh_remote.Exec(

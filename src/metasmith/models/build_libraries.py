@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import yaml
+
 from ..models.libraries import DataInstanceLibrary, DataTypeLibrary, TransformInstanceLibrary
 from ..logging import Log
+from ..models.libraries.pinned import PinnedLibraryError
 
 
 DISABLE_PREFIX = "_disabled"
@@ -46,6 +49,24 @@ def LoadTypeLibraries(data_type_dirs: list[Path]) -> dict[str, DataTypeLibrary]:
     return dtypes
 
 
+def _refuse_if_pinned(library_dir: Path) -> None:
+    # The compile writes a fresh library over the old one, so the pin guards on
+    # the new object see nothing. Read raw: an index too broken to Load is a
+    # reason to rebuild, not to fail.
+    index = library_dir/DataInstanceLibrary._path_to_meta/(DataInstanceLibrary._index_name+DataInstanceLibrary._metadata_ext)
+    if not index.exists(): return
+    try:
+        raw = yaml.safe_load(index.read_text()) or {}
+    except yaml.YAMLError:
+        return
+    if not raw.get("pinned", raw.get("frozen")): return
+    raise PinnedLibraryError(
+        f"refusing to compile [{library_dir}]: it is pinned, and a compile re-mints every"
+        f" member id it recorded, which re-keys every run that used it. Unpin it first"
+        f" (`metasmith data unpin {library_dir}`) if that is what you mean"
+    )
+
+
 def CompileUniqueLibrary(unique_dir: Path, types: dict[str, DataTypeLibrary]) -> dict:
     if not _dir_ok(unique_dir):
         return {"library": str(unique_dir), "namespace": unique_dir.name, "count": 0, "skipped": "filtered"}
@@ -55,6 +76,7 @@ def CompileUniqueLibrary(unique_dir: Path, types: dict[str, DataTypeLibrary]) ->
             f"unique dir [{unique_dir}] has no matching type library "
             f"(looked for namespace [{namespace}]); available: {sorted(types.keys())}"
         )
+    _refuse_if_pinned(unique_dir)
     lib = DataInstanceLibrary(unique_dir)
     lib.AddTypeLibrary(namespace=namespace, lib=types[namespace])
     count = 0

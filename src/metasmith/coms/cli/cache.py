@@ -31,6 +31,13 @@ def register(subs):
         group_by=a.group_by, sort_by=a.sort_by, descending=not a.ascending,
     ))
 
+    _check = sp.add_parser(
+        "check", help="list imported givens that changed since they were imported",
+    )
+    _check.add_argument("--cache-root", default=None)
+    _check.add_argument("--agent-home", default=None)
+    _check.set_defaults(func=lambda a: _ops.check_imports(a.cache_root, agent_home=a.agent_home))
+
     _tag = sp.add_parser("tag", help="label an entry, so you can group by it later")
     _tag.add_argument("key")
     _tag.add_argument("tags", nargs="+")

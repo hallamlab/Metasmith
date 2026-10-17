@@ -28,6 +28,11 @@ class EnvScan:
     runs: list[EnvRun] = field(default_factory=list)
     forbidden: list[tuple[str, int]] = field(default_factory=list)
     host_shell_calls: list[int] = field(default_factory=list)
+    # A trailing `*` marks a prefix: the key was an f-string.
+    param_keys: set[str] = field(default_factory=set)
+    # A key read through a name or an f-string cannot be listed, so nothing
+    # about this transform's params can be called unread.
+    param_keys_dynamic: bool = False
 
     @property
     def declares_env(self) -> bool:
@@ -76,6 +81,26 @@ def ScanSource(source: str, filename: str = "<transform>") -> EnvScan:
                 has_env=e is not None,
                 has_cmd=c is not None,
             ))
+
+    def _is_params(n) -> bool:
+        return isinstance(n, ast.Attribute) and n.attr == "params"
+
+    for n in ast.walk(tree):
+        key = None
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+                and n.func.attr == "get" and _is_params(n.func.value):
+            key = _positional(n, 0)
+        elif isinstance(n, ast.Subscript) and _is_params(n.value):
+            key = n.slice
+        else:
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            scan.param_keys.add(key.value)
+        elif isinstance(key, ast.JoinedStr) and key.values and isinstance(key.values[0], ast.Constant) \
+                and str(key.values[0].value):
+            scan.param_keys.add(str(key.values[0].value) + "*")
+        else:
+            scan.param_keys_dynamic = True
 
     scan.runs.sort(key=lambda r: r.lineno)
     return scan

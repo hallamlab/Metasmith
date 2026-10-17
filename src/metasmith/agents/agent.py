@@ -196,6 +196,57 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
         pass
 
     @exclusive("deploying")
+    def DeployDevOverlay(self, src: Path|str = MODULE_PATH) -> dict:
+        """Put a source tree of the engine over the agent image's own, tree and tarball from one archive."""
+        import tarfile
+
+        src = Path(src).resolve()
+        if not (src/"__init__.py").is_file():
+            raise ValueError(f"[{src}] is not a metasmith package: it has no __init__.py")
+
+        def _no_bytecode(info: tarfile.TarInfo):
+            name = Path(info.name)
+            if "__pycache__" in name.parts or name.suffix == ".pyc": return None
+            return info
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            part = tmpdir/"dev"/"metasmith.tar.part"
+            part.parent.mkdir(parents=True)
+            with tarfile.open(part, "w") as tar:
+                tar.add(src, arcname="metasmith", filter=_no_bytecode)
+            with tarfile.open(part) as tar:
+                n_files = sum(1 for m in tar.getmembers() if m.isfile())
+            mover = Logistics()
+            mover.QueueTransfer(src=Source.FromLocal(tmpdir), dest=self.home)
+            res = mover.ExecuteTransfers()
+            for e in res.errors:
+                Log.Error(e)
+            assert len(res.completed) == 1, f"failed to send the dev overlay to [{self.home.address}]"
+
+        # The bootstrap stages the tarball per node and binds the tree where it
+        # cannot, so the two are swapped in only once the tree is whole.
+        dev = Path(self.home.GetPath())/"dev"
+        res = self._remote_oneshot("\n".join([
+            f"cd {dev} || exit 1",
+            "rm -rf metasmith.next && mkdir metasmith.next",
+            'tar -xf metasmith.tar.part -C metasmith.next || { echo "MSM_OVERLAY|FAIL|tar"; exit 1; }',
+            'n=$(find metasmith.next/metasmith -type f | wc -l | tr -d " ")',
+            f'[ "$n" = "{n_files}" ] || {{ echo "MSM_OVERLAY|FAIL|$n of {n_files} files"; exit 1; }}',
+            "rm -rf metasmith.prev",
+            "{ [ -e metasmith ] || [ -L metasmith ]; } && mv metasmith metasmith.prev",
+            "mv metasmith.next/metasmith metasmith && rmdir metasmith.next && mv -f metasmith.tar.part metasmith.tar",
+            'echo "MSM_OVERLAY|OK|$(stat -c %Y-%s metasmith.tar 2>/dev/null)"',
+        ]), timeout=300)
+        status = [ln.strip().split("|") for ln in res.out if ln.startswith("MSM_OVERLAY|")]
+        if not status or status[-1][1] != "OK":
+            raise RuntimeError(
+                f"the dev overlay did not land in [{dev}] on [{self.home.address}]: "
+                f"{(res.out + res.err)[-10:]}"
+            )
+        return {"src": str(src), "overlay": str(dev/"metasmith"), "files": n_files, "stage_key": status[-1][2]}
+
+    @exclusive("deploying")
     def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None, on_phase=None):
         _phase = on_phase or (lambda _: None)
         if runtime is not None:
@@ -264,6 +315,11 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             _quiet = True
             resolved_agent_home, resolved_home, hostname = _resolve_deploy_paths(shell, self.home.GetPath())
             _quiet = False
+            if any(c.isspace() for c in resolved_agent_home):
+                raise ValueError(
+                    f"the agent home [{resolved_agent_home}] contains whitespace; the generated "
+                    f"workflow and its launchers pass it to bash, so deploy to a path without any"
+                )
             resolved_agent_home = Path(resolved_agent_home)
             resolved_home = Path(resolved_home)
 

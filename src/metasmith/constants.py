@@ -47,6 +47,7 @@ class AgentPaths:
     NXF_CONFIG = "workflow.config.nf"
     NXF_RES = "workflow.resources.nf"
     NXF_PARAMS = "workflow.params.yml"
+    PARAM_KEYS_FILE = "param_keys.json"
     GPU_MANIFEST = "workflow.gpu.json"
     ENV_MANIFEST = "workflow.env.json"
     # Schema 1 recorded which of `container:` / `conda:` a resource carried; schema 2

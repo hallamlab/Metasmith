@@ -159,6 +159,41 @@ def list_cache(
     return out
 
 
+def check_imports(cache_root: str | None = None, *, agent_home: str | None = None) -> dict:
+    """Each imported given whose bytes no longer match what its import recorded.
+
+    An import is indexed in place, so its identity says nothing about later
+    edits: a given changed after import keeps serving the old id, and every
+    downstream shard keyed on it.
+    """
+    from ..caching.promote import _entry_size
+
+    listing = list_cache(cache_root, agent_home=agent_home, origin=IMPORTED)
+    changed = []
+    for row in listing["entries"]:
+        path = Path(row["path"])
+        reasons = []
+        try:
+            st = path.stat()
+        except OSError:
+            reasons.append("missing")
+        else:
+            size = _entry_size(path)
+            if row["size_bytes"] and size != row["size_bytes"]:
+                reasons.append(f"size {row['size_bytes']} -> {size}")
+            if st.st_mtime > row["created_at"] + 1:
+                reasons.append("modified after import")
+        if reasons:
+            changed.append({
+                k: row[k] for k in ("key", "name", "instance_id", "path", "dtype")
+            } | {"reasons": reasons})
+    return {
+        "cache_root": listing["cache_root"],
+        "checked": len(listing["entries"]),
+        "changed": changed,
+    }
+
+
 def _group(rows: list[dict], group_by: str) -> dict:
     groups: dict[str, list[dict]] = {}
     for r in rows:
