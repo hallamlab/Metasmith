@@ -20,7 +20,9 @@ msm_on_run_host() {{
     if [ -z "$_msm_h" ] || [ "$_msm_h" = "$(hostname)" ]; then
         bash -c "$1"
     else
-        ssh -o BatchMode=yes -o ConnectTimeout={HOP_CONNECT_TIMEOUT_S} "$_msm_h" "$1"
+        # -n: a script fed to bash on stdin, as a LiveShell does, would otherwise lose
+        # everything after this line to the hop.
+        ssh -n -o BatchMode=yes -o ConnectTimeout={HOP_CONNECT_TIMEOUT_S} "$_msm_h" "$1"
     fi
 }}
 msm_slurm_state() {{

@@ -129,7 +129,7 @@ class _RunControl:
             try:
                 proc = subprocess.run(
                     ["ssh", "-o", f"ConnectTimeout={min(timeout, 30)}", "-o", "BatchMode=yes", ssh_src.host, cmd],
-                    capture_output=True, text=True, timeout=timeout,
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
                 )
                 return ShellResult(
                     out=[ln for ln in proc.stdout.splitlines()],
