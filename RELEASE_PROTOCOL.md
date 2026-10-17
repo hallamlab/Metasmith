@@ -21,7 +21,7 @@ have been exercised. Focus the verification on what a release actually changes.
 ```
 PYTHONPATH="$PWD/src" mamba run -n msm python -m pytest tests/metasmith \
     -m "not docker and not e2e_docker and not e2e_agentic and not nextflow \
-        and not network and not requires_docker and not requires_apptainer \
+        and not remote_host and not requires_docker and not requires_apptainer \
         and not requires_ssh_localhost and not requires_docker_dev_image"
 ```
 
@@ -57,7 +57,7 @@ infrastructure the dev box may lack. Run the ones a release touches:
 - **`docker` / `nextflow`** — real container + Nextflow execution. Run on a host
   with a working Docker daemon when the change affects deploy, staging, or
   workflow generation.
-- **`network`** — remote-shell paths; needs `LIVESHELL_REMOTE_HOST`.
+- **`remote_host`** — remote-shell paths; needs `LIVESHELL_REMOTE_HOST`.
 - **`e2e_agentic`** — live agent-driven scenarios; opt-in, needs an API key and a
   compiled standard library (`dev/libraries.sh -b`).
 
