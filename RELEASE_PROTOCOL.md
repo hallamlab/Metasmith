@@ -221,6 +221,21 @@ mamba create -n msm_node -c conda-forge nodejs
 mamba run -n msm_node ./dev/metasmith.sh --build-gui
 ```
 
+### Run the unpublished build on a cluster
+
+An agent on an apptainer host pulls `docker://quay.io/hallamlab/metasmith:<version>-<hash>`,
+which does not exist before §4. Stage the local SIF where that pull would land instead:
+
+1. Copy `metasmith.sif` into the host's `$APPTAINER_CACHEDIR` under the name
+   `Environment._cached_name()` gives the image URL. For 0.25.0 that was
+   `docker..quay.io_hallamlab_metasmith..0.25.0-28ecc51.sif`.
+2. Run `apptainer exec --no-home --cleanenv <sif> true` on the host.
+3. Create an empty `<sif>.verified` beside it only when step 2 exits 0. The engine trusts the
+   stamp and skips the pull.
+4. Install the conda package from `file://conda_build` into a throwaway env for the driver.
+
+A rebuild after a fix changes the hash. Stage each rebuild's SIF under its own name.
+
 ---
 
 ## 4. Publish
