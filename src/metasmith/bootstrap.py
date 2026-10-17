@@ -336,7 +336,7 @@ def ExecuteStep(
         if cache_meta is not None:
             _promote(cache_meta, lineages, results)
         if success: Path(".command.success").touch()
-        return ExecutionResult(success)
+        return ExecutionResult(success, exit_code=None if success else context.FailureExitCode())
     except Exception as e:
         on_exit(ExecutionResult(False), "failed with error")
         Log.Error(f"error while executing transform [{step_name}]")
@@ -345,7 +345,7 @@ def ExecuteStep(
             traceback.print_tb(e.__traceback__, file=f)
         with open("traceback.temp", "r") as f:
             Log.Error(f.read()[:-1])
-        return ExecutionResult(False)
+        return ExecutionResult(False, exit_code=context.FailureExitCode())
 
 
 def _promote(cache_meta, lineages: list, results: list) -> None:
