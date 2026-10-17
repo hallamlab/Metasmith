@@ -173,15 +173,35 @@ pub enum Owner {
     // An `active` with no pid: written by a watcher from before the field.
     Legacy,
     Pid(i32),
+    // A pid from another pid namespace, as a client inside a docker container reads the host
+    // watcher's. The number means nothing here, so it cannot be probed and must not be killed.
+    Unseen(i32),
+}
+
+pub fn pid_namespace() -> Option<String> {
+    fs::read_link("/proc/self/ns/pid").ok().map(|ns| ns.to_string_lossy().into_owned())
+}
+
+pub fn owner_record() -> String {
+    match pid_namespace() {
+        Some(ns) => format!("{} {}\n", std::process::id(), ns),
+        None => format!("{}\n", std::process::id()),
+    }
 }
 
 pub fn read_owner(workspace: &Path) -> Owner {
-    match fs::read_to_string(workspace.join("active")) {
-        Err(_) => Owner::Missing,
-        Ok(raw) => match raw.trim().parse::<i32>() {
-            Ok(pid) if pid > 1 => Owner::Pid(pid),
-            _ => Owner::Legacy,
-        },
+    let raw = match fs::read_to_string(workspace.join("active")) {
+        Err(_) => return Owner::Missing,
+        Ok(raw) => raw,
+    };
+    let mut fields = raw.split_whitespace();
+    let pid = match fields.next().map(str::parse::<i32>) {
+        Some(Ok(pid)) if pid > 1 => pid,
+        _ => return Owner::Legacy,
+    };
+    match fields.next() {
+        Some(ns) if pid_namespace().as_deref() != Some(ns) => Owner::Unseen(pid),
+        _ => Owner::Pid(pid),
     }
 }
 
@@ -284,7 +304,7 @@ pub fn setup_launcher_script(workspace: &Path, cwd: &Path, active_path: &Path, l
     ));
 
     let staged_active = active_path.with_extension("staged");
-    fs::write(&staged_active, format!("{}\n", std::process::id()))?;
+    fs::write(&staged_active, owner_record())?;
     fs::set_permissions(&staged_active, Permissions::from_mode(0o644))?;
     fs::rename(&staged_active, &active_path)?;
 
@@ -415,7 +435,7 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf, start_lock: Option<File>)
         Logger::info("Watcher shutting down");
 
         match read_owner(&workspace_for_guard) {
-            Owner::Pid(pid) if pid != current_pid => {
+            Owner::Pid(pid) | Owner::Unseen(pid) if pid != current_pid => {
                 Logger::info(&format!("'active' now names watcher [{}]; leaving its jobs and files alone", pid));
             }
             _ => {
@@ -476,7 +496,7 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf, start_lock: Option<File>)
                 Logger::info("'active' file was deleted");
                 running.store(false, Ordering::SeqCst);
             }
-            Owner::Pid(pid) if pid != current_pid => {
+            Owner::Pid(pid) | Owner::Unseen(pid) if pid != current_pid => {
                 Logger::info(&format!("'active' now names watcher [{}]; stepping down", pid));
                 running.store(false, Ordering::SeqCst);
             }
@@ -588,3 +608,33 @@ pub fn check_status(workspace: &Path, timeout: u64) -> Status {
 pub fn check_status_default_timeout(workspace: &Path) -> Status {
     check_status(&workspace, 2)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn owner_of(record: &str) -> Owner {
+        let dir = std::env::temp_dir().join(format!("msm_owner_{}_{}", std::process::id(), record.len()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("active"), record).unwrap();
+        let owner = read_owner(&dir);
+        fs::remove_file(dir.join("active")).unwrap();
+        fs::remove_dir(&dir).unwrap();
+        owner
+    }
+
+    #[test]
+    fn a_pid_from_another_namespace_is_unseen() {
+        assert!(matches!(owner_of("4242 pid:[1]\n"), Owner::Unseen(4242)));
+    }
+
+    #[test]
+    fn a_pid_from_this_namespace_is_probed() {
+        let record = format!("4242 {}\n", pid_namespace().unwrap());
+        assert!(matches!(owner_of(&record), Owner::Pid(4242)));
+        assert!(matches!(owner_of("4242\n"), Owner::Pid(4242)));
+        assert!(matches!(owner_of("\n"), Owner::Legacy));
+    }
+}
+
