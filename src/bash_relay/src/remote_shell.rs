@@ -177,7 +177,7 @@ impl Job {
         }
         let watcher_alive = match read_owner(workspace) {
             Owner::Missing => false,
-            Owner::Legacy => true,
+            Owner::Legacy | Owner::Unseen(_) => true,
             Owner::Pid(pid) => pid_is_relay(pid),
         };
         if self.start_path.exists() {

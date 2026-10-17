@@ -30,13 +30,22 @@ def _pid_is_relay(pid: int) -> bool:
         return True
     return b"msm_relay" in argv0
 
+def _pid_namespace() -> str | None:
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
 def _watcher_alive(watcher_path: Path) -> bool:
     try:
-        raw = (watcher_path/"active").read_text().strip()
+        fields = (watcher_path/"active").read_text().split()
     except OSError:
         return False
-    # An `active` with no pid comes from a watcher older than the field; it cannot be checked.
-    return _pid_is_relay(int(raw)) if raw.isdigit() else True
+    # An `active` with no pid comes from a watcher older than the field, and a pid from another
+    # namespace (a host watcher read from inside a container) names nothing here: neither can be checked.
+    if not fields or not fields[0].isdigit(): return True
+    if len(fields) > 1 and fields[1] != _pid_namespace(): return True
+    return _pid_is_relay(int(fields[0]))
 
 @dataclass
 class Job:

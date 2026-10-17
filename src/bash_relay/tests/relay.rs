@@ -38,7 +38,7 @@ impl Sandbox {
     }
 
     fn owner(&self) -> Option<i32> {
-        fs::read_to_string(self.io.join("active")).ok()?.trim().parse().ok()
+        fs::read_to_string(self.io.join("active")).ok()?.split_whitespace().next()?.parse().ok()
     }
 
     fn watchers(&self) -> usize {
