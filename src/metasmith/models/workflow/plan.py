@@ -545,12 +545,16 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None, given_root: bool = False) -> DagRenderer:
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
                 return ns
             return name
+
+        # A library may declare its own environments (bench::checkm2.env), outside the env namespace.
+        def _hidden(name: str) -> bool:
+            return _get_ns(name) in blacklist_namespaces or ("env" in blacklist_namespaces and name.endswith(".env"))
 
         r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background, mode=mode, blacklist=blacklist, legend_columns=legend_columns, monochrome=monochrome, colour_palette=colour_palette, colour_overrides=colour_overrides)
         def _type_label(dtype_name: str) -> Label:
@@ -561,12 +565,13 @@ class WorkflowPlan:
                 return Label(name=name, namespace=ns, full=dtype_name)
             return Label(name=dtype_name, full=dtype_name)
 
-        r.add_node(NodeKind.TRANSFORM, "given")
+        if given_root:
+            r.add_node(NodeKind.TRANSFORM, "given")
 
         given_inst_names: set[str] = set()
         k2names: dict[Endpoint, set[str]] = {}
         for x in self.given:
-            if _get_ns(x.dtype_name) in blacklist_namespaces: continue
+            if _hidden(x.dtype_name): continue
             k2names[x.dtype] = k2names.get(x.dtype, set()) | {x.dtype_name}
         parents: set[Endpoint] = set()
         for e in k2names:
@@ -576,10 +581,10 @@ class WorkflowPlan:
         for p in parents:
             if p not in k2names: continue
             for inst in k2names[p]:
-                if _get_ns(inst) in blacklist_namespaces: continue
+                if _hidden(inst): continue
                 shown_parents.add(inst)
         for e, insts_all in k2names.items():
-            insts = [i for i in insts_all if _get_ns(i) not in blacklist_namespaces]
+            insts = [i for i in insts_all if not _hidden(i)]
             if len(insts) == 0: continue
             for inst_name in insts:
                 for p in e.parents:
@@ -588,7 +593,10 @@ class WorkflowPlan:
                     for pname in pinsts:
                         r.add_edge(pname, inst_name)
                 r.add_node(NodeKind.DATA, inst_name, _type_label(inst_name), dtype=e)
-                r.add_edge("given", inst_name)
+                if given_root:
+                    r.add_edge("given", inst_name)
+                else:
+                    r.mark_given(inst_name)
                 given_inst_names.add(inst_name)
 
         given_ids = {x.instance_id for x in self.given}
@@ -629,7 +637,7 @@ class WorkflowPlan:
                     insts = step.dependency_map[d]
                     nodes = {
                         _data_node(x) for x in insts
-                        if _get_ns(x.dtype_name) not in blacklist_namespaces
+                        if not _hidden(x.dtype_name)
                     }
                     if len(nodes) == 0: continue
                     acc += list(nodes)
@@ -655,7 +663,7 @@ class WorkflowPlan:
                             n = _lib.GetName(t)
                         except KeyError:
                             continue
-                        if n and _get_ns(n) not in blacklist_namespaces:
+                        if n and not _hidden(n):
                             out.append(n)
                             named[n] = t
                     return out
@@ -683,7 +691,7 @@ class WorkflowPlan:
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, show_namespaces: bool = True, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light", background: bool = True, mode: DagMode = DagMode.PLAIN, blacklist: Iterable[Endpoint] = (), legend_columns: int = 0, monochrome: bool = False, colour_palette: Sequence[str] | None = None, colour_overrides: Mapping[str, str] | None = None, given_root: bool = False):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
@@ -700,4 +708,5 @@ class WorkflowPlan:
             monochrome=monochrome,
             colour_palette=colour_palette,
             colour_overrides=colour_overrides,
+            given_root=given_root,
         ).render(path_base, format)

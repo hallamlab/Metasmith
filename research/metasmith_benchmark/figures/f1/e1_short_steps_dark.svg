@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="399" height="538" viewBox="0 0 399 538">
+<g fill="none" stroke="#8D97A8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="butt">
+<path d="M 24.8,39.7 L 24.8,42.2 L 24.8,135.8 L 24.8,167.1 L 24.8,198.2 L 24.8,229.4 L 24.8,260.6 L 24.8,354.2 A 8.5,8.5 0 0 0 33.3,362.7 L 50.2,362.7 L 67.1,362.7 A 8.5,8.5 0 0 1 75.5,371.1"/>
+<path d="M 75.5,61.7 L 75.5,59.1 A 8.5,8.5 0 0 0 67.1,50.7 L 33.3,50.7 A 8.5,8.5 0 0 1 24.8,42.2"/>
+<path d="M 75.5,70.9 L 75.5,92.9"/>
+<path d="M 75.5,102.1 L 75.5,104.7 L 75.5,167.1 L 75.5,198.2 L 75.5,229.4 L 75.5,260.6 L 75.5,371.1 L 75.5,373.7"/>
+<path d="M 75.5,382.9 L 75.5,404.9"/>
+<path d="M 75.5,414.1 L 75.5,416.6 A 8.5,8.5 0 0 0 84.0,425.1"/>
+<path d="M 41.7,124.1 L 41.7,121.5 A 8.5,8.5 0 0 1 50.2,113.1 L 67.1,113.1 A 8.5,8.5 0 0 0 75.5,104.7"/>
+<path d="M 41.7,133.3 L 41.7,152.8 L 41.7,155.3"/>
+<path d="M 41.7,164.5 L 41.7,167.1 L 41.7,198.2 L 41.7,229.4 L 41.7,260.6 L 41.7,354.2 A 8.5,8.5 0 0 0 50.2,362.7"/>
+<path d="M 126.2,186.5 L 126.2,183.9 A 8.5,8.5 0 0 0 117.8,175.5 L 84.0,175.5 L 50.2,175.5 L 33.3,175.5 A 8.5,8.5 0 0 1 24.8,167.1"/>
+<path d="M 126.2,195.7 L 126.2,215.2 L 126.2,217.7"/>
+<path d="M 126.2,226.9 L 126.2,291.9 L 126.2,416.6 A 8.4,8.4 0 0 1 117.8,425.1 A 8.4,8.4 0 0 0 109.3,433.6"/>
+<path d="M 109.3,248.9 L 109.3,246.3 A 8.5,8.5 0 0 0 100.9,237.9 L 84.0,237.9 L 50.2,237.9 L 33.3,237.9 A 8.5,8.5 0 0 1 24.8,229.4"/>
+<path d="M 109.3,258.1 L 109.3,291.9 L 109.3,433.6 L 109.3,436.1"/>
+<path d="M 109.3,445.3 L 109.3,467.3"/>
+<path d="M 109.3,476.5 L 109.3,498.5"/>
+<path d="M 58.6,280.1 L 58.6,277.6 A 8.4,8.4 0 0 0 50.2,269.1 L 33.3,269.1 A 8.5,8.5 0 0 1 24.8,260.6"/>
+<path d="M 58.6,289.3 L 58.6,291.9 L 58.6,416.6 A 8.5,8.5 0 0 0 67.1,425.1 L 84.0,425.1 L 100.9,425.1 A 8.5,8.5 0 0 1 109.3,433.6"/>
+<path d="M 92.4,311.3 L 92.4,308.8 A 8.5,8.5 0 0 1 100.9,300.3 L 117.8,300.3 A 8.5,8.5 0 0 0 126.2,291.9"/>
+<path d="M 92.4,320.5 L 92.4,342.5"/>
+<path d="M 92.4,351.7 L 92.4,354.2 A 8.5,8.5 0 0 1 84.0,362.7 A 8.5,8.5 0 0 0 75.5,371.1"/>
+<path d="M 24.8,135.8 A 8.5,8.5 0 0 0 33.3,144.3 A 8.5,8.5 0 0 1 41.7,152.8"/>
+<path d="M 24.8,198.2 A 8.5,8.5 0 0 0 33.3,206.7 L 50.2,206.7 L 84.0,206.7 L 117.8,206.7 A 8.5,8.5 0 0 1 126.2,215.2"/>
+<path d="M 75.5,167.1 A 8.5,8.5 0 0 0 84.0,175.5"/>
+<path d="M 75.5,198.2 A 8.5,8.5 0 0 0 84.0,206.7"/>
+<path d="M 75.5,229.4 A 8.5,8.5 0 0 0 84.0,237.9"/>
+<path d="M 75.5,260.6 A 8.4,8.4 0 0 1 67.1,269.1 A 8.4,8.4 0 0 0 58.6,277.6"/>
+<path d="M 41.7,167.1 A 8.5,8.5 0 0 0 50.2,175.5"/>
+<path d="M 41.7,198.2 A 8.5,8.5 0 0 0 50.2,206.7"/>
+<path d="M 41.7,229.4 A 8.5,8.5 0 0 0 50.2,237.9"/>
+<path d="M 41.7,260.6 A 8.4,8.4 0 0 0 50.2,269.1"/>
+<path d="M 109.3,291.9 A 8.5,8.5 0 0 1 100.9,300.3"/>
+<path d="M 58.6,291.9 A 8.5,8.5 0 0 0 67.1,300.3 L 84.0,300.3 A 8.5,8.5 0 0 1 92.4,308.8"/>
+</g>
+<g><title>fastp</title>
+<polygon points="19.5,30.5 30.2,30.5 24.8,39.7" fill="#3987e5" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="39.8" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">fastp</text></g>
+<g><title>megahit</title>
+<polygon points="70.2,61.7 80.9,61.7 75.5,70.9" fill="#d95926" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="71.0" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">megahit</text></g>
+<g><title>gunzip_shortread_assemblies</title>
+<polygon points="70.2,92.9 80.9,92.9 75.5,102.1" fill="#7a7f88" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">gunzip_shortread_assemblies</text></g>
+<g><title>bowtie2_assembly_build</title>
+<polygon points="36.4,124.1 47.1,124.1 41.7,133.3" fill="#d95926" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">bowtie2_assembly_build</text></g>
+<g><title>bowtie2_assembly_align</title>
+<polygon points="36.4,155.3 47.1,155.3 41.7,164.5" fill="#d95926" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">bowtie2_assembly_align</text></g>
+<g><title>metabat2_jgisummarizebamcontigdepths_shortread</title>
+<polygon points="120.9,186.5 131.6,186.5 126.2,195.7" fill="#199e70" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">metabat2_jgisummarizebamcontigd…</text></g>
+<g><title>metabat2_metabat2</title>
+<polygon points="120.9,217.7 131.6,217.7 126.2,226.9" fill="#199e70" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="227.0" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">metabat2_metabat2</text></g>
+<g><title>comebin_runcomebin</title>
+<polygon points="104.0,248.9 114.7,248.9 109.3,258.1" fill="#199e70" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="258.2" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">comebin_runcomebin</text></g>
+<g><title>semibin_singleeasybin</title>
+<polygon points="53.3,280.1 64.0,280.1 58.6,289.3" fill="#199e70" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="289.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">semibin_singleeasybin</text></g>
+<g><title>rename_predastool</title>
+<polygon points="87.1,311.3 97.8,311.3 92.4,320.5" fill="#7a7f88" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="320.6" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">rename_predastool</text></g>
+<g><title>dastool_fastatocontig2bin</title>
+<polygon points="87.1,342.5 97.8,342.5 92.4,351.7" fill="#7a7f88" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="351.8" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">dastool_fastatocontig2bin</text></g>
+<g><title>dastool_dastool</title>
+<polygon points="70.2,373.7 80.9,373.7 75.5,382.9" fill="#199e70" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="383.0" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">dastool_dastool</text></g>
+<g><title>rename_postdastool</title>
+<polygon points="70.2,404.9 80.9,404.9 75.5,414.1" fill="#7a7f88" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="414.2" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">rename_postdastool</text></g>
+<g><title>checkm2_predict</title>
+<polygon points="104.0,436.1 114.7,436.1 109.3,445.3" fill="#9085e9" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="445.4" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">checkm2_predict</text></g>
+<g><title>concat_checkm2_tsv</title>
+<polygon points="104.0,467.3 114.7,467.3 109.3,476.5" fill="#7a7f88" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="476.6" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">concat_checkm2_tsv</text></g>
+<g><title>bin_summary</title>
+<polygon points="104.0,498.5 114.7,498.5 109.3,507.7" fill="#7a7f88" stroke="#171b21" stroke-width="1.0" stroke-linejoin="round"/>
+<text x="138.7" y="507.8" font-family="Arial" font-size="13" fill="#DFE3EA" font-weight="600" text-anchor="start">bin_summary</text></g>
+</svg>

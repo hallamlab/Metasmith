@@ -1,0 +1,66 @@
+Exact sacct commands run on fir (as phyberos) for the E2 Slurm-accounting evidence
+gathering task, 2026-09-22. All read-only; nothing submitted, cancelled, or written
+outside /scratch/phyberos/bench/evidence/.
+
+Existing dumps found already in /scratch/phyberos/bench/evidence/ at the start of
+this session (not regenerated): e1e2_jobs.psv, sacct_july_jobs.psv,
+sacct_july_steps.psv, sacct_sept_jobs.psv, sacct_sept_steps.psv. Their date coverage
+was checked but they were superseded for the actual join by the authoritative
+window query below, which has known, verified boundaries.
+
+FMT="JobID,JobIDRaw,JobName,State,Submit,Start,End,Elapsed,ElapsedRaw,ReqCPUS,AllocCPUS,ReqMem,NodeList,ExitCode,Partition,Account,WorkDir"
+STEPFMT="JobID,JobName,State,Elapsed,ElapsedRaw,MaxRSS,MaxVMSize,AveRSS,ReqCPUS,AllocCPUS,WorkDir"
+
+# 1. Probe: full August, to check for E2 jobs outside the 09-12..09-18 window.
+#    Result: 0 matches for all six run keys.
+sacct -X --starttime=2026-08-01T00:00:00 --endtime=2026-08-31T23:59:59 \
+  --format=$FMT --parsable2 \
+  > /scratch/phyberos/bench/evidence/probe_aug_jobs.psv \
+  2> /scratch/phyberos/bench/evidence/probe_aug_jobs.err
+
+# 2. Probe: September 1-9 (before the campaign window), same check.
+#    Result: 0 matches for all six run keys.
+sacct -X --starttime=2026-09-01T00:00:00 --endtime=2026-09-09T23:59:59 \
+  --format=$FMT --parsable2 \
+  > /scratch/phyberos/bench/evidence/probe_sept_early_jobs.psv \
+  2> /scratch/phyberos/bench/evidence/probe_sept_early_jobs.err
+
+# 3. Probe: September 18 through today (2026-09-22), same check.
+#    Result: 0 matches for all six run keys.
+sacct -X --starttime=2026-09-18T00:00:00 --endtime=2026-09-22T23:59:59 \
+  --format=$FMT --parsable2 \
+  > /scratch/phyberos/bench/evidence/probe_sept_late_jobs.psv \
+  2> /scratch/phyberos/bench/evidence/probe_sept_late_jobs.err
+
+# 4. Authoritative allocation-row dump (-X) for the actual working window, with
+#    known clean boundaries confirmed empty on both sides by (1)-(3) above.
+#    All matched E2 rows in fact fall within 2026-09-13T02:40:45..2026-09-15T14:50:15,
+#    comfortably inside this range. This is the PRIMARY source for
+#    e2_slurm_tasks.tsv's Start/End/Elapsed/AllocCPUS/ReqMem/WorkDir/State/ExitCode.
+sacct -X --starttime=2026-09-09T00:00:00 --endtime=2026-09-18T23:59:59 \
+  --format=$FMT --parsable2 \
+  > /scratch/phyberos/bench/evidence/e2_window_jobs.psv \
+  2> /scratch/phyberos/bench/evidence/e2_window_jobs.err
+
+# 5. Step-row dump (no -X) for the same window, to recover MaxRSS from each
+#    job's `.batch` step (MaxRSS is blank on -X allocation rows). WorkDir is
+#    blank on step rows -- the join back to run_key goes through JobID, using
+#    (4) to first identify which base JobIDs belong to one of the six E2 keys.
+sacct --starttime=2026-09-09T00:00:00 --endtime=2026-09-18T23:59:59 \
+  --format=$STEPFMT --parsable2 --units=K \
+  > /scratch/phyberos/bench/evidence/e2_window_steps.psv
+
+# Filtering to the six E2 run keys is NOT a sacct filter -- WorkDir is only an
+# output field. It is done downstream in build_e2_slurm_tables.py by matching
+# WorkDir against "/scratch/phyberos/cami/metasmith/runs/<run_key>/".
+
+# Ad-hoc existence/attribution checks (not persisted as files, run directly
+# against the files above with grep/awk):
+#   grep -c '<run_key>' e2_window_jobs.psv            # per-key row counts
+#   grep '<run_key>' e2_window_jobs.psv | awk -F'|' '{print $3}' | ...   # JobName census per key, to derive arm
+#   ls /scratch/phyberos/cami/metasmith/runs/           # confirmed the six run-key
+#       directories no longer exist (only an unrelated later run, OgFSQzRS, remains)
+#       -- so .command.sh/.command.out cannot be read for any E2 job in this task,
+#       and per-sample identity is not recoverable beyond the Slurm-array
+#       base-offset + task-id arithmetic recorded in e2_slurm_tasks.tsv's
+#       sample_ordinal_in_batch column.

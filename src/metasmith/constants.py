@@ -69,6 +69,9 @@ class AgentPaths:
     PID_LOCK_FILE = "PID.lock"
     RUN_PGID_FILE = "RUN.pgid"
     RUN_TOKEN_FILE = "RUN.token"
+    # The host both pgids belong to, and the driver's Slurm job when it runs as one.
+    RUN_HOST_FILE = "RUN.host"
+    RUN_SLURM_JOB_FILE = "RUN.slurmjob"
     RUN_TOKEN_ENV = "METASMITH_RUN"
     # Docker label carrying RUN_TOKEN_ENV: `--rm` leaves no other handle on a
     # container whose client was killed.

@@ -29,14 +29,40 @@ export function paramRows(params) {
   }))
 }
 
-// Rows with no name are rows still being typed, and are not params. The server
-// drops them too -- this is so a page can tell whether it has anything to send.
+// The server holds names to the same pattern. `_` nests: process_tries is
+// params.process.tries.
+export const PARAM_NAME = /^[A-Za-z][A-Za-z0-9_]*$/
+
+// `slurmAccount=def-x` typed whole into the name box is a name and a value.
+export function splitPair(row) {
+  const key = row.key ?? ''
+  const at = key.indexOf('=')
+  if (at < 0 || (row.value ?? '').trim()) return row
+  return { ...row, key: key.slice(0, at).trim(), value: key.slice(at + 1).trim() }
+}
+
+export function paramProblems(rows) {
+  const problems = []
+  const seen = new Set()
+  for (const r of rows ?? []) {
+    const k = (r.key ?? '').trim()
+    if (!k) continue
+    if (!PARAM_NAME.test(k)) problems.push(`[${k}] is not a param name: letters, digits and _ only`)
+    else if (seen.has(k)) problems.push(`[${k}] is given twice`)
+    seen.add(k)
+  }
+  return problems
+}
+
+// A row with no name is still being typed, and a row with no value inherits
+// the agent's default. Neither is sent.
 export function toParams(rows) {
   const out = {}
   for (const r of rows ?? []) {
     const k = (r.key ?? '').trim()
-    if (!k) continue
-    out[k] = (r.value ?? '').trim()
+    const v = (r.value ?? '').trim()
+    if (!k || !v) continue
+    out[k] = v
   }
   return out
 }

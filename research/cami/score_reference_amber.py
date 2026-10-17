@@ -172,6 +172,12 @@ def read_nfcore_contig_to_bin(path: Path, contigs: set[str]) -> dict[str, list[t
         ci, bi, ni = header.index("contig_id"), header.index("binner"), header.index("bin_id")
         per_binner: dict[str, list[tuple[str, str]]] = {}
         kept = dropped_unbinned = dropped_unknown_contig = 0
+        # Per-binner tallies, because a binner silently reaching zero kept rows is the failure
+        # this function actually had: DAS Tool's 65,569 rows were all dropped as
+        # contig-not-in-assembly while the three raw binners scored fine, so the run emitted
+        # three labels and looked complete. An aggregate count cannot show that.
+        seen: dict[str, int] = {}
+        lost: dict[str, int] = {}
         for line in f:
             parts = line.rstrip("\n").split("\t")
             if len(parts) <= max(ci, bi, ni):
@@ -180,10 +186,24 @@ def read_nfcore_contig_to_bin(path: Path, contigs: set[str]) -> dict[str, list[t
             if binner.lower() in NFCORE_DROP_BINNERS:
                 dropped_unbinned += 1
                 continue
-            if parts[ci] not in contigs:
-                dropped_unknown_contig += 1
+            seen[binner] = seen.get(binner, 0) + 1
+            bin_id = parts[ni].strip()
+            # DAS Tool emits an explicit Unbinned pseudo-bin. Scoring it would create one
+            # enormous bin holding every contig the refinement rejected -- the same hazard as
+            # the empty-binner rows, wearing a name instead of a blank.
+            if "unbinned" in bin_id.lower():
+                dropped_unbinned += 1
                 continue
-            per_binner.setdefault(binner, []).append((parts[ci], parts[ni]))
+            # DAS Tool writes the assembler's FULL FASTA HEADER as the contig id --
+            # `k141_10 flag=1 multi=2.5908 len=1055` -- while MetaBAT2, SemiBin2 and COMEBin
+            # write the bare name. nf-core concatenates both shapes into one file, so the id
+            # has to be trimmed at whitespace before any membership test.
+            contig = parts[ci].split()[0] if parts[ci] else ""
+            if contig not in contigs:
+                dropped_unknown_contig += 1
+                lost[binner] = lost.get(binner, 0) + 1
+                continue
+            per_binner.setdefault(binner, []).append((contig, bin_id))
             kept += 1
     assert per_binner, (
         f"[{path}] yielded no scorable rows. kept={kept} "
@@ -195,6 +215,20 @@ def read_nfcore_contig_to_bin(path: Path, contigs: set[str]) -> dict[str, list[t
         f"({', '.join(sorted(per_binner))}); dropped {dropped_unbinned} unbinned, "
         f"{dropped_unknown_contig} not in this assembly",
         file=sys.stderr,
+    )
+    for binner in sorted(seen):
+        print(
+            f"    {binner}: {len(per_binner.get(binner, []))} kept of {seen[binner]}"
+            f"{f', {lost[binner]} contig-not-in-assembly' if binner in lost else ''}",
+            file=sys.stderr,
+        )
+    # A binner present in the table but absent from the output is a silent half-answer. Refuse
+    # it rather than scoring the labels that happen to have survived.
+    empty = sorted(b for b in seen if not per_binner.get(b))
+    assert not empty, (
+        f"[{path}] dropped EVERY row of {empty} while keeping other binners. Their contig ids "
+        f"do not match the assembly's names. Scoring the survivors would report a partial "
+        f"comparison as a complete one -- fix the id handling rather than proceeding."
     )
     return per_binner
 
@@ -328,8 +362,26 @@ def main() -> int:
             f"nf-core/mag only produces a self-mapped BAM under "
             f"binning_map_mode = 'own'."
         )
-        print(f"  BAM/assembly contig overlap: {overlap}/{len(seen)} sampled",
+        frac = overlap / max(1, len(seen))
+        print(f"  BAM/assembly contig overlap: {overlap}/{len(seen)} sampled ({frac:.4f})",
               file=sys.stderr)
+        # CAUTION THIS ASSERT IS NECESSARY AND NOT SUFFICIENT, and B21 is why. MEGAHIT names
+        # contigs `k141_<N>` independently in EVERY assembly, so two unrelated assemblies of
+        # the same corpus share almost all of their contig NAMES. Measured on two CAMI rung-10
+        # samples: a correctly paired gold standard shared 16,392 of 16,393 contig names
+        # (99.99%) and a WRONG one shared 16,351 of 16,393 (99.74%). An overlap check cannot
+        # tell those apart, and in the in-plan scorer that cost nine of ten samples their
+        # score with no error raised.
+        #
+        # This script is safe against that by CONSTRUCTION rather than by this assert: it
+        # builds the gold standard itself, from the sample's own reads_mapping and this BAM, so
+        # there is no pairing step to get wrong. Anything that accepts a PRE-BUILT gold
+        # standard must instead assert its `@SampleID` names the same assembly the prediction
+        # came from -- that is the only field that distinguishes them.
+        if frac < 0.5:
+            print(f"  WARNING low overlap {frac:.4f}: the BAM and the assembly may be a "
+                  f"cross-sample pair that still collides on `k141_N` names",
+                  file=sys.stderr)
         _run(
             f"python {args.lib.resolve()} {read_contig.resolve()} "
             f"{args.reads_mapping.resolve()} {lengths_file.resolve()} "

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
+from .invocation import TOMBSTONE_NAME, read_manifest
 from .keys import canonical_cbor, multihash_key
 from .layout import (
     MANIFEST_NAME,
@@ -309,8 +310,9 @@ def write_shard(
 ) -> ShardWrite:
     """Stage this entry's shard and rename it into place. Never opens sqlite.
 
-    A shard already there wins: two tasks that reached the same key produced
-    the same thing, and the one that got there first has readers.
+    A servable shard already there wins: two tasks that reached the same key
+    produced the same thing, and the one that got there first has readers. An
+    evicted or broken shard is replaced, since no reader can be using it.
     """
     cache_root = Path(cache_root)
     key_hex = key.hex()
@@ -321,10 +323,12 @@ def write_shard(
         lineage=lineage, lineage_payload=lineage_payload,
     )
     final = shard_for(cache_root, key_hex, origin)
-    if final.exists():
+    stale = final.exists()
+    if stale and (origin == IMPORTED or _servable(final)):
         return ShardWrite("exists", final, manifest, int(manifest["size"]))
 
-    tmp = cache_root / f"{key_hex}.{socket.gethostname()}.{os.getpid()}.tmp"
+    stem = cache_root / f"{key_hex}.{socket.gethostname()}.{os.getpid()}"
+    tmp = stem.with_name(stem.name + ".tmp")
     if tmp.exists():
         shutil.rmtree(tmp)
     _out_dir(tmp).mkdir(parents=True)
@@ -334,13 +338,30 @@ def write_shard(
         _place(Path(f.src), tmp / f.relpath)
     (tmp / MANIFEST_NAME).write_bytes(canonical_cbor(manifest))
     final.parent.mkdir(parents=True, exist_ok=True)
+    dead = stem.with_name(stem.name + ".dead")
+    if stale:
+        try:
+            final.rename(dead)
+        except OSError:
+            dead = None
     try:
         tmp.rename(final)
     except OSError:
         shutil.rmtree(tmp, ignore_errors=True)
         status = "exists" if final.exists() else "failed"
         return ShardWrite(status, final, manifest, int(manifest["size"]))
+    finally:
+        if stale and dead is not None:
+            shutil.rmtree(dead, ignore_errors=True)
     return ShardWrite("promoted", final, manifest, int(manifest["size"]))
+
+
+def _servable(shard: Path) -> bool:
+    # Mirrors `invocation.probe`, which reads the generated-shard path only.
+    if (shard / TOMBSTONE_NAME).exists():
+        return False
+    found = read_manifest(shard)
+    return found is not None and all((shard / f["relpath"]).exists() for f in found.get("files", []))
 
 
 def index_shard(
@@ -416,14 +437,22 @@ def admit(
     return written
 
 
-def _place(src: Path, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if src.is_dir():
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest, symlinks=True)
-        return
+def _link_or_copy(src, dest) -> None:
+    # A link across devices, or past a filesystem's per-file link limit, falls back to a copy.
     try:
         os.link(src, dest)
     except OSError:
         shutil.copy2(src, dest)
+
+
+def _place(src: Path, dest: Path) -> None:
+    # A shard's files share their inodes with the task's products, so a cached directory
+    # costs its bytes once rather than once per placement (a GTDB package is ~250 GB).
+    # CAUTION never edit a product in place: the edit reaches the cache and every run it serves.
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.is_dir():
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy)
+        return
+    _link_or_copy(src, dest)

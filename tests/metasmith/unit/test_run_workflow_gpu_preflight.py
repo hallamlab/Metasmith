@@ -74,7 +74,7 @@ def agent(tmp_path, monkeypatch):
     (home / "relay").mkdir(parents=True, exist_ok=True)
     RecordingMover.sent = {}
     monkeypatch.setattr(_agents, "Logistics", RecordingMover)
-    return Agent(home=Source.FromLocal(home))
+    return Agent(home=Source.FromLocal(home), default_params={"slurmAccount": "def-test"})
 
 
 def _run(monkeypatch, agent, manifest, gpus=None, gpu_present="", config=None, manifest_text=None):

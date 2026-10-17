@@ -1,0 +1,862 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="662" height="4875" viewBox="0 0 662 4875">
+<rect width="662" height="4875" fill="#FFFFFF"/>
+<g fill="none" stroke="#666666" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="butt">
+<path d="M 143.1,39.7 L 143.1,42.2 L 143.1,73.5 L 143.1,104.7 L 143.1,135.8 L 143.1,167.1 L 143.1,198.2 L 143.1,229.4 L 143.1,260.6 L 143.1,291.9 L 143.1,323.1 L 143.1,354.2 L 143.1,385.4 L 143.1,416.6 L 143.1,447.9 L 143.1,495.9 L 143.1,498.4" stroke="#636EFA"/>
+<path d="M 143.1,507.8 L 143.1,510.2 L 143.1,635.0 L 143.1,791.0 A 8.5,8.5 0 0 1 134.7,799.5 L 67.1,799.5" stroke="#EF553B"/>
+<path d="M 143.1,2651.3 L 143.1,2648.8 A 8.5,8.5 0 0 0 134.7,2640.3 L 84.0,2640.3 A 8.5,8.5 0 0 1 75.5,2631.8" stroke="#00CC96"/>
+<path d="M 143.1,2660.5 L 143.1,2682.4" stroke="#00CC96"/>
+<path d="M 143.1,2691.8 L 143.1,2694.2 L 143.1,2756.7 L 143.1,2912.7 L 143.1,3068.7 L 143.1,3879.8 A 8.5,8.5 0 0 0 151.6,3888.3" stroke="#00CC96"/>
+<path d="M 329.0,61.6 L 329.0,59.1 A 8.5,8.5 0 0 0 320.6,50.7 L 151.6,50.7 A 8.5,8.5 0 0 1 143.1,42.2" stroke="#636EFA"/>
+<path d="M 329.0,71.0 L 329.0,4115.1" stroke="#636EFA"/>
+<path d="M 329.0,4117.7 L 329.0,4115.1 A 8.5,8.5 0 0 0 320.6,4106.7 L 253.0,4106.7 A 8.5,8.5 0 0 1 244.5,4098.2" stroke="#EF553B"/>
+<path d="M 329.0,4126.9 L 329.0,4129.4 L 329.0,4160.6 L 329.0,4191.9 L 329.0,4223.1 L 329.0,4254.2 L 329.0,4304.8" stroke="#00CC96"/>
+<path d="M 329.0,4314.2 L 329.0,4316.6 L 329.0,4379.1 A 8.5,8.5 0 0 1 320.6,4387.5" stroke="#00CC96"/>
+<path d="M 312.1,92.8 L 312.1,90.3 A 8.5,8.5 0 0 0 303.7,81.9 L 151.6,81.9 A 8.5,8.5 0 0 1 143.1,73.5" stroke="#636EFA"/>
+<path d="M 312.1,102.2 L 312.1,1758.2 A 8.5,8.5 0 0 1 303.7,1766.7 L 286.8,1766.7 L 269.9,1766.7 A 8.5,8.5 0 0 0 261.4,1775.2" stroke="#636EFA"/>
+<path d="M 312.1,2089.7 L 312.1,2087.2 A 8.4,8.4 0 0 0 303.7,2078.7 A 8.4,8.4 0 0 1 295.2,2070.2" stroke="#00CC96"/>
+<path d="M 312.1,2098.9 L 312.1,2120.8" stroke="#636EFA"/>
+<path d="M 312.1,2130.2 L 312.1,3879.8 A 8.5,8.5 0 0 1 303.7,3888.3" stroke="#636EFA"/>
+<path d="M 312.1,4273.6 L 312.1,4271.1 A 8.5,8.5 0 0 1 320.6,4262.7 A 8.5,8.5 0 0 0 329.0,4254.2" stroke="#00CC96"/>
+<path d="M 312.1,4283.0 L 312.1,4316.6 A 8.4,8.4 0 0 1 303.7,4325.1" stroke="#00CC96"/>
+<path d="M 295.2,124.0 L 295.2,121.5 A 8.5,8.5 0 0 0 286.8,113.1 L 151.6,113.1 A 8.5,8.5 0 0 1 143.1,104.7" stroke="#636EFA"/>
+<path d="M 295.2,133.4 L 295.2,1758.2 A 8.5,8.5 0 0 1 286.8,1766.7" stroke="#636EFA"/>
+<path d="M 295.2,2027.3 L 295.2,2024.8 A 8.5,8.5 0 0 1 303.7,2016.3 L 337.5,2016.3 A 8.5,8.5 0 0 0 345.9,2007.8" stroke="#00CC96"/>
+<path d="M 295.2,2036.5 L 295.2,2058.4" stroke="#00CC96"/>
+<path d="M 295.2,2067.8 L 295.2,2070.2 L 295.2,2132.7 L 295.2,2288.7 L 295.2,2444.7 L 295.2,3879.8 A 8.5,8.5 0 0 1 286.8,3888.3" stroke="#00CC96"/>
+<path d="M 295.2,4242.4 L 295.2,4239.9 A 8.5,8.5 0 0 1 303.7,4231.5 L 320.6,4231.5 A 8.5,8.5 0 0 0 329.0,4223.1" stroke="#00CC96"/>
+<path d="M 295.2,4251.8 L 295.2,4333.6 L 295.2,4336.1" stroke="#00CC96"/>
+<path d="M 295.2,4345.3 L 295.2,4367.2" stroke="#636EFA"/>
+<path d="M 295.2,4376.6 L 295.2,4535.1 A 8.5,8.5 0 0 1 286.8,4543.5 L 236.1,4543.5 L 219.2,4543.5 A 8.5,8.5 0 0 0 210.7,4551.9 L 210.7,4554.5" stroke="#636EFA"/>
+<path d="M 261.4,155.2 L 261.4,152.8 A 8.5,8.5 0 0 0 253.0,144.3 L 151.6,144.3 A 8.5,8.5 0 0 1 143.1,135.8" stroke="#636EFA"/>
+<path d="M 261.4,164.6 L 261.4,1775.2" stroke="#636EFA"/>
+<path d="M 261.4,1777.7 L 261.4,1775.2 A 8.5,8.5 0 0 0 253.0,1766.7 L 100.9,1766.7 A 8.5,8.5 0 0 1 92.4,1758.2 L 92.4,1756.4" stroke="#EF553B"/>
+<path d="M 261.4,1786.9 L 261.4,1808.2" stroke="#00CC96"/>
+<path d="M 261.4,1818.8 L 261.4,1840.1" stroke="#636EFA"/>
+<path d="M 261.4,1849.3 L 261.4,1851.8 L 261.4,1883.0 L 261.4,1933.0" stroke="#EF553B"/>
+<path d="M 261.4,2152.1 L 261.4,2149.6 A 8.5,8.5 0 0 1 269.9,2141.1 L 286.8,2141.1 A 8.5,8.5 0 0 0 295.2,2132.7" stroke="#00CC96"/>
+<path d="M 261.4,2161.3 L 261.4,2163.8 L 261.4,2195.1 L 261.4,2226.2 L 261.4,2276.8" stroke="#EF553B"/>
+<path d="M 261.4,2286.2 L 261.4,3879.8 A 8.5,8.5 0 0 1 253.0,3888.3" stroke="#EF553B"/>
+<path d="M 261.4,4180.0 L 261.4,4177.6 A 8.5,8.5 0 0 1 269.9,4169.1 L 320.6,4169.1 A 8.5,8.5 0 0 0 329.0,4160.6" stroke="#00CC96"/>
+<path d="M 261.4,4189.4 L 261.4,4395.9 L 261.4,4398.5" stroke="#00CC96"/>
+<path d="M 261.4,4407.7 L 261.4,4410.2 L 261.4,4441.4 L 261.4,4472.6 L 261.4,4523.2" stroke="#636EFA"/>
+<path d="M 396.6,186.4 L 396.6,183.9 A 8.5,8.5 0 0 0 388.2,175.5 L 151.6,175.5 A 8.5,8.5 0 0 1 143.1,167.1" stroke="#636EFA"/>
+<path d="M 396.6,195.8 L 396.6,2288.7 L 396.6,2912.7 L 396.6,3553.6" stroke="#636EFA"/>
+<path d="M 396.6,3556.1 L 396.6,3553.6 A 8.5,8.5 0 0 0 388.2,3545.1 L 67.1,3545.1 A 8.5,8.5 0 0 1 58.6,3536.7" stroke="#00CC96"/>
+<path d="M 396.6,3565.3 L 396.6,3567.8 L 396.6,3599.1 L 396.6,3630.2 L 396.6,3680.8" stroke="#EF553B"/>
+<path d="M 396.6,3690.2 L 396.6,3879.8 A 8.5,8.5 0 0 1 388.2,3888.3 L 354.4,3888.3 L 337.5,3888.3 L 303.7,3888.3 L 286.8,3888.3 L 269.9,3888.3 L 253.0,3888.3 L 236.1,3888.3 L 219.2,3888.3 A 8.5,8.5 0 0 0 210.7,3896.8" stroke="#EF553B"/>
+<path d="M 362.8,217.6 L 362.8,215.2 A 8.5,8.5 0 0 0 354.4,206.7 L 151.6,206.7 A 8.5,8.5 0 0 1 143.1,198.2" stroke="#636EFA"/>
+<path d="M 362.8,227.0 L 362.8,2132.7 L 362.8,2756.7 L 362.8,3397.6" stroke="#636EFA"/>
+<path d="M 362.8,3400.1 L 362.8,3397.6 A 8.5,8.5 0 0 0 354.4,3389.1 L 67.1,3389.1 A 8.5,8.5 0 0 1 58.6,3380.7" stroke="#00CC96"/>
+<path d="M 362.8,3409.3 L 362.8,3411.8 L 362.8,3443.1 L 362.8,3474.2 L 362.8,3524.8" stroke="#EF553B"/>
+<path d="M 362.8,3534.2 L 362.8,3879.8 A 8.5,8.5 0 0 1 354.4,3888.3" stroke="#EF553B"/>
+<path d="M 278.3,248.8 L 278.3,246.3 A 8.5,8.5 0 0 0 269.9,237.9 L 151.6,237.9 A 8.5,8.5 0 0 1 143.1,229.4" stroke="#636EFA"/>
+<path d="M 278.3,258.2 L 278.3,2070.2 L 278.3,2694.2 L 278.3,3335.2" stroke="#636EFA"/>
+<path d="M 278.3,3337.7 L 278.3,3335.2 A 8.5,8.5 0 0 0 269.9,3326.7 L 67.1,3326.7 A 8.5,8.5 0 0 1 58.6,3318.2" stroke="#00CC96"/>
+<path d="M 278.3,3346.9 L 278.3,3368.8" stroke="#636EFA"/>
+<path d="M 278.3,3378.2 L 278.3,3879.8 A 8.5,8.5 0 0 1 269.9,3888.3" stroke="#636EFA"/>
+<path d="M 278.3,4211.2 L 278.3,4208.8 A 8.5,8.5 0 0 1 286.8,4200.3 L 320.6,4200.3 A 8.5,8.5 0 0 0 329.0,4191.9" stroke="#00CC96"/>
+<path d="M 278.3,4220.6 L 278.3,4379.1 A 8.5,8.5 0 0 1 269.9,4387.5" stroke="#00CC96"/>
+<path d="M 278.3,4429.0 L 278.3,4427.1 A 8.5,8.5 0 0 0 269.9,4418.7 A 8.5,8.5 0 0 1 261.4,4410.2" stroke="#636EFA"/>
+<path d="M 278.3,4460.2 L 278.3,4458.4 A 8.5,8.5 0 0 0 269.9,4449.9 A 8.5,8.5 0 0 1 261.4,4441.4" stroke="#636EFA"/>
+<path d="M 278.3,4492.0 L 278.3,4489.6 A 8.5,8.5 0 0 0 269.9,4481.1 A 8.5,8.5 0 0 1 261.4,4472.6" stroke="#636EFA"/>
+<path d="M 126.2,280.0 L 126.2,277.6 A 8.4,8.4 0 0 1 134.7,269.1 A 8.4,8.4 0 0 0 143.1,260.6" stroke="#636EFA"/>
+<path d="M 126.2,289.4 L 126.2,2444.7 L 126.2,3068.7 L 126.2,3692.7 L 126.2,4739.1" stroke="#636EFA"/>
+<path d="M 126.2,4741.7 L 126.2,4739.1 A 8.5,8.5 0 0 1 134.7,4730.7 L 168.5,4730.7 A 8.5,8.5 0 0 0 176.9,4722.2" stroke="#EF553B"/>
+<path d="M 126.2,4750.9 L 126.2,4772.8" stroke="#636EFA"/>
+<path d="M 126.2,4782.2 L 126.2,4784.6 A 8.5,8.5 0 0 0 134.7,4793.1 L 168.5,4793.1 A 8.5,8.5 0 0 1 176.9,4801.6 L 176.9,4804.1" stroke="#636EFA"/>
+<path d="M 244.5,311.2 L 244.5,308.8 A 8.5,8.5 0 0 0 236.1,300.3 L 151.6,300.3 A 8.5,8.5 0 0 1 143.1,291.9" stroke="#636EFA"/>
+<path d="M 244.5,320.6 L 244.5,1040.7 L 244.5,1196.7 L 244.5,1352.7 L 244.5,1633.5 A 8.5,8.5 0 0 1 236.1,1641.9 L 219.2,1641.9 A 8.5,8.5 0 0 0 210.7,1650.3" stroke="#636EFA"/>
+<path d="M 244.5,1871.2 L 244.5,1868.8 A 8.4,8.4 0 0 1 253.0,1860.3 A 8.4,8.4 0 0 0 261.4,1851.8" stroke="#EF553B"/>
+<path d="M 244.5,1902.4 L 244.5,1900.0 A 8.4,8.4 0 0 1 253.0,1891.5 A 8.4,8.4 0 0 0 261.4,1883.0" stroke="#EF553B"/>
+<path d="M 244.5,2183.2 L 244.5,2180.8 A 8.4,8.4 0 0 1 253.0,2172.3 A 8.4,8.4 0 0 0 261.4,2163.8" stroke="#EF553B"/>
+<path d="M 244.5,2214.4 L 244.5,2211.9 A 8.4,8.4 0 0 1 253.0,2203.5 A 8.4,8.4 0 0 0 261.4,2195.1" stroke="#EF553B"/>
+<path d="M 244.5,2245.6 L 244.5,2243.2 A 8.4,8.4 0 0 1 253.0,2234.7 A 8.4,8.4 0 0 0 261.4,2226.2" stroke="#EF553B"/>
+<path d="M 244.5,2308.1 L 244.5,2305.6 A 8.5,8.5 0 0 1 253.0,2297.1 L 286.8,2297.1 A 8.5,8.5 0 0 0 295.2,2288.7" stroke="#00CC96"/>
+<path d="M 244.5,2317.3 L 244.5,2319.8 L 244.5,2351.1 L 244.5,2382.2 L 244.5,2432.8" stroke="#EF553B"/>
+<path d="M 244.5,2442.2 L 244.5,3879.8 A 8.5,8.5 0 0 1 236.1,3888.3" stroke="#EF553B"/>
+<path d="M 244.5,4055.3 L 244.5,4052.8 A 8.5,8.5 0 0 0 236.1,4044.3 L 219.2,4044.3 A 8.5,8.5 0 0 1 210.7,4035.8" stroke="#EF553B"/>
+<path d="M 244.5,4064.5 L 244.5,4086.4" stroke="#EF553B"/>
+<path d="M 244.5,4095.8 L 244.5,4098.2 L 244.5,4316.6 L 244.5,4379.1 L 244.5,4535.1 A 8.5,8.5 0 0 1 236.1,4543.5" stroke="#EF553B"/>
+<path d="M 210.7,342.4 L 210.7,339.9 A 8.5,8.5 0 0 0 202.3,331.5 L 151.6,331.5 A 8.5,8.5 0 0 1 143.1,323.1" stroke="#636EFA"/>
+<path d="M 210.7,351.8 L 210.7,1040.7 L 210.7,1196.7 L 210.7,1352.7 L 210.7,1650.3" stroke="#636EFA"/>
+<path d="M 210.7,1652.9 L 210.7,1650.3 A 8.5,8.5 0 0 0 202.3,1641.9 L 100.9,1641.9 A 8.5,8.5 0 0 1 92.4,1633.5" stroke="#EF553B"/>
+<path d="M 210.7,1662.1 L 210.7,1683.4" stroke="#636EFA"/>
+<path d="M 210.7,2339.2 L 210.7,2336.8 A 8.5,8.5 0 0 1 219.2,2328.3 L 236.1,2328.3 A 8.5,8.5 0 0 0 244.5,2319.8" stroke="#EF553B"/>
+<path d="M 210.7,2370.4 L 210.7,2367.9 A 8.5,8.5 0 0 1 219.2,2359.5 L 236.1,2359.5 A 8.5,8.5 0 0 0 244.5,2351.1" stroke="#EF553B"/>
+<path d="M 210.7,2401.6 L 210.7,2399.2 A 8.5,8.5 0 0 1 219.2,2390.7 L 236.1,2390.7 A 8.5,8.5 0 0 0 244.5,2382.2" stroke="#EF553B"/>
+<path d="M 210.7,2464.1 L 210.7,2461.6 A 8.5,8.5 0 0 1 219.2,2453.1 L 286.8,2453.1 A 8.5,8.5 0 0 0 295.2,2444.7" stroke="#00CC96"/>
+<path d="M 210.7,2473.3 L 210.7,2475.8 L 210.7,2507.1 L 210.7,2538.2 L 210.7,2569.4 L 210.7,2620.0" stroke="#EF553B"/>
+<path d="M 210.7,2629.4 L 210.7,3896.8 L 210.7,3899.3" stroke="#EF553B"/>
+<path d="M 210.7,3908.5 L 210.7,3911.1 L 210.7,3961.0" stroke="#AB63FA"/>
+<path d="M 210.7,3971.6 L 210.7,3973.4 L 210.7,4035.8 L 210.7,4316.6 L 210.7,4379.1 L 210.7,4551.9" stroke="#EF553B"/>
+<path d="M 210.7,4563.7 L 210.7,4585.0" stroke="#00CC96"/>
+<path d="M 210.7,4595.6 L 210.7,4597.4 L 210.7,4659.9 A 8.5,8.5 0 0 1 202.3,4668.3 L 185.4,4668.3 A 8.5,8.5 0 0 0 176.9,4676.8" stroke="#EF553B"/>
+<path d="M 160.0,373.6 L 160.0,371.1 A 8.5,8.5 0 0 0 151.6,362.7 A 8.5,8.5 0 0 1 143.1,354.2" stroke="#636EFA"/>
+<path d="M 160.0,383.0 L 160.0,385.4 L 160.0,416.6 L 160.0,447.9 L 160.0,479.1 L 160.0,3879.8 A 8.5,8.5 0 0 0 168.5,3888.3" stroke="#636EFA"/>
+<path d="M 193.8,404.8 L 193.8,402.4 A 8.5,8.5 0 0 0 185.4,393.9 L 168.5,393.9 L 151.6,393.9 A 8.5,8.5 0 0 1 143.1,385.4" stroke="#636EFA"/>
+<path d="M 193.8,414.2 L 193.8,416.6 L 193.8,447.9 L 193.8,479.1 L 193.8,510.2 L 193.8,572.6 L 193.8,697.5 L 193.8,791.0 L 193.8,1945.5 A 8.5,8.5 0 0 1 185.4,1953.9 A 8.5,8.5 0 0 0 176.9,1962.3" stroke="#636EFA"/>
+<path d="M 193.8,2495.2 L 193.8,2492.8 A 8.4,8.4 0 0 1 202.3,2484.3 A 8.4,8.4 0 0 0 210.7,2475.8" stroke="#EF553B"/>
+<path d="M 193.8,2526.4 L 193.8,2523.9 A 8.4,8.4 0 0 1 202.3,2515.5 A 8.4,8.4 0 0 0 210.7,2507.1" stroke="#EF553B"/>
+<path d="M 193.8,2557.6 L 193.8,2555.2 A 8.4,8.4 0 0 1 202.3,2546.7 A 8.4,8.4 0 0 0 210.7,2538.2" stroke="#EF553B"/>
+<path d="M 193.8,2588.8 L 193.8,2586.3 A 8.4,8.4 0 0 1 202.3,2577.9 A 8.4,8.4 0 0 0 210.7,2569.4" stroke="#EF553B"/>
+<path d="M 193.8,2713.7 L 193.8,2711.2 A 8.5,8.5 0 0 0 185.4,2702.7 L 151.6,2702.7 A 8.5,8.5 0 0 1 143.1,2694.2" stroke="#00CC96"/>
+<path d="M 193.8,2722.9 L 193.8,2744.8" stroke="#636EFA"/>
+<path d="M 193.8,2754.2 L 193.8,3879.8 A 8.4,8.4 0 0 0 202.3,3888.3" stroke="#636EFA"/>
+<path d="M 227.6,436.0 L 227.6,433.6 A 8.5,8.5 0 0 0 219.2,425.1 L 202.3,425.1 L 168.5,425.1 L 151.6,425.1 A 8.5,8.5 0 0 1 143.1,416.6" stroke="#636EFA"/>
+<path d="M 227.6,445.4 L 227.6,447.9 L 227.6,479.1 L 227.6,572.6 L 227.6,3879.8 A 8.4,8.4 0 0 1 219.2,3888.3" stroke="#636EFA"/>
+<path d="M 227.6,3930.4 L 227.6,3927.9 A 8.4,8.4 0 0 0 219.2,3919.5 A 8.4,8.4 0 0 1 210.7,3911.1" stroke="#AB63FA"/>
+<path d="M 227.6,3992.9 L 227.6,3990.3 A 8.4,8.4 0 0 0 219.2,3981.9 A 8.4,8.4 0 0 1 210.7,3973.4" stroke="#EF553B"/>
+<path d="M 227.6,4002.1 L 227.6,4023.4" stroke="#EF553B"/>
+<path d="M 345.9,467.2 L 345.9,464.8 A 8.5,8.5 0 0 0 337.5,456.3 L 236.1,456.3 L 202.3,456.3 L 168.5,456.3 L 151.6,456.3 A 8.5,8.5 0 0 1 143.1,447.9" stroke="#636EFA"/>
+<path d="M 345.9,476.6 L 345.9,589.5 L 345.9,592.1" stroke="#636EFA"/>
+<path d="M 345.9,601.3 L 345.9,622.6" stroke="#EF553B"/>
+<path d="M 345.9,633.2 L 345.9,2007.8 L 345.9,3879.8 A 8.5,8.5 0 0 1 337.5,3888.3" stroke="#00CC96"/>
+<path d="M 345.9,4148.8 L 345.9,4146.4 A 8.4,8.4 0 0 0 337.5,4137.9 A 8.4,8.4 0 0 1 329.0,4129.4" stroke="#00CC96"/>
+<path d="M 345.9,4158.2 L 345.9,4379.1 A 8.5,8.5 0 0 1 337.5,4387.5 L 320.6,4387.5 L 269.9,4387.5 A 8.5,8.5 0 0 0 261.4,4395.9" stroke="#00CC96"/>
+<path d="M 286.8,2297.1 L 388.2,2297.1 A 8.5,8.5 0 0 0 396.6,2288.7" stroke="#636EFA"/>
+<path d="M 134.7,2921.1 L 388.2,2921.1 A 8.5,8.5 0 0 0 396.6,2912.7" stroke="#636EFA"/>
+<path d="M 24.8,997.0 L 24.8,995.1 A 8.5,8.5 0 0 1 33.3,986.7 L 84.0,986.7 A 8.5,8.5 0 0 0 92.4,978.2" stroke="#EF553B"/>
+<path d="M 24.8,1007.6 L 24.8,1508.7 A 8.5,8.5 0 0 0 33.3,1517.1 L 50.2,1517.1 L 67.1,1517.1" stroke="#EF553B"/>
+<path d="M 24.8,2932.1 L 24.8,2929.6 A 8.5,8.5 0 0 1 33.3,2921.1 L 134.7,2921.1 A 8.5,8.5 0 0 0 143.1,2912.7" stroke="#00CC96"/>
+<path d="M 24.8,2941.3 L 24.8,2943.8 L 24.8,2975.1 L 24.8,3006.2 L 24.8,3056.8" stroke="#EF553B"/>
+<path d="M 24.8,3066.2 L 24.8,3879.8 A 8.5,8.5 0 0 0 33.3,3888.3 L 50.2,3888.3 L 67.1,3888.3" stroke="#EF553B"/>
+<path d="M 286.8,2141.1 L 354.4,2141.1 A 8.5,8.5 0 0 0 362.8,2132.7" stroke="#636EFA"/>
+<path d="M 134.7,2765.1 L 354.4,2765.1 A 8.5,8.5 0 0 0 362.8,2756.7" stroke="#636EFA"/>
+<path d="M 92.4,748.0 L 92.4,745.5 A 8.5,8.5 0 0 0 84.0,737.1 A 8.5,8.5 0 0 1 75.5,728.6" stroke="#EF553B"/>
+<path d="M 92.4,966.5 L 92.4,964.0 A 8.5,8.5 0 0 0 84.0,955.5 L 67.1,955.5 A 8.5,8.5 0 0 1 58.6,947.0" stroke="#AB63FA"/>
+<path d="M 92.4,975.7 L 92.4,978.2 L 92.4,1028.2" stroke="#EF553B"/>
+<path d="M 92.4,1038.8 L 92.4,1057.5 L 92.4,1060.1" stroke="#EF553B"/>
+<path d="M 92.4,1069.3 L 92.4,1090.6" stroke="#636EFA"/>
+<path d="M 92.4,1153.0 L 92.4,1151.2 A 8.5,8.5 0 0 1 100.9,1142.7 A 8.5,8.5 0 0 0 109.3,1134.2" stroke="#EF553B"/>
+<path d="M 92.4,1163.6 L 92.4,1525.5" stroke="#EF553B"/>
+<path d="M 92.4,1528.1 L 92.4,1525.5 A 8.5,8.5 0 0 0 84.0,1517.1 L 67.1,1517.1 A 8.5,8.5 0 0 1 58.6,1508.7 L 58.6,1506.2" stroke="#636EFA"/>
+<path d="M 92.4,1537.3 L 92.4,1539.8 L 92.4,1571.0 L 92.4,1621.0" stroke="#AB63FA"/>
+<path d="M 92.4,1631.6 L 92.4,1633.5 L 92.4,1715.3" stroke="#EF553B"/>
+<path d="M 92.4,1724.5 L 92.4,1745.8" stroke="#EF553B"/>
+<path d="M 92.4,2776.1 L 92.4,2773.6 A 8.5,8.5 0 0 1 100.9,2765.1 L 134.7,2765.1 A 8.5,8.5 0 0 0 143.1,2756.7" stroke="#00CC96"/>
+<path d="M 92.4,2785.3 L 92.4,2787.8 L 92.4,2819.1 L 92.4,2850.2 L 92.4,2900.8" stroke="#EF553B"/>
+<path d="M 92.4,2910.2 L 92.4,3879.8 A 8.5,8.5 0 0 0 100.9,3888.3" stroke="#EF553B"/>
+<path d="M 303.7,2078.7 L 286.8,2078.7 A 8.5,8.5 0 0 1 278.3,2070.2" stroke="#636EFA"/>
+<path d="M 41.7,841.6 L 41.7,839.1 A 8.4,8.4 0 0 1 50.2,830.7 A 8.4,8.4 0 0 0 58.6,822.2" stroke="#AB63FA"/>
+<path d="M 41.7,872.8 L 41.7,870.4 A 8.4,8.4 0 0 1 50.2,861.9 A 8.4,8.4 0 0 0 58.6,853.5" stroke="#AB63FA"/>
+<path d="M 41.7,904.0 L 41.7,901.5 A 8.4,8.4 0 0 1 50.2,893.1 A 8.4,8.4 0 0 0 58.6,884.6" stroke="#AB63FA"/>
+<path d="M 41.7,1309.0 L 41.7,1307.2 A 8.4,8.4 0 0 1 50.2,1298.7 A 8.4,8.4 0 0 0 58.6,1290.2" stroke="#EF553B"/>
+<path d="M 41.7,1319.6 L 41.7,1508.7 A 8.5,8.5 0 0 0 50.2,1517.1" stroke="#EF553B"/>
+<path d="M 41.7,2963.2 L 41.7,2960.8 A 8.5,8.5 0 0 0 33.3,2952.3 A 8.5,8.5 0 0 1 24.8,2943.8" stroke="#EF553B"/>
+<path d="M 41.7,2994.4 L 41.7,2991.9 A 8.5,8.5 0 0 0 33.3,2983.5 A 8.5,8.5 0 0 1 24.8,2975.1" stroke="#EF553B"/>
+<path d="M 41.7,3025.6 L 41.7,3023.2 A 8.5,8.5 0 0 0 33.3,3014.7 A 8.5,8.5 0 0 1 24.8,3006.2" stroke="#EF553B"/>
+<path d="M 41.7,3088.1 L 41.7,3085.6 A 8.5,8.5 0 0 1 50.2,3077.1 L 117.8,3077.1 L 134.7,3077.1 A 8.5,8.5 0 0 0 143.1,3068.7" stroke="#00CC96"/>
+<path d="M 41.7,3097.3 L 41.7,3099.8 L 41.7,3131.1 L 41.7,3162.2 L 41.7,3193.4 L 41.7,3244.0" stroke="#EF553B"/>
+<path d="M 41.7,3253.4 L 41.7,3879.8 A 8.5,8.5 0 0 0 50.2,3888.3" stroke="#EF553B"/>
+<path d="M 109.3,1122.5 L 109.3,1120.0 A 8.5,8.5 0 0 0 100.9,1111.5 L 84.0,1111.5 L 67.1,1111.5 A 8.5,8.5 0 0 1 58.6,1103.0" stroke="#AB63FA"/>
+<path d="M 109.3,1131.7 L 109.3,1134.2 L 109.3,1184.2" stroke="#EF553B"/>
+<path d="M 109.3,1194.8 L 109.3,1213.5 L 109.3,1216.1" stroke="#EF553B"/>
+<path d="M 109.3,1225.3 L 109.3,1246.6" stroke="#636EFA"/>
+<path d="M 109.3,1465.6 L 109.3,1463.2 A 8.5,8.5 0 0 0 100.9,1454.7 L 67.1,1454.7 A 8.5,8.5 0 0 1 58.6,1446.2" stroke="#636EFA"/>
+<path d="M 109.3,1559.2 L 109.3,1556.8 A 8.5,8.5 0 0 0 100.9,1548.3 A 8.5,8.5 0 0 1 92.4,1539.8" stroke="#AB63FA"/>
+<path d="M 109.3,1589.8 L 109.3,1588.0 A 8.5,8.5 0 0 0 100.9,1579.5 A 8.5,8.5 0 0 1 92.4,1571.0" stroke="#AB63FA"/>
+<path d="M 109.3,2807.2 L 109.3,2804.8 A 8.5,8.5 0 0 0 100.9,2796.3 A 8.5,8.5 0 0 1 92.4,2787.8" stroke="#EF553B"/>
+<path d="M 109.3,2838.4 L 109.3,2835.9 A 8.5,8.5 0 0 0 100.9,2827.5 A 8.5,8.5 0 0 1 92.4,2819.1" stroke="#EF553B"/>
+<path d="M 109.3,2869.6 L 109.3,2867.2 A 8.5,8.5 0 0 0 100.9,2858.7 A 8.5,8.5 0 0 1 92.4,2850.2" stroke="#EF553B"/>
+<path d="M 109.3,3712.1 L 109.3,3709.6 A 8.5,8.5 0 0 0 100.9,3701.1 L 67.1,3701.1 A 8.5,8.5 0 0 1 58.6,3692.7" stroke="#00CC96"/>
+<path d="M 109.3,3721.3 L 109.3,3723.8 L 109.3,3755.1 L 109.3,3786.2 L 109.3,3817.4 L 109.3,3868.0" stroke="#EF553B"/>
+<path d="M 109.3,3877.4 L 109.3,3879.8 A 8.5,8.5 0 0 0 117.8,3888.3 L 151.6,3888.3 L 168.5,3888.3 L 185.4,3888.3 L 202.3,3888.3 A 8.5,8.5 0 0 1 210.7,3896.8" stroke="#EF553B"/>
+<path d="M 58.6,654.5 L 58.6,652.0 A 8.5,8.5 0 0 1 67.1,643.5 L 134.7,643.5 A 8.5,8.5 0 0 0 143.1,635.0" stroke="#EF553B"/>
+<path d="M 58.6,663.7 L 58.6,685.0" stroke="#EF553B"/>
+<path d="M 58.6,695.6 L 58.6,808.0" stroke="#EF553B"/>
+<path d="M 58.6,810.5 L 58.6,808.0 A 8.4,8.4 0 0 1 67.1,799.5 A 8.4,8.4 0 0 0 75.5,791.0" stroke="#00CC96"/>
+<path d="M 58.6,819.7 L 58.6,822.2 L 58.6,853.5 L 58.6,884.6 L 58.6,935.2" stroke="#AB63FA"/>
+<path d="M 58.6,944.6 L 58.6,947.0 L 58.6,1103.0 L 58.6,1276.0 L 58.6,1278.5" stroke="#AB63FA"/>
+<path d="M 58.6,1287.7 L 58.6,1290.2 L 58.6,1340.2" stroke="#EF553B"/>
+<path d="M 58.6,1350.8 L 58.6,1369.5 L 58.6,1372.1" stroke="#EF553B"/>
+<path d="M 58.6,1381.3 L 58.6,1402.6" stroke="#636EFA"/>
+<path d="M 58.6,1434.5 L 58.6,1432.0 A 8.4,8.4 0 0 1 67.1,1423.5 A 8.4,8.4 0 0 0 75.5,1415.0" stroke="#00CC96"/>
+<path d="M 58.6,1443.7 L 58.6,1446.2 L 58.6,1496.8" stroke="#636EFA"/>
+<path d="M 58.6,3119.2 L 58.6,3116.8 A 8.4,8.4 0 0 0 50.2,3108.3 A 8.4,8.4 0 0 1 41.7,3099.8" stroke="#EF553B"/>
+<path d="M 58.6,3150.4 L 58.6,3147.9 A 8.4,8.4 0 0 0 50.2,3139.5 A 8.4,8.4 0 0 1 41.7,3131.1" stroke="#EF553B"/>
+<path d="M 58.6,3181.6 L 58.6,3179.2 A 8.4,8.4 0 0 0 50.2,3170.7 A 8.4,8.4 0 0 1 41.7,3162.2" stroke="#EF553B"/>
+<path d="M 58.6,3212.8 L 58.6,3210.3 A 8.4,8.4 0 0 0 50.2,3201.9 A 8.4,8.4 0 0 1 41.7,3193.4" stroke="#EF553B"/>
+<path d="M 58.6,3275.3 L 58.6,3272.8 A 8.5,8.5 0 0 1 67.1,3264.3 L 168.5,3264.3 A 8.5,8.5 0 0 0 176.9,3255.8" stroke="#00CC96"/>
+<path d="M 58.6,3284.5 L 58.6,3306.4" stroke="#00CC96"/>
+<path d="M 58.6,3315.8 L 58.6,3318.2 L 58.6,3380.7 L 58.6,3536.7 L 58.6,3692.7 L 58.6,3879.8 A 8.5,8.5 0 0 0 67.1,3888.3 L 84.0,3888.3 L 100.9,3888.3 L 117.8,3888.3" stroke="#00CC96"/>
+<path d="M 176.9,529.7 L 176.9,527.1 A 8.5,8.5 0 0 0 168.5,518.7 L 151.6,518.7 A 8.5,8.5 0 0 1 143.1,510.2" stroke="#EF553B"/>
+<path d="M 176.9,538.9 L 176.9,560.8" stroke="#636EFA"/>
+<path d="M 176.9,570.2 L 176.9,572.6 L 176.9,697.5 L 176.9,1962.3 L 176.9,1964.9" stroke="#636EFA"/>
+<path d="M 176.9,1974.1 L 176.9,1995.4" stroke="#EF553B"/>
+<path d="M 176.9,2006.0 L 176.9,3255.8 L 176.9,3879.8 A 8.5,8.5 0 0 0 185.4,3888.3" stroke="#00CC96"/>
+<path d="M 176.9,4616.9 L 176.9,4614.4 A 8.5,8.5 0 0 1 185.4,4605.9 L 202.3,4605.9 A 8.5,8.5 0 0 0 210.7,4597.4" stroke="#EF553B"/>
+<path d="M 176.9,4626.1 L 176.9,4647.4" stroke="#EF553B"/>
+<path d="M 176.9,4658.0 L 176.9,4676.8 L 176.9,4679.3" stroke="#EF553B"/>
+<path d="M 176.9,4688.5 L 176.9,4710.4" stroke="#EF553B"/>
+<path d="M 176.9,4719.8 L 176.9,4722.2 L 176.9,4801.6" stroke="#EF553B"/>
+<path d="M 176.9,4813.3 L 176.9,4834.6" stroke="#636EFA"/>
+<path d="M 75.5,716.9 L 75.5,714.4 A 8.5,8.5 0 0 1 84.0,705.9 L 168.5,705.9 L 185.4,705.9 A 8.5,8.5 0 0 0 193.8,697.5" stroke="#636EFA"/>
+<path d="M 75.5,726.1 L 75.5,728.6 L 75.5,778.6" stroke="#EF553B"/>
+<path d="M 75.5,789.2 L 75.5,791.0 L 75.5,947.0 L 75.5,1103.0 L 75.5,1259.0 L 75.5,1415.0 L 75.5,1508.7 L 75.5,2631.8 L 75.5,3879.8 A 8.5,8.5 0 0 0 84.0,3888.3" stroke="#00CC96"/>
+<path d="M 134.7,799.5 L 185.4,799.5 A 8.5,8.5 0 0 0 193.8,791.0" stroke="#636EFA"/>
+<path d="M 379.7,3431.2 L 379.7,3428.8 A 8.4,8.4 0 0 0 371.3,3420.3 A 8.4,8.4 0 0 1 362.8,3411.8" stroke="#EF553B"/>
+<path d="M 379.7,3462.4 L 379.7,3459.9 A 8.4,8.4 0 0 0 371.3,3451.5 A 8.4,8.4 0 0 1 362.8,3443.1" stroke="#EF553B"/>
+<path d="M 379.7,3493.6 L 379.7,3491.2 A 8.4,8.4 0 0 0 371.3,3482.7 A 8.4,8.4 0 0 1 362.8,3474.2" stroke="#EF553B"/>
+<path d="M 379.7,3587.2 L 379.7,3584.8 A 8.5,8.5 0 0 1 388.2,3576.3 A 8.5,8.5 0 0 0 396.6,3567.8" stroke="#EF553B"/>
+<path d="M 379.7,3618.4 L 379.7,3615.9 A 8.5,8.5 0 0 1 388.2,3607.5 A 8.5,8.5 0 0 0 396.6,3599.1" stroke="#EF553B"/>
+<path d="M 379.7,3649.6 L 379.7,3647.2 A 8.5,8.5 0 0 1 388.2,3638.7 A 8.5,8.5 0 0 0 396.6,3630.2" stroke="#EF553B"/>
+<path d="M 379.7,3743.2 L 379.7,3740.8 A 8.5,8.5 0 0 0 371.3,3732.3 L 117.8,3732.3 A 8.5,8.5 0 0 1 109.3,3723.8" stroke="#EF553B"/>
+<path d="M 379.7,3774.4 L 379.7,3771.9 A 8.5,8.5 0 0 0 371.3,3763.5 L 117.8,3763.5 A 8.5,8.5 0 0 1 109.3,3755.1" stroke="#EF553B"/>
+<path d="M 379.7,3805.6 L 379.7,3803.2 A 8.5,8.5 0 0 0 371.3,3794.7 L 117.8,3794.7 A 8.5,8.5 0 0 1 109.3,3786.2" stroke="#EF553B"/>
+<path d="M 379.7,3836.8 L 379.7,3834.3 A 8.5,8.5 0 0 0 371.3,3825.9 L 117.8,3825.9 A 8.5,8.5 0 0 1 109.3,3817.4" stroke="#EF553B"/>
+<path d="M 278.3,2694.2 A 8.5,8.5 0 0 1 269.9,2702.7 L 202.3,2702.7 A 8.5,8.5 0 0 0 193.8,2711.2" stroke="#636EFA"/>
+<path d="M 126.2,2444.7 A 8.5,8.5 0 0 0 134.7,2453.1 L 202.3,2453.1 A 8.5,8.5 0 0 1 210.7,2461.6" stroke="#636EFA"/>
+<path d="M 126.2,3068.7 A 8.5,8.5 0 0 1 117.8,3077.1" stroke="#636EFA"/>
+<path d="M 126.2,3692.7 A 8.4,8.4 0 0 1 117.8,3701.1 A 8.4,8.4 0 0 0 109.3,3709.6" stroke="#636EFA"/>
+<path d="M 244.5,1040.7 A 8.5,8.5 0 0 1 236.1,1049.1 L 202.3,1049.1 L 100.9,1049.1 A 8.5,8.5 0 0 0 92.4,1057.5" stroke="#636EFA"/>
+<path d="M 244.5,1196.7 A 8.5,8.5 0 0 1 236.1,1205.1 L 202.3,1205.1 L 117.8,1205.1 A 8.5,8.5 0 0 0 109.3,1213.5" stroke="#636EFA"/>
+<path d="M 244.5,1352.7 A 8.5,8.5 0 0 1 236.1,1361.1 L 202.3,1361.1 L 67.1,1361.1 A 8.5,8.5 0 0 0 58.6,1369.5" stroke="#636EFA"/>
+<path d="M 210.7,1040.7 A 8.5,8.5 0 0 1 202.3,1049.1" stroke="#636EFA"/>
+<path d="M 210.7,1196.7 A 8.5,8.5 0 0 1 202.3,1205.1" stroke="#636EFA"/>
+<path d="M 210.7,1352.7 A 8.5,8.5 0 0 1 202.3,1361.1" stroke="#636EFA"/>
+<path d="M 160.0,385.4 A 8.5,8.5 0 0 0 168.5,393.9" stroke="#636EFA"/>
+<path d="M 160.0,416.6 A 8.5,8.5 0 0 0 168.5,425.1" stroke="#636EFA"/>
+<path d="M 160.0,447.9 A 8.5,8.5 0 0 0 168.5,456.3" stroke="#636EFA"/>
+<path d="M 160.0,479.1 A 8.5,8.5 0 0 1 151.6,487.5" stroke="#636EFA"/>
+<path d="M 143.1,495.9 A 8.5,8.5 0 0 1 151.6,487.5 L 185.4,487.5 L 219.2,487.5 A 8.5,8.5 0 0 0 227.6,479.1" stroke="#636EFA"/>
+<path d="M 193.8,416.6 A 8.5,8.5 0 0 0 202.3,425.1" stroke="#636EFA"/>
+<path d="M 193.8,447.9 A 8.5,8.5 0 0 0 202.3,456.3" stroke="#636EFA"/>
+<path d="M 193.8,479.1 A 8.5,8.5 0 0 1 185.4,487.5" stroke="#636EFA"/>
+<path d="M 193.8,510.2 A 8.5,8.5 0 0 1 185.4,518.7 A 8.5,8.5 0 0 0 176.9,527.1" stroke="#636EFA"/>
+<path d="M 193.8,572.6 A 8.5,8.5 0 0 0 202.3,581.1" stroke="#636EFA"/>
+<path d="M 345.9,589.5 A 8.5,8.5 0 0 0 337.5,581.1 L 236.1,581.1 L 202.3,581.1 L 185.4,581.1 A 8.5,8.5 0 0 1 176.9,572.6" stroke="#636EFA"/>
+<path d="M 227.6,447.9 A 8.5,8.5 0 0 0 236.1,456.3" stroke="#636EFA"/>
+<path d="M 227.6,572.6 A 8.5,8.5 0 0 0 236.1,581.1" stroke="#636EFA"/>
+<path d="M 176.9,697.5 A 8.5,8.5 0 0 1 168.5,705.9" stroke="#636EFA"/>
+<path d="M 75.5,947.0 A 8.5,8.5 0 0 0 84.0,955.5" stroke="#00CC96"/>
+<path d="M 75.5,1103.0 A 8.5,8.5 0 0 0 84.0,1111.5" stroke="#00CC96"/>
+<path d="M 75.5,1259.0 A 8.4,8.4 0 0 1 67.1,1267.5 A 8.4,8.4 0 0 0 58.6,1276.0" stroke="#00CC96"/>
+<path d="M 75.5,1508.7 A 8.5,8.5 0 0 0 84.0,1517.1" stroke="#00CC96"/>
+<path d="M 210.7,4316.6 A 8.5,8.5 0 0 0 219.2,4325.1 L 253.0,4325.1 L 286.8,4325.1 A 8.5,8.5 0 0 1 295.2,4333.6" stroke="#EF553B"/>
+<path d="M 210.7,4379.1 A 8.5,8.5 0 0 0 219.2,4387.5 L 253.0,4387.5 A 8.4,8.4 0 0 1 261.4,4395.9" stroke="#EF553B"/>
+<path d="M 244.5,4316.6 A 8.5,8.5 0 0 0 253.0,4325.1" stroke="#EF553B"/>
+<path d="M 244.5,4379.1 A 8.4,8.4 0 0 0 253.0,4387.5" stroke="#EF553B"/>
+<path d="M 295.2,4333.6 A 8.5,8.5 0 0 1 303.7,4325.1 L 320.6,4325.1 A 8.5,8.5 0 0 0 329.0,4316.6" stroke="#00CC96"/>
+</g>
+<g><title>given</title>
+<polygon points="137.8,30.5 148.5,30.5 143.1,39.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="26.5" x2="642.9" y2="26.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="39.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">given</text></g>
+<g><title>ref::checkv_db</title>
+<circle cx="329.0" cy="66.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="60.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">ref</text>
+<text x="419.5" y="71.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_db</text></g>
+<g><title>bench::carveme_166.env</title>
+<circle cx="312.1" cy="97.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="92.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="102.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">carveme_166.env</text></g>
+<g><title>modelling::media</title>
+<circle cx="295.2" cy="128.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="123.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">modelling</text>
+<text x="419.5" y="133.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">media</text></g>
+<g><title>modelling::medium_name</title>
+<circle cx="261.4" cy="159.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="154.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">modelling</text>
+<text x="419.5" y="164.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">medium_name</text></g>
+<g><title>annotation::virsorter2_db</title>
+<circle cx="396.6" cy="191.1" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="185.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="195.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_db</text></g>
+<g><title>ref::vibrant_db</title>
+<circle cx="362.8" cy="222.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="216.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">ref</text>
+<text x="419.5" y="227.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_db</text></g>
+<g><title>bench::deepvirfinder.env</title>
+<circle cx="278.3" cy="253.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="248.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="258.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">deepvirfinder.env</text></g>
+<g><title>ref::genomad</title>
+<circle cx="126.2" cy="284.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="279.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">ref</text>
+<text x="419.5" y="289.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad</text></g>
+<g><title>bench::checkm2.env</title>
+<circle cx="244.5" cy="315.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="310.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="320.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkm2.env</text></g>
+<g><title>bench::checkm2_database</title>
+<circle cx="210.7" cy="347.1" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="341.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="351.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkm2_database</text></g>
+<g><title>viromics::contig_study</title>
+<circle cx="160.0" cy="378.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="372.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="383.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">contig_study</text></g>
+<g><title>sequences::read_metadata</title>
+<circle cx="193.8" cy="409.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="404.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="414.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_metadata</text></g>
+<g><title>sequences::read_pair</title>
+<circle cx="227.6" cy="440.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="435.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="445.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_pair</text></g>
+<g><title>e3::nanopore_reads</title>
+<circle cx="345.9" cy="471.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="466.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="476.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">nanopore_reads</text></g>
+<g><title>sequences::short_reads_pe</title>
+<circle cx="143.1" cy="503.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="497.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="507.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">short_reads_pe</text></g>
+<g><title>bbduk_pratama</title>
+<polygon points="171.6,529.7 182.3,529.7 176.9,538.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="525.7" x2="642.9" y2="525.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="539.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bbduk_pratama</text></g>
+<g><title>sequences::clean_short_reads</title>
+<circle cx="176.9" cy="565.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="560.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="570.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">clean_short_reads</text></g>
+<g><title>spades_hybrid_pratama</title>
+<polygon points="340.6,592.1 351.3,592.1 345.9,601.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="588.1" x2="642.9" y2="588.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="601.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">spades_hybrid_pratama</text></g>
+<g><title>e3::hybrid_spades_assembly</title>
+<circle cx="345.9" cy="627.9" r="5.3" fill="#00CC96" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="622.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="632.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">hybrid_spades_assembly</text></g>
+<g><title>seqkit_reads</title>
+<polygon points="53.3,654.5 64.0,654.5 58.6,663.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="650.5" x2="642.9" y2="650.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="663.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">seqkit_reads</text></g>
+<g><title>sequences::read_qc_stats</title>
+<circle cx="58.6" cy="690.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="684.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="695.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_qc_stats</text></g>
+<g><title>megahit</title>
+<polygon points="70.2,716.9 80.9,716.9 75.5,726.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="712.9" x2="642.9" y2="712.9" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="726.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">megahit</text></g>
+<g><title>sequences::megahit_assembly_graph</title>
+<circle cx="92.4" cy="752.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="747.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="757.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">megahit_assembly_graph</text></g>
+<g><title>sequences::megahit_assembly</title>
+<circle cx="75.5" cy="783.9" r="5.3" fill="#00CC96" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="778.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="788.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">megahit_assembly</text></g>
+<g><title>assembly_stats</title>
+<polygon points="53.3,810.5 64.0,810.5 58.6,819.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="806.5" x2="642.9" y2="806.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="819.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">assembly_stats</text></g>
+<g><title>sequences::assembly_per_bp_coverage</title>
+<circle cx="41.7" cy="846.3" r="4.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.3"/>
+<text x="419.5" y="840.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="851.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">assembly_per_bp_coverage</text></g>
+<g><title>sequences::assembly_per_contig_coverage</title>
+<circle cx="41.7" cy="877.5" r="4.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.3"/>
+<text x="419.5" y="872.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="882.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">assembly_per_contig_coverage</text></g>
+<g><title>sequences::assembly_stats</title>
+<circle cx="41.7" cy="908.7" r="4.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.3"/>
+<text x="419.5" y="903.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="913.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">assembly_stats</text></g>
+<g><title>alignment::bam</title>
+<circle cx="58.6" cy="939.9" r="4.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.3"/>
+<text x="419.5" y="934.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">alignment</text>
+<text x="419.5" y="944.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bam</text></g>
+<g><title>comebin</title>
+<polygon points="87.1,966.5 97.8,966.5 92.4,975.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="962.5" x2="642.9" y2="962.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="975.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">comebin</text></g>
+<g><title>binning::comebin_contig_to_bin_table</title>
+<circle cx="24.8" cy="1002.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="996.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">binning</text>
+<text x="419.5" y="1007.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">comebin_contig_to_bin_table</text></g>
+<g><title>sequences::comebin_bin_fasta</title>
+<circle cx="92.4" cy="1033.5" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1028.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1038.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">comebin_bin_fasta</text></g>
+<g><title>checkm2</title>
+<polygon points="87.1,1060.1 97.8,1060.1 92.4,1069.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1056.1" x2="642.9" y2="1056.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1069.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
+<g><title>bench::checkm2_quality</title>
+<circle cx="92.4" cy="1095.9" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1090.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="1100.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkm2_quality</text></g>
+<g><title>semibin2</title>
+<polygon points="104.0,1122.5 114.7,1122.5 109.3,1131.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1118.5" x2="642.9" y2="1118.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1131.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">semibin2</text></g>
+<g><title>binning::semibin2_contig_to_bin_table</title>
+<circle cx="92.4" cy="1158.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1152.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">binning</text>
+<text x="419.5" y="1163.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">semibin2_contig_to_bin_table</text></g>
+<g><title>sequences::semibin2_bin_fasta</title>
+<circle cx="109.3" cy="1189.5" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1184.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1194.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">semibin2_bin_fasta</text></g>
+<g><title>checkm2</title>
+<polygon points="104.0,1216.1 114.7,1216.1 109.3,1225.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1212.1" x2="642.9" y2="1212.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1225.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
+<g><title>bench::checkm2_quality</title>
+<circle cx="109.3" cy="1251.9" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1246.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="1256.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkm2_quality</text></g>
+<g><title>metabat2</title>
+<polygon points="53.3,1278.5 64.0,1278.5 58.6,1287.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1274.5" x2="642.9" y2="1274.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1287.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabat2</text></g>
+<g><title>binning::metabat2_contig_to_bin_table</title>
+<circle cx="41.7" cy="1314.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1308.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">binning</text>
+<text x="419.5" y="1319.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metabat2_contig_to_bin_table</text></g>
+<g><title>sequences::metabat2_bin_fasta</title>
+<circle cx="58.6" cy="1345.5" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1340.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1350.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metabat2_bin_fasta</text></g>
+<g><title>checkm2</title>
+<polygon points="53.3,1372.1 64.0,1372.1 58.6,1381.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1368.1" x2="642.9" y2="1368.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1381.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
+<g><title>bench::checkm2_quality</title>
+<circle cx="58.6" cy="1407.9" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1402.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="1412.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkm2_quality</text></g>
+<g><title>prodigal</title>
+<polygon points="53.3,1434.5 64.0,1434.5 58.6,1443.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1430.5" x2="642.9" y2="1430.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1443.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">prodigal</text></g>
+<g><title>sequences::gff</title>
+<circle cx="109.3" cy="1470.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="1464.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1475.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gff</text></g>
+<g><title>sequences::orfs</title>
+<circle cx="58.6" cy="1501.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="1496.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1506.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">orfs</text></g>
+<g><title>das_tool</title>
+<polygon points="87.1,1528.1 97.8,1528.1 92.4,1537.3" fill="#FFFFFF" stroke="#AB63FA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1524.1" x2="642.9" y2="1524.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1537.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">das_tool</text></g>
+<g><title>binning::das_tool_summary</title>
+<circle cx="109.3" cy="1563.9" r="4.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.3"/>
+<text x="419.5" y="1558.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">binning</text>
+<text x="419.5" y="1568.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">das_tool_summary</text></g>
+<g><title>binning::das_tool_contig_to_bin_table</title>
+<circle cx="109.3" cy="1595.1" r="5.3" fill="#AB63FA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1589.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">binning</text>
+<text x="419.5" y="1599.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">das_tool_contig_to_bin_table</text></g>
+<g><title>sequences::das_tool_bin_fasta</title>
+<circle cx="92.4" cy="1626.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1620.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1631.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">das_tool_bin_fasta</text></g>
+<g><title>checkm2</title>
+<polygon points="205.4,1652.9 216.1,1652.9 210.7,1662.1" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1648.9" x2="642.9" y2="1648.9" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1662.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm2</text></g>
+<g><title>bench::checkm2_quality</title>
+<circle cx="210.7" cy="1688.7" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1683.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">bench</text>
+<text x="419.5" y="1693.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkm2_quality</text></g>
+<g><title>prodigal_from_bin</title>
+<polygon points="87.1,1715.3 97.8,1715.3 92.4,1724.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1711.3" x2="642.9" y2="1711.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1724.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">prodigal_from_bin</text></g>
+<g><title>sequences::bin_orfs</title>
+<circle cx="92.4" cy="1751.1" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1745.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="1755.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bin_orfs</text></g>
+<g><title>carveme_from_orfs</title>
+<polygon points="256.1,1777.7 266.8,1777.7 261.4,1786.9" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1773.7" x2="642.9" y2="1773.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1787.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">carveme_from_orfs</text></g>
+<g><title>modelling::carveme_model</title>
+<circle cx="261.4" cy="1813.5" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1808.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">modelling</text>
+<text x="419.5" y="1818.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">carveme_model</text></g>
+<g><title>memote_score</title>
+<polygon points="256.1,1840.1 266.8,1840.1 261.4,1849.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1836.1" x2="642.9" y2="1836.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1849.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">memote_score</text></g>
+<g><title>modelling::memote_results</title>
+<circle cx="244.5" cy="1875.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="1870.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">modelling</text>
+<text x="419.5" y="1880.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">memote_results</text></g>
+<g><title>modelling::memote_report</title>
+<circle cx="244.5" cy="1907.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="1901.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">modelling</text>
+<text x="419.5" y="1911.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">memote_report</text></g>
+<g><title>modelling::memote_score</title>
+<circle cx="261.4" cy="1938.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1932.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">modelling</text>
+<text x="419.5" y="1943.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">memote_score</text></g>
+<g><title>spades_pratama</title>
+<polygon points="171.6,1964.9 182.3,1964.9 176.9,1974.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="1960.9" x2="642.9" y2="1960.9" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="1974.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">spades_pratama</text></g>
+<g><title>sequences::spades_assembly</title>
+<circle cx="176.9" cy="2000.7" r="5.3" fill="#00CC96" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="1995.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="2005.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">spades_assembly</text></g>
+<g><title>split_hybrid_contigs_pratama</title>
+<polygon points="289.9,2027.3 300.6,2027.3 295.2,2036.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2023.3" x2="642.9" y2="2023.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2036.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">split_hybrid_contigs_pratama</text></g>
+<g><title>sequences::contig_batch</title>
+<circle cx="295.2" cy="2063.1" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="2057.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="2067.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">contig_batch</text></g>
+<g><title>deepvirfinder_pratama</title>
+<polygon points="306.8,2089.7 317.5,2089.7 312.1,2098.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2085.7" x2="642.9" y2="2085.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2099.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">deepvirfinder_pratama</text></g>
+<g><title>e3::deepvirfinder_candidate_virus</title>
+<circle cx="312.1" cy="2125.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="2120.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="2130.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">deepvirfinder_candidate_virus</text></g>
+<g><title>vibrant_pratama</title>
+<polygon points="256.1,2152.1 266.8,2152.1 261.4,2161.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2148.1" x2="642.9" y2="2148.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2161.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">vibrant_pratama</text></g>
+<g><title>viromics::vibrant_genome_quality</title>
+<circle cx="244.5" cy="2187.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2182.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2192.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_genome_quality</text></g>
+<g><title>viromics::vibrant_amgs</title>
+<circle cx="244.5" cy="2219.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2213.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2223.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_amgs</text></g>
+<g><title>viromics::vibrant_lifestyle_table</title>
+<circle cx="244.5" cy="2250.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2244.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2255.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_lifestyle_table</text></g>
+<g><title>viromics::vibrant_candidate_virus</title>
+<circle cx="261.4" cy="2281.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2276.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2286.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_candidate_virus</text></g>
+<g><title>virsorter2_pratama</title>
+<polygon points="239.2,2308.1 249.9,2308.1 244.5,2317.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2304.1" x2="642.9" y2="2304.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2317.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">virsorter2_pratama</text></g>
+<g><title>annotation::virsorter2_boundary</title>
+<circle cx="210.7" cy="2343.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2338.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="2348.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_boundary</text></g>
+<g><title>annotation::virsorter2_scores</title>
+<circle cx="210.7" cy="2375.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2369.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="2379.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_scores</text></g>
+<g><title>annotation::virsorter2_viral_sequences</title>
+<circle cx="210.7" cy="2406.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2400.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="2411.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_viral_sequences</text></g>
+<g><title>viromics::virsorter2_candidate_virus</title>
+<circle cx="244.5" cy="2437.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2432.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2442.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_candidate_virus</text></g>
+<g><title>genomad_pratama</title>
+<polygon points="205.4,2464.1 216.1,2464.1 210.7,2473.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2460.1" x2="642.9" y2="2460.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2473.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">genomad_pratama</text></g>
+<g><title>taxonomy::genomad_virus_genes</title>
+<circle cx="193.8" cy="2499.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2494.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="2504.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_genes</text></g>
+<g><title>taxonomy::genomad_plasmid_summary</title>
+<circle cx="193.8" cy="2531.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2525.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="2535.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_plasmid_summary</text></g>
+<g><title>taxonomy::genomad_taxonomy</title>
+<circle cx="193.8" cy="2562.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2556.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="2567.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_taxonomy</text></g>
+<g><title>taxonomy::genomad_virus_summary</title>
+<circle cx="193.8" cy="2593.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2588.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="2598.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_summary</text></g>
+<g><title>viromics::genomad_candidate_virus</title>
+<circle cx="210.7" cy="2624.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2619.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2629.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_candidate_virus</text></g>
+<g><title>splitContigsForAmr</title>
+<polygon points="137.8,2651.3 148.5,2651.3 143.1,2660.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2647.3" x2="642.9" y2="2647.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2660.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">splitContigsForAmr</text></g>
+<g><title>sequences::contig_batch</title>
+<circle cx="143.1" cy="2687.1" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="2681.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="2691.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">contig_batch</text></g>
+<g><title>deepvirfinder_pratama</title>
+<polygon points="188.5,2713.7 199.2,2713.7 193.8,2722.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2709.7" x2="642.9" y2="2709.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2723.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">deepvirfinder_pratama</text></g>
+<g><title>e3::deepvirfinder_candidate_virus</title>
+<circle cx="193.8" cy="2749.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="2744.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="2754.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">deepvirfinder_candidate_virus</text></g>
+<g><title>vibrant_pratama</title>
+<polygon points="87.1,2776.1 97.8,2776.1 92.4,2785.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2772.1" x2="642.9" y2="2772.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2785.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">vibrant_pratama</text></g>
+<g><title>viromics::vibrant_genome_quality</title>
+<circle cx="109.3" cy="2811.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2806.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2816.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_genome_quality</text></g>
+<g><title>viromics::vibrant_amgs</title>
+<circle cx="109.3" cy="2843.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2837.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2847.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_amgs</text></g>
+<g><title>viromics::vibrant_lifestyle_table</title>
+<circle cx="109.3" cy="2874.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2868.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2879.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_lifestyle_table</text></g>
+<g><title>viromics::vibrant_candidate_virus</title>
+<circle cx="92.4" cy="2905.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2900.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="2910.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_candidate_virus</text></g>
+<g><title>virsorter2_pratama</title>
+<polygon points="19.5,2932.1 30.2,2932.1 24.8,2941.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="2928.1" x2="642.9" y2="2928.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="2941.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">virsorter2_pratama</text></g>
+<g><title>annotation::virsorter2_boundary</title>
+<circle cx="41.7" cy="2967.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2962.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="2972.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_boundary</text></g>
+<g><title>annotation::virsorter2_viral_sequences</title>
+<circle cx="41.7" cy="2999.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="2993.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="3003.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_viral_sequences</text></g>
+<g><title>annotation::virsorter2_scores</title>
+<circle cx="41.7" cy="3030.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3024.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="3035.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_scores</text></g>
+<g><title>viromics::virsorter2_candidate_virus</title>
+<circle cx="24.8" cy="3061.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3056.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3066.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_candidate_virus</text></g>
+<g><title>genomad_pratama</title>
+<polygon points="36.4,3088.1 47.1,3088.1 41.7,3097.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3084.1" x2="642.9" y2="3084.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3097.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">genomad_pratama</text></g>
+<g><title>taxonomy::genomad_plasmid_summary</title>
+<circle cx="58.6" cy="3123.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3118.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3128.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_plasmid_summary</text></g>
+<g><title>taxonomy::genomad_taxonomy</title>
+<circle cx="58.6" cy="3155.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3149.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3159.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_taxonomy</text></g>
+<g><title>taxonomy::genomad_virus_genes</title>
+<circle cx="58.6" cy="3186.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3180.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3191.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_genes</text></g>
+<g><title>taxonomy::genomad_virus_summary</title>
+<circle cx="58.6" cy="3217.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3212.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3222.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_summary</text></g>
+<g><title>viromics::genomad_candidate_virus</title>
+<circle cx="41.7" cy="3248.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3243.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3253.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_candidate_virus</text></g>
+<g><title>splitContigsForAmr</title>
+<polygon points="53.3,3275.3 64.0,3275.3 58.6,3284.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3271.3" x2="642.9" y2="3271.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3284.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">splitContigsForAmr</text></g>
+<g><title>sequences::contig_batch</title>
+<circle cx="58.6" cy="3311.1" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="3305.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="419.5" y="3315.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">contig_batch</text></g>
+<g><title>deepvirfinder_pratama</title>
+<polygon points="273.0,3337.7 283.7,3337.7 278.3,3346.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3333.7" x2="642.9" y2="3333.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3347.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">deepvirfinder_pratama</text></g>
+<g><title>e3::deepvirfinder_candidate_virus</title>
+<circle cx="278.3" cy="3373.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="3368.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="3378.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">deepvirfinder_candidate_virus</text></g>
+<g><title>vibrant_pratama</title>
+<polygon points="357.5,3400.1 368.2,3400.1 362.8,3409.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3396.1" x2="642.9" y2="3396.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3409.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">vibrant_pratama</text></g>
+<g><title>viromics::vibrant_amgs</title>
+<circle cx="379.7" cy="3435.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3430.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3440.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_amgs</text></g>
+<g><title>viromics::vibrant_genome_quality</title>
+<circle cx="379.7" cy="3467.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3461.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3471.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_genome_quality</text></g>
+<g><title>viromics::vibrant_lifestyle_table</title>
+<circle cx="379.7" cy="3498.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3492.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3503.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_lifestyle_table</text></g>
+<g><title>viromics::vibrant_candidate_virus</title>
+<circle cx="362.8" cy="3529.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3524.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3534.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">vibrant_candidate_virus</text></g>
+<g><title>virsorter2_pratama</title>
+<polygon points="391.3,3556.1 402.0,3556.1 396.6,3565.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3552.1" x2="642.9" y2="3552.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3565.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">virsorter2_pratama</text></g>
+<g><title>annotation::virsorter2_boundary</title>
+<circle cx="379.7" cy="3591.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3586.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="3596.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_boundary</text></g>
+<g><title>annotation::virsorter2_scores</title>
+<circle cx="379.7" cy="3623.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3617.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="3627.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_scores</text></g>
+<g><title>annotation::virsorter2_viral_sequences</title>
+<circle cx="379.7" cy="3654.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3648.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="419.5" y="3659.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_viral_sequences</text></g>
+<g><title>viromics::virsorter2_candidate_virus</title>
+<circle cx="396.6" cy="3685.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3680.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3690.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">virsorter2_candidate_virus</text></g>
+<g><title>genomad_pratama</title>
+<polygon points="104.0,3712.1 114.7,3712.1 109.3,3721.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3708.1" x2="642.9" y2="3708.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3721.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">genomad_pratama</text></g>
+<g><title>taxonomy::genomad_virus_genes</title>
+<circle cx="379.7" cy="3747.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3742.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3752.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_genes</text></g>
+<g><title>taxonomy::genomad_plasmid_summary</title>
+<circle cx="379.7" cy="3779.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3773.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3783.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_plasmid_summary</text></g>
+<g><title>taxonomy::genomad_virus_summary</title>
+<circle cx="379.7" cy="3810.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3804.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3815.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_summary</text></g>
+<g><title>taxonomy::genomad_taxonomy</title>
+<circle cx="379.7" cy="3841.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3836.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="419.5" y="3846.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_taxonomy</text></g>
+<g><title>viromics::genomad_candidate_virus</title>
+<circle cx="109.3" cy="3872.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="3867.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3877.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_candidate_virus</text></g>
+<g><title>merge_candidate_calls_pratama</title>
+<polygon points="205.4,3899.3 216.1,3899.3 210.7,3908.5" fill="#FFFFFF" stroke="#AB63FA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3895.3" x2="642.9" y2="3895.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="3908.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_candidate_calls_pratama</text></g>
+<g><title>viromics::candidate_call_provenance</title>
+<circle cx="227.6" cy="3935.1" r="4.7" fill="#FFFFFF" stroke="#AB63FA" stroke-width="1.3"/>
+<text x="419.5" y="3929.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3939.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">candidate_call_provenance</text></g>
+<g><title>viromics::dereplicated_candidate_virus</title>
+<circle cx="210.7" cy="3966.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="3960.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="3971.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">dereplicated_candidate_virus</text></g>
+<g><title>contig_length_table</title>
+<polygon points="222.3,3992.9 233.0,3992.9 227.6,4002.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="3988.9" x2="642.9" y2="3988.9" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4002.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">contig_length_table</text></g>
+<g><title>viromics::contig_length_table</title>
+<circle cx="227.6" cy="4028.7" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="4023.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="4033.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">contig_length_table</text></g>
+<g><title>split_viral_contigs_pratama</title>
+<polygon points="239.2,4055.3 249.9,4055.3 244.5,4064.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4051.3" x2="642.9" y2="4051.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4064.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">split_viral_contigs_pratama</text></g>
+<g><title>e3::viral_contig_batch</title>
+<circle cx="244.5" cy="4091.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="4085.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4095.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">viral_contig_batch</text></g>
+<g><title>checkv_batch_pratama</title>
+<polygon points="323.7,4117.7 334.4,4117.7 329.0,4126.9" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4113.7" x2="642.9" y2="4113.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4127.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkv_batch_pratama</text></g>
+<g><title>e3::checkv_complete_genomes_batch</title>
+<circle cx="345.9" cy="4153.5" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="4148.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4158.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_complete_genomes_batch</text></g>
+<g><title>e3::checkv_completeness_batch</title>
+<circle cx="261.4" cy="4184.7" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="4179.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4189.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_completeness_batch</text></g>
+<g><title>e3::checkv_contamination_batch</title>
+<circle cx="278.3" cy="4215.9" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="4210.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4220.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_contamination_batch</text></g>
+<g><title>e3::checkv_proviruses_batch</title>
+<circle cx="295.2" cy="4247.1" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="4241.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4251.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_proviruses_batch</text></g>
+<g><title>e3::checkv_viruses_batch</title>
+<circle cx="312.1" cy="4278.3" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="4272.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4283.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_viruses_batch</text></g>
+<g><title>e3::checkv_quality_summary_batch</title>
+<circle cx="329.0" cy="4309.5" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="419.5" y="4304.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4314.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_quality_summary_batch</text></g>
+<g><title>curate_trim_batch_pratama</title>
+<polygon points="289.9,4336.1 300.6,4336.1 295.2,4345.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4332.1" x2="642.9" y2="4332.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4345.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">curate_trim_batch_pratama</text></g>
+<g><title>e3::curated_candidate_virus_batch</title>
+<circle cx="295.2" cy="4371.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="4366.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4376.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">curated_candidate_virus_batch</text></g>
+<g><title>checkv_merge_pratama</title>
+<polygon points="256.1,4398.5 266.8,4398.5 261.4,4407.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4394.5" x2="642.9" y2="4394.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4407.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkv_merge_pratama</text></g>
+<g><title>viromics::checkv_contamination</title>
+<circle cx="278.3" cy="4434.3" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="4428.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="4439.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_contamination</text></g>
+<g><title>viromics::checkv_quality_summary</title>
+<circle cx="278.3" cy="4465.5" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="4460.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="4470.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_quality_summary</text></g>
+<g><title>viromics::checkv_complete_genomes</title>
+<circle cx="278.3" cy="4496.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="4491.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="4501.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_complete_genomes</text></g>
+<g><title>viromics::checkv_completeness</title>
+<circle cx="261.4" cy="4527.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="4522.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="4532.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">checkv_completeness</text></g>
+<g><title>curate_merge_pratama</title>
+<polygon points="205.4,4554.5 216.1,4554.5 210.7,4563.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4550.5" x2="642.9" y2="4550.5" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4563.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">curate_merge_pratama</text></g>
+<g><title>e3::curated_candidate_virus</title>
+<circle cx="210.7" cy="4590.3" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="4584.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4595.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">curated_candidate_virus</text></g>
+<g><title>mmseqs_votu_pratama</title>
+<polygon points="171.6,4616.9 182.3,4616.9 176.9,4626.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4612.9" x2="642.9" y2="4612.9" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4626.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">mmseqs_votu_pratama</text></g>
+<g><title>viromics::votu_cluster_table</title>
+<circle cx="176.9" cy="4652.7" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="4647.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>
+<text x="419.5" y="4657.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">votu_cluster_table</text></g>
+<g><title>votu_representatives_pratama</title>
+<polygon points="171.6,4679.3 182.3,4679.3 176.9,4688.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4675.3" x2="642.9" y2="4675.3" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4688.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">votu_representatives_pratama</text></g>
+<g><title>e3::votu_representatives</title>
+<circle cx="176.9" cy="4715.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="419.5" y="4709.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4719.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">votu_representatives</text></g>
+<g><title>genomad_island_annotate_pratama</title>
+<polygon points="120.9,4741.7 131.6,4741.7 126.2,4750.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4737.7" x2="642.9" y2="4737.7" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4751.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">genomad_island_annotate_pratama</text></g>
+<g><title>e3::genomad_island_genes</title>
+<circle cx="126.2" cy="4777.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="419.5" y="4772.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4782.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_island_genes</text></g>
+<g><title>island_filter_pratama</title>
+<polygon points="171.6,4804.1 182.3,4804.1 176.9,4813.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="409.1" y1="4800.1" x2="642.9" y2="4800.1" stroke="#111111" stroke-width="1"/>
+<text x="409.1" y="4813.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">island_filter_pratama</text></g>
+<g><title>e3::final_votu_representatives</title>
+<circle cx="176.9" cy="4839.9" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="419.5" y="4834.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">e3</text>
+<text x="419.5" y="4844.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">final_votu_representatives</text></g>
+</svg>

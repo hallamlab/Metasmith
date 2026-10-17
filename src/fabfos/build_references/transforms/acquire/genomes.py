@@ -34,7 +34,7 @@ def protocol(context: ExecutionContext):
         H={host}; ACC={acc}
         # GCF_048541595.1 -> GCF/048/541/595, which is how the FTP shards the tree.
         P=$(echo $ACC | sed 's|^\\(GC[FA]\\)_\\([0-9][0-9][0-9]\\)\\([0-9][0-9][0-9]\\)\\([0-9][0-9][0-9]\\).*|\\1/\\2/\\3/\\4|')
-        DIR=$(wget -qO- $FTP_ROOT/$P/ | grep -o "${{ACC}}_[^\\"/<]*" | sort -u | head -1)
+        DIR=$(wget -qO- $FTP_ROOT/$P/ | grep -o "${{ACC}}_[^\\"/<]*" | sort -u | sed -n 1p)
         if [ -z "$DIR" ]; then
             echo "[genomes] $H ($ACC): no assembly directory under $FTP_ROOT/$P/" >&2
             exit 1

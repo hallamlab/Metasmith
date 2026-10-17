@@ -1,5 +1,6 @@
 <script>
   import DeleteControl from './DeleteControl.svelte'
+  import { PARAM_NAME, paramProblems, splitPair } from '../lib/params.js'
 
   // Key/value rows for nextflow params. Two boxes and a cross, the shape the
   // recipe rows already use, because a params file is a list of one thing and
@@ -13,8 +14,8 @@
     // shown greyed in a row whose value is empty, so an inherited default reads
     // as "this is what it will be" rather than as an empty box
     inherited = {},
-    keyPlaceholder = 'process_clusterOptions',
-    valuePlaceholder = '--account=st-you-1',
+    keyPlaceholder = 'slurmAccount',
+    valuePlaceholder = 'the account to charge',
   } = $props()
 
   // Read off the rows each time rather than kept in a counter: the parent may
@@ -29,6 +30,12 @@
   function drop(id) {
     rows = rows.filter((r) => r.id !== id)
   }
+
+  function settle(id) {
+    rows = rows.map((r) => (r.id === id ? splitPair(r) : r))
+  }
+
+  let problems = $derived(paramProblems(rows))
 </script>
 
 <div class="rows">
@@ -36,7 +43,9 @@
     <div class="entry">
       <input
         class="grow mono"
+        class:bad={row.key?.trim() && !PARAM_NAME.test(row.key.trim())}
         bind:value={row.key}
+        onblur={() => settle(row.id)}
         placeholder={keyPlaceholder}
         spellcheck="false"
         aria-label="param name"
@@ -54,6 +63,10 @@
     </div>
   {/each}
 
+  {#each problems as problem}
+    <span class="small problem">{problem}</span>
+  {/each}
+
   <div class="entry addrow">
     <button class="small" onclick={add}>+ a param</button>
   </div>
@@ -65,4 +78,6 @@
   .entry :global(input) { min-width: 0; }
   .trail { display: flex; align-items: center; }
   .addrow { gap: 10px; }
+  .entry :global(input.bad) { border-color: var(--bad); }
+  .problem { color: var(--bad); }
 </style>

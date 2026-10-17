@@ -50,7 +50,10 @@ def _centroids(tables) -> set[str]:
 
 # add_to_db globs the tree itself at either the top of the directory or under `infer/`,
 # but the tree-taxonomy only under `infer/`. Read both, because which one de_novo_wf
-# writes has moved between GTDB-Tk versions.
+# writes has moved between GTDB-Tk versions. The marker set is a wildcard for the same
+# reason: GTDB-Tk 2 names the archaeal set ar53, and older releases ar122.
+DOMAINS = ("bac[0-9]*", "ar[0-9]*")
+
 def _domain_files(tree_dir: Path, domain: str, suffix: str) -> list[Path]:
     found = []
     for parent in (tree_dir, tree_dir/"infer"):
@@ -67,7 +70,7 @@ def _leaves(newick: str) -> set[str]:
 
 def _tree_members(tree_dir: Path) -> set[str]:
     members = set()
-    for domain in ("bac120", "ar122"):
+    for domain in DOMAINS:
         for table in _domain_files(tree_dir, domain, "decorated.tree-taxonomy"):
             with open(table) as f:
                 for line in f:
@@ -128,7 +131,7 @@ def protocol(context: ExecutionContext):
     # is how the paper ran it -- the per-binner split is ours, not theirs.
     merged = Path("gtdb_merged/infer")
     merged.mkdir(parents=True, exist_ok=True)
-    for domain in ("bac120", "ar122"):
+    for domain in DOMAINS:
         rows: dict[str, str] = {}
         best_tree, best_leaves = None, -1
         for handle in tree_handles:
@@ -145,18 +148,19 @@ def protocol(context: ExecutionContext):
                     best_tree, best_leaves = tree, len(leaves)
         if best_tree is None:
             continue
+        marker = best_tree.name.split(".")[1]
         newick = best_tree.read_text()
         present = _leaves(newick)
         graft = [g for g in rows if g in staged_mags and g not in present]
         if graft:
             body = newick.strip().rstrip(";").strip()
             newick = f"({body}," + ",".join(f"{g}:0.1" for g in graft) + ");\n"
-        (merged/f"gtdbtk.{domain}.decorated.tree").write_text(newick)
-        with open(merged/f"gtdbtk.{domain}.decorated.tree-taxonomy", "w") as f:
+        (merged/f"gtdbtk.{marker}.decorated.tree").write_text(newick)
+        with open(merged/f"gtdbtk.{marker}.decorated.tree-taxonomy", "w") as f:
             for gid, taxon in rows.items():
                 f.write(f"{gid}\t{taxon}\n")
         Log.Info(
-            f"{domain}: {len(rows)} taxonomy rows from {len(tree_handles)} directories,"
+            f"{marker}: {len(rows)} taxonomy rows from {len(tree_handles)} directories,"
             f" {best_leaves} tree leaves, {len(graft)} MAGs grafted"
         )
 

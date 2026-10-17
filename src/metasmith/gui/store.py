@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import os
 import shutil
 import threading
@@ -446,6 +447,17 @@ class Project:
         return out
 
     def create_run(self, workflow: str, record: dict) -> RunRecord:
+        # flock, not the state lock: two GUI processes can share a project.
+        runs = self.runs_dir(workflow)
+        runs.mkdir(parents=True, exist_ok=True)
+        fd = os.open(runs / ".create.lock", os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            return self._create_run(workflow, record)
+        finally:
+            os.close(fd)
+
+    def _create_run(self, workflow: str, record: dict) -> RunRecord:
         wf = self.read_workflow(workflow)
         # Every run of a workflow stages into the same task_key workspace on the
         # agent -- one PID.lock, one process group. A second run launched while

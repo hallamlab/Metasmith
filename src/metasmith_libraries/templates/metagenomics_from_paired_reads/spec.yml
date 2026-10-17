@@ -83,6 +83,7 @@ transform_libraries:
 - functionalAnnotation
 resource_libraries:
 - env
+- lib
 shared_input_paths: []
 input_library:
   schema: v1

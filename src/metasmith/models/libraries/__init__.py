@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .resources import Duration, Gpu, GPU_LABEL, Gpus, Resources, Size
+from .resources import Duration, Gpu, GPU_LABEL, Gpus, LOCAL_LABEL, Resources, Size
 from .types import (
     DataTypeLibrary, DataTypeOntologies, DataTypeOntology, yaml_safe_load,
 )

@@ -3,7 +3,7 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::diamond.env"))
-db      = model.AddProduct(lib.GetType("ref::uniref50_diamond_db"))
+fasta   = model.AddProduct(lib.GetType("ref::uniref50_fasta"))
 
 # ftp.uniprot.org has gone down whole-host before (every path 404s, not just
 # this one) without warning -- pinning a single mirror just resets the same
@@ -15,18 +15,20 @@ UNIREF50_URLS = [
 ]
 
 def protocol(context: ExecutionContext):
-    idb = context.Output(db)
+    ifasta = context.Output(fasta)
+    url = context.params.get("uniref50_url")
+    urls = UNIREF50_URLS if url is None else [url]
 
-    _cmd = "\n".join([
-        FetchCommand(UNIREF50_URLS, "uniref50.fasta.gz", label="uniref50"),
-        "diamond makedb --in uniref50.fasta.gz -d uniref50",
-        f"mv uniref50.dmnd {idb.container}",
-    ])
-    context.ExecWithEnv(env=image, cmd=_cmd)
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        FetchCommand(urls, "uniref50.fasta.gz", label="uniref50"),
+        f"mv uniref50.fasta.gz {ifasta.local}",
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
 
     return ExecutionResult(
-        manifest=[{db: idb.local}],
-        success=idb.local.exists(),
+        manifest=[{fasta: ifasta.local}],
+        success=ifasta.local.is_file() and ifasta.local.stat().st_size > 0,
     )
 
 TransformInstance(
@@ -35,8 +37,8 @@ TransformInstance(
     group_by=image,
     labels=["local"],
     resources=Resources(
-        cpus=8,
-        memory=Size.GB(14),
+        cpus=1,
+        memory=Size.GB(2),
         duration=Duration(hours=12),
     ),
 )

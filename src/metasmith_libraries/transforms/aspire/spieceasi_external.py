@@ -13,8 +13,8 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run    = model.AddRequirement(lib.GetType("aspire::run"))
-policy = model.AddRequirement(lib.GetType("aspire::spieceasi_off"), parents={run})
+study  = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+policy = model.AddRequirement(lib.GetType("aspire::spieceasi_off"), parents={study})
 x_all  = model.AddRequirement(lib.GetType("aspire::external_graph_all"))
 x_thr  = model.AddRequirement(lib.GetType("aspire::external_graph_thr"))
 x_nf   = model.AddRequirement(lib.GetType("aspire::external_node_features"))
@@ -41,7 +41,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

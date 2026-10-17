@@ -12,7 +12,7 @@
 // `Source.Parse` expands `~` for a local home, so what comes back from a save is
 // `/home/you/msm.<id>` where `~/msm.<id>` went in, and only the server knows
 // what `~` was. It answers with `home_is_default` on the agent.
-import { paramRows, toParams } from './params.js'
+import { paramProblems, paramRows, toParams } from './params.js'
 
 export const HOME_PREFIX = '~/msm.'
 
@@ -120,5 +120,6 @@ export function formProblems(form) {
   // a form that was never loaded from a real agent can be missing
   if (!(form.path ?? '').trim() && !form.id) out.push('no home directory')
   if (form.kind === 'ssh' && !(form.host ?? '').trim()) out.push('no host chosen')
+  out.push(...paramProblems(form.params))
   return out
 }

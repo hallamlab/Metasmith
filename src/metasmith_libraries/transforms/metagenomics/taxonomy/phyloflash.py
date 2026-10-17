@@ -23,8 +23,10 @@ def protocol(context: ExecutionContext):
     threads  = context.params.get('cpus')
     threads_arg = "" if threads is None else f"-CPUs {threads}"
 
+    # unbgzip=f: bbmap's own BGZF reader hangs on a large pigz stream; see
+    # logistics/interleave_zipped_short_reads.py.
     _cmd = f"""
-            reformat.sh in={ireads.container} \
+            reformat.sh unbgzip=f in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
     context.ExecWithEnv(env=img_bb, cmd=_cmd)
@@ -65,6 +67,6 @@ TransformInstance(
     resources=Resources(
         cpus=8,
         memory=Size.GB(32),
-        duration=Duration(hours=2),
+        duration=Duration(hours=6),
     )
 )

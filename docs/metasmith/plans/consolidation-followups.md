@@ -9,6 +9,13 @@ module already states belongs here either.
 
 ## Open bugs
 
+**`WaitForWorkflow` reports a live run as `errored` when its remote probe gets no answer.**
+`agents/run_control.py` parses labelled lines from one remote shell call. When the call fails,
+as it does when the ssh master drops, every field takes its default. The defaults read as "log
+present, `PID GONE`, driver not `ALIVE`, no sentinel", which is the dead-run branch. Seen twice on
+fir during the 0.24.2 smoke while both runs completed normally. The first move is to treat a probe
+with no `MTIME` line as unknown and keep polling.
+
 **The e2e docker cleanup chmods every pytest tmpdir on the host, and now times out doing it.**
 `tests/metasmith/e2e/docker/test_cache_real_nextflow.py::_bind_root` walks UP from the work
 directory until its parent is `/tmp`, which lands on `/tmp/pytest-of-tony` — the shared root of

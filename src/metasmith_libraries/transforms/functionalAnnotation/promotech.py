@@ -19,8 +19,8 @@ def protocol(context: ExecutionContext):
     imerge = context.Input(merge)
     opred = context.Output(out_pred)
 
-    chunks_dir  = "/ws/pt_chunks"
-    results_dir = "/ws/pt_results"
+    chunks_dir  = "pt_chunks"
+    results_dir = "pt_results"
 
     context.ExecWithEnv(
         env=image,
@@ -37,19 +37,20 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(
         env=image,
         cmd=f"""
+            export ws="$PWD"
             cd /opt/promotech &&
-            mkdir -p {results_dir} &&
+            mkdir -p "$ws/{results_dir}" &&
             run_chunk() {{
                 chunk=$1
                 name=$(basename "$chunk" .fna)
-                mkdir -p {results_dir}/$name
+                mkdir -p "$ws/{results_dir}/$name"
                 python promotech.py -pg -f "$chunk" \
-                    -o {results_dir}/$name -m RF-HOT 2>&1 &&
-                python promotech.py -g -i {results_dir}/$name \
-                    -o {results_dir}/$name -m RF-HOT -t 0.5 2>&1
+                    -o "$ws/{results_dir}/$name" -m RF-HOT 2>&1 &&
+                python promotech.py -g -i "$ws/{results_dir}/$name" \
+                    -o "$ws/{results_dir}/$name" -m RF-HOT -t 0.5 2>&1
             }} &&
             export -f run_chunk &&
-            ls {chunks_dir}/*.fna | xargs -I{{}} -P {cpus} \
+            ls "$ws/{chunks_dir}"/*.fna | xargs -I{{}} -P {cpus} \
                 bash -c 'run_chunk "$@"' _ {{}}
         """,
     )
@@ -60,11 +61,11 @@ def protocol(context: ExecutionContext):
             python {imerge.container} \
                 --manifest {chunks_dir}/manifest.json \
                 --results-dir {results_dir} \
-                --output /ws/pt_merged.tsv
+                --output pt_merged.tsv
         """,
     )
 
-    context.LocalShell(f"cp /ws/pt_merged.tsv {opred.local}")
+    context.LocalShell(f"cp pt_merged.tsv {opred.local}")
 
     return ExecutionResult(
         manifest=[{out_pred: opred.local}],

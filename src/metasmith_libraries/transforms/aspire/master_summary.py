@@ -16,12 +16,12 @@ from metasmith.python_api import *
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-run        = model.AddRequirement(lib.GetType("aspire::run"))
-am         = model.AddRequirement(lib.GetType("aspire::analysis_asv_meta"), parents={run})
-counts     = model.AddRequirement(lib.GetType("aspire::analysis_counts"), parents={run})
-net        = model.AddRequirement(lib.GetType("aspire::network_outputs"), parents={run})
-sankey     = model.AddRequirement(lib.GetType("aspire::sankey_outputs"), parents={run})
-magl       = model.AddRequirement(lib.GetType("aspire::asv_mag_outputs"), parents={run})
+study      = model.AddRequirement(lib.GetType("aspire::study_metadata"))
+am         = model.AddRequirement(lib.GetType("aspire::analysis_asv_meta"), parents={study})
+counts     = model.AddRequirement(lib.GetType("aspire::analysis_counts"), parents={study})
+net        = model.AddRequirement(lib.GetType("aspire::network_outputs"), parents={study})
+sankey     = model.AddRequirement(lib.GetType("aspire::sankey_outputs"), parents={study})
+magl       = model.AddRequirement(lib.GetType("aspire::asv_mag_outputs"), parents={study})
 long       = model.AddProduct(lib.GetType("aspire::master_long"))
 wide       = model.AddProduct(lib.GetType("aspire::master_count_wide"))
 manifest   = model.AddProduct(lib.GetType("aspire::master_source_manifest"))
@@ -49,7 +49,7 @@ _DIRECTORY_PRODUCTS = set()
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=run,
+    group_by=study,
     resources=Resources(
         cpus=4,
         memory=Size.GB(32),

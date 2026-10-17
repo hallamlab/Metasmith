@@ -7,7 +7,7 @@ edition = "2024"
 clap = { version = "4.4", features = ["derive"] }
 gethostname = "0.4"
 users = "0.11" # for getting $USER
-nix = { version = "0.28", features = ["signal", "process"]} # For signaling processes (SIGTERM)
+nix = { version = "0.28", features = ["signal", "process", "fs"]} # For signaling processes (SIGTERM)
 log = "0.4" # Standard logging facade
 chrono = "0.4" # timestamps
 lazy_static = "1.4" # For thread-safe global access to the log file handle

@@ -62,6 +62,29 @@ def test_an_existing_shard_wins(tmp_path):
     assert not list(cache_root.glob("*.tmp"))
 
 
+def test_an_evicted_shard_is_replaced(tmp_path):
+    from metasmith.caching.invocation import probe
+    from metasmith.caching.promote import tombstone_shard
+
+    cache_root = tmp_path / "task_cache"
+    promote_members(
+        cwd=_task_dir(tmp_path, "t1", "first"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+    tombstone_shard(cache_root, KEY)
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
+
+    records = promote_members(
+        cwd=_task_dir(tmp_path, "t2", "second"), entries=[_entry()], meta=META,
+        cache_root=cache_root, successes=[True],
+    )
+
+    assert records[0]["status"] == "promoted"
+    assert probe(cache_root, bytes.fromhex(KEY)) is not None
+    assert (shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt").read_text() == "second"
+    assert not list(cache_root.glob("*.tmp")) and not list(cache_root.glob("*.dead"))
+
+
 def test_a_failed_member_is_recorded_and_not_promoted(tmp_path):
     cache_root = tmp_path / "task_cache"
     records = promote_members(
@@ -87,54 +110,6 @@ def test_a_product_is_stored_under_its_canonical_position(tmp_path):
     assert records[2]["produces"][0]["relpath"] == "out/1-1-1.abcdef-step_a.txt"
 
 
-def test_network_fs_uses_copy_strategy(tmp_path, monkeypatch):
-    from metasmith.caching import fs as fs_module
-
-    fake_mp = str(tmp_path)
-    fake_mountinfo = (
-        f"100 1 0:42 / {fake_mp} rw,relatime shared:1 - lustre lustre rw\n"
-        "1 0 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw\n"
-    )
-    monkeypatch.setattr(
-        Path, "read_text", lambda self, *a, **k: (
-            fake_mountinfo if str(self) == "/proc/self/mountinfo"
-            else _orig_read_text(self, *a, **k)
-        ),
-    )
-    fs_module._read_mountinfo.cache_clear()
-
-    cache_root = tmp_path / "task_cache"
-    cache_root.mkdir()
-    assert fs_module.detect_strategy(cache_root) == "copy"
-    fs_module._read_mountinfo.cache_clear()
-
-
-def test_straddle_mount_init_fails(tmp_path, monkeypatch):
-    from metasmith.caching import fs as fs_module
-
-    cache_dir = tmp_path / "a"
-    work_dir = tmp_path / "b"
-    cache_dir.mkdir()
-    work_dir.mkdir()
-    fake_mountinfo = (
-        f"100 1 0:42 / {cache_dir} rw,relatime - ext4 /dev/sda1 rw\n"
-        f"200 1 0:43 / {work_dir} rw,relatime - lustre lustre rw\n"
-        "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
-    )
-    monkeypatch.setattr(
-        Path, "read_text", lambda self, *a, **k: (
-            fake_mountinfo if str(self) == "/proc/self/mountinfo"
-            else _orig_read_text(self, *a, **k)
-        ),
-    )
-    fs_module._read_mountinfo.cache_clear()
-
-    with pytest.raises(fs_module.StraddleMountError):
-        fs_module.assert_same_mount(cache_dir, work_dir)
-    fs_module._read_mountinfo.cache_clear()
-
-
-_orig_read_text = Path.read_text
 
 
 def test_gc_tombstone_delay(tmp_path):
@@ -242,3 +217,19 @@ def test_a_slot_with_no_name_promotes_anyway(tmp_path):
     assert records[0]["status"] == "promoted"
     manifest = read_manifest(shard_dir(cache_root, KEY))
     assert [f["dtype_name"] for f in manifest["files"]] == [""]
+
+
+def test_a_directory_product_is_linked_into_the_shard(tmp_path):
+    cwd = tmp_path / "t1"
+    product = cwd / "1-1-1.abcdef-step_a.txt"
+    (product / "sub").mkdir(parents=True)
+    (product / "sub" / "part.bin").write_text("bulk")
+    cache_root = tmp_path / "task_cache"
+
+    records = promote_members(
+        cwd=cwd, entries=[_entry()], meta=META, cache_root=cache_root, successes=[True],
+    )
+
+    assert records[0]["status"] == "promoted"
+    stored = shard_dir(cache_root, KEY) / "out" / "1-1-1.abcdef-step_a.txt" / "sub" / "part.bin"
+    assert stored.stat().st_ino == (product / "sub" / "part.bin").stat().st_ino

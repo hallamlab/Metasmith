@@ -1,0 +1,6 @@
+outs:
+- md5: 5cb0329d8424d70b03d0329f09dbc9e3.dir
+  size: 26599633
+  nfiles: 182
+  hash: md5
+  path: cyano_r1

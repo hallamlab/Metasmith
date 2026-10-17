@@ -20,7 +20,7 @@ from ...hashing import KeyGenerator
 from ...logging import Log
 from ...serialization import IsText
 from ..solver import Dependency, Endpoint
-from .resources import Gpus, Size
+from .resources import Gpus, RETRY_EXITS, Size
 
 from ..paths import ContextPath, PathMap  # noqa: F401
 
@@ -45,6 +45,7 @@ class ContextData:
 class ExecutionResult:
     success: bool = True
     manifest: list[dict[Dependency, Path]] = field(default_factory=list)
+    exit_code: int|None = None
 
 class ExecutionFailed(Exception):
     pass
@@ -109,6 +110,7 @@ class ExecutionContext:
     _detected_gpus: list|None = None
     _slot_keys: dict[Dependency, str] = field(default_factory=dict)
     _ambiguous_slots: set[str] = field(default_factory=set)
+    _exit_codes: list[int] = field(default_factory=list)
 
     def __post_init__(self):
         if isinstance(self._environment, Runtime):
@@ -201,12 +203,25 @@ class ExecutionContext:
             self._batch_index += 1
         self._batch_index = 0
 
-    def LocalShell(self, cmd: str):
+    def LocalShell(self, cmd: str) -> int:
         cmd = RemoveLeadingIndent(cmd)
         Log.Info(f"invoked local shell, calling subprocess.run() with:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
-        subprocess.run(cmd, shell=True, executable='/bin/bash')
+        code = subprocess.run(["/bin/bash", "-o", "pipefail", "-c", cmd]).returncode
+        self._record_exit(code)
+        return code
+
+    def _record_exit(self, code: int) -> None:
+        if code != 0:
+            Log.Warn(f"the command exited with code [{code}]")
+            self._exit_codes.append(code)
+
+    def FailureExitCode(self) -> int:
+        """The exit code a failed step ends with, so the retry ladder sees what killed it."""
+        named = [c for c in self._exit_codes if c in RETRY_EXITS]
+        if named: return named[-1]
+        return self._exit_codes[-1] if self._exit_codes else 1
 
     def DeclaredGpus(self) -> tuple[Gpus, Size|None]:
         raw = self.params.get("gpus")
@@ -384,7 +399,7 @@ class ExecutionContext:
                 "    exit $__msm_code",
                 "}",
                 "trap on_exit EXIT",
-                "set -e",
+                "set -eo pipefail",
                 *(f"export {k}={shlex.quote(str(v))}" for k, v in _validate_exports(exports).items()),
                 cmd,
             ]
@@ -434,6 +449,7 @@ class ExecutionContext:
             )
         if exit_codef.exists(): exit_codef.unlink()
         if exit_code != 0:
+            self._exit_codes.append(exit_code)
             Log.Error(
                 f"the script in the container exited with code [{exit_code}]"
             )

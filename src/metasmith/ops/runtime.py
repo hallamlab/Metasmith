@@ -54,6 +54,38 @@ def setup_environment(
     return agent.SetupEnvironment(task_key, force=force, library=library)
 
 
+def setup_run(
+    agent_path: str,
+    task_ref: str,
+    workspace: str | None = None,
+    config_preset: str | None = None,
+    config_file: str | None = None,
+    params: dict | None = None,
+    is_local_preset: bool | None = None,
+    force: bool = False,
+    library: str | None = None,
+) -> dict:
+    agent = load_agent(agent_path)
+    task = _ws.load_task(workspace, task_ref)
+    task.RefuseIfDeferred()
+    if config_file is None and config_preset:
+        presets = agent.GetNxfConfigPresets()
+        assert config_preset in presets, (
+            f"preset [{config_preset}] not found, available: {list(presets.keys())}"
+        )
+        config_file = presets[config_preset]
+    if is_local_preset is None and config_preset:
+        is_local_preset = config_preset == "local"
+    return agent.SetupWorkflow(
+        task,
+        config_file=Path(config_file) if config_file else None,
+        params=params,
+        is_local_preset=is_local_preset,
+        force=force,
+        library=library,
+    ) | {"agent": Path(agent_path).stem}
+
+
 def staged_path(agent_path: str, task_key: str) -> str:
     agent = load_agent(agent_path)
     return str(agent._task_workspace(task_key))

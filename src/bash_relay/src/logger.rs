@@ -3,10 +3,16 @@ use std::io::{self, Write};
 use std::path::Path;
 use chrono::Local;
 use lazy_static::lazy_static;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 lazy_static! {
     static ref LOG_FILE: Mutex<Option<File>> = Mutex::new(None);
+}
+
+// A daemon watcher's stdio is /dev/null, and before that it was a terminal that may have gone:
+// a failed log write has nowhere to be reported, and must never panic the watcher.
+fn log_file() -> MutexGuard<'static, Option<File>> {
+    LOG_FILE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub struct Logger;
@@ -25,8 +31,7 @@ impl Logger {
             .create(true)
             .open(&log_path)?;
 
-        let mut log_file_guard = LOG_FILE.lock().unwrap();
-        *log_file_guard = Some(file);
+        *log_file() = Some(file);
 
         Ok(())
     }
@@ -45,34 +50,16 @@ impl Logger {
 
         let log_line = format!("{} {}| {}\n", timestamp, level, message);
 
-        let mut log_file_guard = LOG_FILE.lock().unwrap();
-        if let Some(file) = log_file_guard.as_mut() {
-            if let Err(e) = file.write_all(log_line.as_bytes()) {
-
-                eprintln!("FATAL: Failed to write to log file: {}", e);
-            }
+        if let Some(file) = log_file().as_mut() {
+            let _ = file.write_all(log_line.as_bytes());
         }
     }
 
     pub fn flush_and_close_log_file() {
-
-        let mut log_file_guard = match LOG_FILE.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-
-                eprintln!("Warning: LOG_FILE Mutex was poisoned. Proceeding with cleanup.");
-                poisoned.into_inner()
-            }
-        };
-
-        if let Some(file) = log_file_guard.as_mut() {
-
-            if let Err(e) = file.flush() {
-
-                eprintln!("FATAL: Failed to flush log file before closing: {}", e);
-            }
+        let mut guard = log_file();
+        if let Some(file) = guard.as_mut() {
+            let _ = file.flush();
         }
-
-        *log_file_guard = None;
+        *guard = None;
     }
 }

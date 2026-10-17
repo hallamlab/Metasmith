@@ -17,16 +17,12 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus = 16 if cpus is None else cpus
 
-    local_data = Path("./eggnog_data")
-    context.LocalShell(f"cp -r {idata.external} {local_data}")
-
     context.ExecWithEnv(
         env=image,
-        binds=[(local_data, "/eggnog_data")],
         cmd=f"""
             sed '/^[^>]/s/\\*//g' {iorfs.container} > ./proteins.clean.faa
             emapper.py \
-                --data_dir /eggnog_data \
+                --data_dir {idata.container} \
                 -i ./proteins.clean.faa \
                 -o results \
                 -m diamond \

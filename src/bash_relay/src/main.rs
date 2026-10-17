@@ -6,26 +6,42 @@ mod remote_shell;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write, BufReader, BufRead};
-use std::time::Duration;
+use std::os::fd::AsRawFd;
+use std::time::{Duration, Instant};
 use std::thread;
 use gethostname::gethostname;
 use users::{get_current_uid, get_current_username};
-use nix::unistd::{fork, setsid, ForkResult};
-use nix::sys::signal::{signal, SigHandler, SIGCHLD};
+use nix::fcntl::FlockArg;
+use nix::sys::signal::{kill, signal, SigHandler, Signal, SIGCHLD};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::unistd::{dup2, fork, setsid, ForkResult, Pid};
 
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::symlink;
 #[cfg(target_family = "windows")]
 use std::os::windows::fs::symlink_dir;
 
-use crate::watcher::{run_watcher, check_status_default_timeout, kill_run, Status, wipe_workspace};
-use crate::utils::current_time_millis;
+use crate::watcher::{run_watcher, check_status, check_status_default_timeout, kill_run, live_owner, pid_is_relay, wipe_workspace};
 use crate::remote_shell::RemoteShell;
 
+/// The engine version this relay ships with, baked in by `dev.sh -b`. A watcher reports it in
+/// its status, so a `start` from a newer binary can replace an idle older watcher.
+pub const VERSION: &str = match option_env!("MSM_ENGINE_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+// A start that cannot get its watcher answering by then has failed, and says why.
+const START_DEADLINE: Duration = Duration::from_secs(30);
+const START_LOCK_WAIT: Duration = Duration::from_secs(40);
+const STALLED_OWNER_WAIT_S: u64 = 10;
+const STOP_WAIT: Duration = Duration::from_secs(5);
+const LOG_TAIL_LINES: usize = 20;
+
 #[derive(Parser, Debug)]
-#[command(author, version, about = None, long_about = None)]
+#[command(author, version = VERSION, about = None, long_about = None)]
 struct Cli {
     #[arg(short, long, value_name = "PATH")]
     io: Option<std::path::PathBuf>,
@@ -99,8 +115,7 @@ fn calculate_default_io_path() -> PathBuf {
     default_io
 }
 
-fn setup_workspace(local_link_path: &Path, is_local: bool) -> io::Result<()> {
-
+fn workspace_target() -> PathBuf {
     let host = gethostname()
         .into_string()
         .unwrap_or_else(|_| "unknown_host".to_string());
@@ -113,48 +128,268 @@ fn setup_workspace(local_link_path: &Path, is_local: bool) -> io::Result<()> {
     let tmp_dir = env::var("TMPDIR")
         .unwrap_or_else(|_| "/tmp".to_string());
 
-    let workspace_target = PathBuf::from(tmp_dir)
-        .join(format!("msm_{}_{}", host, username));
+    PathBuf::from(tmp_dir).join(format!("msm_{}_{}", host, username))
+}
 
-    if local_link_path.is_symlink() {
-        println!(" - Unlinking existing symlink at: {}", local_link_path.display());
-        fs::remove_file(local_link_path)?;
+// The lock sits on node-local disk beside the workspace target, never in the agent home:
+// flock on Lustre is not reliable, and the race it closes is between starts on one node.
+fn lock_path(workspace: &Path, is_local: bool) -> PathBuf {
+    let base = if is_local { workspace.to_path_buf() } else { workspace_target() };
+    let mut name = base.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".lock");
+    base.with_file_name(name)
+}
+
+#[allow(deprecated)]
+fn acquire_lock(path: &Path, wait: Duration) -> io::Result<Option<File>> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let file = OpenOptions::new().create(true).truncate(false).write(true).open(path)?;
+    let start = Instant::now();
+    loop {
+        // The deprecated free function, not nix's Flock guard: the guard unlocks on drop, and a
+        // forked watcher dropping its inherited copy would release the parent's lock with it.
+        match nix::fcntl::flock(file.as_raw_fd(), FlockArg::LockExclusiveNonblock) {
+            Ok(()) => return Ok(Some(file)),
+            Err(nix::Error::EWOULDBLOCK) | Err(nix::Error::EINTR) => {}
+            Err(e) => return Err(io::Error::from(e)),
+        }
+        if start.elapsed() >= wait {
+            return Ok(None);
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn setup_workspace(local_link_path: &Path, is_local: bool) -> io::Result<()> {
+    if is_local {
+        if local_link_path.is_symlink() {
+            fs::remove_file(local_link_path)?;
+        }
+        println!(" - Creating local workspace at: {}", local_link_path.display());
+        fs::create_dir_all(local_link_path)?;
+        return Ok(());
     }
 
-    if local_link_path.exists() && !is_local {
+    let workspace_target = workspace_target();
+    println!(" - Creating workspace at: {}", workspace_target.display());
+    fs::create_dir_all(&workspace_target)?;
+
+    if local_link_path.is_symlink() {
+        if fs::read_link(local_link_path)? == workspace_target {
+            return Ok(());
+        }
+    } else if local_link_path.exists() {
         println!(" - Removing existing directory at: {}", local_link_path.display());
         fs::remove_dir_all(local_link_path)?;
     }
 
-    if is_local {
+    println!(" - Linking workspace to: {}", local_link_path.display());
+    // Linked beside and renamed over, so no reader ever finds the path missing.
+    let mut staged_name = local_link_path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    staged_name.push(format!(".link.{}", std::process::id()));
+    let staged = local_link_path.with_file_name(staged_name);
+    let _ = fs::remove_file(&staged);
 
-        println!(" - Creating local workspace at: {}", local_link_path.display());
-        fs::create_dir_all(local_link_path)?;
-
-    } else {
-
-        println!(" - Creating workspace at: {}", workspace_target.display());
-        fs::create_dir_all(&workspace_target)?;
-
-        println!(" - Linking workspace to: {}", local_link_path.display());
-
-        #[cfg(target_family = "unix")]
-        {
-            symlink(&workspace_target, local_link_path)?;
-        }
-        #[cfg(target_family = "windows")]
-        {
-            symlink_dir(&workspace_target, local_link_path)?;
-        }
-        #[cfg(not(any(target_family = "unix", target_family = "windows")))]
-        {
-            return Err(io::Error::new(io::ErrorKind::Other,
-                "Symlink creation not supported/implemented for this OS family."));
-        }
-
+    #[cfg(target_family = "unix")]
+    {
+        symlink(&workspace_target, &staged)?;
+    }
+    #[cfg(target_family = "windows")]
+    {
+        symlink_dir(&workspace_target, &staged)?;
+    }
+    #[cfg(not(any(target_family = "unix", target_family = "windows")))]
+    {
+        return Err(io::Error::new(io::ErrorKind::Other,
+            "Symlink creation not supported/implemented for this OS family."));
     }
 
-    Ok(())
+    fs::rename(&staged, local_link_path)
+}
+
+fn print_log_tail(workspace: &Path) {
+    let logs_path = workspace.join("main.log");
+    let lines: Vec<String> = match File::open(&logs_path) {
+        Ok(f) => BufReader::new(f).lines().map_while(Result::ok).collect(),
+        Err(e) => {
+            eprintln!("no watcher log at [{}]: {}", logs_path.display(), e);
+            return;
+        }
+    };
+    eprintln!("--- last {} lines of [{}] ---", LOG_TAIL_LINES, logs_path.display());
+    for l in &lines[lines.len().saturating_sub(LOG_TAIL_LINES)..] {
+        eprintln!("{}", l);
+    }
+}
+
+fn ignore_sigchld() {
+    // Ignoring SIGCHLD is what reaps each dispatched job: nothing waits on the
+    // `sh -c nohup ... &` the watcher spawns, so without this every finished job
+    // leaves a zombie. Only the watcher sets it; the start parent must still
+    // be able to wait on the watcher it forked.
+    unsafe {
+        if let Err(e) = signal(SIGCHLD, SigHandler::SigIgn) {
+            eprintln!("Failed to set SIGCHLD handler: {}", e);
+        }
+    }
+}
+
+// Leave the login shell's session, so a dropped ssh connection cannot SIGHUP the
+// watcher, and let go of its stdio: a write to a terminal that has gone kills the
+// watcher on the broken pipe.
+fn detach() {
+    let _ = setsid();
+    if let Ok(null) = OpenOptions::new().read(true).write(true).open("/dev/null") {
+        for fd in 0..3 {
+            let _ = dup2(null.as_raw_fd(), fd);
+        }
+    }
+}
+
+/// Remove `active` and wait for the watcher to leave. With its pid known the wait is on the
+/// process itself, since a status probe answers "dead" the moment `active` is gone.
+fn stop_watcher(workspace: &Path, owner: Option<i32>, wait: Duration) -> bool {
+    let active_path = workspace.join("active");
+    if active_path.exists() {
+        if let Err(e) = fs::remove_file(&active_path) {
+            eprintln!("Failed to remove 'active' file at {}: {}", active_path.display(), e);
+        }
+    }
+    let start = Instant::now();
+    loop {
+        let gone = match owner {
+            Some(pid) => !pid_is_relay(pid),
+            None => !check_status(workspace, 1).alive,
+        };
+        if gone {
+            return true;
+        }
+        if start.elapsed() >= wait {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn wait_for_watcher(workspace: &Path, child: Pid) -> i32 {
+    let start = Instant::now();
+    loop {
+        match waitpid(child, Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::StillAlive) => {}
+            Ok(status) => {
+                eprintln!("watcher [{}] exited before it came up: {:?}", child, status);
+                print_log_tail(workspace);
+                return 1;
+            }
+            Err(e) => {
+                eprintln!("cannot wait on watcher [{}]: {}", child, e);
+                print_log_tail(workspace);
+                return 1;
+            }
+        }
+
+        let status = check_status(workspace, 1);
+        if status.alive && status.pid == child.as_raw() {
+            println!("pid [{}]", status.pid);
+            println!("success");
+            return 0;
+        }
+
+        if start.elapsed() >= START_DEADLINE {
+            eprintln!("watcher [{}] did not answer within {}s; killing it", child, START_DEADLINE.as_secs());
+            let _ = kill(child, Signal::SIGKILL);
+            let _ = waitpid(child, None);
+            print_log_tail(workspace);
+            return 1;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn start(workspace: &PathBuf, cwd: &PathBuf, args: &ArgsStart) -> i32 {
+    let lock_file = lock_path(workspace, args.local);
+    let lock = match acquire_lock(&lock_file, START_LOCK_WAIT) {
+        Ok(Some(f)) => f,
+        Ok(None) => {
+            eprintln!("another `msm_relay start` held [{}] for {}s", lock_file.display(), START_LOCK_WAIT.as_secs());
+            return 1;
+        }
+        Err(e) => {
+            eprintln!("cannot take the start lock [{}]: {}", lock_file.display(), e);
+            return 1;
+        }
+    };
+
+    let mut status = check_status_default_timeout(workspace);
+    if !status.alive {
+        if let Some(pid) = live_owner(workspace) {
+            status = check_status(workspace, STALLED_OWNER_WAIT_S);
+            if !status.alive {
+                eprintln!(
+                    "watcher [{}] owns [{}] but does not answer; leaving it and its jobs alone. \
+                     Stop it with `msm_relay stop` if it is stuck.",
+                    pid, workspace.display(),
+                );
+                return 1;
+            }
+        }
+    }
+
+    if status.alive {
+        if status.version == VERSION {
+            println!("Relay server already running at [{}]", workspace.display());
+            println!("pid [{}]", status.pid);
+            return 0;
+        }
+        if !status.jobs.is_empty() {
+            println!(
+                "Relay server [{}] at [{}] is version [{}], not [{}]; keeping it while it has {} job(s)",
+                status.pid, workspace.display(), status.version, VERSION, status.jobs.len(),
+            );
+            return 0;
+        }
+        println!("Replacing idle watcher [{}] version [{}] with [{}]", status.pid, status.version, VERSION);
+        if !stop_watcher(workspace, Some(status.pid), STOP_WAIT) {
+            eprintln!("watcher [{}] did not stop within {}s", status.pid, STOP_WAIT.as_secs());
+            return 1;
+        }
+    }
+
+    println!("Starting relay:");
+    println!("  - at: [{}]", workspace.display());
+    println!("  - cwd: [{}]", cwd.display());
+
+    if let Err(e) = setup_workspace(workspace, args.local) {
+        eprintln!("failed to set up the relay workspace at [{}]: {}", workspace.display(), e);
+        return 1;
+    }
+
+    if args.connected {
+        ignore_sigchld();
+        run_watcher(workspace, cwd, Some(lock));
+        return 0;
+    }
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { child }) => {
+            println!("Watcher daemon PID: {}", child);
+            wait_for_watcher(workspace, child)
+        }
+        Ok(ForkResult::Child) => {
+            // Closing this copy leaves the parent's lock held until it has seen the watcher answer.
+            drop(lock);
+            detach();
+            ignore_sigchld();
+            run_watcher(workspace, cwd, None);
+            0
+        }
+        Err(e) => {
+            eprintln!("Failed to fork the watcher: {}", e);
+            1
+        }
+    }
 }
 
 fn print_logs(logs_path: &Path) -> io::Result<()> {
@@ -197,132 +432,26 @@ fn main() {
     match cli.command {
 
         Commands::Start(args) => {
-            let status = watcher::check_status_default_timeout(&workspace);
-            if status.alive {
-
-                println!(
-                    "Relay server already running at [{}]",
-                    workspace.display()
-                );
-
-            } else {
-                println!("Starting relay:");
-                println!("  - at: [{}]", workspace.display());
-                println!("  - cwd: [{}]", current_working_directory.display());
-
-                let _ = setup_workspace(&workspace, args.local);
-
-                // Ignoring SIGCHLD is what reaps each dispatched job: nothing
-                // waits on the `sh -c nohup ... &` the watcher spawns, so
-                // without this every finished job leaves a zombie. Needed in
-                // both modes -- a connected watcher dispatches the same way.
-                unsafe {
-                    match signal(SIGCHLD, SigHandler::SigIgn) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            eprintln!("Failed to set SIGCHLD handler: {}", e);
-
-                        }
-                    }
-                }
-
-                if args.connected {
-
-                    run_watcher(&workspace, &current_working_directory)
-                } else {
-
-                    match unsafe { fork() } {
-                        Ok(ForkResult::Parent { child }) => {
-
-                            println!("Watcher daemon PID: {}", child);
-
-                            let check_interval = Duration::from_millis(100);
-
-                            loop {
-
-                                let status = check_status_default_timeout(&workspace);
-
-                                if status.alive {
-                                    println!("pid [{}]", status.pid);
-                                    println!("success");
-
-                                    std::process::exit(0);
-                                }
-
-                                thread::sleep(check_interval);
-                            }
-                        }
-
-                        Ok(ForkResult::Child) => {
-
-                            // Leave the login shell's process group. Otherwise a
-                            // dropped ssh connection SIGHUPs that group, the
-                            // shutdown guard runs, and the relay takes down the
-                            // bookkeeping for jobs it only half-killed. A daemon
-                            // relay stops on `msm_relay stop` and nothing else.
-                            if let Err(e) = setsid() {
-                                eprintln!("Failed to detach watcher into its own session: {}", e);
-                            }
-
-                            run_watcher(&workspace, &current_working_directory)
-                        }
-
-                        Err(e) => {
-
-                            eprintln!("Failed to fork process: {}", e);
-
-                            panic!("Fork failed: {}", e);
-
-                        }
-                    }
-                }
-            }
+            std::process::exit(start(&workspace, &current_working_directory, &args));
         }
         Commands::Stop => {
+            let is_local = workspace.exists() && !workspace.is_symlink();
+            // Taken to keep a concurrent start from reading a half-stopped workspace, but a stop
+            // still proceeds without it: a wedged start must never make a relay unstoppable.
+            let _lock = acquire_lock(&lock_path(&workspace, is_local), START_LOCK_WAIT).ok().flatten();
+            let owner = live_owner(&workspace);
 
-            let active_path = workspace.join("active");
-
-            if active_path.exists() {
-                match fs::remove_file(&active_path) {
-                    Ok(_) => {
-
-                        println!("Signalled relay to stop by removing 'active' file");
-                    }
-                    Err(e) => {
-
-                        eprintln!(
-                            "FATAL: Failed to remove 'active' file at {}: {}",
-                            active_path.display(),
-                            e
-                        );
-                    }
-                }
-            } else {
-
+            if !workspace.join("active").exists() {
                 println!("Relay not running");
             }
-
-            let start = current_time_millis();
-            let timeout_seconds: u64 = 5;
-            let timeout_ms = (timeout_seconds as u128) * 1000;
-            loop {
-
-                let status: Status = check_status_default_timeout(&workspace);
-
-                if !status.alive {
-                    println!("shutdown success");
-                    return;
-                }
-
-                let now = current_time_millis();
-
-                if now.saturating_sub(start) >= timeout_ms {
-                    break;
-                }
-
-                thread::sleep(Duration::from_millis(100));
+            if stop_watcher(&workspace, owner, STOP_WAIT) {
+                println!("shutdown success");
+                return;
             }
 
+            if let Some(pid) = owner.filter(|p| pid_is_relay(*p)) {
+                let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
+            }
             wipe_workspace(&workspace);
 
             println!("shutdown enforced");
@@ -348,15 +477,16 @@ fn main() {
                         let _ = io::stderr().flush();
                     });
 
-                    let _ = shell.exec(&args.cmd, None);
+                    let code = shell.exec(&args.cmd, None);
 
                     shell.remove_on_out(key_out);
                     shell.remove_on_err(key_err);
                     shell.dispose();
+                    std::process::exit(code);
                 }
                 Err(e) => {
                     eprintln!("Failed to initialize RemoteShell for bounce command: {}", e);
-
+                    std::process::exit(1);
                 }
             }
         }
@@ -372,6 +502,7 @@ fn main() {
             println!("  - alive: {}", status.alive);
             println!("  - PID: {}", status.pid);
             println!("  - active jobs: {}", status.jobs.join(", "));
+            println!("  - version: {}", status.version);
         }
         Commands::Logs => {
 

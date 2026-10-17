@@ -15,6 +15,8 @@ def protocol(context: ExecutionContext):
     ihits      = context.Output(hits)
 
     pct_identity = ithreshold.local.read_text().strip()
+    threads = context.params.get('cpus')
+    threads = 4 if threads is None else threads
 
     _cmd = f"""\
             makeblastdb \
@@ -28,6 +30,7 @@ def protocol(context: ExecutionContext):
                 -qcov_hsp_perc 90 \
                 -outfmt 6 \
                 -max_target_seqs 10000 \
+                -num_threads {threads} \
                 -out {ihits.container}
         """
     context.ExecWithEnv(env=image, cmd=_cmd)
