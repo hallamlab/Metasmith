@@ -15,6 +15,8 @@ from ..coms.terminals import (
     IDLE_TIMEOUT, LiveShell, PROBE_TIMEOUT, RemoveLeadingIndent,
     SSH_CONNECT_TIMEOUT,
 )
+
+DEPLOY_STEP_IDLE_TIMEOUT = 1800
 from ..env import ContainerDef, Environment, Rootfs, Runtime
 from ..hashing import KeyGenerator
 from ..logging import Log
@@ -26,6 +28,7 @@ from .pool import _PoolAccess
 from .run_control import _RunControl
 from .shell import AgentShell
 from .workflow_ops import _WorkflowOps
+from .agent_lock import exclusive
 
 
 @dataclass
@@ -106,14 +109,15 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
         if self._is_ssh():
             ssh_src = SshSource.Parse(self.home.address)
             Log.Info(f"starting ssh to [{ssh_src.host}]")
-            # ConnectTimeout rather than a shell bound: this Exec deliberately
-            # inherits stdin so a key passphrase can be typed, and a bound here
-            # would cut that off. ConnectTimeout bounds only the handshake, so
-            # a host that accepts nothing fails in seconds instead of holding
-            # the calling thread for the life of the process.
+            # ConnectTimeout bounds the handshake, so a host that accepts nothing
+            # fails in seconds. This Exec inherits stdin so a passphrase or a
+            # second factor can be typed; the idle bound gives a person time for
+            # that, and stops a prompt nobody will ever answer, as in the GUI,
+            # from holding the calling thread for the life of the process.
             shell.Exec(
                 f"ssh -o ConnectTimeout={SSH_CONNECT_TIMEOUT:g} {ssh_src.host}",
                 inherit_stdin=True,
+                idle_timeout=IDLE_TIMEOUT, what=f"ssh login to [{ssh_src.host}]",
             )
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
             def on_out(x):
@@ -142,6 +146,7 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
     def _run_cleanup(self, shell: LiveShell):
         pass
 
+    @exclusive("deploying")
     def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None, on_phase=None):
         _phase = on_phase or (lambda _: None)
         if runtime is not None:
@@ -164,7 +169,13 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
                 str_cmd = RemoveLeadingIndent(cmd)
                 for x in str_cmd.split("\n"):
                     if display_cmd is None: Log.Info(f">>> {x}")
-                return shell.Exec(cmd, timeout=timeout, history=True)
+                # Provisioning (an image build, an env solve) can be silent for
+                # minutes; half an hour of silence is a wedged step.
+                return shell.Exec(
+                    cmd, timeout=timeout, history=True,
+                    idle_timeout=None if timeout is not None else DEPLOY_STEP_IDLE_TIMEOUT,
+                    what=display_cmd,
+                )
 
             _staged = []
             def _remote_file(x: str|Path, dest: str|Path, executable=False):
@@ -199,14 +210,14 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             self._run_setup(shell)
             _quiet = False
 
-            shell.Exec(f'mkdir -p {self.home.GetPath()}')
+            shell.Exec(f'mkdir -p {self.home.GetPath()}', idle_timeout=PROBE_TIMEOUT)
             _quiet = True
             cmds = [
                 f'realpath {self.home.GetPath()}',
                 f'realpath ~',
                 f'hostname',
             ]
-            res = shell.Exec('\n'.join(cmds), history=True)
+            res = shell.Exec('\n'.join(cmds), history=True, idle_timeout=PROBE_TIMEOUT)
             _quiet = False
             assert len(res.out)==len(cmds), res.out
             resolved_agent_home, resolved_home, hostname = [x.strip() for x in res.out]
@@ -307,11 +318,15 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             if not container.needs_relay:
                 Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")
             elif f"msm_relay {VERSION}" in shell.Exec(
-                    f'[[ -x "{relay_bin}" ]] && "{relay_bin}" --version', history=True).out and not assertive:
+                    f'[[ -x "{relay_bin}" ]] && "{relay_bin}" --version', history=True,
+                    idle_timeout=PROBE_TIMEOUT).out and not assertive:
                 Log.Info(f"relay binary {VERSION} present at [{relay_bin}], skipping container extraction")
             else:
                 do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.CONTAINER_HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
-                res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)
+                res = shell.Exec(
+                    f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True,
+                    idle_timeout=PROBE_TIMEOUT,
+                )
                 assert "relay-deployed" in res.out, f"deploy_from_container completed but relay binary missing at [{relay_bin}]"
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")

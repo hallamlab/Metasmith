@@ -7,6 +7,7 @@ from ..coms.terminals import LiveShell, ShellResult
 from ..models.remote import SshSource
 from ..models.workflow import WorkflowTask
 from .shell import AgentShell
+from .run_host import OnRunHost, RUN_HOST_FUNCTIONS
 
 # Time for a signal to take effect before a reap pass re-counts survivors.
 REAP_SETTLE_S = 1.0
@@ -179,9 +180,6 @@ class _RunControl:
         run_dir = self._resolve_run_dir(task_key, run)
         agent_log = run_dir / "agent.log"
         workspace = self._task_workspace(task_key)
-        pid_lock = workspace / AgentPaths.PID_LOCK_FILE
-        run_pgid = workspace / AgentPaths.RUN_PGID_FILE
-
         start = time.monotonic()
         cur_poll = poll_s
         max_poll = 15.0
@@ -192,32 +190,44 @@ class _RunControl:
             # Labelled, not positional: `grep -c` prints its 0 *and* exits 1,
             # so a bare `|| echo 0` fallback emits the count twice and shifts
             # every line after it.
-            cmd = (
+            #
+            # PID.lock goes when nextflow exits, but the driver runs on for as
+            # long as promotion, results and log gathering take, and it is what
+            # writes the sentinel. RUN.pgid holds the driver's own process
+            # group; while anything is left in it the run is alive. Both are
+            # asked on the run's own host, and END marks a probe that ran to
+            # completion: anything short of it is no answer, not a dead run.
+            cmd = "\n".join([
+                f"cd {workspace} || exit 0",
+                RUN_HOST_FUNCTIONS,
                 f"if [ -e {agent_log} ]; then "
                 f"echo \"MTIME $(stat -c %Y {agent_log})\"; "
                 f"echo \"COUNT $(grep -c '{sentinel}' {agent_log} 2>/dev/null)\"; "
                 f"echo \"FAILED $(grep -c '{AgentPaths.RUN_FAILED_SENTINEL}' {agent_log} 2>/dev/null)\"; "
-                f"else echo 'MTIME MISSING'; echo 'COUNT 0'; echo 'FAILED 0'; fi; "
-                f"[ -e {pid_lock} ] && echo 'PID ALIVE' || echo 'PID GONE'; "
-                # PID.lock goes when nextflow exits, but the driver runs on for
-                # as long as promotion, results and log gathering take, and it
-                # is what writes the sentinel. RUN.pgid holds the driver's own
-                # process group; while anything is left in it the run is alive.
-                f"if [ -s {run_pgid} ]; then "
-                f"kill -0 -\"$(cat {run_pgid})\" 2>/dev/null "
-                f"&& echo 'DRIVER ALIVE' || echo 'DRIVER GONE'; "
-                f"else echo 'DRIVER UNKNOWN'; fi"
-            )
-            res = self._remote_oneshot(cmd, timeout=30)
+                f"else echo 'MTIME MISSING'; echo 'COUNT 0'; echo 'FAILED 0'; fi",
+                f'echo "PID $(msm_group_state ./{AgentPaths.PID_LOCK_FILE})"',
+                f'echo "DRIVER $(msm_group_state ./{AgentPaths.RUN_PGID_FILE})"',
+                "echo 'END probe'",
+            ])
+            res = self._remote_oneshot(cmd, timeout=60)
             fields: dict[str, str] = {}
             for ln in res.out:
                 label, _, value = ln.strip().partition(" ")
                 if label and value:
                     fields.setdefault(label, value.strip())
+            if "END" not in fields:
+                if elapsed > timeout_s:
+                    return {
+                        "task_key": task_key, "status": "timeout", "run_dir": str(run_dir),
+                        "elapsed_s": elapsed, "last_log_mtime": last_mtime, "tail": [],
+                    }
+                time.sleep(cur_poll)
+                cur_poll = min(max_poll, cur_poll * 1.3)
+                continue
             mtime_line = fields.get("MTIME", "")
             count_line = fields.get("COUNT", "0")
-            pid_line = fields.get("PID", "GONE")
-            driver_line = fields.get("DRIVER", "UNKNOWN")
+            pid_state = fields.get("PID", "UNKNOWN")
+            driver_state = fields.get("DRIVER", "UNKNOWN")
 
             log_exists = mtime_line != "MISSING"
             try:
@@ -245,10 +255,11 @@ class _RunControl:
                     "tail": tail.get("lines", []),
                 }
             # A workspace with no RUN.pgid cannot answer, and answering "wait"
-            # there would hang forever on a run that really did die.
-            driver_alive = driver_line == "ALIVE"
+            # there would hang forever on a run that really did die. A host
+            # that cannot be asked is the opposite: UNKNOWN keeps waiting.
             if (
-                log_exists and pid_line == "GONE" and not driver_alive
+                log_exists and pid_state in ("GONE", "NONE")
+                and driver_state in ("GONE", "NONE")
                 and count == 0 and elapsed >= grace_s
             ):
                 tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
@@ -360,18 +371,20 @@ class _RunControl:
         return {"task_key": task_key, "run": run, "run_dir": str(run_dir), "file": str(live_path), "exists": exists, "lines": lines}
 
     def _scan_cmd(self, script: str, task_key: str, **extra: str) -> str:
-        return RenderScan(
+        workspace = self._task_workspace(task_key)
+        return OnRunHost(RenderScan(
             script,
-            workspace=self._task_workspace(task_key),
+            workspace=workspace,
             relay=AgentPaths.to_relay(self.home.GetPath()),
             **extra,
-        )
+        ), workspace)
 
     @staticmethod
     def _parse_scan(lines) -> dict:
         report: dict = {
             "token": None, "run_pgid": None, "nextflow_pid": None,
             "processes": [], "token_processes": [], "containers": [], "relay_jobs": [],
+            "unreachable": None,
         }
         for raw in lines:
             parts = raw.strip().split("|")
@@ -387,6 +400,7 @@ class _RunControl:
                 case "RELAY":
                     jobs = [j.strip() for j in "|".join(rest).split(",") if j.strip()]
                     report["relay_jobs"] += jobs
+                case "UNREACHABLE": report["unreachable"] = rest[0] or None
         by_pid = {p["pid"]: p for p in report["processes"] + report["token_processes"]}
         report["survivors"] = sorted(by_pid.values(), key=lambda p: int(p["pid"]))
         return report
@@ -407,7 +421,8 @@ class _RunControl:
         report["relay_jobs"] = [
             j for j in report["relay_jobs"] if token and j.endswith(f"run={token}")
         ]
-        report["empty"] = not (
+        # A host that cannot be reached has not been seen to be empty.
+        report["empty"] = report["unreachable"] is None and not (
             report["survivors"] or report["containers"] or report["relay_jobs"]
         )
         return report
@@ -424,6 +439,11 @@ class _RunControl:
         before = self.InspectWorkflowProcesses(task_key, scope)
         rungs: list[str] = []
         report = before
+        if scope == SCOPE_RUN:
+            slurm_job = self._task_workspace(task_key) / AgentPaths.RUN_SLURM_JOB_FILE
+            self._remote_oneshot(
+                f'[ -s {slurm_job} ] && scancel "$(head -n1 {slurm_job})" 2>/dev/null; true', timeout=30,
+            )
         for i in range(max(1, passes)):
             sig = "TERM" if i == 0 else "KILL"
             self._remote_oneshot(
@@ -440,6 +460,7 @@ class _RunControl:
             "rungs": rungs,
             "stopped": self._found(before),
             "survived": self._found(report),
+            "unreachable": report["unreachable"],
         }
 
     def CancelWorkflow(self, task: WorkflowTask | str, timeout_s: float = 30.0) -> dict:
@@ -464,6 +485,9 @@ class _RunControl:
                 reaped = self.ReapWorkflow(task_key, scope=SCOPE_WORKLOAD)
                 rung, survived = "reap", reaped["survived"]
                 stopped = reaped["stopped"]
+            unreachable = report["unreachable"]
+            if unreachable:
+                detail += f"; the run's host [{unreachable}] could not be reached to check for survivors"
             return {
                 "task_key": task_key,
                 "method": rung,
@@ -471,44 +495,52 @@ class _RunControl:
                 "killed_pid": pid,
                 "stopped": stopped,
                 "survived": survived,
-                "status": "cancelled" if not survived else "cancelling",
+                "status": "cancelled" if not (survived or unreachable) else "cancelling",
                 "detail": detail,
             }
 
-        probe = self._remote_oneshot(f"[ -e {pid_lock} ] && cat {pid_lock} || echo __MSM_NONE__", timeout=15)
-        first = probe.out[0].strip() if probe.out else "__MSM_NONE__"
+        probe = self._remote_oneshot(
+            f"[ -e {pid_lock} ] && head -n1 {pid_lock} || echo __MSM_NONE__", timeout=15,
+        )
+        first = probe.out[0].strip() if probe.out else ""
         if first == "__MSM_NONE__":
-            report = self.InspectWorkflowProcesses(task_key, SCOPE_WORKLOAD)
-            survived = self._found(report)
-            return {
-                "task_key": task_key,
-                "method": "noop",
-                "rung": "noop",
-                "killed_pid": None,
-                "stopped": [],
-                "survived": survived,
-                "status": "not_running" if not survived else "cancelling",
-                "detail": "PID.lock not present",
-            }
+            return _finish("noop", None, "PID.lock not present")
         try:
             pid = int(first)
         except ValueError:
-            pid = None
+            return {
+                "task_key": task_key, "method": "none", "rung": "none", "killed_pid": None,
+                "stopped": [], "survived": [], "status": "unknown",
+                "detail": f"could not read PID.lock: {(probe.out + probe.err)[:3]}",
+            }
+
+        def _on_host(cmd: str) -> str:
+            res = self._remote_oneshot(
+                f"cd {workspace} || exit 0\n{RUN_HOST_FUNCTIONS}\n{cmd}", timeout=30,
+            )
+            return res.out[-1].strip() if res.out else "UNKNOWN"
 
         self._remote_oneshot(f"rm -f {pid_lock}", timeout=15)
 
         start = time.monotonic()
+        state = "UNKNOWN"
         while time.monotonic() - start < timeout_s:
-            alive = self._remote_oneshot(
-                f"[ -e /proc/{pid} ] && echo ALIVE || echo GONE" if pid else "echo GONE",
-                timeout=15,
-            )
-            if alive.out and alive.out[0].strip() == "GONE":
+            state = _on_host(f"msm_pgid_state {pid}")
+            if state == "GONE":
                 return _finish("pidfile", pid, "PID.lock removed; driver exited")
             time.sleep(1.0)
 
-        if pid:
-            self._remote_oneshot(f"kill -KILL -{pid} 2>/dev/null || true", timeout=15)
+        killed = _on_host(
+            f'msm_on_run_host "kill -KILL -{pid} 2>/dev/null; echo KILLED"; '
+            '[ $? = 255 ] && echo UNREACHABLE'
+        )
+        if killed != "KILLED":
+            return {
+                "task_key": task_key, "method": "pidfile", "rung": "pidfile", "killed_pid": None,
+                "stopped": [], "survived": [], "status": "cancelling",
+                "detail": f"PID.lock removed, but the run's host could not be reached to confirm "
+                          f"nextflow [{pid}] stopped (last state {state})",
+            }
         return _finish(
             "group_kill", pid,
             f"nextflow did not exit within {timeout_s:g}s of PID.lock removal; "

@@ -30,6 +30,7 @@ from .portability import _check_env_portability, _read_env_manifest, _read_env_m
 from .shell import AgentShell
 from .spec import Spec
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
+from .agent_lock import exclusive
 
 
 def GetNxfConfigPresets(folder: Path = MODULE_PATH/"nextflow_config") -> dict[str, Path]:
@@ -110,6 +111,7 @@ class _WorkflowOps:
         )
         return mock
 
+    @exclusive("staging a workflow")
     def StageWorkflow(
         self, task: WorkflowTask, on_exist: str = "update",
         verify_external_paths: bool=False, idle_timeout: float|None = IDLE_TIMEOUT,
@@ -166,7 +168,10 @@ class _WorkflowOps:
             if len(mock.container.binds) > 0:
                 _srcs = [str(src) for src, _dst in mock.container.binds]
                 _check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in _srcs)
-                _res = sh_remote.Exec(_check, history=True, quiet=True)
+                _res = sh_remote.Exec(
+                    _check, history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="checking external binds",
+                )
                 _out = _res.out if isinstance(_res.out, str) else "\n".join(_res.out)
                 _missing = [ln.split("MISSING::", 1)[1].strip()
                             for ln in _out.splitlines() if "MISSING::" in ln]
@@ -224,6 +229,7 @@ class _WorkflowOps:
         assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
         return workspace
 
+    @exclusive("pulling images")
     def MaterialiseImages(self, task: WorkflowTask|str, force: bool=False) -> dict:
         # Fetch every tool image a staged task needs, onto this agent's host.
         #
@@ -262,6 +268,7 @@ class _WorkflowOps:
             "unknown": unknown,
         }
 
+    @exclusive("setting up environments")
     def SetupEnvironment(
         self, task: WorkflowTask|str, force: bool=False, library: Path|str|None=None,
     ) -> dict:
@@ -321,6 +328,7 @@ class _WorkflowOps:
             return params
         return dict(self.default_params) | dict(params or {})
 
+    @exclusive("launching a run")
     def RunWorkflow(
             self,
             task: WorkflowTask|str,
@@ -570,6 +578,13 @@ class _WorkflowOps:
             slurm_wrap = os.environ.get("METASMITH_DRIVER_SLURM")
             if slurm_wrap:
                 from .runner import RenderLauncher
+                from .run_host import LAUNCH_GUARD
+                gres = sh_remote.Exec(
+                    f"(cd {workspace} && {{\n{LAUNCH_GUARD}\n}}) && echo __MSM_CLEAR__",
+                    history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="checking for a live run",
+                )
+                assert "__MSM_CLEAR__" in gres.out, "\n".join(gres.out + gres.err)
                 bres = sh_remote.Exec(
                     f"grep '^export BINDS=' {launcher} | head -1", history=True, quiet=True,
                     idle_timeout=PROBE_TIMEOUT, what="reading the launcher's bind spec",
@@ -606,7 +621,7 @@ class _WorkflowOps:
                 job_id = next((ln.strip() for ln in sres.out if ln.strip().isdigit()), None)
                 assert job_id, f"sbatch did not return a job id; output was {sres.out!r}"
                 sh_remote.Exec(
-                    f"echo {job_id} > {workspace}/RUN.slurmjob", history=True, quiet=True,
+                    f"echo {job_id} > {workspace}/{AgentPaths.RUN_SLURM_JOB_FILE}", history=True, quiet=True,
                     idle_timeout=PROBE_TIMEOUT, what="recording the driver's Slurm job id",
                 )
                 Log.Info(
@@ -616,10 +631,15 @@ class _WorkflowOps:
                     f" check on it"
                 )
             else:
-                sh_remote.Exec(
-                    f"{launcher} {stub_delay:0.3f}",
+                lres = sh_remote.Exec(
+                    f"{launcher} {stub_delay:0.3f}", history=True,
                     idle_timeout=IDLE_TIMEOUT, what="launching the run",
                 )
+                if lres.exit_code not in (0, None):
+                    raise RuntimeError(
+                        f"the launcher for [{task_key}] refused or failed (exit {lres.exit_code}):\n"
+                        + "\n".join(lres.out[-10:] + lres.err[-10:])
+                    )
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
@@ -627,7 +647,10 @@ class _WorkflowOps:
             index_param = ""
             if run is not None:
                 index_param = f"-a index={run}"
-            sh_remote.Exec(f"./msm api check_workflow -a key={key} {index_param}")
+            sh_remote.Exec(
+                f"./msm api check_workflow -a key={key} {index_param}",
+                idle_timeout=IDLE_TIMEOUT, what="checking the workflow",
+            )
 
     def GetResultSource(self, task: WorkflowTask|str, allow_globus: bool = True, check_exists: bool = False):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
