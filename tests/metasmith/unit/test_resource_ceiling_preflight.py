@@ -129,7 +129,7 @@ def agent(tmp_path, monkeypatch):
     _resources_file(workspace)
     RecordingMover.sent = {}
     monkeypatch.setattr(_agents, "Logistics", RecordingMover)
-    return Agent(home=Source.FromLocal(home))
+    return Agent(home=Source.FromLocal(home), default_params={"slurmAccount": "def-test"})
 
 
 @pytest.fixture

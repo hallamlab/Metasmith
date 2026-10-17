@@ -2981,3 +2981,70 @@ class TestGivensFromThePool:
         with pytest.raises(AssertionError) as excinfo:
             op_inputs.sync(lib_path, [self._row("r0", "ref")])
         assert "read a pool" in str(excinfo.value)
+
+
+class TestLaunchRefusals:
+    def _post(self, client, workflow, **body):
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            agent = mock.MagicMock()
+            mload.return_value = agent
+            agent.ListWorkflowRuns.return_value = [{"index": 1}]
+            r = client.post("/api/runs", json={"workflow": workflow, "agent": "smith", **body})
+            if r.status_code == 202:
+                _finish(client, r.get_json()["job"])
+            return r, agent.RunWorkflow.call_args
+
+    def test_a_name_holding_its_value_is_refused(self, client, runnable):
+        r, _ = self._post(client, runnable, params={"slurmAccount=def-x": ""})
+        assert r.status_code == 400
+        assert "not a param name" in r.get_json()["error"]
+
+    def test_an_empty_value_inherits(self, client, runnable):
+        r, call = self._post(client, runnable, params={"n": "", "m": "2"})
+        assert r.status_code == 202
+        assert call.kwargs["params"] == {"m": 2}
+
+    def test_a_scheduler_preset_needs_a_real_account(self, client, runnable):
+        client.post(f"/api/workflows/{runnable}/preset/adopt", json={"source": "slurm"})
+        r, _ = self._post(client, runnable)
+        assert r.status_code == 400
+        assert "slurmAccount" in r.get_json()["error"]
+        r, _ = self._post(client, runnable, params={"slurmAccount": "st-you-1"})
+        assert r.status_code == 400
+        r, call = self._post(client, runnable, params={"slurmAccount": "def-hallam"})
+        assert r.status_code == 202
+        assert call.kwargs["params"] == {"slurmAccount": "def-hallam"}
+
+    def test_the_agents_default_account_counts(self, client, runnable):
+        client.put("/api/agents/smith", json={
+            "name": "smith", "default_params": {"slurmAccount": "def-hallam"},
+        })
+        client.post(f"/api/workflows/{runnable}/preset/adopt", json={"source": "slurm"})
+        r, _ = self._post(client, runnable)
+        assert r.status_code == 202
+
+
+class TestWorkflowPresetSource:
+    def test_a_new_workflow_takes_the_agents_default_preset(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        client.put("/api/agents/smith", json={"name": "smith", "default_preset": "slurm"})
+        r = client.post("/api/workflows", json={"agent": "smith", "sample_type": "mock::assembly"})
+        body = client.get(f"/api/workflows/{r.get_json()['name']}/preset").get_json()
+        assert body["preset_source"] == "slurm"
+        assert (body["stale"], body["edited"], body["chosen"]) == (False, False, False)
+
+    def test_without_an_agent_it_is_local(self, client):
+        name = _make_workflow(client)
+        assert client.get(f"/api/workflows/{name}/preset").get_json()["preset_source"] == "local"
+
+    def test_a_stock_change_since_adoption_reads_stale(self, client):
+        name = _make_workflow(client)
+        client.application.config["MSM_PROJECT"].write_request(name, {"preset_stock": "0" * 16})
+        assert client.get(f"/api/workflows/{name}/preset").get_json()["stale"] is True
+
+    def test_a_dropdown_pick_is_chosen_and_an_edit_is_edited(self, client):
+        name = _make_workflow(client)
+        assert client.post(f"/api/workflows/{name}/preset/adopt", json={"source": "slurm"}).get_json()["chosen"]
+        client.put(f"/api/workflows/{name}/preset", json={"content": "// mine\n"})
+        body = client.get(f"/api/workflows/{name}/preset").get_json()
+        assert body["edited"] and body["chosen"]

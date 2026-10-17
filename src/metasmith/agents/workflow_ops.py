@@ -104,6 +104,30 @@ def SplitParamKeys(d: dict) -> dict:
     return parsed
 
 
+# The shipped preset's default, and the example the GUI and CLI show.
+SLURM_ACCOUNT_PLACEHOLDERS = {"", "<slurm_account>", "st-you-1"}
+
+
+def SlurmAccountProblem(config_text: str, params: dict) -> str|None:
+    if "slurmAccount" not in config_text: return None
+    process = params.get("process")
+    cluster_options = process.get("clusterOptions") if isinstance(process, dict) else None
+    if cluster_options:
+        m = re.search(r"--account[= ](\S*)", str(cluster_options))
+        if m and m.group(1).strip("'\"") in SLURM_ACCOUNT_PLACEHOLDERS:
+            return f"process.clusterOptions charges the placeholder account [{m.group(1)}]"
+        return None
+    account = params.get("slurmAccount")
+    if account is None:
+        found = re.findall(r"""^\s*(?:params\.)?slurmAccount\s*=\s*['"]([^'"]*)['"]""", config_text, re.M)
+        account = found[-1] if found else ""
+    if str(account).strip() in SLURM_ACCOUNT_PLACEHOLDERS:
+        return (
+            f"slurmAccount is [{account}]; set the param slurmAccount to the Slurm account"
+            f" to charge, on the agent's default params or on this run"
+        )
+    return None
+
 # nproc, then MemTotal, then the tightest memory.max on this shell's cgroup path. A login
 # node's user slice caps memory well below what `free` reports (16 GiB per user on fir).
 HOST_SIZE_PROBE = (
@@ -293,10 +317,15 @@ class _WorkflowOps:
                 Log.Info(f"external binds {_srcs}")
             binds = mock.MakeBindsParam()
             _rootfs_arg = f" rootfs={rootfs.value}" if rootfs is not None else ""
-            sh_remote.Exec(f"""\
+            sres = sh_remote.Exec(f"""\
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname){_rootfs_arg}
-            """, timeout=None, idle_timeout=idle_timeout, what="compiling the workflow on the agent")
+            """, timeout=None, history=True, idle_timeout=idle_timeout, what="compiling the workflow on the agent")
+            if sres.exit_code not in (0, None):
+                tail = "\n".join((sres.err or sres.out)[-40:])
+                raise RuntimeError(
+                    f"staging [{task._key}] failed on the agent (exit {sres.exit_code}):\n{tail}"
+                )
             launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
             res = sh_remote.Exec(
                 f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True,
@@ -439,6 +468,10 @@ class _WorkflowOps:
             )
             config_file = presets[wanted]
         params = self._resolve_params(params)
+        _given = yaml.safe_load(Path(params).read_text()) if isinstance(params, (Path, str)) else params
+        _account_problem = SlurmAccountProblem(Path(config_file).read_text(), SplitParamKeys(_given or {}))
+        if _account_problem:
+            raise ValueError(f"refusing to launch: {_account_problem}")
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:

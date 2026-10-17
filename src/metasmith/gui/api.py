@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 import uuid
@@ -14,7 +15,10 @@ from pathlib import Path
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
+from ..agents.agent_lock import Busy
+from ..agents.workflow_ops import SlurmAccountProblem, SplitParamKeys
 from ..hashing import KeyGenerator
+from ..logging import Log
 from ..models.dag_renderer import THEMES
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
@@ -398,6 +402,9 @@ def _param_value(v):
     return op_inputs.scalar(v)
 
 
+PARAM_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
 def _checked_params(raw, what: str = "params") -> dict | None:
     if raw is None: return None
     assert isinstance(raw, dict), f"{what} must be a mapping of name to value"
@@ -405,6 +412,11 @@ def _checked_params(raw, what: str = "params") -> dict | None:
     for k, v in raw.items():
         k = str(k).strip()
         if not k: continue
+        assert PARAM_NAME.match(k), (
+            f"[{k}] in {what} is not a param name: use letters, digits and _ only,"
+            f" and give the value in its own box"
+        )
+        if v is None or (isinstance(v, str) and not v.strip()): continue
         out[k] = _param_value(v)
     return out
 
@@ -480,6 +492,7 @@ def _agent_payload(p: Project, name: str, hosts: list[str] | None = None) -> dic
     info["problems"] = _agent_problems(info, hosts)
     info["valid"] = not info["problems"]
     info["deployed"] = bool(info.get("real_path"))
+    info["busy"] = Busy(info["home"]) if info.get("home") else None
     return info
 
 
@@ -910,11 +923,9 @@ def create_workflow():
         op_data.materialize_template(
             template.spec.input_library, lib_path, type_library_paths=types,
         )
-    default_preset = op_agent.config_presets()
-    if default_preset:
-        source = "local" if "local" in default_preset else default_preset[0]
-        p.write_preset(wf.name, op_agent.preset_content(source))
-        p.write_request(wf.name, {"preset_source": source})
+    source = _default_preset_source(p, b.get("agent"))
+    if source:
+        _adopt_preset(p, wf.name, source)
     _rows_of(wf.name)
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
@@ -944,14 +955,62 @@ def put_workflow_overrides(name):
     return jsonify({"name": name, "overrides": wf.overrides})
 
 
+def _stock_digest(source: str) -> str:
+    return hashlib.sha256(op_agent.preset_content(source).encode()).hexdigest()[:16]
+
+
+def _adopt_preset(p, workflow: str, source: str, chosen: bool = False):
+    p.write_preset(workflow, op_agent.preset_content(source))
+    return p.write_request(workflow, {
+        "preset_source": source, "preset_stock": _stock_digest(source), "preset_chosen": chosen,
+    })
+
+
+def _default_preset_source(p, agent_name: str | None) -> str | None:
+    available = op_agent.config_presets()
+    if not available:
+        return None
+    if agent_name and p.agent_exists(agent_name):
+        try:
+            wanted = op_agent.info(str(p.agent_path(agent_name))).get("default_preset")
+        except Exception:
+            wanted = None
+        if wanted in available:
+            return wanted
+    return "local" if "local" in available else available[0]
+
+
+def _preset_is_stale(wf, content: str) -> bool:
+    # The stock preset changed since this workflow took its copy. A workflow from
+    # before the digest was recorded can only be compared by content.
+    source = wf.request.get("preset_source")
+    if not source or source not in op_agent.config_presets():
+        return False
+    recorded = wf.request.get("preset_stock")
+    if recorded:
+        return recorded != _stock_digest(source)
+    return content != op_agent.preset_content(source)
+
+
+def _preset_is_edited(wf, content: str) -> bool:
+    source = wf.request.get("preset_source")
+    if not source or source not in op_agent.config_presets():
+        return bool(content)
+    return content != op_agent.preset_content(source)
+
+
 @bp.get("/workflows/<name>/preset")
 def get_workflow_preset(name):
     p = _project()
     wf = p.read_workflow(name)
+    content = p.read_preset(name) or ""
     return jsonify({
         "name": name,
-        "content": p.read_preset(name) or "",
+        "content": content,
         "preset_source": wf.request.get("preset_source"),
+        "stale": _preset_is_stale(wf, content),
+        "edited": _preset_is_edited(wf, content),
+        "chosen": bool(wf.request.get("preset_chosen")),
     })
 
 
@@ -966,11 +1025,15 @@ def put_workflow_preset(name):
 @bp.post("/workflows/<name>/preset/adopt")
 def adopt_workflow_preset(name):
     p = _project()
-    source = _checked_preset(_body().get("source"))
+    b = _body()
+    source = _checked_preset(b.get("source"))
     assert source, "a preset name is required"
-    p.write_preset(name, op_agent.preset_content(source))
-    wf = p.write_request(name, {"preset_source": source})
-    return jsonify({"name": name, "content": p.read_preset(name) or "", "preset_source": source})
+    chosen = bool(b.get("chosen", True))
+    _adopt_preset(p, name, source, chosen=chosen)
+    return jsonify({
+        "name": name, "content": p.read_preset(name) or "", "preset_source": source,
+        "stale": False, "edited": False, "chosen": chosen,
+    })
 
 
 @bp.get("/presets")
@@ -1565,7 +1628,7 @@ def setup_environment(name):
     return jsonify(job.summary()), 202
 
 
-def _ensure_preset(p, workflow: str) -> str | None:
+def _ensure_preset(p, workflow: str, agent_name: str | None = None) -> str | None:
     # A workflow created before per-workflow presets existed has no
     # `preset.nf` of its own -- adopt one now, the same content eager
     # adoption would have written at creation time, rather than launching
@@ -1574,13 +1637,40 @@ def _ensure_preset(p, workflow: str) -> str | None:
     source = wf.request.get("preset_source")
     if p.preset_path(workflow).is_file():
         return source
-    available = op_agent.config_presets()
-    if not available:
-        return source
-    source = "local" if "local" in available else available[0]
-    p.write_preset(workflow, op_agent.preset_content(source))
-    p.write_request(workflow, {"preset_source": source})
+    source = _default_preset_source(p, agent_name)
+    if source:
+        _adopt_preset(p, workflow, source)
     return source
+
+
+def _param_names_read_by(library: str | None) -> set[str]:
+    if not library or not Path(library).is_dir():
+        return set()
+    names = set()
+    for src in Path(library).rglob("*.py"):
+        try:
+            names.update(_PARAMS_READ.findall(src.read_text(errors="replace")))
+        except OSError:
+            continue
+    return names
+
+
+_PARAMS_READ = re.compile(r"""params(?:\.get\(|\[)\s*['"]([A-Za-z0-9_]+)['"]""")
+
+
+def _launch_warnings(preset_text: str, preset_source: str | None, params: dict, library: str | None) -> list[str]:
+    out = []
+    if preset_source != "local" and "slurmAccount" in preset_text and "xlocalx" not in preset_text:
+        out.append(
+            "this workflow's preset has no xlocalx block, so steps labelled local (the"
+            " downloads) go to the scheduler instead of this host; reset the preset to refresh it"
+        )
+    words = set(re.findall(r"[A-Za-z][A-Za-z0-9]*", preset_text))
+    read = _param_names_read_by(library)
+    unknown = [k for k in params if k not in read and k.split("_", 1)[0] not in words]
+    if unknown:
+        out.append(f"no preset or transform reads the param(s) {', '.join(sorted(unknown))}")
+    return out
 
 
 @bp.post("/runs")
@@ -1590,11 +1680,24 @@ def create_run():
     workflow = b.get("workflow")
     agent_name = b.get("agent")
     wf, agent_path = _runnable(p, workflow, agent_name)
-    preset_source = _ensure_preset(p, workflow)
+    preset_source = _ensure_preset(p, workflow, agent_name)
+    params = _checked_params(b.get("params")) or None
+    agent_info = op_agent.info(agent_path)
+    busy = Busy(agent_info["home"])
+    if busy:
+        raise ProjectError(f"agent [{agent_name}] is busy: {busy}")
+    preset_text = p.preset_path(workflow).read_text() if p.preset_path(workflow).is_file() else ""
+    effective = dict(agent_info.get("default_params") or {}) | dict(params or {})
+    account_problem = SlurmAccountProblem(preset_text, SplitParamKeys(effective))
+    assert account_problem is None, f"cannot launch [{workflow}] on [{agent_name}]: {account_problem}"
+    found = stdlib.discover(p.root)
+    warnings = _launch_warnings(
+        preset_text, preset_source, effective, found["path"] if found["present"] else None,
+    )
     rec = p.create_run(workflow, {
         "agent": agent_name,
         "preset_source": preset_source,
-        "params": _checked_params(b.get("params")) or None,
+        "params": params,
         "resource_overrides": _checked_overrides(b.get("resource_overrides")),
         "on_exist": b.get("on_exist", "update"),
         "launched_by": current_app.config.get("MSM_INSTANCE"),
@@ -1604,6 +1707,8 @@ def create_run():
 
     def _work(job):
         with LogCapture(job):
+            for warning in warnings:
+                Log.Warn(warning)
             try:
                 staged = op_runtime.stage(
                     agent_path, str(wf.path), rec.record.get("on_exist", "update"), None,
