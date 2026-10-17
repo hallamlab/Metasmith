@@ -104,6 +104,27 @@ def test_a_sliced_step_keeps_the_full_plans_cache_slot(tmp_path, monkeypatch):
     assert sliced["fetch"] == full["fetch"]
 
 
+def test_a_slice_after_a_sample_step_is_numbered_from_one(tmp_path, monkeypatch):
+    # On fir a setup run of metagenomics_from_paired_reads kept steps 1-5, 7 and 8: step 6
+    # reads a sample. The bootstrap read step 7 as the slice's seventh step, so
+    # buildUniRef50DB ran buildPhyloflashDB, and step 8 ran off the end of the list.
+    task = _solve(tmp_path, {"fetch": FETCH, "annotate": ANNOTATE}, "mock::annotated")
+    steps = sorted(task.plan.steps, key=lambda s: s.transform.name != "annotate")
+    for order, step in enumerate(steps, start=1):
+        step.order = order
+    task.plan.steps = steps
+    sub = setup_subplan(task)
+    task.SaveAs(Source.FromLocal(tmp_path / "full"))
+    sub.SaveAs(Source.FromLocal(tmp_path / "sub"))
+    loaded = WorkflowTask.Load(tmp_path / "sub")
+    assert [(s.order, s.transform.name) for s in loaded.plan.steps] == [(1, "fetch")]
+    assert [t.producing_step.order for t in loaded.plan.targets] == [1]
+    assert [(s.order, s.transform.name) for s in task.plan.steps] == [(1, "annotate"), (2, "fetch")]
+    full = _slots(task, tmp_path / "full_home", monkeypatch)
+    sliced = _slots(sub, tmp_path / "sub_home", monkeypatch)
+    assert sliced["fetch"] == full["fetch"]
+
+
 def test_the_slice_survives_a_save_and_load(tmp_path):
     task = _solve(tmp_path, {"fetch": FETCH, "annotate": ANNOTATE}, "mock::annotated")
     task.SaveAs(Source.FromLocal(tmp_path / "bundle"))
