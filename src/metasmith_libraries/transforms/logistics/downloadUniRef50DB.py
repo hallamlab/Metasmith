@@ -13,20 +13,32 @@ UNIREF50_URLS = [
     "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
     "https://ftp.expasy.org/databases/uniprot/current_release/uniref/uniref50/uniref50.fasta.gz",
 ]
+CPUS = 4
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
+    url = context.params.get("uniref50_url")
+    urls = UNIREF50_URLS if url is None else [url]
 
-    _cmd = "\n".join([
-        FetchCommand(UNIREF50_URLS, "uniref50.fasta.gz", label="uniref50"),
-        "diamond makedb --in uniref50.fasta.gz -d uniref50",
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        FetchCommand(urls, "uniref50.fasta.gz", label="uniref50"),
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
+
+    # makedb holds one 1e9-letter block plus a 16-byte entry per sequence, whatever the
+    # input's size: rebuilding the 2026-08 release (38.8 M sequences, 12.2 G letters)
+    # peaked at 3.4 GB RSS with --threads 4, in 21 min. Unbounded, --threads is every
+    # core on a shared login node.
+    context.ExecWithEnv(env=image, cmd="\n".join([
+        f"diamond makedb --in uniref50.fasta.gz -d uniref50 --threads {CPUS}",
+        "diamond dbinfo -d uniref50.dmnd",
         f"mv uniref50.dmnd {idb.container}",
-    ])
-    context.ExecWithEnv(env=image, cmd=_cmd)
+    ]))
 
     return ExecutionResult(
         manifest=[{db: idb.local}],
-        success=idb.local.exists(),
+        success=idb.local.is_file() and idb.local.stat().st_size > 0,
     )
 
 TransformInstance(
@@ -35,8 +47,8 @@ TransformInstance(
     group_by=image,
     labels=["local"],
     resources=Resources(
-        cpus=8,
-        memory=Size.GB(14),
+        cpus=CPUS,
+        memory=Size.GB(8),
         duration=Duration(hours=12),
     ),
 )

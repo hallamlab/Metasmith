@@ -6,12 +6,17 @@ image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 profiles = model.AddProduct(lib.GetType("ref::kofamscan_profiles"))
 ko_list  = model.AddProduct(lib.GetType("ref::kofamscan_ko_list"))
 
-PROFILES_URL = "ftp://ftp.genome.jp/pub/db/kofam/profiles.tar.gz"
-KO_LIST_URL = "ftp://ftp.genome.jp/pub/db/kofam/ko_list.gz"
+# The top-level profiles.tar.gz and ko_list.gz are replaced at each KEGG release;
+# archives/<date>/ keeps each pair, and the pair is what must agree.
+BASE_URL = "ftp://ftp.genome.jp/pub/db/kofam/archives"
+RELEASE = "2026-08-02"
 
 def protocol(context: ExecutionContext):
     iprofiles = context.Output(profiles)
     iko_list = context.Output(ko_list)
+    base = context.params.get("kofam_base_url", BASE_URL).rstrip("/")
+    release = context.params.get("kofam_release", RELEASE)
+    Log.Info(f"KOfam release [{release}] from [{base}]")
 
     # `--strip-components=1` because the archive wraps everything in a
     # `profiles/` directory and kofamscan is handed a profile directory it does
@@ -21,8 +26,8 @@ def protocol(context: ExecutionContext):
         env=image,
         cmd="\n".join([
             "set -e",
-            FetchCommand(PROFILES_URL, "profiles.tar.gz"),
-            FetchCommand(KO_LIST_URL, "ko_list.gz"),
+            FetchCommand(f"{base}/{release}/profiles.tar.gz", "profiles.tar.gz"),
+            FetchCommand(f"{base}/{release}/ko_list.gz", "ko_list.gz"),
             f"mkdir -p {iprofiles.container}",
             f"tar -xzf profiles.tar.gz -C {iprofiles.container} --strip-components=1",
             f"gunzip -c ko_list.gz > {iko_list.container}",

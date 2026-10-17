@@ -65,6 +65,13 @@ types:
     - reference_data
     properties:
       _: ganon2 database prefix (.hibf + .tax files share a common prefix)
+  # ganon2_db's inputs, split from its build so the download runs on a login node and
+  # the index on a compute node. Everything `ganon build` would otherwise fetch itself.
+  ganon2_sources:
+    extends:
+    - reference_data
+    properties:
+      _: ganon2 build inputs -- RefSeq files/**/*.fna.gz with their assembly_summary.txt, NCBI taxdump.tar.gz and species_genome_size.txt.gz
   metaphlan_db:
     extends:
     - reference_data
@@ -75,6 +82,12 @@ types:
     - reference_data
     properties:
       _: phyloFlash SILVA SSU DB dir (bbmap + UDB + tax tree)
+  # The fetch half of phyloflash_db, split so the network part runs on a login node.
+  phyloflash_sources:
+    extends:
+    - reference_data
+    properties:
+      _: SILVA SSU fasta.gz and UniVec as fetched, unbuilt, for phyloFlash_makedb.pl
   antismash:
     extends:
     - reference_data

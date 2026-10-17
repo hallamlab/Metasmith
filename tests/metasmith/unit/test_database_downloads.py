@@ -59,6 +59,11 @@ class _RecordingContext:
 
     def LocalShell(self, cmd: str, **kw):
         self.local_shell_calls.append(cmd)
+        return 0
+
+    @property
+    def emitted(self) -> list[str]:
+        return self.local_shell_calls + self.commands
 
 
 def _render(lib_root: Path, name: str, tmp_path: Path, url_override: str | None = None):
@@ -147,8 +152,8 @@ def test_a_second_attempt_does_not_refetch_the_archive(
     work = tmp_path / "work"
     work.mkdir()
     ctx = _render(metasmith_libraries_root, "downloadUniRef50DB", work, url_override=url)
-    assert ctx.commands, "the transform emitted no command"
-    command = ctx.commands[0]
+    assert ctx.emitted, "the transform emitted no command"
+    command = ctx.emitted[0]
 
     for _ in range(2):
         # The indexing that follows the fetch is not installed here and is not
@@ -166,7 +171,7 @@ def test_a_download_narrates_and_bounds_itself(metasmith_libraries_root, tmp_pat
     # I5: `wget -q` with no timeout and no retry cap. Ten to seventeen silent
     # minutes at a stretch, and a stalled transfer that looks like a working one.
     ctx = _render(metasmith_libraries_root, name, tmp_path)
-    invocations = [w for c in ctx.commands for w in _wget_invocations(c)]
+    invocations = [w for c in ctx.emitted for w in _wget_invocations(c)]
     assert invocations, f"[{name}] emitted no wget"
     for w in invocations:
         assert "--progress=" in w, f"[{name}] fetches without saying anything: {w}"

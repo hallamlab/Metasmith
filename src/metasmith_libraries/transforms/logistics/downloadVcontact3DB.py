@@ -27,9 +27,16 @@ done
 exec wget --quiet --tries=5 --timeout=60 -O "$dest" "$url"
 """
 
+# The newest release vConTACT3 3.1.4 accepts: `prepare_databases` offers the
+# releases whose Compatibility is the lowest one above the installed version, which
+# in db_versions.tsv on 2026-10-17 is 3.1.10, holding 228 and 230. "latest" would
+# follow that remote table, so it is pinned here.
+DB_VERSION = "230"
+
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
+    version = str(context.params.get("vcontact3_db_version", DB_VERSION))
 
     shim_dir = Path("_shim")
     shim_dir.mkdir(exist_ok=True)
@@ -43,7 +50,7 @@ def protocol(context: ExecutionContext):
     # database from anywhere else can stage one 3.1.4 will refuse at run time.
     _cmd = f"""
         export PATH="$PWD/{shim_dir}:$PATH"
-        vcontact3 prepare_databases --get-version "latest" --set-location ./vcontact3_db
+        vcontact3 prepare_databases --get-version "{version}" --set-location ./vcontact3_db
     """
     context.ExecWithEnv(env=image, cmd=_cmd)
 
@@ -89,9 +96,11 @@ def protocol(context: ExecutionContext):
     Log.Info(f"vcontact3 database versions staged: {[p.stem for p in versions]}")
     staged.rename(idb.local)
 
+    manifest = idb.local/f"{version}.json"
+    data = idb.local/f"v{version}"
     return ExecutionResult(
         manifest=[{db: idb.local}],
-        success=idb.local.exists(),
+        success=manifest.is_file() and data.is_dir() and any(data.iterdir()),
     )
 
 

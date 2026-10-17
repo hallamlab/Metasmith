@@ -55,8 +55,11 @@ def protocol(context: ExecutionContext):
         for (path, md5) in parts:
             f.write(f"PART={md5}  {path}\n")
 
+    metadata = iout.local/"metadata"/"metadata.txt"
     whole = all((iout.local/p).exists() for p in (
-        "taxonomy/gtdb_taxonomy.tsv", "skani/database/sketches.db", "metadata/metadata.txt"))
+        "taxonomy/gtdb_taxonomy.tsv", "skani/database/sketches.db",
+        "skani/database/index.db", "skani/database/markers.bin",
+    )) and metadata.exists() and f"VERSION_DATA={RELEASE}" in metadata.read_text()
     return ExecutionResult(manifest=[{out: iout.local}], success=whole)
 
 
