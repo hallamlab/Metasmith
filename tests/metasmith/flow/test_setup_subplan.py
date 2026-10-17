@@ -67,9 +67,9 @@ def _solve(tmp_path: Path, transforms: dict[str, str], target: str, resources=Tr
     )
 
 
-def _slots(task: WorkflowTask, home: Path) -> dict[str, list[str]]:
-    AgentPaths.HOME_ROOT = home
-    AgentPaths.WORK_ROOT = home / "_ws"
+def _slots(task: WorkflowTask, home: Path, monkeypatch) -> dict[str, list[str]]:
+    monkeypatch.setattr(AgentPaths, "HOME_ROOT", home)
+    monkeypatch.setattr(AgentPaths, "WORK_ROOT", home / "_ws")
     task_path = AgentPaths.to_task(task.GetKey())
     task_path.parent.mkdir(parents=True, exist_ok=True)
     task.SaveAs(Source.FromLocal(task_path))
@@ -96,11 +96,11 @@ def test_the_slice_keeps_only_the_steps_that_read_no_sample(tmp_path):
     assert all(lib.GetKey() != task.data_libraries[0].GetKey() for lib in sub.data_libraries)
 
 
-def test_a_sliced_step_keeps_the_full_plans_cache_slot(tmp_path):
+def test_a_sliced_step_keeps_the_full_plans_cache_slot(tmp_path, monkeypatch):
     task = _solve(tmp_path, {"fetch": FETCH, "annotate": ANNOTATE}, "mock::annotated")
     sub = setup_subplan(task)
-    full = _slots(task, tmp_path / "full_home")
-    sliced = _slots(sub, tmp_path / "sub_home")
+    full = _slots(task, tmp_path / "full_home", monkeypatch)
+    sliced = _slots(sub, tmp_path / "sub_home", monkeypatch)
     assert sliced["fetch"] == full["fetch"]
 
 
