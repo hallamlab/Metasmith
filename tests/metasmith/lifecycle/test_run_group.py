@@ -14,6 +14,7 @@ import pytest
 from metasmith.agents.run_control import RenderScan, _RunControl, _SCAN_SCRIPT
 from metasmith.agents.runner import RenderLauncher
 from metasmith.constants import AgentPaths
+from metasmith.models.remote import Source
 
 from _procs import alive, group_alive, pids_matching, wait_until
 
@@ -26,6 +27,14 @@ def _sleeps(*seconds: str) -> list[int]:
     return out
 
 TASK_KEY = "lifecyc1"
+
+
+class _LocalAgent(_RunControl):
+    def __init__(self, home: Path):
+        self.home = Source.FromLocal(home)
+
+    def _is_ssh(self) -> bool:
+        return False
 
 
 def _workspace(tmp_path: Path, stub_body: str) -> Path:
@@ -135,3 +144,83 @@ def test_the_token_scan_finds_what_left_the_group(tmp_path, reaper):
                 os.kill(p, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+def test_a_cancel_before_nextflow_starts_stops_the_run(tmp_path, reaper):
+    # The driver is still staging: start.sh has written RUN.pgid, nothing has
+    # written PID.lock yet.
+    workspace = _workspace(tmp_path, "sleep 956 &\nsleep 957\n")
+    _start(workspace)
+    pgid = int((workspace/AgentPaths.RUN_PGID_FILE).read_text().strip())
+    reaper.append(pgid)
+    assert wait_until(lambda: len(_sleeps("956", "957")) == 2)
+    tree = _sleeps("956", "957")
+    assert not (workspace/AgentPaths.PID_LOCK_FILE).exists()
+
+    result = _LocalAgent(tmp_path).CancelWorkflow(TASK_KEY, timeout_s=5)
+
+    assert result["status"] == "cancelled", result
+    assert result["rung"] == "start_window"
+    assert wait_until(lambda: not any(alive(p) for p in tree))
+
+
+def test_a_cancel_after_the_run_ended_is_a_noop(tmp_path, reaper):
+    workspace = _workspace(tmp_path, "exit 0\n")
+    _start(workspace)
+    pgid = int((workspace/AgentPaths.RUN_PGID_FILE).read_text().strip())
+    reaper.append(pgid)
+    assert wait_until(lambda: not group_alive(pgid))
+
+    result = _LocalAgent(tmp_path).CancelWorkflow(TASK_KEY, timeout_s=5)
+
+    assert result["rung"] == "noop", result
+
+
+def test_a_reused_pgid_without_the_run_token_is_not_the_run(tmp_path, spawner):
+    workspace = _workspace(tmp_path, "exit 0\n")
+    stranger = spawner("sleep 958 & wait")
+    assert wait_until(lambda: pids_matching("sleep 958"))
+    (workspace/AgentPaths.RUN_PGID_FILE).write_text(f"{stranger.pid}\n")
+    (workspace/AgentPaths.RUN_TOKEN_FILE).write_text(f"{TASK_KEY}.never\n")
+
+    result = _LocalAgent(tmp_path).CancelWorkflow(TASK_KEY, timeout_s=5)
+
+    assert result["rung"] == "noop", result
+    assert group_alive(stranger.pid)
+
+
+def _foreground_workspace(tmp_path: Path, relay_body: str, start_relay: bool) -> Path:
+    workspace = tmp_path/AgentPaths.STAGED/TASK_KEY
+    (workspace/AgentPaths.INTERNALS).mkdir(parents=True)
+    relay = tmp_path/"relay"/"msm_relay"
+    relay.parent.mkdir()
+    relay.write_text("#!/bin/bash\n" + relay_body)
+    relay.chmod(0o755)
+    stub = tmp_path/"msm"
+    stub.write_text(f'#!/bin/bash\n[ -e "{tmp_path}/relay/started" ] && echo RELAY_UP || echo RELAY_DOWN\n')
+    stub.chmod(0o755)
+    launcher = workspace/"start.slurm.sh"
+    launcher.write_text(RenderLauncher(
+        TASK_KEY, [], "", background=False, workdir=str(workspace), start_relay=start_relay,
+    ))
+    launcher.chmod(0o755)
+    return workspace
+
+
+def _driver_saw(workspace: Path) -> str:
+    subprocess.run(
+        ["bash", str(workspace/"start.slurm.sh")], cwd="/",
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60, check=True,
+    )
+    return (workspace/AgentPaths.INTERNALS/"logs.latest"/"agent.log").read_text().strip()
+
+
+def test_a_slurm_hosted_driver_starts_its_nodes_relay_first(tmp_path):
+    workspace = _foreground_workspace(tmp_path, f'[ "$1" = start ] && touch "{tmp_path}/relay/started"\n', True)
+    assert _driver_saw(workspace) == "RELAY_UP"
+
+
+def test_a_relay_that_fails_to_start_does_not_stop_the_launcher(tmp_path):
+    # The driver still runs, so the failure reaches agent.log and the run record.
+    workspace = _foreground_workspace(tmp_path, "exit 1\n", True)
+    assert _driver_saw(workspace) == "RELAY_DOWN"

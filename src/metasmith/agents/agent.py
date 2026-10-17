@@ -10,7 +10,7 @@ from typing import Literal
 
 import yaml
 
-from ..constants import AgentPaths, CONTAINER_TAG, MODULE_PATH, VERSION
+from ..constants import AgentPaths, BUILD_HASH, CONTAINER_TAG, MODULE_PATH, VERSION
 from ..coms.terminals import (
     IDLE_TIMEOUT, LiveShell, PROBE_TIMEOUT, RemoveLeadingIndent,
     SSH_CONNECT_TIMEOUT,
@@ -31,12 +31,61 @@ from .workflow_ops import _WorkflowOps
 from .agent_lock import exclusive
 
 
+DEFAULT_CONTAINER = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
+
+
+def _assert_container_resolvable(container: str, runtime: Runtime, native: bool) -> None:
+    # A source checkout has no build hash, so the default names the bare
+    # version: an alias that does not exist until that version is published,
+    # and after that points at whichever build was pushed last.
+    if native or runtime == Runtime.MAMBA or BUILD_HASH: return
+    if container != DEFAULT_CONTAINER: return
+    raise ValueError(
+        f"this metasmith [{VERSION}] runs from a source tree with no build hash, so it cannot "
+        f"name the agent image it matches; [{container}] is a guess. Pass container=<image> "
+        f"to Agent (image=<image> to Deploy), for example the image `dev/metasmith.sh -bd` built"
+    )
+
+
+_DEPLOY_PROBES = {
+    "agent home": 'realpath "{home}"',
+    "user home": "realpath ~",
+    "hostname": "hostname",
+}
+
+
+def _resolve_deploy_paths(shell, home) -> list[str]:
+    # Labelled, so a login banner or a profile's own output cannot shift the
+    # answers, and a probe that fails is named with what it printed.
+    cmds = [
+        f'printf "MSM_PROBE|{label}|%s\\n" "$({cmd.format(home=home)} 2>&1)"'
+        for label, cmd in _DEPLOY_PROBES.items()
+    ]
+    res = shell.Exec("\n".join(cmds), history=True, idle_timeout=PROBE_TIMEOUT)
+    found: dict[str, str] = {}
+    for ln in res.out:
+        tag, _, rest = ln.strip().partition("|")
+        if tag != "MSM_PROBE": continue
+        label, _, value = rest.partition("|")
+        found[label] = value.strip()
+    bad = [
+        f"{label} [{found.get(label, '')}]" for label in _DEPLOY_PROBES
+        if not found.get(label) or (label != "hostname" and not found[label].startswith("/"))
+    ]
+    if bad:
+        raise RuntimeError(
+            f"could not resolve {', '.join(bad)} on the agent host; "
+            f"the shell printed: {(res.out + res.err)[:10]}"
+        )
+    return [found[label] for label in _DEPLOY_PROBES]
+
+
 @dataclass
 class Agent(_WorkflowOps, _RunControl, _PoolAccess):
     home: Source
     id: str = field(default_factory=lambda: KeyGenerator().GenerateUID(l=8))
     setup_commands: list[str] = field(default_factory=list)
-    container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
+    container: str = DEFAULT_CONTAINER
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
     native: bool = False
@@ -157,6 +206,7 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             self.native = native
         if rootfs is not None:
             self.rootfs = Rootfs.Parse(rootfs)
+        _assert_container_resolvable(self.container, self.runtime, self.native)
         Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native}, rootfs={self.rootfs.value})")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
@@ -212,15 +262,8 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
 
             shell.Exec(f'mkdir -p {self.home.GetPath()}', idle_timeout=PROBE_TIMEOUT)
             _quiet = True
-            cmds = [
-                f'realpath {self.home.GetPath()}',
-                f'realpath ~',
-                f'hostname',
-            ]
-            res = shell.Exec('\n'.join(cmds), history=True, idle_timeout=PROBE_TIMEOUT)
+            resolved_agent_home, resolved_home, hostname = _resolve_deploy_paths(shell, self.home.GetPath())
             _quiet = False
-            assert len(res.out)==len(cmds), res.out
-            resolved_agent_home, resolved_home, hostname = [x.strip() for x in res.out]
             resolved_agent_home = Path(resolved_agent_home)
             resolved_home = Path(resolved_home)
 

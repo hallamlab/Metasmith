@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from metasmith.agents import Agent
@@ -70,3 +71,19 @@ def test_build_hash_is_deterministic():
     h2 = compute_build_hash()
     assert h1 == h2
     assert re.fullmatch(r"[0-9a-f]{7}", h1), f"expected 7-char hex, got [{h1}]"
+
+
+def test_a_source_tree_refuses_to_guess_the_agent_image(monkeypatch):
+    import metasmith.agents.agent as agent_mod
+    monkeypatch.setattr(agent_mod, "BUILD_HASH", "")
+    with pytest.raises(ValueError, match="container="):
+        agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.APPTAINER, False)
+
+
+def test_an_explicit_image_or_a_built_package_is_used_as_given(monkeypatch):
+    import metasmith.agents.agent as agent_mod
+    monkeypatch.setattr(agent_mod, "BUILD_HASH", "")
+    agent_mod._assert_container_resolvable("docker://example/metasmith:dev", Runtime.APPTAINER, False)
+    agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.MAMBA, False)
+    monkeypatch.setattr(agent_mod, "BUILD_HASH", "abc1234")
+    agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.APPTAINER, False)

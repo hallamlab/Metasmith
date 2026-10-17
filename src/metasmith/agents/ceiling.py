@@ -64,6 +64,27 @@ def parse_requests(resources_text: str) -> dict[str, "tuple[int|None, float|None
     return out
 
 
+def apply_overrides(
+    requests: dict[str, "tuple[int|None, float|None]"], overrides_text: str,
+) -> dict[str, "tuple[int|None, float|None]"]:
+    """`requests` as the resource overrides appended after them leave them.
+
+    An override's `withName` is a regex over the process name, and the later of
+    two matching blocks binds, as it does in nextflow.
+    """
+    out = dict(requests)
+    for pattern, body in _WITH_NAME.findall(overrides_text):
+        cpus_m = _REQ_CPUS.search(body)
+        mem_m = _REQ_MEM_GB.search(body)
+        for name, (cpus, gb) in out.items():
+            if not re.fullmatch(pattern, name): continue
+            out[name] = (
+                int(cpus_m.group(1)) if cpus_m else cpus,
+                float(mem_m.group(1)) if mem_m else gb,
+            )
+    return out
+
+
 def find_breaches(
     requests: dict[str, "tuple[int|None, float|None]"],
     ceiling_cpus: "int|None", ceiling_gb: "float|None",
@@ -117,7 +138,7 @@ def cap_lines(
 
 def check_launch(
     config_text: str, resources_text: str, on_this_host: "set[str] | None",
-    knob: str = "executor",
+    knob: str = "executor", overrides_text: str = "",
 ) -> list[str]:
     """Raise if this host cannot schedule the plan; return the config to append.
 
@@ -125,7 +146,7 @@ def check_launch(
     None means all of them. Only those earn a refusal: a scheduler queues an
     over-request against a node that fits.
     """
-    requests = parse_requests(resources_text)
+    requests = apply_overrides(parse_requests(resources_text), overrides_text)
     if on_this_host is not None:
         requests = {k: v for k, v in requests.items() if k in on_this_host}
     if not requests:

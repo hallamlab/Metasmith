@@ -1618,6 +1618,7 @@ class TestRuns:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             mload.return_value = mock.MagicMock()
             mload.return_value.StageWorkflow.return_value = None
+            mload.return_value.AgentClock.return_value = ""
             mload.return_value.ListWorkflowRuns.return_value = [
                 {"index": 1, "path": "/x/logs.1", "timestamp": "t"},
             ]
@@ -1770,6 +1771,7 @@ class TestLaunchParams:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             agent = mock.MagicMock()
             mload.return_value = agent
+            agent.AgentClock.return_value = ""
             agent.ListWorkflowRuns.return_value = [{"index": 1}]
             r = client.post("/api/runs", json={
                 "workflow": workflow, "agent": "smith", **body,
@@ -2240,6 +2242,7 @@ class TestResultsFiltering:
     def _name(client, workflow) -> str:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             mload.return_value = mock.MagicMock()
+            mload.return_value.AgentClock.return_value = ""
             mload.return_value.ListWorkflowRuns.return_value = [
                 {"index": 1, "path": "/x/logs.1", "timestamp": "t"},
             ]
@@ -2754,6 +2757,7 @@ class TestValueRowFields:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             mload.return_value = mock.MagicMock()
             mload.return_value.StageWorkflow.return_value = None
+            mload.return_value.AgentClock.return_value = ""
             mload.return_value.ListWorkflowRuns.return_value = []
             r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
         assert r.status_code == 202, r.get_json()
@@ -2775,6 +2779,7 @@ class TestValueRowFields:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             mload.return_value = mock.MagicMock()
             mload.return_value.StageWorkflow.return_value = None
+            mload.return_value.AgentClock.return_value = ""
             mload.return_value.ListWorkflowRuns.return_value = []
             r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
         assert r.status_code == 202, r.get_json()
@@ -2988,6 +2993,7 @@ class TestLaunchRefusals:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             agent = mock.MagicMock()
             mload.return_value = agent
+            agent.AgentClock.return_value = ""
             agent.ListWorkflowRuns.return_value = [{"index": 1}]
             r = client.post("/api/runs", json={"workflow": workflow, "agent": "smith", **body})
             if r.status_code == 202:
@@ -3055,6 +3061,7 @@ class TestSetupRun:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             agent = mock.MagicMock()
             mload.return_value = agent
+            agent.AgentClock.return_value = ""
             agent.ListWorkflowRuns.return_value = [{"index": 1}]
             agent.SetupWorkflow.return_value = {
                 "task_key": "fullKEY1", "setup_task_key": "setupKEY",
@@ -3073,3 +3080,61 @@ class TestSetupRun:
     def test_an_unknown_kind_is_refused(self, client, runnable):
         r = client.post("/api/runs", json={"workflow": runnable, "agent": "smith", "kind": "dance"})
         assert r.status_code == 400
+
+
+class TestSlurmDriverRunBinding:
+    # A Slurm-hosted driver's launch returns while its job is queued, so the
+    # newest logs dir at launch time belongs to the run before.
+    PREVIOUS = {"index": 1, "path": "/h/logs.2026-10-16_09-00-00", "timestamp": "2026-10-16_09-00-00"}
+    THIS = {"index": 2, "path": "/h/logs.2026-10-17_10-00-05", "timestamp": "2026-10-17_10-00-05"}
+
+    def _running(self, client, runnable):
+        project: Project = client.application.config["MSM_PROJECT"]
+        return project, project.create_run(runnable, {
+            "agent": "smith", "task_key": "k", "state": "running",
+            "launched_at": "2020-01-01T00:00:00+00:00",
+            "launch_stamp": "2026-10-17_10-00-00", "run_number": None,
+        })
+
+    def test_the_run_before_is_never_bound(self, client, runnable, monkeypatch):
+        from metasmith.ops import runtime as op_runtime
+        project, rec = self._running(client, runnable)
+        monkeypatch.setattr(op_runtime, "list_runs", lambda *a: [self.PREVIOUS])
+        waits = []
+        monkeypatch.setattr(op_runtime, "wait", lambda *a, **kw: waits.append(kw) or {"status": "completed"})
+        assert client.application.config["MSM_WATCHER"].poll_once() == []
+        assert waits == [], "the watcher probed a run it had not bound"
+        assert project.read_run(runnable, rec.name).record.get("run_number") is None
+
+    def test_the_first_run_after_the_launch_is_bound(self, client, runnable, monkeypatch):
+        from metasmith.ops import runtime as op_runtime
+        project, rec = self._running(client, runnable)
+        monkeypatch.setattr(op_runtime, "list_runs", lambda *a: [self.PREVIOUS, self.THIS])
+        waits = []
+        monkeypatch.setattr(op_runtime, "wait", lambda *a, **kw: waits.append(kw) or {"status": "timeout"})
+        client.application.config["MSM_WATCHER"].poll_once()
+        assert [w["run"] for w in waits] == [2]
+        assert project.read_run(runnable, rec.name).record.get("run_number") == 2
+
+    def test_a_just_bound_run_gets_the_driver_grace(self, client, runnable, monkeypatch):
+        # agent.log appears a moment after the logs dir; "missing" must not fail it yet.
+        from metasmith.ops import runtime as op_runtime
+        project, rec = self._running(client, runnable)
+        monkeypatch.setattr(op_runtime, "list_runs", lambda *a: [self.PREVIOUS, self.THIS])
+        monkeypatch.setattr(op_runtime, "wait", lambda *a, **kw: {"status": "missing"})
+        client.application.config["MSM_WATCHER"].poll_once()
+        assert project.read_run(runnable, rec.name).record["state"] == "running"
+
+    def test_a_launch_whose_run_has_not_started_binds_nothing(self, client, runnable):
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            mload.return_value.StageWorkflow.return_value = None
+            mload.return_value.AgentClock.return_value = "2026-10-17_10-00-00"
+            mload.return_value.ListWorkflowRuns.return_value = [dict(self.PREVIOUS)]
+            r = client.post("/api/runs", json={"workflow": runnable, "agent": "smith"})
+            assert r.status_code == 202, r.get_json()
+            _finish(client, r.get_json()["job"])
+        project: Project = client.application.config["MSM_PROJECT"]
+        record = project.read_run(runnable, r.get_json()["run"]["name"]).record
+        assert record["run_number"] is None
+        assert record["launch_stamp"] == "2026-10-17_10-00-00"
