@@ -6,15 +6,29 @@ from metasmith.python_api import *
 lib         = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model       = Transform()
 image       = model.AddRequirement(lib.GetType("env::comebin.env"))
+cpu_patch   = model.AddRequirement(lib.GetType("lib::comebin_cpu"))
 asm         = model.AddRequirement(lib.GetType("sequences::assembly"))
 bam         = model.AddRequirement(lib.GetType("alignment::bam"), parents={asm})
 bin_fasta   = model.AddProduct(lib.GetType("sequences::comebin_bin_fasta"))
 table       = model.AddProduct(lib.GetType("binning::comebin_contig_to_bin_table"))
 
 
+# The patch's sitecustomize keeps the bin step's Leiden sweep from hanging on any device. Without a GPU it also
+# spreads training, which uses one core of many, across them, and its dropout pool needs OpenMP's idle workers
+# parked rather than spinning on the same cores: at 48 threads a step took 1.26 s spinning and 0.79 s parked.
+def _comebin_patch(icpu_patch):
+    env = f"""
+            export PYTHONPATH={icpu_patch.container}${{PYTHONPATH:+:$PYTHONPATH}}"""
+    if os.environ.get("CUDA_VISIBLE_DEVICES", ""):
+        return env
+    return env + """
+            export OMP_WAIT_POLICY=PASSIVE"""
+
+
 def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     ibam = context.Input(bam)
+    icpu_patch = context.Input(cpu_patch)
 
     threads = context.params.get('cpus', 8)
     workdir = "comebin_out"
@@ -29,7 +43,7 @@ def protocol(context: ExecutionContext):
         return ExecutionResult(manifest=[], success=False)
     batch_size = min(usable_contigs, 1024)
 
-    _cmd = f"""
+    _cmd = f"""{_comebin_patch(icpu_patch)}
             mkdir -p {bam_dir}
             cp -L {ibam.container} {bam_dir}/
             mkdir -p {workdir}
@@ -43,6 +57,11 @@ def protocol(context: ExecutionContext):
             ],
             cmd=_cmd,
         )
+
+    sweep = Path(f"{workdir}/comebin_res/leiden_sweep.state")
+    if sweep.exists() and sweep.read_text().strip() == "running":
+        Log.Error("COMEBin's bin step died mid-sweep, most likely out of memory; failing the step so a retry gets more")
+        return ExecutionResult(manifest=[], success=False)
 
     outputs = []
     bin_dir = f"{workdir}/comebin_res/comebin_res_bins"
