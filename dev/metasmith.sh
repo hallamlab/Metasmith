@@ -748,7 +748,14 @@ case $1 in
         [ -d "$HERE/tests/metasmith/lifecycle" ] || { echo "tests/metasmith/lifecycle/ is missing"; exit 1; }
         # These spawn real process trees, so a hang here is a hang with children:
         # --durations makes a test that is waiting out a kill ladder obvious.
-        pytest -m lifecycle -q --durations=0 --durations-min=1.0 $HERE/tests/metasmith/lifecycle $@
+        pytest -m lifecycle -q --durations=0 --durations-min=1.0 $HERE/tests/metasmith/lifecycle $@ || exit $?
+        # The relay's race tests (concurrent starts, a dying or stalled watcher) live with the crate.
+        CARGO=$(command -v cargo || echo $HOME/.cargo/bin/cargo)
+        if [ -x "$CARGO" ]; then
+            (cd $HERE/src/bash_relay && $CARGO test --release -q) || exit $?
+        else
+            echo "WARNING: cargo not found, so src/bash_relay/tests did not run"
+        fi
     ;;
 
     -td) # inject updates to an agent home for dev binds

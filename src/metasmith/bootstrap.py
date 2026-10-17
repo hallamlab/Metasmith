@@ -113,6 +113,13 @@ def _as_home_rooted(path_map: PathMap, p: Path) -> Path | None:
     return path_map.ExternalToLocal(p)
 
 
+def FailureExitCode(results: list[ExecutionResult], context) -> int:
+    # A protocol that names its own failure (137 for a sized-out binner) outranks
+    # whatever its commands exited with.
+    named = [r.exit_code for r in results if r.exit_code]
+    return named[-1] if named else context.FailureExitCode()
+
+
 def ExecuteStep(
     step,
     agent,
@@ -345,9 +352,7 @@ def ExecuteStep(
         if cache_meta is not None:
             _promote(cache_meta, lineages, results)
         if success: Path(".command.success").touch()
-        named = [r.exit_code for r in results if r.exit_code]
-        failure_code = named[-1] if named else context.FailureExitCode()
-        return ExecutionResult(success, exit_code=None if success else failure_code)
+        return ExecutionResult(success, exit_code=None if success else FailureExitCode(results, context))
     except Exception as e:
         on_exit(ExecutionResult(False), "failed with error")
         Log.Error(f"error while executing transform [{step_name}]")
