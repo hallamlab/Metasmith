@@ -75,11 +75,15 @@ def TwinPlaceBash(external_home: Path, src: str = TWIN_SRC, dst: str = TWIN_DST)
     """Bash that places one shard product at `dst`, after `TwinHomeBash` set `h`."""
     # A driver container binds the agent home at its host path and again at /msm_home. The two
     # binds share a device, yet a hard link between them fails with EXDEV, so the shard is linked
-    # through the bind the work dir sits on first. A copy costs a product's bytes twice, so say so.
+    # through the bind the work dir sits on first. A directory cannot be hard linked, so its files
+    # are (`cp -al`), and a partial tree is cleared before the next try. A copy costs a product's
+    # bytes twice, so say so.
     return (
-        f"m='{src}'; ln -f \"$h${{m#'{external_home}'}}\" '{dst}' 2>/dev/null"
-        f" || ln -f \"$m\" '{dst}' 2>/dev/null"
-        f" || {{ echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
+        f"m='{src}'; v=\"$h${{m#'{external_home}'}}\";"
+        f" ln -f \"$v\" '{dst}' 2>/dev/null || ln -f \"$m\" '{dst}' 2>/dev/null"
+        f" || cp -al \"$v\" '{dst}' 2>/dev/null"
+        f" || {{ rm -rf '{dst}'; cp -al \"$m\" '{dst}' 2>/dev/null; }}"
+        f" || {{ rm -rf '{dst}'; echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
     )
 
 
@@ -100,7 +104,6 @@ class NextflowGenContext:
     external_work_var: str = "${params.workspace}"
     bootstrap_var: str = "${params.bootstrap_def}"
     cache_root: Path | None = None
-    cache_hit_strategy: str = "link"
     cache_helper: tuple[str, ...] = DEFAULT_CACHE_HELPER
     rootfs: "Rootfs|None" = None
 
@@ -133,36 +136,6 @@ def _read_env_declarations(step) -> dict[str, dict[str, str]|None]:
                 # else; asking `ResolveEnvImage` for its conda form returns the same URI.
                 found[name] = {"container": ResolveEnvImage(content, Runtime.APPTAINER, p)}
     return found
-
-def apply_fs_strategy(context: NextflowGenContext) -> None:
-    if context.cache_root is None:
-        return
-    if os.environ.get("METASMITH_CACHE", "1").lower() in {
-        "0", "false", "off", "no"
-    }:
-        return
-    from ...caching.fs import (
-        StraddleMountError,
-        assert_same_mount,
-        detect_strategy,
-    )
-
-    anchor = context.cache_root
-    while not anchor.exists() and anchor != anchor.parent:
-        anchor = anchor.parent
-    try:
-        assert_same_mount(anchor, context.work_dir)
-    except StraddleMountError as e:
-        Log.Warn(
-            "cache_root and work_dir straddle mounts; forcing "
-            f"publishDir 'copy' strategy. ({e})"
-        )
-        context.cache_hit_strategy = "copy"
-        return
-    context.cache_hit_strategy = detect_strategy(
-        anchor, default=context.cache_hit_strategy
-    )
-
 
 _REF_NAMESPACE = "ref::"
 _ENV_NAMESPACE = "env::"
@@ -229,7 +202,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
         return s[2:-1]
     if context.cache_root is None:
         context.cache_root = default_cache_root(context.external_home)
-    task._apply_fs_strategy(context)
     cache_decisions = task._compute_cache_decisions(context)
     path_map = PathMap(
         extern_home=context.external_home,

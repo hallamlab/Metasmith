@@ -148,4 +148,11 @@ process {
         scratch = false                     // login node doesn't have SLURM_TMPDIR
         errorStrategy = { task.attempt < 2 ? 'retry' : 'ignore' }  // a download's failure is usually the network's
     }
+
+    // A step whose products are large references writes straight into its work dir. Node-local
+    // scratch would make its promotion into the cache a copy across devices instead of a link,
+    // on top of Nextflow's own copy out of scratch.
+    withLabel: 'xnoscratchx' {
+        scratch = false
+    }
 }

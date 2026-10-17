@@ -17,7 +17,7 @@ from ..libraries import (
 from ..paths import DeferredPathError, is_deferred
 from ..remote import Logistics, Source, SourceType
 from .cache_decisions import compute_cache_decisions
-from .nextflow_codegen import NextflowGenContext, apply_fs_strategy, prepare_nextflow
+from .nextflow_codegen import NextflowGenContext, prepare_nextflow
 from .plan import WorkflowPlan
 
 
@@ -36,9 +36,6 @@ class WorkflowTask:
 
     def GetKey(self):
         return self._key
-
-    def _apply_fs_strategy(self, context: NextflowGenContext) -> None:
-        apply_fs_strategy(context)
 
     def _compute_cache_decisions(self, context: NextflowGenContext) -> dict[int, dict]:
         return compute_cache_decisions(self, context)

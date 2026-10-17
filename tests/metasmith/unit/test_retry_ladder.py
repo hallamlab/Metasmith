@@ -52,6 +52,14 @@ class TestPresets:
         assert process_level and all(l.startswith(f"{key} = {{") for l in process_level), lines
 
 
+    def test_a_large_reference_step_can_opt_out_of_scratch(self):
+        from metasmith.models.libraries.resources import NO_SCRATCH_LABEL
+
+        src = _preset("slurm")
+        block = src[src.index(f"withLabel: 'x{NO_SCRATCH_LABEL}x'"):]
+        assert "scratch = false" in block[:block.index("}")]
+
+
 class TestLadder:
     def test_memory_doubles_only_on_an_oom(self):
         ladder = MemoryLadder("'8 GB'")

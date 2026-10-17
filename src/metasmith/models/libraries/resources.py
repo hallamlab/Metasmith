@@ -84,6 +84,7 @@ class Gpus(Enum):
 
 GPU_LABEL = "gpu"
 LOCAL_LABEL = "local"
+NO_SCRATCH_LABEL = "noscratch"
 
 @dataclass
 class Gpu:
