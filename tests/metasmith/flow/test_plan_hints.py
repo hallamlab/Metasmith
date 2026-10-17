@@ -435,3 +435,58 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     assert any(m.startswith("mock::long_reads") for m in hit.near_misses), hit.near_misses
     assert any(m.startswith("mock::metadata") for m in hit.near_misses), hit.near_misses
     assert plan.hints[0].kind == "too_general"
+
+
+def _transform(requires: list[str], produces: str) -> str:
+    reqs = "\n".join(f'r{i} = model.AddRequirement(lib.GetType("mock::{t}"))' for i, t in enumerate(requires))
+    return f"""
+from pathlib import Path
+from metasmith.models.libraries import TransformInstanceLibrary, TransformInstance, ExecutionContext, ExecutionResult
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+{reqs}
+out = model.AddProduct(lib.GetType("mock::{produces}"))
+def protocol(ctx): return ExecutionResult(manifest=[{{out: Path('o')}}], success=True)
+TransformInstance(protocol=protocol, model=model, group_by=r0)
+"""
+
+
+def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(temp_dir):
+    types_path = temp_dir / "mock.yml"
+    _write_types_yml(types_path, {
+        name: {"properties": {"_": name}}
+        for name in ("reads", "assembly", "accession", "script", "truth", "stats")
+    })
+    tr_lib = _make_transform_lib(temp_dir, types_path, {
+        "assemble": _transform(["reads"], "assembly"),
+        "fetch_assembly": _transform(["accession"], "assembly"),
+        "stats": _transform(["assembly"], "stats"),
+        "gold": _transform(["assembly", "script"], "truth"),
+    })
+
+    inputs = DataInstanceLibrary(temp_dir / "inputs.xgdb")
+    inputs.AddTypeLibrary(types_path, namespace="mock")
+    inputs.AddValue("r.fq", "x", "mock::reads")
+    pool_backed(inputs)
+    inputs.Save()
+
+    target_model = Transform()
+    for t in ("mock::stats", "mock::truth"):
+        target_model.AddRequirement(tr_lib.GetType(t))
+    plan = WorkflowPlan.Generate(
+        given=[[sv] for sv in inputs.AsSamples("mock::reads")],
+        transforms=[tr_lib],
+        target_names=["mock::stats", "mock::truth"],
+        target_model=target_model,
+    )
+
+    assert plan.steps == []
+    first = plan.hints[0]
+    assert first.kind == "unproduced_requirement", plan.hints
+    assert "mock::script" in first.message and first.target == "mock::truth"
+    assert first.candidate_transforms == ["gold"]
+    stats = [h for h in plan.hints if h.target == "mock::stats"]
+    assert [h.kind for h in stats] == ["blocked_by_other_target"], stats
+    assert not any("accession" in h.message for h in plan.hints), plan.hints
