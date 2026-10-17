@@ -1,4 +1,3 @@
-import os
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -31,13 +30,9 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (context.external_cwd/"weights", "/weights"),
-        ],
-        args=["--nv", "--env", f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','')}"],
         cmd=f"""
             python {iplm.container}/saprot.py \
-                --weights /weights \
+                --weights "$PWD/weights" \
                 --fasta {iorfs.container} \
                 --di3 {itok.container} \
                 --out-parquet {iemb.container} \
@@ -63,5 +58,7 @@ TransformInstance(
         cpus=4,
         memory=Size.GB(16),
         duration=Duration(hours=3),
+        gpus=Gpus.REQUIRED,
+        gpu_memory=Size.GB(16),
     ),
 )

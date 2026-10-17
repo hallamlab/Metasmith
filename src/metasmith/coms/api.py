@@ -26,7 +26,7 @@ class Api:
             Path(workspace), int(step_index), host,
             stage_root=Path(stage_root) if stage_root else None,
         )
-        exit(0 if res.success else 1)
+        exit(0 if res.success else (res.exit_code or 1))
 
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import logging
 import queue
 import threading
@@ -16,6 +17,9 @@ FAILED = "failed"
 TERMINAL = {DONE, FAILED}
 
 _MAX_LINES = 5000
+_MAX_FINISHED = 200
+
+_server_log = logging.getLogger("metasmith.gui.jobs")
 
 
 @dataclass
@@ -120,6 +124,7 @@ class JobRunner:
         job = Job(id=self._next_id(kind), kind=kind, label=label, subject=subject or {})
         with self._lock:
             self._jobs[job.id] = job
+            self._prune()
 
         def _run():
             job.status = RUNNING
@@ -131,14 +136,21 @@ class JobRunner:
                 job.status = FAILED
                 job.error = str(exc) or exc.__class__.__name__
                 job.emit(f"ERROR: {job.error}")
-                for line in traceback.format_exc().splitlines():
-                    job.emit(line)
+                _server_log.error("job [%s] failed\n%s", job.id, traceback.format_exc())
             finally:
                 job.finished_at = utcnow()
                 job.finish()
 
         threading.Thread(target=_run, name=f"msm-gui-{job.id}", daemon=True).start()
         return job
+
+    def _prune(self):
+        finished = sorted(
+            (j for j in self._jobs.values() if j.status in TERMINAL),
+            key=lambda j: j.finished_at or "",
+        )
+        for j in finished[: max(0, len(finished) - _MAX_FINISHED)]:
+            del self._jobs[j.id]
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
@@ -157,12 +169,12 @@ class JobRunner:
             return [j for j in self._jobs.values() if j.status not in TERMINAL]
 
 
-_active_job = threading.local()
+_active_job: contextvars.ContextVar[Job | None] = contextvars.ContextVar("msm_gui_job", default=None)
 
 
 class _JobLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
-        job = getattr(_active_job, "job", None)
+        job = _active_job.get()
         if job is None:
             return
         try:
@@ -191,14 +203,13 @@ def install_log_capture():
 class LogCapture:
     def __init__(self, job: Job):
         self.job = job
-        self._previous = None
+        self._token = None
 
     def __enter__(self):
         install_log_capture()
-        self._previous = getattr(_active_job, "job", None)
-        _active_job.job = self.job
+        self._token = _active_job.set(self.job)
         return self
 
     def __exit__(self, *exc):
-        _active_job.job = self._previous
+        _active_job.reset(self._token)
         return False

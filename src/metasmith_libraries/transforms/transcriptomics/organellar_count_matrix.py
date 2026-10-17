@@ -6,7 +6,7 @@ model = Transform()
 exp   = model.AddRequirement(lib.GetType("transcriptomics::experiment"))
 bam   = model.AddRequirement(lib.GetType("transcriptomics::organellar_bam"), parents={exp})
 gff   = model.AddRequirement(lib.GetType("transcriptomics::organellar_gff"))
-image = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
+image = model.AddRequirement(lib.GetType("env::pysam.env"))
 helpers = model.AddRequirement(lib.GetType("lib::transcriptomics"))
 out   = model.AddProduct(lib.GetType("transcriptomics::organellar_gene_count_table"))
 
@@ -28,7 +28,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        cmd=f"pip install -q pysam && python {ihelp.container}/organellar_count_matrix.py {manifest} {gff_manifest} {iout.container}",
+        cmd=f"python {ihelp.container}/organellar_count_matrix.py {manifest} {gff_manifest} {iout.container}",
     )
     return ExecutionResult(
         manifest=[{out: iout.local}],

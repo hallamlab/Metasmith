@@ -120,6 +120,65 @@ the cue to run ``materialise`` first.
     same choice as the ``APPTAINER_CACHEDIR`` note above, seen from the other
     side: a store on a node-local path is invisible to every other node.
 
+.. _Setup Run:
+
+Set up a workflow before its first run
+------------------------------------------------------------
+
+A workflow's reference databases are downloaded by its own steps, and some take
+hours. A failed download in the real run is discovered only when that step
+fails. A **setup run** does that work first, so the real run starts with every
+reference already in place.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    metasmith workflow setup <agent> <task> --preset slurm --params '{"slurmAccount": "<account>"}'
+    metasmith workflow wait <agent> <setup task>
+    metasmith workflow run <agent> <task> --preset slurm --params '{"slurmAccount": "<account>"}'
+
+``workflow setup`` prepares every tool image or conda env the task needs. Then
+it launches a run of only the steps that read no sample: the downloads, and the
+database builds that use only them. It prints the setup run's own task key as
+``setup_task_key``, which is the one to ``wait`` on. In the web GUI the same action is the
+workflow's **set up** button. **environments only** skips the downloads.
+
+When the setup run completes, the real run serves those steps from the agent's
+cache instead of running them again. Running setup a second time does nothing
+that is already done.
+
+.. important::
+
+    The real run must use the **same agent** and the **same task** as the setup
+    run. A different agent home has its own empty cache. A task planned again
+    from a rebuilt resource library cites different references, and so does not
+    find them.
+
+Downloads run on the login node
+------------------------------------------------------------
+
+On a cluster, the large downloads run on the node that runs the workflow's
+driver, which is normally a login node, not on a compute node. Compute nodes on
+many clusters download slowly or not at all. Each download fetches in resumable
+parts, so a download that fails partway continues from where it stopped when
+the step runs again.
+
+Each large download takes its source address from a run parameter, for example
+``gtdb_release_url``, ``uniref50_url`` and ``metabuli_db_url``. Point one at a
+local mirror to skip the internet download:
+
+.. code-block:: bash
+    :caption: Terminal
+
+    metasmith workflow setup <agent> <task> --preset slurm \
+        --params '{"slurmAccount": "<account>", "gtdb_release_url": "https://mirror.example.org/gtdb/release232/232.0"}'
+
+.. note::
+
+    GTDB-Tk uses GTDB release 232, whatever newer release exists. A GTDB
+    mirror must serve release 232 in the layout of its ``232.0`` directory,
+    ``MD5SUM.txt`` included.
+
 .. _Container Runtime:
 
 Container Runtime

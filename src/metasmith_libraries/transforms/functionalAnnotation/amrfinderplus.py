@@ -18,11 +18,10 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/amrdb")],
         cmd=f"""
             amrfinder \
                 -p {iorfs.container} \
-                -d /amrdb \
+                -d {idb.container} \
                 --plus \
                 --threads {threads} \
                 -o {iout.container}

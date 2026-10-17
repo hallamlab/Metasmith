@@ -13,7 +13,7 @@ out_3di   = model.AddProduct(lib.GetType("sequences::structure_3di_tokens"))
 COLLECT = r'''
 import sys
 from pathlib import Path
-import pandas as pd
+import polars as pl
 
 descriptor_tsv = Path(sys.argv[1])
 out_parquet    = Path(sys.argv[2])
@@ -36,7 +36,8 @@ with open(descriptor_tsv) as f:
             sid = name
         rows.append({"sequence_id": sid, "aa_sequence": parts[1], "di3_sequence": parts[2]})
 
-pd.DataFrame(rows).to_parquet(out_parquet, index=False)
+schema = {"sequence_id": pl.Utf8, "aa_sequence": pl.Utf8, "di3_sequence": pl.Utf8}
+pl.DataFrame(rows, schema=schema).write_parquet(out_parquet)
 '''
 
 
@@ -52,21 +53,15 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (context.external_cwd/"structures", "/in"),
-            (context.external_cwd, "/work"),
-        ],
         cmd="""
-            cd /work
             shopt -s nullglob
-            foldseek structureto3didescriptor /in/*.pdb /in/*.cif /work/descriptor.tsv
+            foldseek structureto3didescriptor structures/*.pdb structures/*.cif descriptor.tsv
         """,
     )
 
     context.ExecWithEnv(
         env=image_py,
         cmd=f"""
-            pip install --quiet --no-cache-dir pandas pyarrow
             python {collect.name} descriptor.tsv {iout.container}
         """,
     )

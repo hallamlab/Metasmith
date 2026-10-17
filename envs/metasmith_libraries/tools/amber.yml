@@ -1,0 +1,6 @@
+name: amber
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - cami-amber=2.0.7

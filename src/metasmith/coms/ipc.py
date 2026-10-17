@@ -1,4 +1,5 @@
 from __future__ import annotations
+import contextvars
 import os
 import re
 from typing import IO, Callable, Any
@@ -177,7 +178,9 @@ class NonBlockingReader:
                     break
             if callable(self._on_close): self._on_close(self)
 
-        self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
+        # Run in the opener's context, so a GUI job's log capture still sees the
+        # remote output its own shell reads.
+        self._worker = Thread(target=contextvars.copy_context().run, args=[reader, io_handle, self._callbacks])
         self._worker.start()
 
     def RegisterCallback(self, callback: Callable[[bytes], None]):

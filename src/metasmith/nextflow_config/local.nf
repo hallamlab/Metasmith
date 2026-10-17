@@ -9,7 +9,7 @@ params {
     }
 
     process {
-        tries = 2
+        tries = 3
     }
 }
 
@@ -44,9 +44,12 @@ process {
 
     executor = 'local'
 
-    errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
-        task.attempt<params.process.tries? 'retry' : 'ignore'
-    }
-    maxRetries = params.process.tries+2     // this must be larger than errorStrategy
+    // Retries only an exit that names a resource or an interruption; see slurm.nf.
+    errorStrategy = { (task.exitStatus in [125, 137, 140, 143] || task.exitStatus == Integer.MAX_VALUE) && task.attempt < params.process.tries ? 'retry' : 'ignore' }
+    maxRetries = 99                         // errorStrategy owns the limit
     maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
+
+    withLabel: 'xlocalx' {
+        errorStrategy = { task.attempt < 2 ? 'retry' : 'ignore' }  // a download's failure is usually the network's
+    }
 }

@@ -129,7 +129,7 @@ def agent(tmp_path, monkeypatch):
     _resources_file(workspace)
     RecordingMover.sent = {}
     monkeypatch.setattr(_agents, "Logistics", RecordingMover)
-    return Agent(home=Source.FromLocal(home))
+    return Agent(home=Source.FromLocal(home), default_params={"slurmAccount": "def-test"})
 
 
 @pytest.fixture
@@ -213,3 +213,44 @@ def test_the_retry_ladder_stays_under_the_ceiling(launch, roomy_ceiling):
         f"no per-step block names the {ROOMY_GB} GB ceiling, so attempt 2 of a "
         f"step that fits asks for twice the machine: {per_step[:400]}"
     )
+
+
+def _label_local(agent, *processes: str) -> None:
+    import json
+    workspace = Path(agent.home.GetPath()) / AgentPaths.STAGED / TASK_KEY
+    steps = {
+        name: {"process": name, "labels": ["local"] if name in processes else []}
+        for name in (BIG_STEP, SMALL_STEP)
+    }
+    (workspace / AgentPaths.ENV_MANIFEST).write_text(json.dumps({"schema": 2, "steps": steps}))
+
+
+def _local_ceiling(cpus: int, gb: int) -> dict:
+    return {"localExecutor": {"cpus": cpus, "memory": f"{gb} GB"}}
+
+
+def test_a_scheduler_refuses_a_local_step_its_driver_host_cannot_run(launch, agent):
+    # Under a scheduler preset a `local` step runs on the driver's host, and nextflow aborts the
+    # whole run at that step's submit when it asks for more than the local executor has.
+    _label_local(agent, BIG_STEP)
+    with pytest.raises(Exception) as e:
+        launch("slurm", params=_local_ceiling(CEILING_CPUS, CEILING_GB))
+    message = str(e.value)
+    assert "interproscan" in message, message
+    assert "prodigal" not in message, message
+    assert "localExecutor" in message, message
+
+
+def test_a_scheduler_does_not_check_the_steps_it_queues(launch, agent):
+    _label_local(agent)
+    shell = launch("slurm", params=_local_ceiling(CEILING_CPUS, CEILING_GB))
+    assert shell.launched
+
+
+def test_a_scheduler_sizes_its_local_executor_at_launch(launch, agent):
+    _label_local(agent, SMALL_STEP)
+    launch("slurm", params=_local_ceiling(ROOMY_CPUS, ROOMY_GB))
+    config = RecordingMover.sent.get(AgentPaths.NXF_CONFIG, "")
+    assert f"executor {{ cpus = {ROOMY_CPUS}; memory = '{ROOMY_GB} GB' }}" in config
+    per_step = config[config.index("withName"):]
+    assert SMALL_STEP in per_step and BIG_STEP not in per_step, per_step

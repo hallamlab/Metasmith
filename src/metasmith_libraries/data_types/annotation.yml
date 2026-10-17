@@ -356,6 +356,10 @@ types:
   dram_db:
     properties:
       _: DRAM database directory
+  # The fetch half of dram_db, split so the network part runs on a login node.
+  dram_sources:
+    properties:
+      _: DRAM database downloads as fetched, unprocessed -- KOfam, Pfam-A.full, Pfam hmm.dat, dbCAN and the five distillation sheets
   dram_annotations:
     properties:
       _: DRAM gene annotations (dbCAN/KOfam/Pfam) TSV

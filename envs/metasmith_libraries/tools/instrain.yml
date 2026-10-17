@@ -1,0 +1,6 @@
+name: instrain
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - instrain=1.10.0

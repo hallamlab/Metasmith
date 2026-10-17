@@ -60,6 +60,26 @@ def register(subs):
         a.agent, a.task_key, a.force, a.library,
     ))
 
+    _setup = sp.add_parser(
+        "setup",
+        help="prepare an agent for a planned task: every environment it needs, then a run "
+             "of only the steps that read no sample (the downloads), into the agent's cache",
+    )
+    _setup.add_argument("agent")
+    _setup.add_argument("task_ref", metavar="TASK",
+                        help="task key in the workspace, or a path to a task bundle directory")
+    _setup.add_argument("--preset")
+    _setup.add_argument("--params", help="JSON dict")
+    _setup.add_argument("--force", action="store_true",
+                        help="re-fetch or rebuild environments even when already there")
+    _setup.add_argument("--library", default=None,
+                        help="library to read conda recipes from "
+                             "(default: the installed metasmith_libraries)")
+    _setup.set_defaults(func=lambda a: _rt.setup_run(
+        a.agent, a.task_ref, a.workspace, config_preset=a.preset,
+        params=json.loads(a.params) if a.params else None, force=a.force, library=a.library,
+    ))
+
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")
     _run.add_argument("task_key")

@@ -33,7 +33,7 @@ def protocol(context: ExecutionContext):
 
     _cmd = f"""
         set -e
-        REL=$(wget -qO- {RELNOTE_URL} | grep -oiE 'Release [0-9]+\\.[0-9]+' | head -1 | cut -d' ' -f2)
+        REL=$(wget -qO- {RELNOTE_URL} | grep -oiE 'Release [0-9]+\\.[0-9]+' | sed -n 1p | cut -d' ' -f2)
         if [ -z "$REL" ]; then
             echo '[kegg] no release number on the release-note page -- refusing to write' \\
                  'an unlabelled snapshot of a database that changes daily' >&2

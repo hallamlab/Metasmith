@@ -38,7 +38,7 @@ EMIT = {{
     "FUNCTION": lambda v: ("FUNCTION", v),
 }}
 
-with open("/ws/0.pf", "w") as f:
+with open("0.pf", "w") as f:
     for oid in orf_ids:
         f.write(f"ID\\t{{oid}}\\n")
         f.write(f"NAME\\t{{oid}}\\n")
@@ -52,25 +52,23 @@ with open("/ws/0.pf", "w") as f:
         f.write("//\\n")
 """
 
-    context.LocalShell("mkdir -p ws")
     context.LocalShell("cat > _build_pf.py << 'PYEOF'\n" + build_pf + "\nPYEOF\n")
 
     context.ExecWithEnv(
         env=image,
-        binds=[(context.external_cwd / "ws", "/ws")],
-        cmd=(
-            "cp _build_pf.py /ws/_build_pf.py && "
-            "python3 /ws/_build_pf.py && "
-            "pathologic -i /ws/0.pf -o /ws/cyc --silent && "
-            "mkdir -p /ws/tables && "
-            "dump_pgdb_csvs /ws/cyc /ws/tables && "
-            "tar czf /ws/cyc.tgz -C /ws/cyc . && "
-            "tar czf /ws/tables.tgz -C /ws/tables ."
-        ),
+        cmd="""
+            ws="$PWD"
+            python3 "$ws/_build_pf.py"
+            pathologic -i "$ws/0.pf" -o "$ws/cyc" --silent
+            mkdir -p "$ws/tables"
+            dump_pgdb_csvs "$ws/cyc" "$ws/tables"
+            tar czf "$ws/cyc.tgz" -C "$ws/cyc" .
+            tar czf "$ws/tables.tgz" -C "$ws/tables" .
+        """,
     )
 
-    context.LocalShell(f"cp ws/cyc.tgz {iarchive.local}")
-    context.LocalShell(f"cp ws/tables.tgz {itables.local}")
+    context.LocalShell(f"cp cyc.tgz {iarchive.local}")
+    context.LocalShell(f"cp tables.tgz {itables.local}")
 
     return ExecutionResult(
         manifest=[

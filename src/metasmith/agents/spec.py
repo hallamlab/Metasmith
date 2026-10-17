@@ -214,7 +214,12 @@ class Spec:
         )
         data_libs: list[DataInstanceLibrary] = []
         seen: set[int] = set()
-        for lib in [v._original for v in _samples] + [
+        for lib in [v._original for v in _samples]:
+            if id(lib) in seen: continue
+            seen.add(id(lib))
+            data_libs.append(lib)
+        sample_library_count = len(data_libs)
+        for lib in [
             lib if isinstance(lib, DataInstanceLibrary) else lib._original
             for lib in resources
         ]:
@@ -226,4 +231,5 @@ class Spec:
             plan=plan,
             data_libraries=data_libs,
             transform_libraries=transforms,
+            sample_library_count=sample_library_count,
         )
