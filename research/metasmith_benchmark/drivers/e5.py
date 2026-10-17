@@ -94,7 +94,9 @@ CATALOGUES = {
                         "korem2015", "li2019", "bissett_base", "karlsson2013", "sunagawa2015")},
 }
 ASSEMBLIES = HERE.parent / "results" / "e5" / "assemblies.tsv"
-CATALOGUE_QUEUE = 112
+# Each array element counts against queueSize and slurm.nf's arrays are 100 wide, so a queue near 100 keeps one
+# array in flight and runs the four callers' arrays in series (findings/E5_RUN.md).
+CATALOGUE_QUEUE = 800
 
 # CAMI's long-read set for each hybrid study.
 CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_associated_long_nano",
