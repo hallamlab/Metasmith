@@ -27,6 +27,9 @@ class WorkflowTask:
     plan: WorkflowPlan
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
+    # The leading data_libraries that hold samples; the rest are resources. None
+    # for a bundle written before it was recorded.
+    sample_library_count: int|None = None
 
     def __post_init__(self):
         self._update_hash()
@@ -102,6 +105,7 @@ class WorkflowTask:
             key=self._key,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
+            sample_libraries=self.sample_library_count,
         )
 
     def LibraryMasks(self) -> dict[str, set[Path]]:
@@ -229,6 +233,7 @@ class WorkflowTask:
             plan=plan,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
+            sample_library_count=raw_task.get("sample_libraries"),
         )
         # The key names the staged directory, so it is a fact about this bundle
         # rather than something to re-derive. `WorkflowPlan._update_hash` folds

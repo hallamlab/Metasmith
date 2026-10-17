@@ -19,6 +19,7 @@ from ..models.libraries import (
 from ..models.remote import GlobusSource, Logistics, Source
 from ..models.solver import Dependency, Transform
 from ..models.workflow import WorkflowPlan, WorkflowTask
+from ..models.workflow.setup import setup_subplan
 from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
 from .conda import (
     NO_RECIPE, _conda_frontend, _create_conda_envs, _find_recipes, _manifest_envs, _recipe_roots,
@@ -444,6 +445,26 @@ class _WorkflowOps:
             )
             return params
         return dict(self.default_params) | dict(params or {})
+
+    @exclusive("setting up a workflow")
+    def SetupWorkflow(
+        self, task: WorkflowTask, config_file: Path|None=None, params: dict|Path|str|None=None,
+        is_local_preset: bool|None=None, force: bool=False, library: Path|str|None=None,
+    ) -> dict:
+        # Every environment the full plan names, then a run of only its sample-free
+        # steps. Their products land in this agent's cache under the keys the full
+        # run will ask for, so the real run serves them as hits.
+        sub = setup_subplan(task)
+        self.StageWorkflow(task, "update")
+        environment = self.SetupEnvironment(task.GetKey(), force=force, library=library)
+        self.StageWorkflow(sub, "update")
+        self.RunWorkflow(sub.GetKey(), config_file=config_file, params=params, is_local_preset=is_local_preset)
+        return {
+            "task_key": task.GetKey(),
+            "setup_task_key": sub.GetKey(),
+            "steps": [step.transform.name for step in sub.plan.steps],
+            "environment": environment,
+        }
 
     @exclusive("launching a run")
     def RunWorkflow(

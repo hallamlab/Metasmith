@@ -3048,3 +3048,28 @@ class TestWorkflowPresetSource:
         client.put(f"/api/workflows/{name}/preset", json={"content": "// mine\n"})
         body = client.get(f"/api/workflows/{name}/preset").get_json()
         assert body["edited"] and body["chosen"]
+
+
+class TestSetupRun:
+    def test_a_setup_run_records_its_kind_and_the_slices_key(self, client, runnable):
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            agent = mock.MagicMock()
+            mload.return_value = agent
+            agent.ListWorkflowRuns.return_value = [{"index": 1}]
+            agent.SetupWorkflow.return_value = {
+                "task_key": "fullKEY1", "setup_task_key": "setupKEY",
+                "steps": ["downloadThing"], "environment": {"fetched": 2},
+            }
+            r = client.post("/api/runs", json={"workflow": runnable, "agent": "smith", "kind": "setup"})
+            assert r.status_code == 202, r.get_json()
+            _finish(client, r.get_json()["job"])
+        run = r.get_json()["run"]
+        body = client.get(f"/api/runs/{runnable}/{run['name']}").get_json()
+        assert body["kind"] == "setup"
+        assert body["task_key"] == "setupKEY"
+        assert body["setup_steps"] == ["downloadThing"]
+        assert agent.RunWorkflow.call_count == 0
+
+    def test_an_unknown_kind_is_refused(self, client, runnable):
+        r = client.post("/api/runs", json={"workflow": runnable, "agent": "smith", "kind": "dance"})
+        assert r.status_code == 400

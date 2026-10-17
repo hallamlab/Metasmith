@@ -1539,8 +1539,9 @@ def _run_summary(r) -> dict:
         "state": r.state,
         "live": r.live,
         "archived_at": r.archived_at,
+        "kind": r.record.get("kind") or "run",
         **{k: r.record.get(k) for k in (
-            "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
+            "setup_steps", "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
             "collected_at", "run_number", "preset_source", "error",
             "probe_error", "probe_error_at",
             "params", "resource_overrides",
@@ -1673,12 +1674,20 @@ def _launch_warnings(preset_text: str, preset_source: str | None, params: dict, 
     return out
 
 
+RUN_KINDS = ("run", "setup")
+
+
 @bp.post("/runs")
 def create_run():
+    # kind `setup` runs only the steps that read no sample (the downloads), after
+    # preparing every environment the full plan names; the real run then finds
+    # their products in the agent's cache.
     b = _body()
     p = _project()
     workflow = b.get("workflow")
     agent_name = b.get("agent")
+    kind = b.get("kind") or "run"
+    assert kind in RUN_KINDS, f"kind must be one of {', '.join(RUN_KINDS)}"
     wf, agent_path = _runnable(p, workflow, agent_name)
     preset_source = _ensure_preset(p, workflow, agent_name)
     params = _checked_params(b.get("params")) or None
@@ -1691,42 +1700,66 @@ def create_run():
     account_problem = SlurmAccountProblem(preset_text, SplitParamKeys(effective))
     assert account_problem is None, f"cannot launch [{workflow}] on [{agent_name}]: {account_problem}"
     found = stdlib.discover(p.root)
-    warnings = _launch_warnings(
-        preset_text, preset_source, effective, found["path"] if found["present"] else None,
-    )
+    library = found["path"] if found["present"] else None
+    warnings = _launch_warnings(preset_text, preset_source, effective, library)
     rec = p.create_run(workflow, {
+        "kind": kind,
         "agent": agent_name,
         "preset_source": preset_source,
         "params": params,
-        "resource_overrides": _checked_overrides(b.get("resource_overrides")),
+        "resource_overrides": _checked_overrides(b.get("resource_overrides")) if kind == "run" else None,
         "on_exist": b.get("on_exist", "update"),
         "launched_by": current_app.config.get("MSM_INSTANCE"),
     })
     run_name = rec.name
     watcher = current_app.config["MSM_WATCHER"]
 
+    def _launch_run() -> str:
+        staged = op_runtime.stage(
+            agent_path, str(wf.path), rec.record.get("on_exist", "update"), None,
+        )
+        p.update_run(workflow, run_name, {
+            "state": "staged", "task_key": staged["task_key"],
+            "staged_path": op_runtime.staged_path(agent_path, staged["task_key"]),
+        })
+        p.update_run(workflow, run_name, {"state": "launching"})
+        op_runtime.run(
+            agent_path,
+            staged["task_key"],
+            config_file=str(p.preset_path(workflow)),
+            is_local_preset=rec.record.get("preset_source") == "local",
+            params=rec.record.get("params"),
+            resource_overrides=rec.record.get("resource_overrides"),
+        )
+        return staged["task_key"]
+
+    def _launch_setup() -> str:
+        p.update_run(workflow, run_name, {"state": "launching"})
+        report = op_runtime.setup_run(
+            agent_path, str(wf.path),
+            config_file=str(p.preset_path(workflow)),
+            params=rec.record.get("params"),
+            is_local_preset=rec.record.get("preset_source") == "local",
+            force=bool(b.get("force", False)),
+            library=library,
+        )
+        key = report["setup_task_key"]
+        p.update_run(workflow, run_name, {
+            "task_key": key,
+            "full_task_key": report["task_key"],
+            "setup_steps": report["steps"],
+            "environment": report["environment"],
+            "staged_path": op_runtime.staged_path(agent_path, key),
+        })
+        return key
+
     def _work(job):
         with LogCapture(job):
             for warning in warnings:
                 Log.Warn(warning)
             try:
-                staged = op_runtime.stage(
-                    agent_path, str(wf.path), rec.record.get("on_exist", "update"), None,
-                )
-                p.update_run(workflow, run_name, {
-                    "state": "staged", "task_key": staged["task_key"],
-                    "staged_path": op_runtime.staged_path(agent_path, staged["task_key"]),
-                })
-                p.update_run(workflow, run_name, {"state": "launching"})
-                op_runtime.run(
-                    agent_path,
-                    staged["task_key"],
-                    config_file=str(p.preset_path(workflow)),
-                    is_local_preset=rec.record.get("preset_source") == "local",
-                    params=rec.record.get("params"),
-                    resource_overrides=rec.record.get("resource_overrides"),
-                )
-                runs = op_runtime.list_runs(agent_path, staged["task_key"])
+                key = _launch_setup() if kind == "setup" else _launch_run()
+                runs = op_runtime.list_runs(agent_path, key)
                 p.update_run(workflow, run_name, {
                     "state": "running",
                     "launched_at": utcnow(),
@@ -1741,7 +1774,8 @@ def create_run():
             return {"workflow": workflow, "run": run_name}
 
     job = _jobs().submit(
-        "run", f"launch {run_name}", _work, subject={"workflow": workflow, "run": run_name},
+        kind, f"{'set up' if kind == 'setup' else 'launch'} {run_name}", _work,
+        subject={"workflow": workflow, "run": run_name},
     )
     return jsonify({"run": _run_summary(rec), "job": job.summary()}), 202
 

@@ -1300,15 +1300,18 @@
     if (job) jobId = job.id
   }
 
-  async function launch() {
+  // `setup` runs only the steps that read no sample -- the downloads -- after
+  // preparing every environment, so the real run finds them in the cache.
+  async function launch(kind = 'run') {
     launching = true
     const params = toParams(runParams)
     const out = await attempt(() =>
       api.post('/runs', {
         workflow: name,
         agent: agentChoice,
+        kind,
         params: Object.keys(params).length ? params : null,
-        resource_overrides: overridePayload(),
+        resource_overrides: kind === 'run' ? overridePayload() : null,
       }),
     )
     launching = false
@@ -1910,13 +1913,33 @@
         <div class="row" style="gap:8px">
           <button
             class="primary"
-            onclick={launch}
+            onclick={() => launch('run')}
             data-tour="launch"
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || paramProblems(runParams).length > 0 || !!liveRun}
           >
             {launching ? 'launching…' : 'stage and run'}
           </button>
+          <button
+            onclick={() => launch('setup')}
+            title="pull every container and download every reference database this workflow needs, without running a sample"
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || paramProblems(runParams).length > 0 || !!liveRun}
+          >set up</button>
+          <button
+            class="small"
+            onclick={() => setupEnvironment()}
+            title="pull containers or build conda envs only"
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
+          >{settingUp ? 'preparing…' : 'environments only'}</button>
         </div>
+        {#if envReport}
+          <p class="small muted">
+            environments:
+            {Object.entries(envReport)
+              .filter(([, v]) => typeof v === 'number' || Array.isArray(v))
+              .map(([k, v]) => `${k.replaceAll('_', ' ')} ${Array.isArray(v) ? v.length : v}`)
+              .join(', ')}
+          </p>
+        {/if}
         {#if liveRun}
           <!-- Every run of this workflow stages into the same task_key
                workspace on the agent -- one PID.lock, one process group. A
@@ -1956,6 +1979,7 @@
                     <button class="link" onclick={() => select('runs', `${wf.name}/${r.name}`)}>
                       {runSuffix(r.name, wf.name)}
                     </button>
+                    {#if r.kind === 'setup'}<span class="tag" title={(r.setup_steps ?? []).join(', ')}>setup</span>{/if}
                   </td>
                   <td class="muted">{r.agent}</td>
                   <td class="muted"><Ago iso={r.launched_at ?? r.created_at} /></td>
