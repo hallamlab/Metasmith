@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -34,17 +36,42 @@ from .agent_lock import exclusive
 DEFAULT_CONTAINER = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
 
 
-def _assert_container_resolvable(container: str, runtime: Runtime, native: bool) -> None:
+def _local_docker_image(container: str) -> bool:
+    ref = container.removeprefix("docker://")
+    try:
+        return subprocess.run(["docker", "image", "inspect", ref], capture_output=True, timeout=30).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _registry_has_tag(container: str) -> bool|None:
+    repo, _, tag = container.removeprefix("docker://").removeprefix("quay.io/").partition(":")
+    url = f"https://quay.io/api/v1/repository/{repo}/tag/?specificTag={tag}&onlyActiveTags=true"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            return bool(json.load(r).get("tags"))
+    except (OSError, ValueError):
+        return None
+
+
+def _assert_container_resolvable(container: str, runtime: Runtime, native: bool, local_home: bool = False) -> None:
     # A source checkout has no build hash, so the default names the bare
-    # version: an alias that does not exist until that version is published,
-    # and after that points at whichever build was pushed last.
+    # version: a tag that 404s until that version is published, and after that
+    # names whichever build was pushed last rather than this tree.
     if native or runtime == Runtime.MAMBA or BUILD_HASH: return
     if container != DEFAULT_CONTAINER: return
-    raise ValueError(
-        f"this metasmith [{VERSION}] runs from a source tree with no build hash, so it cannot "
-        f"name the agent image it matches; [{container}] is a guess. Pass container=<image> "
-        f"to Agent (image=<image> to Deploy), for example the image `dev/metasmith.sh -bd` built"
-    )
+    if runtime == Runtime.DOCKER and local_home and _local_docker_image(container): return
+    found = _registry_has_tag(container)
+    if found is False:
+        raise ValueError(
+            f"this metasmith [{VERSION}] runs from a source tree with no build hash, and [{container}] "
+            f"is not published. Pass container=<image> to Agent (image=<image> to Deploy), for "
+            f"example the image `dev/metasmith.sh -bd` built"
+        )
+    if found is None:
+        Log.Warn(f"could not check that [{container}] is published; deploying with it anyway")
+    else:
+        Log.Warn(f"[{container}] is the published {VERSION} image, not this source tree. Pass container= to run this tree's engine")
 
 
 _DEPLOY_PROBES = {
@@ -257,7 +284,8 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             self.native = native
         if rootfs is not None:
             self.rootfs = Rootfs.Parse(rootfs)
-        _assert_container_resolvable(self.container, self.runtime, self.native)
+        _assert_container_resolvable(self.container, self.runtime, self.native,
+                                     local_home=self.home.type in (SourceType.DIRECT, SourceType.SYMLINK))
         Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native}, rootfs={self.rootfs.value})")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)

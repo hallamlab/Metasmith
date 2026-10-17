@@ -73,17 +73,37 @@ def test_build_hash_is_deterministic():
     assert re.fullmatch(r"[0-9a-f]{7}", h1), f"expected 7-char hex, got [{h1}]"
 
 
-def test_a_source_tree_refuses_to_guess_the_agent_image(monkeypatch):
+def test_a_source_tree_refuses_an_unpublished_default_image(monkeypatch):
     import metasmith.agents.agent as agent_mod
     monkeypatch.setattr(agent_mod, "BUILD_HASH", "")
+    monkeypatch.setattr(agent_mod, "_registry_has_tag", lambda ref: False)
     with pytest.raises(ValueError, match="container="):
         agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.APPTAINER, False)
+
+
+@pytest.mark.parametrize("published", [True, None])
+def test_a_published_or_unknown_default_image_deploys(monkeypatch, published):
+    import metasmith.agents.agent as agent_mod
+    monkeypatch.setattr(agent_mod, "BUILD_HASH", "")
+    monkeypatch.setattr(agent_mod, "_registry_has_tag", lambda ref: published)
+    agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.APPTAINER, False)
 
 
 def test_an_explicit_image_or_a_built_package_is_used_as_given(monkeypatch):
     import metasmith.agents.agent as agent_mod
     monkeypatch.setattr(agent_mod, "BUILD_HASH", "")
+    monkeypatch.setattr(agent_mod, "_registry_has_tag", lambda ref: False)
     agent_mod._assert_container_resolvable("docker://example/metasmith:dev", Runtime.APPTAINER, False)
     agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.MAMBA, False)
     monkeypatch.setattr(agent_mod, "BUILD_HASH", "abc1234")
     agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.APPTAINER, False)
+
+
+def test_a_local_docker_agent_uses_the_default_tag_once_it_is_built_here(monkeypatch):
+    import metasmith.agents.agent as agent_mod
+    monkeypatch.setattr(agent_mod, "BUILD_HASH", "")
+    monkeypatch.setattr(agent_mod, "_registry_has_tag", lambda ref: False)
+    monkeypatch.setattr(agent_mod, "_local_docker_image", lambda ref: True)
+    agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.DOCKER, False, local_home=True)
+    with pytest.raises(ValueError, match="container="):
+        agent_mod._assert_container_resolvable(agent_mod.DEFAULT_CONTAINER, Runtime.DOCKER, False, local_home=False)
