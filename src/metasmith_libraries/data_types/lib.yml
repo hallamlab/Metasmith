@@ -111,3 +111,8 @@ types:
     properties:
       src: comebin_cpu
       usage: library
+  # On PYTHONPATH it makes me_finder 1.1.2 read every JSON document blastn writes, not only the first.
+  mobileelementfinder_jsonfix:
+    properties:
+      src: mobileelementfinder_jsonfix
+      usage: library

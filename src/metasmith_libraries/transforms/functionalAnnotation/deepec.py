@@ -25,15 +25,13 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    output_files = list(Path("deepec_output").glob("*.tsv"))
-    if output_files:
-        context.LocalShell(f"cp {output_files[0]} {iout.local}")
-    else:
-        result_files = list(Path("deepec_output").glob("*result*"))
-        if result_files:
-            context.LocalShell(f"cp {result_files[0]} {iout.local}")
-        else:
-            context.LocalShell(f"find deepec_output -type f -exec cat {{}} \\; > {iout.local}")
+    # DeepEC 0.4.1 always writes this merged table and moves its intermediates into log_files/.
+    result = Path("deepec_output/DeepEC_Result.txt")
+    if not result.exists():
+        Log.Error(f"DeepEC wrote no [{result}]")
+        return ExecutionResult(manifest=[], success=False)
+    if context.LocalShell(f"cp {result} {iout.local}") != 0:
+        return ExecutionResult(manifest=[], success=False)
 
     return ExecutionResult(
         manifest=[

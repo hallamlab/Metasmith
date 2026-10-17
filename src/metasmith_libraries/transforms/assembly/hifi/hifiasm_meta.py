@@ -15,6 +15,8 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
+    platform = context.params.get("long_read_platform")
+    assert platform in {None, "pacbio"}, f"hifiasm_meta assembles PacBio HiFi only, not [{platform}] reads"
     assembly_prefix = "the_assembly"
     context.ExecWithEnv(
         env = img_hfa,
@@ -46,8 +48,8 @@ TransformInstance(
     model=model,
     group_by=reads,
     resources=Resources(
-        cpus=8,
-        memory=Size.GB(32),
-        duration=Duration(hours=12),
+        cpus=32,
+        memory=Size.GB(128),
+        duration=Duration(hours=48),
     )
 )

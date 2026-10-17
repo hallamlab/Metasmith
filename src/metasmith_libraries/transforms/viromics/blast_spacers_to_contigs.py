@@ -48,16 +48,16 @@ def protocol(context: ExecutionContext):
         return ExecutionResult(manifest=[{out: o.local}], success=True)
 
     # -task blastn-short is the whole point. Spacers are 30-40 bp and the default
-    # task's word size of 11 misses them outright. -subject rather than a made
-    # database because the frozen set is the subject and building one buys
-    # nothing at this scale.
+    # task's word size of 11 misses them outright. The frozen set is made into a
+    # database because blastn ignores -num_threads when given -subject.
     #
     # Every hit is emitted with its identity, alignment length and mismatch count.
     # The paper's acceptance rule -- at most one mismatch over at least 95% of the
     # spacer -- is deliberately NOT applied here: it belongs to the join, where it
     # can be varied without re-running an alignment.
     _cmd = f"""
-        blastn -task blastn-short -query {pooled} -subject {ifrozen.container} \
+        makeblastdb -in {ifrozen.container} -dbtype nucl -out frozen_db
+        blastn -task blastn-short -query {pooled} -db frozen_db \
             -evalue 1e-5 -word_size 7 -reward 1 -penalty -1 -ungapped -dust no \
             -num_threads {threads} \
             -outfmt "6 qseqid sseqid pident length mismatch qlen qstart qend sstart send evalue bitscore qcovs" \

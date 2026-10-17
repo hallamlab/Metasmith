@@ -22,12 +22,11 @@ def protocol(context: ExecutionContext):
         block_size = max(1.0, min(12.0, (mem_gb - 4) / 6))
 
     context.ExecWithEnv(
-        binds=[(idb.external.parent, "/db")],
         env=image,
         cmd=f"""
             diamond blastp \
                 --query {iorfs.container} \
-                --db /db/{idb.external.name} \
+                --db {idb.container} \
                 --out {iout.container} \
                 --threads {threads} \
                 --block-size {block_size} \
@@ -51,6 +50,6 @@ TransformInstance(
     resources=Resources(
         cpus=8,
         memory=Size.GB(32),
-        duration=Duration(minutes=30),
+        duration=Duration(hours=2),
     ),
 )

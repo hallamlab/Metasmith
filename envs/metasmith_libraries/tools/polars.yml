@@ -1,0 +1,8 @@
+name: polars
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - polars=1.38.1
+  - pandas=3.0.1
+  - numpy=2.4.2

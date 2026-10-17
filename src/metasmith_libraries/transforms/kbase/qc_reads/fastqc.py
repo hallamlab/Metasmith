@@ -74,19 +74,45 @@ def protocol(context: ExecutionContext):
 
     basic_stats = {k:v for k, v in blocks["Basic Statistics"]["rows"]}
     n_seq = basic_stats["Total Sequences"]
-    length = basic_stats["Sequence length"]
+    encoding = str(basic_stats["Encoding"])
+    phred_encoding = "sanger" if "Sanger" in encoding else encoding.lower()
+
     qrows = blocks["Per sequence quality scores"]["rows"]
+    n_scored = sum(n for _, n in qrows)
+    mean_quality = sum(q*n for q, n in qrows)/n_scored
     _sum = 0
-    n_med = n_seq/2
     median_quality = 0
     for q, n in qrows:
         _sum += n
-        if _sum >= n_med:
+        if _sum >= n_scored/2:
             median_quality = q
+            break
+
+    # FastQC bins a spread of lengths into ranges like "35-39"; a bin counts at its midpoint.
+    def _length(x):
+        if isinstance(x, str):
+            lo, hi = x.split("-")
+            return (int(lo)+int(hi))/2
+        return x
+    lrows = [(_length(l), n) for l, n in blocks["Sequence Length Distribution"]["rows"]]
+    bases = sum(l*n for l, n in lrows)
+    _sum = 0
+    n50 = 0
+    for l, n in sorted(lrows, reverse=True):
+        _sum += l*n
+        if _sum >= bases/2:
+            n50 = int(round(l))
+            break
+
     stats_json = dict(
         reads = n_seq,
-        bases = n_seq*length,
-        N50 = length,
+        bases = int(round(bases)),
+        mean_quality = mean_quality,
+        q20 = None,
+        q30 = None,
+        phred_encoding = phred_encoding,
+        N50 = n50,
+        GC = basic_stats["%GC"],
         median_quality = median_quality,
         _raw = blocks,
     )

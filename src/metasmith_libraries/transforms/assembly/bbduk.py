@@ -33,7 +33,9 @@ def protocol(context: ExecutionContext):
         seq_len = d["N50"]
         mean_qual = d["mean_quality"]
         phred_encoding = d["phred_encoding"].lower()
-        phred_scale = 33 if phred_encoding in {"sanger"} else 64
+        # seqkit's guesses: Sanger and Illumina-1.8+ are phred+33 (1.8+ only reaches Q41),
+        # Solexa, Illumina-1.3+ and Illumina-1.5+ are phred+64.
+        phred_scale = 33 if phred_encoding in {"sanger", "illumina-1.8+"} else 64
     assert seq_len>0, "fastqc detected read length was 0"
     Log.Info(f"mean quality [{mean_qual}]")
     minlen = max((seq_len//3)+1, 20)

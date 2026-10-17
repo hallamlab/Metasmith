@@ -29,9 +29,9 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/db")],
         cmd=f"""
             export HOME=/tmp
+            sed "s|\\"/db/|\\"$(readlink -f {idb.container})/|g" {idb.container}/DRAM.config > DRAM.local.config
 
             DRAM-v.py annotate \
                 -i {ivs2_seqs.container} \
@@ -39,12 +39,12 @@ def protocol(context: ExecutionContext):
                 -o {annot_dir} \
                 --threads {threads} \
                 --min_contig_size 1000 \
-                --config_loc /db/DRAM.config
+                --config_loc DRAM.local.config
 
             DRAM-v.py distill \
                 -i {annot_dir}/annotations.tsv \
                 -o {distill_dir} \
-                --config_loc /db/DRAM.config
+                --config_loc DRAM.local.config
         """,
     )
 

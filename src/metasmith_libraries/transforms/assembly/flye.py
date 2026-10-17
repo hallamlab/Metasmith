@@ -24,12 +24,25 @@ def protocol(context: ExecutionContext):
     assert q >= 0, f"invalid q score [{q}]"
     q = min(33, q)
     p = 10**(-q/10)
-    if q >= 20:
+    # Quality alone cannot tell ONT from PacBio below Q20, so a run names its platform
+    # with `long_read_platform`; unnamed, sub-Q20 reads are taken to be ONT. The tiers
+    # are flye 2.9.6's own: hifi <1% error (Q20), nano-hq <3% (Q15) and, by its help,
+    # R9 Guppy5+ reads in nano-hq with --read-error raised; nano-raw is 10-20% (<Q10).
+    platform = context.params.get("long_read_platform")
+    assert platform in {None, "ont", "pacbio"}, f"unknown long_read_platform [{platform}]"
+    err = ""
+    if q >= 20 and platform != "ont":
         preset = "--pacbio-hifi"
         err = f"--read-error {p:0.6f}"
+    elif platform == "pacbio":
+        preset = "--pacbio-raw"
+    elif q >= 10:
+        preset = "--nano-hq"
+        if q < 15:
+            err = f"--read-error {p:0.6f}"
     else:
         preset = "--nano-raw"
-        err = ""
+    Log.Info(f"mean read quality [{q}], platform [{platform}], flye mode [{preset}]")
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"

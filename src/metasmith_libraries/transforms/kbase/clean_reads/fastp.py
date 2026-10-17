@@ -1,9 +1,11 @@
 from metasmith.python_api import *
+import json
 
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::fastp.env"))
-reads   = model.AddRequirement(lib.GetType("sequences::short_reads"))
+meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"))
+reads   = model.AddRequirement(lib.GetType("sequences::short_reads"), parents={meta})
 out             = model.AddProduct(lib.GetType("sequences::clean_short_reads"))
 report_json     = model.AddProduct(lib.GetType("sequences::fastp_json_report"))
 report_html     = model.AddProduct(lib.GetType("sequences::fastp_html_report"))
@@ -18,13 +20,16 @@ def protocol(context: ExecutionContext):
     iout=context.Output(out)
     ijson=context.Output(report_json)
     ihtml=context.Output(report_html)
+    parity = json.loads(context.Input(meta).local.read_text())["parity"]
+    assert parity in {"single", "paired"}, f"unknown parity: [{parity}]"
+    interleaved = "--interleaved_in" if parity == "paired" else ""
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--thread {threads}"
     context.ExecWithEnv(
         env=image,
         cmd=f"""\
-            fastp --interleaved_in {threads} \
+            fastp {interleaved} {threads} \
             -h {ihtml.container} -j {ijson.container} \
             -i {ireads.container} --stdout | gzip > {iout.container}
         """,

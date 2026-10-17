@@ -11,6 +11,8 @@ def protocol(context: ExecutionContext):
     iassembly = context.Input(assembly)
     iorgref   = context.Input(orgref)
     iout      = context.Output(out)
+    threads = context.params.get('cpus')
+    threads = 4 if threads is None else threads
 
     _cmd = f"""\
             makeblastdb \
@@ -22,6 +24,7 @@ def protocol(context: ExecutionContext):
                 -db chr_db \
                 -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen" \
                 -evalue 1e-10 \
+                -num_threads {threads} \
                 -out {iout.container}
         """
     context.ExecWithEnv(env=image, cmd=_cmd)

@@ -25,14 +25,18 @@ annotate_called_genes(
     ["input.clean.faa"],
     "{annot_dir}",
     threads={threads},
-    config_loc="/db/DRAM.config",
+    config_loc="DRAM.local.config",
+    rename_genes=False,
 )
 DRAMPY""")
 
+    # buildDramDB writes DRAM.config with /db/ paths; point them at wherever the
+    # database is in this runtime instead of binding it at /db. Gene ids stay as
+    # prodigal named them: DRAM's default prefixes each with the fasta's name.
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/db")],
         cmd=f"""
+            sed "s|\\"/db/|\\"$(readlink -f {idb.container})/|g" {idb.container}/DRAM.config > DRAM.local.config
             sed '/^[^>]/s/\\*//g' {iorfs.container} > input.clean.faa
             python3 _run_dram.py
         """,

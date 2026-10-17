@@ -14,13 +14,17 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
+    # This calls an isolate against its reference, and a prokaryote is haploid. Under
+    # bcftools' diploid default a site where the reads disagree is reported as a
+    # heterozygote, which a haploid genome cannot have.
+    #
     # mpileup faidx-es its reference and writes the .fai beside it. The reference
     # here is a staged input, shared with every other task reading it, so the copy
     # is what keeps two concurrent callers from racing on one index file.
     _cmd = f"""\
             cp {iasm.container} ref.fa
             bcftools mpileup {threads} -Ou -f ref.fa {ibam.container} \
-                | bcftools call {threads} -mv -Ov -o {iout.container}
+                | bcftools call {threads} --ploidy 1 -mv -Ov -o {iout.container}
         """
     context.ExecWithEnv(env=image, cmd=_cmd)
 

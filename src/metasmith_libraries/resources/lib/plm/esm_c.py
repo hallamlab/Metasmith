@@ -100,8 +100,12 @@ with torch.no_grad():
                 "means EZpred needs cannot be built. Its heads take layers 34/35/36 "
                 "and there is no way to recover them from `embeddings` alone.")
         # (n_layers, batch, seq, dim) -> (n_layers, batch, dim), mean over the
-        # sequence axis exactly as EZpred does before selecting its layers.
-        hs_mean = out.hidden_states.float().mean(axis=2).cpu().numpy()
+        # sequence axis as EZpred does before selecting its layers. EZpred embeds
+        # one sequence at a time, so its mean never sees padding; a padded batch
+        # must mask it out or a short sequence is averaged with its pad positions.
+        tok_mask = mask[None, :, :, None]
+        hs = out.hidden_states.float().masked_fill(~tok_mask, 0.0)
+        hs_mean = (hs.sum(axis=2) / tok_mask.sum(axis=2)).cpu().numpy()
         for k, (si, _, w) in enumerate(batch_entries):
             valid = mask[k]
             idxs = valid.nonzero(as_tuple=True)[0]

@@ -6,27 +6,24 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 image = model.AddRequirement(lib.GetType("env::mobileelementfinder.env"))
+jsonfix = model.AddRequirement(lib.GetType("lib::mobileelementfinder_jsonfix"))
 asm = model.AddRequirement(lib.GetType("sequences::contig_batch"))
 out_results = model.AddProduct(lib.GetType("annotation::mobileelementfinder_results"))
 
 
 def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
+    ijsonfix = context.Input(jsonfix)
     iout = context.Output(out_results)
 
     threads = context.params.get("cpus", 4)
 
-    MEF_BLAST_PATCH = Path(
-        "/home/phyberos/project-rpp/spanish_lakes/container_patches/me_finder_blast.py"
-    )
-    MEF_BLAST_INCONTAINER = (
-        "/opt/conda/envs/external_mobileelementfinder_env"
-        "/lib/python3.9/site-packages/me_finder/tools/blast.py"
-    )
+    # A sitecustomize that fails to import is reported and skipped, so the fix is checked before it is relied on.
     context.ExecWithEnv(
         env=image,
-        binds=[(MEF_BLAST_PATCH, MEF_BLAST_INCONTAINER)],
         cmd=f"""
+            export PYTHONPATH={ijsonfix.container}${{PYTHONPATH:+:$PYTHONPATH}}
+            python -c "import me_finder.tools.blast as b; assert b.MSM_JSONFIX"
             mefinder find --contig {iasm.container} --threads {threads} mef_out
         """,
     )
