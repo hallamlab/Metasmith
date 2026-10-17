@@ -63,10 +63,11 @@ def protocol(context: ExecutionContext):
 
     Path("instrain_out").rename(iprofile.local)
     gi = iprofile.local / "output" / "instrain_out_genome_info.tsv"
-    if gi.exists():
-        context.LocalShell(f"cp {gi} {igenome.local}")
-    else:
-        Path(igenome.local).write_text("genome\tcoverage\tbreadth\tnucl_diversity\n")
+    # A completed database-mode profile always writes its genome table, even with nothing mapped.
+    if not gi.exists():
+        Log.Error(f"inStrain wrote no [{gi.name}]; the profile did not complete")
+        return ExecutionResult(manifest=[], success=False)
+    context.LocalShell(f"cp {gi} {igenome.local}")
 
     return ExecutionResult(
         manifest=[{out_profile: iprofile.local, out_genome: igenome.local}],

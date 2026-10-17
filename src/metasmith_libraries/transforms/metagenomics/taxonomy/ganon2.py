@@ -26,7 +26,10 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(env=img_bb, cmd=_cmd)
 
     _cmd = f"""
-            ganon classify --db-prefix {idb.container} \
+            pfx=$(ls {idb.container}/*.hibf 2>/dev/null | sed -n 1p) || true
+            pfx=${{pfx%.hibf}}
+            test -n "$pfx" -a -f "$pfx.tax" || {{ echo "ganon2 prefix not discovered in {idb.container}"; exit 1; }}
+            ganon classify --db-prefix "$pfx" \
                 --paired-reads split_r1.fq.gz split_r2.fq.gz \
                 --output-prefix ganon2_out {threads_arg}
             mv ganon2_out.rep {iclass.container}

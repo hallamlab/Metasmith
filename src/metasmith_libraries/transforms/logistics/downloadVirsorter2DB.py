@@ -82,9 +82,16 @@ def protocol(context: ExecutionContext):
 
     Path("vs2_db").rename(idb.local)
 
+    # setup's last rule touches Done_all_setup only after every file's md5 matches,
+    # and snakemake's onerror leaves the directory itself behind.
+    whole = (idb.local/"Done_all_setup").exists() and all(
+        (idb.local/f).is_file() and (idb.local/f).stat().st_size > 0
+        for f in ("hmm/viral/combined.hmm", "hmm/pfam/Pfam-A-Viruses.hmm",
+                  "hmm/pfam/Pfam-A-acc2desc.tsv")
+    )
     return ExecutionResult(
         manifest=[{db: idb.local}],
-        success=idb.local.exists(),
+        success=whole,
     )
 
 

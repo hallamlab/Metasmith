@@ -11,10 +11,7 @@ so a rewrite that keeps the contract keeps the tests.
 
 from __future__ import annotations
 
-import http.server
 import re
-import subprocess
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,8 +22,6 @@ from metasmith.models.libraries import TransformInstanceLibrary
 
 DOWNLOADERS = ["downloadUniRef50DB", "downloadKofamDB", "downloadInterProScanDB"]
 
-# Big enough that a repeat transfer is unmistakable, small enough to be free.
-PAYLOAD = b"metasmith database payload\n" * 40_000
 
 
 @dataclass
@@ -59,6 +54,11 @@ class _RecordingContext:
 
     def LocalShell(self, cmd: str, **kw):
         self.local_shell_calls.append(cmd)
+        return 0
+
+    @property
+    def emitted(self) -> list[str]:
+        return self.local_shell_calls + self.commands
 
 
 def _render(lib_root: Path, name: str, tmp_path: Path, url_override: str | None = None):
@@ -92,73 +92,16 @@ def _wget_invocations(command: str) -> list[str]:
     return out
 
 
-class _CountingHandler(http.server.BaseHTTPRequestHandler):
-    served_bytes = 0
-
-    def log_message(self, *a):
-        pass
-
-    def do_GET(self):
-        start = 0
-        rng = self.headers.get("Range")
-        if rng:
-            m = re.match(r"bytes=(\d+)-", rng)
-            if m:
-                start = int(m.group(1))
-        if start >= len(PAYLOAD):
-            self.send_response(416)
-            self.send_header("Content-Range", f"bytes */{len(PAYLOAD)}")
-            self.end_headers()
-            return
-        body = PAYLOAD[start:]
-        self.send_response(206 if start else 200)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Accept-Ranges", "bytes")
-        if start:
-            self.send_header(
-                "Content-Range",
-                f"bytes {start}-{len(PAYLOAD) - 1}/{len(PAYLOAD)}",
-            )
-        self.end_headers()
-        self.wfile.write(body)
-        type(self).served_bytes += len(body)
-
-
-@pytest.fixture
-def counting_server():
-    _CountingHandler.served_bytes = 0
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CountingHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/archive.tar.gz", _CountingHandler
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
-def test_a_second_attempt_does_not_refetch_the_archive(
-    metasmith_libraries_root, tmp_path, counting_server,
-):
-    # I4: the download and the indexing are one transform, so an indexing
-    # failure discards the archive. Running the emitted command twice in the
-    # same work directory must not put the payload on the wire twice.
-    url, handler = counting_server
-    work = tmp_path / "work"
-    work.mkdir()
-    ctx = _render(metasmith_libraries_root, "downloadUniRef50DB", work, url_override=url)
-    assert ctx.commands, "the transform emitted no command"
-    command = ctx.commands[0]
-
-    for _ in range(2):
-        # The indexing that follows the fetch is not installed here and is not
-        # the subject; only what reached the wire is.
-        subprocess.run(["bash", "-c", command], cwd=work, capture_output=True, timeout=300)
-
-    assert handler.served_bytes < 1.5 * len(PAYLOAD), (
-        f"the archive went over the wire twice: {handler.served_bytes} bytes "
-        f"for a {len(PAYLOAD)} byte payload"
-    )
+def test_an_indexing_failure_cannot_discard_the_archive(metasmith_libraries_root):
+    # I4: the download and the indexing were one transform, so an indexing failure
+    # discarded the archive. They are two now, and the build reads the fetched fasta
+    # as a product of its own, which a retry of the build does not fetch again.
+    lib = TransformInstanceLibrary.Load(metasmith_libraries_root / "transforms" / "logistics")
+    fetch = lib.GetTransform("downloadUniRef50DB.py")
+    build = lib.GetTransform("buildUniRef50DB.py")
+    fetched = {d.key for g in fetch.model.produces for d in g}
+    assert "local" in fetch.labels and "local" not in build.labels
+    assert any(d.key in fetched for d in build.model.requires)
 
 
 @pytest.mark.parametrize("name", DOWNLOADERS)
@@ -166,7 +109,7 @@ def test_a_download_narrates_and_bounds_itself(metasmith_libraries_root, tmp_pat
     # I5: `wget -q` with no timeout and no retry cap. Ten to seventeen silent
     # minutes at a stretch, and a stalled transfer that looks like a working one.
     ctx = _render(metasmith_libraries_root, name, tmp_path)
-    invocations = [w for c in ctx.commands for w in _wget_invocations(c)]
+    invocations = [w for c in ctx.emitted for w in _wget_invocations(c)]
     assert invocations, f"[{name}] emitted no wget"
     for w in invocations:
         assert "--progress=" in w, f"[{name}] fetches without saying anything: {w}"

@@ -13,6 +13,7 @@ from metasmith.agents import (
 )
 from metasmith.env import Environment, Runtime
 from metasmith.models.libraries import GPU_LABEL, Gpu, Gpus, Resources, Size
+from metasmith.models.libraries.resources import MemoryLadder
 
 
 class TestResourcesDeclaration:
@@ -23,7 +24,7 @@ class TestResourcesDeclaration:
         assert not r.wants_gpu
         assert r.AsNextflowFormat(is_config=True) == [
             "cpus = 4",
-            "memory = { (2**(task.attempt-1)) * ('8.00 GB' as MemoryUnit) }",
+            "memory = " + MemoryLadder("'8.00 GB'"),
         ]
 
     @pytest.mark.parametrize("toggle", [Gpus.OPTIONAL, Gpus.REQUIRED])
@@ -183,7 +184,7 @@ class TestSlurmPreset:
 
     def test_base_cluster_options_survive_and_extra_appends(self):
         src = self._slurm()
-        line = [l for l in src.splitlines() if l.strip().startswith("clusterOptions = (")]
+        line = [l for l in src.splitlines() if l.strip().startswith("clusterOptions = { (")]
         assert len(line) == 1, src
         line = line[0]
         assert '?: "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"' in line

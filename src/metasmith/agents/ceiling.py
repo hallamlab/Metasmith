@@ -15,6 +15,7 @@ import os
 import re
 
 from ..logging import Log
+from ..models.libraries.resources import MemoryLadder
 
 
 DISABLE_ENV = "METASMITH_SKIP_RESOURCE_CHECK"
@@ -79,14 +80,13 @@ def find_breaches(
     return breaches
 
 
-def refusal_message(breaches: list[str], ceiling_cpus, ceiling_gb) -> str:
+def refusal_message(breaches: list[str], ceiling_cpus, ceiling_gb, knob: str = "executor") -> str:
     return (
         f"[{len(breaches)}] step(s) ask for more than this host will schedule"
         f" ({ceiling_cpus} cpus, {ceiling_gb:g} GB), so nextflow would refuse"
-        f" each at submit and the run would report completed with their"
-        f" products missing:\n  " + "\n  ".join(breaches) +
+        f" each at submit and abort the run:\n  " + "\n  ".join(breaches) +
         f"\n\nRun it somewhere bigger, raise the ceiling with"
-        f" `params.executor` (`executor: {{cpus: N, memory: 'M GB'}}` in the"
+        f" `params.{knob}` (`{knob}: {{cpus: N, memory: 'M GB'}}` in the"
         f" run's params), lower the steps' requests with a resource override,"
         f" or set {DISABLE_ENV}=1 to launch anyway."
     )
@@ -97,9 +97,9 @@ def cap_lines(
 ) -> list[str]:
     """Config that stops the retry ladder doubling a request past the ceiling.
 
-    Nextflow retries with `(2**(task.attempt-1)) * memory`, so the second
+    An out-of-memory exit doubles the next attempt's request, so the second
     attempt of a step that only just fits is unschedulable for the same reason
-    the first attempt of an oversized one is -- and every attempt after it.
+    the first attempt of an oversized one is.
     """
     if ceiling_gb is None: return []
     TAB = "\t"
@@ -108,11 +108,7 @@ def cap_lines(
         if gb is None: continue
         lines += [
             TAB + f"withName: '{name}' " + "{",
-            TAB + TAB + (
-                f"memory = {{ def want = (2**(task.attempt-1)) * ('{gb:g} GB'"
-                f" as MemoryUnit); def cap = ('{ceiling_gb:g} GB' as"
-                f" MemoryUnit); want > cap ? cap : want }}"
-            ),
+            TAB + TAB + "memory = " + MemoryLadder(f"'{gb:g} GB'", cap=f"'{ceiling_gb:g} GB'"),
             TAB + "}",
         ]
     lines += ["}", ""]
@@ -120,17 +116,18 @@ def cap_lines(
 
 
 def check_launch(
-    config_text: str, resources_text: str, runs_on_this_host: bool,
+    config_text: str, resources_text: str, on_this_host: "set[str] | None",
+    knob: str = "executor",
 ) -> list[str]:
     """Raise if this host cannot schedule the plan; return the config to append.
 
-    Only the executors that run tasks on the driver's own host earn a refusal.
-    A scheduler queues an over-request against a node that fits, and refusing
-    there would stop work that would have run.
+    `on_this_host` names the processes that run on the driver's own host, and
+    None means all of them. Only those earn a refusal: a scheduler queues an
+    over-request against a node that fits.
     """
-    if not runs_on_this_host:
-        return []
     requests = parse_requests(resources_text)
+    if on_this_host is not None:
+        requests = {k: v for k, v in requests.items() if k in on_this_host}
     if not requests:
         return []
     ceiling_cpus, ceiling_gb = parse_ceiling(config_text)
@@ -151,6 +148,6 @@ def check_launch(
         breaches = []
     if breaches:
         raise ResourceCeilingError(
-            refusal_message(breaches, ceiling_cpus, ceiling_gb)
+            refusal_message(breaches, ceiling_cpus, ceiling_gb, knob)
         )
     return cap_lines(requests, ceiling_gb)

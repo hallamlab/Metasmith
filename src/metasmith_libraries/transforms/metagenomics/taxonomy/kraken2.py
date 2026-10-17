@@ -47,6 +47,12 @@ def protocol(context: ExecutionContext):
         """
     )
 
+    # Bracken re-estimates against the k-mer distribution built for one read length,
+    # and the database ships one file per length it supports.
+    read_len = int(context.params.get("bracken_read_length", 150))
+    if not (idb.local/f"database{read_len}mers.kmer_distrib").exists():
+        Log.Error(f"the Kraken2 database has no database{read_len}mers.kmer_distrib for bracken_read_length={read_len}")
+        return ExecutionResult(manifest=[], success=False)
     context.ExecWithEnv(
         env=img_brk,
         cmd=f"""
@@ -54,7 +60,7 @@ def protocol(context: ExecutionContext):
                 -i {ikrep.container} \
                 -o {ibspec.container} \
                 -w {ibrep.container} \
-                -r 150 -l S
+                -r {read_len} -l S
         """
     )
 

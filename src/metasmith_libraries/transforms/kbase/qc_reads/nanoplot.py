@@ -27,6 +27,9 @@ def protocol(context: ExecutionContext):
                 --outdir nanoplot_out
             mv nanoplot_out/NanoPlot-report.html {ihtml.container}
             tar -czf {iraw.container} nanoplot_out
+            gzip -dcf {ireads.container} \
+                | awk 'NR%4==2 {{ n += length($0); gc += gsub(/[GCgc]/, "") }} END {{ printf "%.2f\\n", n ? 100*gc/n : 0 }}' \
+                > gc_percent.txt
         """,
     )
 
@@ -46,10 +49,19 @@ def protocol(context: ExecutionContext):
             k, v = l[:-1].split("\t")
             meta[k] = _as_number(v)
 
+    with open("gc_percent.txt") as f:
+        gc = float(f.read())
+
+    # NanoPlot reads phred+33 only, which is the only encoding long-read platforms write.
     stats_json = dict(
         reads = meta["number_of_reads"],
         bases = meta["number_of_bases"],
+        mean_quality = meta["mean_qual"],
+        q20 = None,
+        q30 = None,
+        phred_encoding = "sanger",
         N50 = meta["n50"],
+        GC = gc,
         median_quality = meta["median_qual"],
         _raw = meta,
     )

@@ -49,7 +49,7 @@ def protocol(context: ExecutionContext):
         Log.Info(f"gene-calling [{fa.stem}]")
         _cmd = f"""
                 export PATH=/opt/conda/envs/external_checkm2_env/bin:/opt/conda/bin:$PATH
-                prodigal -i {fa} -a {target} -o /dev/null -p meta -q || true
+                prodigal -i {fa} -a {target} -o /dev/null -p meta -q || {{ c=$?; case $c in 125|137) exit $c ;; esac; }}
             """
         context.ExecWithEnv(env=image, cmd=_cmd)
         if not target.exists() or target.stat().st_size == 0:
@@ -62,9 +62,16 @@ def protocol(context: ExecutionContext):
     if surviving:
         _cmd = f"""
                 export PATH=/opt/conda/envs/external_checkm2_env/bin:/opt/conda/bin:$PATH
-                checkm2 predict {threads_arg} --genes -x faa --input ./faa --output-directory ./{out_dir} || true
+                checkm2 predict {threads_arg} --genes -x faa --input ./faa --output-directory ./{out_dir} || {{ c=$?; case $c in 125|137) exit $c ;; esac; }}
             """
         context.ExecWithEnv(env=image, cmd=_cmd)
+        # CheckM2 dies without a report when DIAMOND finds no hits (issue #149), and every bin
+        # then gets a sentinel row. Any other missing report is a broken database or run, and
+        # sentinel rows for it would read as "no quality bins" downstream.
+        diamond = Path(out_dir) / "diamond_output" / "DIAMOND_RESULTS.tsv"
+        if not report.exists() and not (diamond.exists() and diamond.stat().st_size == 0):
+            Log.Error(f"checkm2 wrote no [{report}] and its DIAMOND search was not empty")
+            return ExecutionResult(manifest=[], success=False)
     else:
         Log.Info("all bins failed prodigal; skipping checkm2 predict")
 

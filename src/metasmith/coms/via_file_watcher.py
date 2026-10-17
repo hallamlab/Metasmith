@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Callable, Any, TypeVar, TypeAlias
 from time import monotonic, sleep
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os, signal
 
 from .ipc import CurrentTimeMillis, GenerateId, ResetGenerator
@@ -10,9 +10,33 @@ from ..constants import AgentPaths
 from ..logging import Log
 from .terminals import ShellResult
 
-# TERM -> KILL window for a job's process group. Mirrors GROUP_KILL_GRACE_MS in
+# These mirror GROUP_KILL_GRACE, PICKUP_DEADLINE and ORPHAN_GRACE in
 # bash_relay/src/remote_shell.rs; the two clients must behave identically.
 GROUP_KILL_GRACE_S = 5.0
+PICKUP_DEADLINE_S = 15.0
+ORPHAN_GRACE_S = 5.0
+
+def _pid_is_relay(pid: int) -> bool:
+    if pid <= 1: return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    try:
+        argv0 = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")[0]
+    except OSError:
+        return True
+    return b"msm_relay" in argv0
+
+def _watcher_alive(watcher_path: Path) -> bool:
+    try:
+        raw = (watcher_path/"active").read_text().strip()
+    except OSError:
+        return False
+    # An `active` with no pid comes from a watcher older than the field; it cannot be checked.
+    return _pid_is_relay(int(raw)) if raw.isdigit() else True
 
 @dataclass
 class Job:
@@ -22,6 +46,21 @@ class Job:
     done_path: Path
     out_i: int = 0
     err_i: int = 0
+    submitted: float = field(default_factory=monotonic)
+    stranded_since: float | None = None
+
+    def Stranded(self, watcher_path: Path) -> str | None:
+        if self.done_path.exists(): return None
+        start = self.out_log.with_suffix(".start")
+        watcher_alive = _watcher_alive(watcher_path)
+        if start.exists():
+            if not watcher_alive: return "no live watcher to pick it up"
+            if monotonic()-self.submitted >= PICKUP_DEADLINE_S:
+                return f"the watcher did not pick it up within {PICKUP_DEADLINE_S:.0f}s"
+            return None
+        if watcher_alive or self._group_alive(self._get_pgid(self.out_log.with_suffix(".pid"))):
+            return None
+        return "its watcher died and the job is gone"
 
     def _get_pgid(self, pidf: Path):
         # The .pid file holds a process GROUP id: the relay's launcher.sh runs
@@ -112,6 +151,7 @@ class RemoteShell:
         self._active_jobs: dict[str, Job] = {}
         self._setup_commands: list[str] = setup_commands if setup_commands else []
         self._timeout = timeout
+        self._exit_codes: dict[str, int] = {}
         assert watcher_path.exists(), watcher_path
 
     def __enter__(self):
@@ -186,15 +226,38 @@ class RemoteShell:
         MAX_DT = 0.5
         while not is_done():
             finished = []
+            stranded = []
             for k, j in self._active_jobs.items():
                 if j.done_path.exists():
                     finished.append(k)
+                    continue
+                why = j.Stranded(self._watcher_path)
+                if why is None:
+                    j.stranded_since = None
+                    continue
+                if j.stranded_since is None:
+                    j.stranded_since = monotonic()
+                if monotonic()-j.stranded_since < ORPHAN_GRACE_S:
+                    continue
+                # A start file that vanishes under us was just dispatched, not stranded.
+                start_file = j.out_log.with_suffix(".start")
+                try:
+                    start_file.unlink(missing_ok=True)
+                except OSError:
+                    continue
+                if not j.done_path.exists():
+                    stranded.append((k, why))
             if len(finished)>0: sleep(dt)
             for k, j in self._active_jobs.items():
                 j.out_i = check_log(j.out_log, j.out_i, self._out_callbacks)
                 j.err_i = check_log(j.err_log, j.err_i, self._err_callbacks)
             for k in finished:
-                self._active_jobs[k].Dispose()
+                self._exit_codes[k] = self._active_jobs[k].Dispose()
+                del self._active_jobs[k]
+            for k, why in stranded:
+                Log.Error(f"relay job [{k}] will never finish: {why}")
+                self._active_jobs[k].Dispose(timeout=0)
+                self._exit_codes[k] = 1
                 del self._active_jobs[k]
             now = CurrentTimeMillis()
             if timeout is not None and now-start>timeout*1000: break
@@ -213,11 +276,13 @@ class RemoteShell:
         key = self.ExecAsync(cmd)
         self.AwaitDone(timeout=timeout, _key=key)
         if key in self._active_jobs:
-            self._active_jobs[key].Dispose()
+            code = self._active_jobs.pop(key).Dispose()
+        else:
+            code = self._exit_codes.pop(key, 1)
         if history:
             self.RemoveOnOut(_on_out)
             self.RemoveOnErr(_on_err)
-        return ShellResult(out=_out, err=_err)
+        return ShellResult(out=_out, err=_err, exit_code=code)
 
     def Dispose(self):
         for j in self._active_jobs.values():

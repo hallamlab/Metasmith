@@ -15,12 +15,15 @@ def protocol(context: ExecutionContext):
     cpus     = context.params.get("cpus")
     cpus     = 8 if cpus is None else cpus
 
-    lineage_name = Path(ilineage.external).name
+    # The staged file is named for its type, not its lineage.
+    with open(ilineage.local/"dataset.cfg") as f:
+        lineage_name = dict(l.strip().split("=", 1) for l in f if "=" in l)["name"]
 
     context.ExecWithEnv(
         env=image,
-        binds=[(ilineage.external, f"/busco_lineage/lineages/{lineage_name}")],
         cmd=f"""\
+            mkdir -p busco_lineage/lineages
+            ln -sfn "{ilineage.container}" busco_lineage/lineages/{lineage_name}
             busco \
                 -i {iorfs.container} \
                 -o busco_out \
@@ -29,7 +32,7 @@ def protocol(context: ExecutionContext):
                 -c {cpus} \
                 -f \
                 --offline \
-                --download_path /busco_lineage
+                --download_path busco_lineage
         """,
     )
 

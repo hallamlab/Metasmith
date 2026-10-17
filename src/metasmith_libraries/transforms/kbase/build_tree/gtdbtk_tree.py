@@ -1,5 +1,6 @@
 from metasmith.python_api import *
 from pathlib import Path
+import gzip
 import shutil
 
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -13,10 +14,9 @@ tree    = model.AddProduct(lib.GetType("taxonomy::gtdbtk_tree"))
 def protocol(context: ExecutionContext):
     iref = context.Input(ref)
 
-    # NOT RUN. The GTDB reference is ~110 GB and is not on any host this was written on,
+    # NOT RUN. The GTDB reference is ~100 GB and is not on any host this was written on,
     # so this body was checked by reading `metagenomics/taxonomy/gtdbtk.py` -- same image,
-    # same bind, same GTDBTK_DATA_PATH -- and not by execution. See
-    # research/kbase/curation/r5/README.md.
+    # same GTDBTK_DATA_PATH -- and not by execution. See research/kbase/curation/r5/README.md.
     #
     # Same tool as that transform, which runs `classify_wf` -- identify and align
     # included -- and then globs only `classify/*summary.tsv`, so the concatenated
@@ -48,16 +48,35 @@ def protocol(context: ExecutionContext):
     infer_ws = Path("./gtdb_infer")
     context.ExecWithEnv(
         env=image,
-        binds=[(iref.external, "/ref")],
+        exports={"GTDBTK_DATA_PATH": iref.container},
         cmd=f"""\
             mkdir -p {temp_ws}
-            export GTDBTK_DATA_PATH=/ref
             gtdbtk identify --genome_dir {genome_dir} -x {ext} \
                 --out_dir {align_ws} {threads}
             gtdbtk align --identify_dir {align_ws} \
                 --out_dir {align_ws} {threads}
-            # align writes the MSA gzipped and taxonomy::gtdbtk_msa is plain FASTA
-            gzip -dc {align_ws}/align/*.user_msa.fasta.gz > {imsa.container}
+        """,
+    )
+
+    # align writes one MSA per domain, bac120 and ar53, over different marker sets.
+    # One tree cannot hold both, so it is built for the domain with more genomes.
+    def _count(msa: Path) -> int:
+        with gzip.open(msa, "rt") as f:
+            return sum(1 for l in f if l.startswith(">"))
+    msas = {m: _count(m) for m in sorted(align_ws.glob("align/*.user_msa.fasta.gz"))}
+    msas = {m: n for m, n in msas.items() if n > 0}
+    assert msas, f"gtdbtk align wrote no user MSA under {align_ws}/align"
+    chosen = max(msas, key=msas.get)
+    for m, n in msas.items():
+        if m != chosen:
+            Log.Warn(f"{n} genome(s) in [{m.name}] are left out of the [{chosen.name}] tree")
+    with gzip.open(chosen, "rb") as src, open(imsa.local, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+
+    context.ExecWithEnv(
+        env=image,
+        exports={"GTDBTK_DATA_PATH": iref.container},
+        cmd=f"""\
             gtdbtk infer --msa_file {imsa.container} \
                 --out_dir {infer_ws} {threads}
             cp {infer_ws}/*.unrooted.tree {itree.container}

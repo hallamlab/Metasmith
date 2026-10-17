@@ -13,6 +13,7 @@ in_container() {
     docker run --rm \
         --mount type=bind,source="$HERE",target="/root/src"\
         --workdir /root/src \
+        -e MSM_ENGINE_VERSION="$(cat $HERE/../metasmith/version.txt)" \
         $DOCKER_IMAGE \
         "$@"
 }

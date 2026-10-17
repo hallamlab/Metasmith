@@ -15,8 +15,9 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(
         env=image,
         cmd=f"""
-            sed '/^[^>]/s/\\*//g' {iorfs.container} > /ws/clean.faa
-            (cd /opt/deeptfactor && python tf_running.py -i /ws/clean.faa -o /ws/result -g cpu)
+            ws="$PWD"
+            sed '/^[^>]/s/\\*//g' {iorfs.container} > "$ws/clean.faa"
+            (cd /opt/deeptfactor && python tf_running.py -i "$ws/clean.faa" -o "$ws/result" -g cpu)
         """,
     )
 

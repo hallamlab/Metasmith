@@ -22,9 +22,9 @@
 # repeats it, and only then does the domain flag select a tree to infer. The
 # bacterial inference is the wall: FastTree over 189,805 taxa, which is the whole
 # reference set plus the user's genomes. Identify and align together took three
-# minutes; the inference runs for days. The 48 hour wall below is a floor rather
-# than an estimate, and a survey with archaea may get only the bacterial tree
-# before it expires -- which iPHoP accepts.
+# minutes; the inference runs for days. The wall below is fir's 7-day limit, and
+# a survey with archaea may get only the bacterial tree before it expires -- which
+# iPHoP accepts.
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -64,27 +64,27 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 8)
     ext = "fna"
 
-    # `|| true` per domain, deliberately. de_novo_wf exits non-zero when the input
-    # set holds none of the domain it was asked for, and that is a fact about the
-    # sample rather than a failure of the step. Success is decided below, on
-    # whether a tree exists, not on either exit code.
+    # A non-zero exit per domain is tolerated, deliberately, except an OOM kill.
+    # de_novo_wf exits non-zero when the input set holds none of the domain it was
+    # asked for, and that is a fact about the sample rather than a failure of the
+    # step. Success is decided below, on whether a tree exists.
     domain_cmds = "\n".join(
         f"""
             gtdbtk de_novo_wf --genome_dir {genome_dir} --{domain} \\
                 --outgroup_taxon {outgroup} \\
                 --extension {ext} --cpus {threads} \\
-                --force --out_dir {out_raw} || true
+                --force --out_dir {out_raw} \\
+                || {{ c=$?; case $c in 125|137) exit $c ;; esac; }}
         """
         for domain, outgroup in OUTGROUPS.items()
     )
     _cmd = f"""
-        export GTDBTK_DATA_PATH=/ref
         mkdir -p {out_raw}
         {domain_cmds}
     """
     context.ExecWithEnv(
         env=image,
-        binds=[(iref.external, "/ref")],
+        exports={"GTDBTK_DATA_PATH": iref.container},
         cmd=_cmd,
     )
 
@@ -112,6 +112,6 @@ TransformInstance(
     resources=Resources(
         cpus=32,
         memory=Size.GB(240),
-        duration=Duration(hours=48),
+        duration=Duration(hours=168),
     ),
 )

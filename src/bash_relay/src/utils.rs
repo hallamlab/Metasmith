@@ -1,4 +1,3 @@
-use std::time::SystemTime;
 use rand::{SeedableRng, rngs::StdRng, Rng};
 use std::collections::HashSet;
 
@@ -50,11 +49,4 @@ pub fn generate_id() -> String {
 
     let mut generator = KeyGenerator::new(None);
     generator.generate_uid()
-}
-
-pub fn current_time_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }

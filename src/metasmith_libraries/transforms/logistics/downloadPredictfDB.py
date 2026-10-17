@@ -5,43 +5,49 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::predictf.env"))
 db    = model.AddProduct(lib.GetType("annotation::predictf_db"))
 
-PREDICTF_REPO = "https://github.com/mdsufz/PredicTF.git"
+# master on 2026-10-17, last changed 2023-04-20.
+PREDICTF_COMMIT = "66d80329ef6cd3b417bb0cb16a3edf364159d4bd"
+PREDICTF_ARCHIVE = "https://github.com/mdsufz/PredicTF/archive/{commit}.tar.gz"
 
-PREDICTF_MODEL_WEBDAV = "https://nc.ufz.de/public.php/webdav"
+# A public Nextcloud share; WebDAV takes its token and password as basic auth.
+PREDICTF_MODEL_WEBDAV = "nc.ufz.de/public.php/webdav"
 PREDICTF_MODEL_SHARE  = "e9geJ4FKJk8cWLs"
 PREDICTF_MODEL_PASS   = "6oHaiWQQY9"
+MODEL_FILES = ["metadata_LS.pkl", "model_LS.pkl"]
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
+    commit = context.params.get("predictf_commit", PREDICTF_COMMIT)
+    webdav = f"https://{PREDICTF_MODEL_SHARE}:{PREDICTF_MODEL_PASS}@{PREDICTF_MODEL_WEBDAV}"
 
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        FetchCommand(PREDICTF_ARCHIVE.format(commit=commit), "PredicTF.tar.gz",
+                     label=f"PredicTF {commit}"),
+        f"mkdir -p {idb.local}/model/v2",
+        f"tar -xzf PredicTF.tar.gz -C {idb.local} --strip-components=2 --wildcards '*/BacTFDB/*'",
+        *(FetchCommand(f"{webdav}/{f}", idb.local/"model"/"v2"/f, label=f"PredicTF {f}")
+          for f in MODEL_FILES),
+        "rm -f PredicTF.tar.gz",
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
+
+    # The tracked features.dmnd is rebuilt with this container's diamond.
     context.ExecWithEnv(
         env=image,
         cmd=f"""
-            set -e
-            git clone --depth 1 {PREDICTF_REPO} PredicTF
-            mkdir -p {idb.container}
-            cp -r PredicTF/BacTFDB/. {idb.container}/
-
-            # (1) rebuild the DIAMOND reference DB with this container's diamond
             conda run -n predictf diamond makedb \
                 --in {idb.container}/database/v2/features.fasta \
                 -d {idb.container}/database/v2/features
-
-            # (2) fetch the trained LS model (metadata + weights) into model/v2/
-            mkdir -p {idb.container}/model/v2
-            for f in metadata_LS.pkl model_LS.pkl; do
-                wget -q --header="X-Requested-With: XMLHttpRequest" \
-                    --user="{PREDICTF_MODEL_SHARE}" --password="{PREDICTF_MODEL_PASS}" \
-                    "{PREDICTF_MODEL_WEBDAV}/$f" -O {idb.container}/model/v2/$f
-            done
         """,
     )
 
+    products = [idb.local/"database"/"v2"/"features.dmnd",
+                *(idb.local/"model"/"v2"/f for f in MODEL_FILES)]
     return ExecutionResult(
         manifest=[{db: idb.local}],
-        success=(idb.local / "database" / "v2" / "features.dmnd").exists()
-                and (idb.local / "model" / "v2" / "model_LS.pkl").exists(),
+        success=all(p.is_file() and p.stat().st_size > 0 for p in products),
     )
 
 

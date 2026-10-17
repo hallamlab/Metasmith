@@ -67,12 +67,16 @@ def protocol(context: ExecutionContext):
     _strip_our_header(isb.local, clean_sb)
     _strip_our_header(icb.local, clean_cb)
 
+    # DAS_Tool writes its .scg and diamond files beside the protein file, by the path
+    # it is given; through a link here, so they land in this work dir and not in the
+    # cached ORF product.
     _cmd = f"""
+        ln -s "{iorfs.container}" proteins.faa
         DAS_Tool \
             -i {clean_mb},{clean_sb},{clean_cb} \
             -l metabat2,semibin2,comebin \
             -c {iasm.container} \
-            -p {iorfs.container} \
+            -p proteins.faa \
             -o {outbase} \
             -t {threads} \
             --write_bins --write_bin_evals

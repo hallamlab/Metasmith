@@ -27,7 +27,7 @@ def protocol(context: ExecutionContext):
                 --cpu {threads} \
                 --outdir if_out \
                 {iasm.container} \
-                || true
+                || {{ c=$?; case $c in 125|137) exit $c ;; esac; }}
         """,
     )
 

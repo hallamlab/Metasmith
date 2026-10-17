@@ -546,7 +546,8 @@ export async function createAgent() {
 // the rail because creating one is a change to the list, not a thing the rail
 // knows how to do.
 export async function createWorkflow(body = {}) {
-  const out = await attempt(() => api.post('/workflows', body))
+  // The preset it starts from is the last-used agent's default.
+  const out = await attempt(() => api.post('/workflows', { agent: ui.lastAgent || null, ...body }))
   if (out) {
     select('workflows', out.name)
     loadWorkflows()

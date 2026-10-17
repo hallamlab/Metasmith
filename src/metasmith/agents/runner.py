@@ -25,6 +25,7 @@ from ..models.workflow import (
 from ..serialization import StdTime
 from .agent import Agent
 from .collect import CollectResults
+from .run_host import LAUNCH_GUARD
 
 def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
     doc_path = task_path/"task.yml"
@@ -70,6 +71,7 @@ def RenderLauncher(
     # run's whole duration, which is exactly the file the recovery path reads.
     if background:
         tail = [
+            f'hostname > ./{AgentPaths.RUN_HOST_FILE}',
             f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} </dev/null >$LOG_DIR/agent.log 2>&1 &',
             f'RUN_PGID=$!',
             f'set +m',
@@ -78,6 +80,7 @@ def RenderLauncher(
         ]
     else:
         tail = [
+            f'hostname > ./{AgentPaths.RUN_HOST_FILE}',
             f'RUN_PGID=$$',
             f'set +m',
             f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}',
@@ -97,12 +100,16 @@ def RenderLauncher(
         if background else
         f'cd "{workdir}"'
     )
+    # The Slurm path runs this guard on the login node before it submits: inside
+    # the job, RUN.slurmjob already names the job itself.
+    guard = [LAUNCH_GUARD, f'rm -f ./{AgentPaths.RUN_SLURM_JOB_FILE}'] if background else []
     return "\n".join([
         f'#!/bin/bash',
         cd_line,
         "# >>> agent setup commands",
     ]+list(setup_commands)+[
         "# <<<",
+    ]+guard+[
         f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
         f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
         f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
@@ -137,7 +144,8 @@ def RenderNextflowScript(
             cd {workspace}
             PIDF=./{AgentPaths.PID_LOCK_FILE}
             stop() {{
-                [[ -e "$PIDF" ]] && rm $PIDF
+                # Only this run's lock: a lock naming another nextflow belongs to a run this one must not stop.
+                [[ "$(head -n1 $PIDF 2>/dev/null)" = "$PID" ]] && rm $PIDF
                 [ -e squeue.log ] && mv squeue.log {log_dir}
                 [ -e scancel.log ] && mv scancel.log {log_dir}
                 [ -e {AgentPaths.NXF_WORKFLOW} ] && cp {AgentPaths.NXF_WORKFLOW} {log_dir}

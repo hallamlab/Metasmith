@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
             # once the graph is exhausted, so a low-complexity pool can finish at
             # k21 and never write k141 at all. Match k<digits>.contigs.fa exactly,
             # or the glob also swallows k<digits>.final.contigs.fa.
-            KMAX=$(ls $IC 2>/dev/null | grep -E '^k[0-9]+\\.contigs\\.fa$' | sed -E 's/^k([0-9]+)\\.contigs\\.fa$/\\1/' | sort -n | tail -1)
+            KMAX=$(ls $IC 2>/dev/null | grep -E '^k[0-9]+\\.contigs\\.fa$' | sed -E 's/^k([0-9]+)\\.contigs\\.fa$/\\1/' | sort -n | tail -1) || true
             if [[ -s {iout.container} && -n "$KMAX" ]]; then
                 # Every final contig is named k<K>_<n> after the k that emitted it,
                 # so the graph at KMAX covers a contig only if its K is KMAX. On a

@@ -37,7 +37,7 @@ CURATED = {
 
 BIOCONTAINERS = re.compile(r"quay\.io/biocontainers/([^:/]+):([^-\s]+)")
 
-HAND_WRITTEN = {"ecspr"}
+HAND_WRITTEN = {"ecspr", "minimap2_samtools", "pysam"}
 
 
 def derive_spec(stem: str, uri: str) -> str | None:

@@ -10,6 +10,8 @@ bam         = model.AddRequirement(lib.GetType("alignment::bam"), parents={asm})
 bin_fasta   = model.AddProduct(lib.GetType("sequences::semibin2_bin_fasta"))
 table       = model.AddProduct(lib.GetType("binning::semibin2_contig_to_bin_table"))
 
+BYTES_PER_PAIR = 6
+
 def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     ibam = context.Input(bam)
@@ -30,12 +32,34 @@ def protocol(context: ExecutionContext):
     # the reproducible choice and the parity-matching one.
     seed = context.params.get('semibin2_seed', 1)
 
-    # --min-len is passed ONLY when a caller asks, so SemiBin2's own default behaviour is
-    # preserved for every existing user. Left unset, SemiBin2 derives its floor from
+    # --min-len is passed when a caller asks, or when the assembly is too large to bin at
+    # SemiBin2's own floor (below). Left unset, SemiBin2 derives its floor from
     # `--ratio` (0.05, relative to 2500 bp) rather than from a fixed length; nf-core/mag
     # instead passes `--min-len ${params.min_contig_size}`, i.e. 1500. Those are different
     # rules, not merely different numbers, so a parity caller must pass 1500 explicitly.
     min_len = context.params.get('semibin2_min_len')
+
+    # Single-sample SemiBin2 holds a dense N x N matrix over the contigs it keeps, so
+    # its memory grows with the square of the count: a 16 GB and then a 32 GB request
+    # were OOM-killed 20 minutes in. SemiBin 2.1.0 builds it from float32 depths
+    # (cal_kl), 4 bytes a pair, and 6 leaves room for the copies made around it. A large
+    # assembly drops to the 2500 bp floor SemiBin2 would itself pick at a high --ratio,
+    # and one that cannot fit even then fails at once as an OOM, so the retry asks for
+    # more memory instead of paying 20 minutes to learn the same thing.
+    floor = int(min_len) if min_len else 1000
+    if context.LocalShell(
+        f"awk -v f={floor} '/^>/{{if(l>=f)a++; if(l>=2500)b++; l=0; next}}{{l+=length($0)}}"
+        f"END{{if(l>=f)a++; if(l>=2500)b++; print a+0, b+0}}' {iasm.local} > contig_counts.txt"
+    ) != 0:
+        return ExecutionResult(manifest=[], success=False)
+    n, n2500 = (int(x) for x in Path("contig_counts.txt").read_text().split())
+    budget = (context.params.get('memory') or 64) * 1024**3
+    if not min_len and BYTES_PER_PAIR * n**2 > budget:
+        Log.Info(f"{n} contigs of 1000 bp or more need ~{BYTES_PER_PAIR*n**2/1024**3:.0f} GB; binning the {n2500} of 2500 bp or more")
+        min_len, n = 2500, n2500
+    if BYTES_PER_PAIR * n**2 > budget:
+        Log.Error(f"{n} contigs need ~{BYTES_PER_PAIR*n**2/1024**3:.0f} GB in SemiBin2's pairwise matrix, more than the {budget/1024**3:.0f} GB requested")
+        return ExecutionResult(manifest=[], success=False, exit_code=137)
     min_len_arg = f" --min-len {min_len}" if min_len else ""
 
     _cmd = f"""
@@ -75,7 +99,7 @@ TransformInstance(
     group_by=asm,
     resources=Resources(
         cpus=8,
-        memory=Size.GB(16),
+        memory=Size.GB(64),
         duration=Duration(hours=4),
     )
 )
