@@ -54,7 +54,10 @@ for chunk_id, items in enumerate(bins):
 
 def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
-    chunk_size = CHUNK_SIZE
+    # Each chunk re-scans its consumer's whole database: 5000 ORFs a chunk is ~400 UniRef50
+    # scans for 2M ORFs. Larger chunks cut that, but every consumer's wall is sized for
+    # 5000, so the default stays and a run raises it with this param.
+    chunk_size = int(context.params.get("orf_chunk_size", CHUNK_SIZE))
 
     import os, shutil
     staging = "_chunk_staging"

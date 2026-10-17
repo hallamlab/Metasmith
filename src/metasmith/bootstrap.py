@@ -345,7 +345,9 @@ def ExecuteStep(
         if cache_meta is not None:
             _promote(cache_meta, lineages, results)
         if success: Path(".command.success").touch()
-        return ExecutionResult(success, exit_code=None if success else context.FailureExitCode())
+        named = [r.exit_code for r in results if r.exit_code]
+        failure_code = named[-1] if named else context.FailureExitCode()
+        return ExecutionResult(success, exit_code=None if success else failure_code)
     except Exception as e:
         on_exit(ExecutionResult(False), "failed with error")
         Log.Error(f"error while executing transform [{step_name}]")
