@@ -1,6 +1,7 @@
 from pathlib import Path
 import time
 import shutil
+import filecmp
 import traceback
 import re
 import json
@@ -68,10 +69,13 @@ def DeployFromContainer(workspace: Path, architecture: str, system: str):
     relay_server = Path(f"/app/msm_relay.{architecture}-{system}")
     relay_server_dest = deploy_root/"relay/msm_relay"
     Log.Info(f"deploying relay server to [{relay_server_dest}]")
-    if not relay_server_dest.exists():
-        _assert_real_relay(relay_server, architecture, system)
+    _assert_real_relay(relay_server, architecture, system)
+    if not (relay_server_dest.exists() and filecmp.cmp(relay_server, relay_server_dest, shallow=False)):
         relay_server_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(relay_server, relay_server_dest)
+        # Copied beside and renamed over: writing into the binary a live watcher runs from fails with ETXTBSY.
+        staged = relay_server_dest.with_name(f".{relay_server_dest.name}.{os.getpid()}")
+        shutil.copy(relay_server, staged)
+        os.replace(staged, relay_server_dest)
 
     Log.Info("deployment complete")
 

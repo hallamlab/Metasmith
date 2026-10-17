@@ -306,9 +306,9 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             relay_bin = AgentPaths.to_relay(resolved_agent_home)
             if not container.needs_relay:
                 Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")
-            elif "relay-present" in shell.Exec(
-                    f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True).out and not assertive:
-                Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
+            elif f"msm_relay {VERSION}" in shell.Exec(
+                    f'[[ -x "{relay_bin}" ]] && "{relay_bin}" --version', history=True).out and not assertive:
+                Log.Info(f"relay binary {VERSION} present at [{relay_bin}], skipping container extraction")
             else:
                 do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.CONTAINER_HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
                 res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)

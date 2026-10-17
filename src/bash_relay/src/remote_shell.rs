@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,13 @@ use std::borrow::Cow;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 
-use crate::utils::{generate_id, current_time_millis};
+use crate::utils::generate_id;
+use crate::watcher::{read_owner, pid_is_relay, Owner};
+
+// How long a job may sit undispatched, or orphaned by a dead watcher, before the caller is
+// told it will never run. The watcher polls every 100 ms, so either means it is gone or stuck.
+const PICKUP_DEADLINE: Duration = Duration::from_secs(15);
+const ORPHAN_GRACE: Duration = Duration::from_secs(5);
 
 fn remove_leading_indent(s: &str) -> String {
     let lines: Vec<&str> = s.split('\n').collect();
@@ -84,13 +90,16 @@ struct Job {
     err_index: u64,
 
     start_path: PathBuf,
+    pid_path: PathBuf,
+    submitted: Instant,
+    orphaned_since: Option<Instant>,
 }
 
 // The `.pid` file holds a process GROUP id: launcher.sh runs the job under
 // `set -m`, so the recorded number leads a group containing the tool the job
 // started. Signalling the number alone stops the job's shell and orphans that
 // tool, which is the leak this protocol exists to close.
-const GROUP_KILL_GRACE_MS: u128 = 5_000;
+const GROUP_KILL_GRACE: Duration = Duration::from_secs(5);
 
 fn get_pgid_from_file(pid_file: &Path) -> Result<i32, String> {
     if !pid_file.exists() {
@@ -130,9 +139,8 @@ fn kill_group_escalating(pgid_val: i32) {
         }
     }
 
-    let start = current_time_millis();
-    while group_alive(pgid) {
-        if current_time_millis().saturating_sub(start) >= GROUP_KILL_GRACE_MS { break; }
+    let start = Instant::now();
+    while group_alive(pgid) && start.elapsed() < GROUP_KILL_GRACE {
         sleep(Duration::from_millis(100));
     }
 
@@ -153,9 +161,40 @@ impl Job {
             err_log: compile_path.with_extension("err"),
             done_path: compile_path.with_extension("done"),
             start_path: compile_path.with_extension("start"),
+            pid_path: compile_path.with_extension("pid"),
             out_index: 0,
             err_index: 0,
+            submitted: Instant::now(),
+            orphaned_since: None,
         }
+    }
+
+    // Why this job can no longer finish, if it cannot: never picked up, or picked up by a
+    // watcher that has since died and took the job's process group with it.
+    fn stranded(&self, workspace: &Path) -> Option<String> {
+        if self.done_path.exists() {
+            return None;
+        }
+        let watcher_alive = match read_owner(workspace) {
+            Owner::Missing => false,
+            Owner::Legacy => true,
+            Owner::Pid(pid) => pid_is_relay(pid),
+        };
+        if self.start_path.exists() {
+            if !watcher_alive {
+                return Some("no live watcher to pick it up".to_string());
+            }
+            if self.submitted.elapsed() >= PICKUP_DEADLINE {
+                return Some(format!("the watcher did not pick it up within {}s", PICKUP_DEADLINE.as_secs()));
+            }
+            return None;
+        }
+        let job_alive = get_pgid_from_file(&self.pid_path)
+            .map_or(false, |pgid| group_alive(Pid::from_raw(pgid)));
+        if watcher_alive || job_alive {
+            return None;
+        }
+        Some("its watcher died and the job is gone".to_string())
     }
 
     pub fn signal_stop(&self) {
@@ -273,6 +312,7 @@ pub struct RemoteShell {
     _err_callbacks: CallbackMap,
 
     _active_jobs: Arc<Mutex<HashMap<String, Job>>>,
+    _exit_codes: Arc<Mutex<HashMap<String, i32>>>,
 }
 
 impl RemoteShell {
@@ -288,6 +328,7 @@ impl RemoteShell {
             _out_callbacks: Arc::new(Mutex::new(HashMap::new())),
             _err_callbacks: Arc::new(Mutex::new(HashMap::new())),
             _active_jobs: Arc::new(Mutex::new(HashMap::new())),
+            _exit_codes: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -399,7 +440,7 @@ impl RemoteShell {
     }
 
     pub fn await_done(&self, timeout: Option<Duration>, key_filter: Option<&str>) {
-        let start = current_time_millis();
+        let start = Instant::now();
         let mut dt = Duration::from_millis(100);
         const MAX_DT: Duration = Duration::from_millis(500);
 
@@ -454,8 +495,28 @@ impl RemoteShell {
 
                     if j.done_path.exists() {
                         let timeout_seconds = self._timeout.as_secs_f64();
-                        j.dispose(timeout_seconds);
+                        let code = j.dispose(timeout_seconds);
+                        self._exit_codes.lock().unwrap_or_else(|p| p.into_inner()).insert(k.clone(), code);
                         finished_keys.push(k.clone());
+                        continue;
+                    }
+
+                    match j.stranded(&self._watcher_path) {
+                        None => j.orphaned_since = None,
+                        Some(why) => {
+                            let since = *j.orphaned_since.get_or_insert_with(Instant::now);
+                            if since.elapsed() < ORPHAN_GRACE {
+                                continue;
+                            }
+                            // A start file that vanishes under us was just dispatched, not stranded.
+                            let withdrawn = !j.start_path.exists() || fs::remove_file(&j.start_path).is_ok();
+                            if withdrawn && !j.done_path.exists() {
+                                eprintln!("relay job [{}] will never finish: {}", k, why);
+                                j.dispose(0.0);
+                                self._exit_codes.lock().unwrap_or_else(|p| p.into_inner()).insert(k.clone(), 1);
+                                finished_keys.push(k.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -471,9 +532,8 @@ impl RemoteShell {
 
             if is_done { break; }
 
-            let now = current_time_millis();
             if let Some(t) = timeout {
-                if now.saturating_sub(start) > t.as_millis() { break; }
+                if start.elapsed() > t { break; }
             }
 
             thread::sleep(dt);
@@ -481,18 +541,21 @@ impl RemoteShell {
         }
     }
 
-    pub fn exec(&self, cmd: &str, timeout: Option<Duration>) {
+    /// Run `cmd` through the watcher and return its exit code: 1 when it timed out, could
+    /// not be submitted, or was stranded by a missing watcher.
+    pub fn exec(&self, cmd: &str, timeout: Option<Duration>) -> i32 {
 
         let key = self.exec_async(cmd);
+        if key.is_empty() {
+            return 1;
+        }
 
         self.await_done(timeout, Some(&key));
 
-        if let Some(mut active_jobs) = self._active_jobs.lock().ok() {
-            if let Some(job) = active_jobs.remove(&key) {
-                let timeout_seconds = self._timeout.as_secs_f64();
-                job.dispose(timeout_seconds);
-            }
+        if let Some(job) = self._active_jobs.lock().unwrap_or_else(|p| p.into_inner()).remove(&key) {
+            let timeout_seconds = self._timeout.as_secs_f64();
+            return job.dispose(timeout_seconds);
         }
-
+        self._exit_codes.lock().unwrap_or_else(|p| p.into_inner()).remove(&key).unwrap_or(1)
     }
 }

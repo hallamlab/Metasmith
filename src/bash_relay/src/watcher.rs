@@ -1,8 +1,9 @@
 use crate::logger::Logger;
-use crate::utils::{generate_id, current_time_millis};
+use crate::utils::generate_id;
+use crate::VERSION;
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::thread;
 use std::io::{self, Read, Write};
 use std::fs::{self, Permissions, File, OpenOptions};
@@ -10,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::process::Command;
-use nix::sys::signal::{killpg, Signal};
+use nix::sys::signal::{kill, killpg, Signal};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
 use scopeguard::guard;
@@ -23,6 +24,9 @@ pub struct Status {
     pub pid: i32,
     #[serde(default)]
     pub jobs: Vec<String>,
+    // Empty from a watcher older than the field, which is itself the version mismatch.
+    #[serde(default)]
+    pub version: String,
 }
 
 fn default_pid() -> i32 {
@@ -30,6 +34,9 @@ fn default_pid() -> i32 {
 }
 
 impl Status {
+    pub fn dead() -> Self {
+        Status { alive: false, pid: -1, jobs: Vec::new(), version: String::new() }
+    }
 
     pub fn load(status_file: &Path) -> Option<Self> {
         if !status_file.exists() {
@@ -68,7 +75,7 @@ impl Status {
 // the job actually started. Signalling the number alone stops the job's shell
 // and orphans that tool -- which is the leak this whole protocol exists to
 // close. Everything below therefore signals the group.
-const JOB_KILL_GRACE_MS: u128 = 5_000;
+const JOB_KILL_GRACE: Duration = Duration::from_secs(5);
 
 fn read_pgid(pid_file: &Path) -> Option<i32> {
     let raw = fs::read_to_string(pid_file).ok()?;
@@ -96,9 +103,8 @@ fn kill_job_group(pgid: i32) {
         }
     }
 
-    let start = current_time_millis();
-    while group_alive(pgid) {
-        if current_time_millis().saturating_sub(start) >= JOB_KILL_GRACE_MS { break; }
+    let start = Instant::now();
+    while group_alive(pgid) && start.elapsed() < JOB_KILL_GRACE {
         thread::sleep(Duration::from_millis(100));
     }
 
@@ -157,6 +163,46 @@ pub fn kill_run(workspace: &Path, token: &str) -> usize {
         }
     }
     killed
+}
+
+/// Who `active` says owns the workspace. A watcher writes its pid there when it starts, so a
+/// second `start` can tell a live but slow owner from a dead one instead of trusting a
+/// status reply that a stalled watcher misses.
+pub enum Owner {
+    Missing,
+    // An `active` with no pid: written by a watcher from before the field.
+    Legacy,
+    Pid(i32),
+}
+
+pub fn read_owner(workspace: &Path) -> Owner {
+    match fs::read_to_string(workspace.join("active")) {
+        Err(_) => Owner::Missing,
+        Ok(raw) => match raw.trim().parse::<i32>() {
+            Ok(pid) if pid > 1 => Owner::Pid(pid),
+            _ => Owner::Legacy,
+        },
+    }
+}
+
+pub fn pid_is_relay(pid: i32) -> bool {
+    if pid <= 1 || matches!(kill(Pid::from_raw(pid), None), Err(nix::Error::ESRCH)) {
+        return false;
+    }
+    // A pid outlives nothing on a busy login node, so a live number is checked to still be a
+    // relay. Without procfs (macOS) the signal probe is all there is.
+    match fs::read(format!("/proc/{}/cmdline", pid)) {
+        Ok(raw) => raw.split(|b| *b == 0).next()
+            .map_or(false, |argv0| String::from_utf8_lossy(argv0).contains("msm_relay")),
+        Err(_) => true,
+    }
+}
+
+pub fn live_owner(workspace: &Path) -> Option<i32> {
+    match read_owner(workspace) {
+        Owner::Pid(pid) if pid_is_relay(pid) => Some(pid),
+        _ => None,
+    }
 }
 
 pub fn wipe_workspace(workspace: &Path) -> bool {
@@ -237,10 +283,10 @@ pub fn setup_launcher_script(workspace: &Path, cwd: &Path, active_path: &Path, l
         launcher_path.display()
     ));
 
-    File::create(&active_path)?;
-
-    let permissions_644 = Permissions::from_mode(0o644);
-    fs::set_permissions(&active_path, permissions_644)?;
+    let staged_active = active_path.with_extension("staged");
+    fs::write(&staged_active, format!("{}\n", std::process::id()))?;
+    fs::set_permissions(&staged_active, Permissions::from_mode(0o644))?;
+    fs::rename(&staged_active, &active_path)?;
 
     let script_content: String = [
         "SCRIPT=$1",
@@ -342,15 +388,18 @@ pub fn dispatch(start_file: &Path, workspace: &Path, launcher: &Path) -> io::Res
     Ok(())
 }
 
-pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
+/// Run the watcher loop. `start_lock` is the start lock when this process took it itself
+/// (connected mode); it is released once `active` names this watcher.
+pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf, start_lock: Option<File>) {
     Logger::init_log_file(&workspace)
         .expect("FATAL: Failed to initialize main log file");
-    Logger::info(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+    Logger::info(&format!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> msm_relay {}", VERSION));
     wipe(&workspace);
     let active_path = workspace.join("active");
     let launcher_path = workspace.join("launcher.sh");
     setup_launcher_script(&workspace, &cwd, &active_path, &launcher_path)
         .expect("FATAL: Failed to create launcher script");
+    drop(start_lock);
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -359,29 +408,35 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
 
+    let current_pid = nix::unistd::getpid().as_raw();
+
     let workspace_for_guard = workspace.clone();
-    let _guard = guard(active_path.clone(), |path| {
+    let _guard = guard(active_path.clone(), move |path| {
         Logger::info("Watcher shutting down");
 
-        if path.exists() {
-            if let Err(e) = fs::remove_file(&path) {
-                Logger::error(&format!("FATAL: Failed to remove 'active' file on watcher exit: {}", e));
-            } else {
-                Logger::info("'active' file removed.");
+        match read_owner(&workspace_for_guard) {
+            Owner::Pid(pid) if pid != current_pid => {
+                Logger::info(&format!("'active' now names watcher [{}]; leaving its jobs and files alone", pid));
+            }
+            _ => {
+                if path.exists() {
+                    if let Err(e) = fs::remove_file(&path) {
+                        Logger::error(&format!("FATAL: Failed to remove 'active' file on watcher exit: {}", e));
+                    } else {
+                        Logger::info("'active' file removed.");
+                    }
+                }
+                try_kill_jobs(&workspace_for_guard);
             }
         }
-        try_kill_jobs(&workspace_for_guard);
         Logger::info("Watcher has stopped");
         Logger::info("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
         Logger::flush_and_close_log_file();
     });
 
-    let current_pid = nix::unistd::getpid().as_raw();
-
     while running.load(Ordering::SeqCst) {
         let mut active_jobs: Vec<String> = Vec::new();
         let mut status_checks: Vec<PathBuf> = Vec::new();
-        let mut found_active = false;
 
         match fs::read_dir(workspace) {
             Ok(entries) => {
@@ -389,10 +444,7 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
                     let path = entry.path();
                     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
 
-                    if file_name == active_path.file_name().unwrap().to_string_lossy() {
-                        found_active = true;
-                    }
-                    else if file_name.ends_with(".start") {
+                    if file_name.ends_with(".start") {
                         let _ = dispatch(&path, &workspace, &launcher_path);
                     }
                     else if file_name.ends_with(".pid") {
@@ -419,9 +471,19 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
             }
         }
 
-        if !found_active {
-            Logger::info("'active' file was deleted");
-            running.store(false, Ordering::SeqCst);
+        match read_owner(workspace) {
+            Owner::Missing => {
+                Logger::info("'active' file was deleted");
+                running.store(false, Ordering::SeqCst);
+            }
+            Owner::Pid(pid) if pid != current_pid => {
+                Logger::info(&format!("'active' now names watcher [{}]; stepping down", pid));
+                running.store(false, Ordering::SeqCst);
+            }
+            _ => {}
+        }
+        if !running.load(Ordering::SeqCst) {
+            break;
         }
 
         for check_path in status_checks {
@@ -429,6 +491,7 @@ pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
                 jobs: active_jobs.clone(),
                 alive: true,
                 pid: current_pid,
+                version: VERSION.to_string(),
             };
 
             let status_path = check_path.with_extension("status");
@@ -474,7 +537,7 @@ pub fn check_status(workspace: &Path, timeout: u64) -> Status {
     let active_path = workspace.join("active");
 
     if !active_path.exists() {
-        return Status { alive: false, pid: -1, jobs: Vec::new() };
+        return Status::dead();
     }
 
     let id = generate_id();
@@ -485,24 +548,22 @@ pub fn check_status(workspace: &Path, timeout: u64) -> Status {
 
     if let Err(e) = fs::File::create(&sig) {
          Logger::error(&format!("Failed to create check file {}: {}", sig.display(), e));
-         return Status { alive: false, pid: -1, jobs: Vec::new() };
+         return Status::dead();
     }
 
     let _cleanup = CleanupGuard::new(sig.clone(), result.clone());
 
-    let start_time = current_time_millis();
-    let timeout_ms = (timeout as u128) * 1000;
+    let start_time = Instant::now();
+    let timeout = Duration::from_secs(timeout);
 
     loop {
-        let elapsed = current_time_millis().saturating_sub(start_time);
-
-        if elapsed > timeout_ms {
+        if start_time.elapsed() > timeout {
             Logger::info(&format!(
                 "Status check timed out after {}ms. Returning Status(alive=False).",
-                elapsed
+                start_time.elapsed().as_millis()
             ));
 
-            return Status { alive: false, pid: -1, jobs: Vec::new() };
+            return Status::dead();
         }
 
         thread::sleep(Duration::from_millis(20));
