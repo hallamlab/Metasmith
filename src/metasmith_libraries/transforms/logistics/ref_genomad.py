@@ -15,7 +15,9 @@ BASE_URL = "https://portal.nersc.gov/genomad/__data__"
 
 def protocol(context: ExecutionContext):
     idb = context.Output(ref)
-    version = str(context.params.get("genomad_db_version", DB_VERSION))
+    version = context.params.get("genomad_db_version", DB_VERSION)
+    assert not isinstance(version, float), f"genomad_db_version [{version}] was read as a number; quote it, e.g. \"{version}\""
+    version = str(version)
     base = context.params.get("genomad_base_url", BASE_URL).rstrip("/")
     archive = f"genomad_db_v{version}.tar.gz"
 

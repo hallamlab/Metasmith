@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
-    platform = context.params.get("long_read_platform")
+    platform = (context.params.get("long_read_platform") or "").lower() or None
     assert platform in {None, "ont", "pacbio"}, f"unknown long_read_platform [{platform}]"
     ont = "--ont" if platform == "ont" else ""
     assembly_prefix = "the_assembly"

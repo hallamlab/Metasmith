@@ -92,6 +92,18 @@ def test_semibin2_falls_back_to_long_contigs_when_they_fit(metasmith_libraries_r
     assert ctx.commands and "--min-len 2500" in ctx.commands[0]
 
 
+def test_semibin2_counts_at_the_floor_it_was_given(metasmith_libraries_root, work):
+    transform = _binner(metasmith_libraries_root, "semibin2")
+    asm = work / "asm.fa"
+    asm.write_text(_fasta(work / "a.fa", 40, 1500).read_text() + _fasta(work / "b.fa", 10, 3000).read_text())
+    ctx = _Context(_inputs(transform, asm, work), {"memory": 8 * 30**2 / 1024**3, "semibin2_min_len": 2000})
+    try:
+        transform.protocol(ctx)
+    except Exception:
+        pass
+    assert ctx.commands and "--min-len 2000" in ctx.commands[0]
+
+
 def test_comebin_fails_as_an_oom_when_its_sweep_was_killed(metasmith_libraries_root, work):
     transform = _binner(metasmith_libraries_root, "comebin")
     fasta = _fasta(work / "asm.fa", 4, 2000)

@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
-    platform = context.params.get("long_read_platform")
+    platform = (context.params.get("long_read_platform") or "").lower() or None
     assert platform in {None, "pacbio"}, f"hifiasm_meta assembles PacBio HiFi only, not [{platform}] reads"
     assembly_prefix = "the_assembly"
     context.ExecWithEnv(

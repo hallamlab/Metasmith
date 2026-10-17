@@ -38,6 +38,14 @@ def test_a_fetch_whose_md5_differs_fails_and_leaves_nothing(tmp_path):
     assert not (tmp_path / "part_aa.part").exists()
 
 
+def test_a_second_fetch_into_the_same_dir_fetches_nothing(tmp_path):
+    command = FetchCommand("https://example.org/a.gz", "a.gz")
+    assert _run(tmp_path, command) == 0
+    (tmp_path / "a.gz").write_bytes(b"first")
+    assert _run(tmp_path, command) == 0
+    assert (tmp_path / "a.gz").read_bytes() == b"first"
+
+
 @pytest.mark.parametrize("text, gb", [
     ("180 GB", 180), ("1.5 GB", 1), ("1 TB", 1024), ("512 MB", 1), ("750 GB", 750), ("64", 64),
 ])

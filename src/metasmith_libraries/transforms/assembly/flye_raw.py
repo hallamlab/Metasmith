@@ -27,7 +27,7 @@ def protocol(context: ExecutionContext):
     # with `long_read_platform`; unnamed, sub-Q20 reads are taken to be ONT. The tiers
     # are flye 2.9.6's own: hifi <1% error (Q20), nano-hq <3% (Q15) and, by its help,
     # R9 Guppy5+ reads in nano-hq with --read-error raised; nano-raw is 10-20% (<Q10).
-    platform = context.params.get("long_read_platform")
+    platform = (context.params.get("long_read_platform") or "").lower() or None
     assert platform in {None, "ont", "pacbio"}, f"unknown long_read_platform [{platform}]"
     err = ""
     if q >= 20 and platform != "ont":

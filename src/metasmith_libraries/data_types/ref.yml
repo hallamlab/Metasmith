@@ -13,6 +13,12 @@ types:
     properties:
       _: DIAMOND-formatted UniRef50 database
       ext: dmnd
+  uniref50_fasta:
+    extends:
+    - reference_data
+    properties:
+      _: UniRef50 protein fasta as fetched, for diamond makedb
+      ext: fasta.gz
   # A DIRECTORY of .hmm files -- not an archive, and it carried `ext: tgz` while being
   # one, which is exactly the quiet lie that had kofamscan trying to untar it.
   # compile/kofam_ref.py unpacks with --strip-components=1 because kofamscan is handed

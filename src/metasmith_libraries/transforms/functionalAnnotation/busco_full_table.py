@@ -23,7 +23,7 @@ def protocol(context: ExecutionContext):
         env=image,
         cmd=f"""\
             mkdir -p busco_lineage/lineages
-            ln -sfn "$(readlink -f {ilineage.container})" busco_lineage/lineages/{lineage_name}
+            ln -sfn "{ilineage.container}" busco_lineage/lineages/{lineage_name}
             busco \
                 -i {iorfs.container} \
                 -o busco_out \

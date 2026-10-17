@@ -50,7 +50,7 @@ def protocol(context: ExecutionContext):
 
     _cmd = f"""{_comebin_patch(icpu_patch)}
             mkdir -p {bam_dir}
-            ln -s "$(readlink -f {ibam.container})" {bam_dir}/
+            ln -s "{ibam.container}" {bam_dir}/
             mkdir -p {workdir}
             run_comebin.sh -a {contigs} -o {workdir} -p {bam_dir} -t {threads} -b {batch_size}
         """

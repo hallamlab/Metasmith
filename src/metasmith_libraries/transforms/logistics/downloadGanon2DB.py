@@ -20,7 +20,8 @@ def protocol(context: ExecutionContext):
     # The selection and flags `ganon build --source refseq --organism-group archaea
     # bacteria --top 1` hands genome_updater (ganon 2.4.1, build_update.py). Its own
     # default base is ftp://, which a cluster firewall tends to drop. The genomes are
-    # hard-linked out rather than moved, so a retry's fix mode (-i) still finds them.
+    # hard-linked out rather than moved. A retry starts in a fresh work dir and fetches
+    # from zero; -i only helps a rerun inside one attempt.
     context.ExecWithEnv(env=image, cmd=f"""
         export ncbi_base_url={ncbi}/
         fix=""

@@ -8,7 +8,7 @@ ko_list  = model.AddProduct(lib.GetType("ref::kofamscan_ko_list"))
 
 # The top-level profiles.tar.gz and ko_list.gz are replaced at each KEGG release;
 # archives/<date>/ keeps each pair, and the pair is what must agree.
-BASE_URL = "ftp://ftp.genome.jp/pub/db/kofam/archives"
+BASE_URL = "https://www.genome.jp/ftp/db/kofam/archives"
 RELEASE = "2026-08-02"
 
 def protocol(context: ExecutionContext):
@@ -22,17 +22,16 @@ def protocol(context: ExecutionContext):
     # `profiles/` directory and kofamscan is handed a profile directory it does
     # not recurse into -- a nested level reads to it as zero profiles, which it
     # reports as zero annotations rather than as an error.
-    context.ExecWithEnv(
-        env=image,
-        cmd="\n".join([
-            "set -e",
-            FetchCommand(f"{base}/{release}/profiles.tar.gz", "profiles.tar.gz"),
-            FetchCommand(f"{base}/{release}/ko_list.gz", "ko_list.gz"),
-            f"mkdir -p {iprofiles.container}",
-            f"tar -xzf profiles.tar.gz -C {iprofiles.container} --strip-components=1",
-            f"gunzip -c ko_list.gz > {iko_list.container}",
-        ]),
-    )
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        FetchCommand(f"{base}/{release}/profiles.tar.gz", "profiles.tar.gz", label="KOfam profiles"),
+        FetchCommand(f"{base}/{release}/ko_list.gz", "ko_list.gz", label="KOfam ko_list"),
+        f"mkdir -p {iprofiles.local}",
+        f"tar -xzf profiles.tar.gz -C {iprofiles.local} --strip-components=1",
+        f"gunzip -c ko_list.gz > {iko_list.local}",
+        "rm -f profiles.tar.gz ko_list.gz",
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
 
     n_hmm = len(list(iprofiles.local.glob("*.hmm"))) if iprofiles.local.is_dir() else 0
     n_ko = 0

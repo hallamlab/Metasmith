@@ -26,7 +26,9 @@ FILES = [
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
     base = context.params.get("amrfinder_db_url", BASE_URL).rstrip("/")
-    minor = str(context.params.get("amrfinder_db_minor", MINOR))
+    minor = context.params.get("amrfinder_db_minor", MINOR)
+    assert not isinstance(minor, float), f"amrfinder_db_minor [{minor}] was read as a number; quote it, e.g. \"{minor}\""
+    minor = str(minor)
     version = str(context.params.get("amrfinder_db_version", DB_VERSION))
     url = f"{base}/{minor}/{version}"
     stage = Path("amrfinderdb")

@@ -56,7 +56,7 @@ def protocol(context: ExecutionContext):
             # convertmsa's alignment database is only the way to pfam.mmspro, and it is
             # the bulk of the directory.
             rm -f {idb.container}/pfam.mmsmsa {idb.container}/pfam.mmsmsa.*
-            sed -i -e 's|{idb.container}|/db|g' -e "s|$(realpath {idb.container})|/db|g" \
+            sed -i -e "s|\\"$(realpath {idb.container})/|\\"/db/|g" -e 's|"{idb.container}/|"/db/|g' \
                 {idb.container}/DRAM.config
         """,
     )

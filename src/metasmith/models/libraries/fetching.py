@@ -40,10 +40,7 @@ def FetchCommand(
     It **resumes**: the transfer lands on `<dest>.part` and is promoted to
     `dest` only once wget reports it complete, so `dest` existing means a whole
     archive and a second attempt in the same work directory fetches nothing.
-    A partial `.part` continues from where it stopped. That matters because the
-    fetch and the indexing that follows it are one transform and so one cache
-    entry: a failure in the indexing discards the fetch, and the reporter paid
-    for the same 5.5 GB three times over.
+    A partial `.part` continues from where it stopped.
     """
     if isinstance(urls, (str, Path)):
         urls = [str(urls)]

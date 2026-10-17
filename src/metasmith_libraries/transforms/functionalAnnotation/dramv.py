@@ -31,7 +31,11 @@ def protocol(context: ExecutionContext):
         env=image,
         cmd=f"""
             export HOME=/tmp
-            sed "s|\\"/db/|\\"$(readlink -f {idb.container})/|g" {idb.container}/DRAM.config > DRAM.local.config
+            sed "s|\\"/db/|\\"{idb.container}/|g" {idb.container}/DRAM.config > DRAM.local.config
+            # DRAM only warns about a database it cannot open, and annotates without it.
+            grep -o '"{idb.container}/[^"]*"' DRAM.local.config | tr -d '"' | while read -r f; do
+                [ -e "$f" ] || {{ echo "DRAM.config names a missing file [$f]" >&2; exit 1; }}
+            done
 
             DRAM-v.py annotate \
                 -i {ivs2_seqs.container} \

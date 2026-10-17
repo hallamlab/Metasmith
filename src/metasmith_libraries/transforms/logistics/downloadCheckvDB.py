@@ -17,7 +17,9 @@ BASE_URL = "https://portal.nersc.gov/CheckV"
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
-    version = str(context.params.get("checkv_db_version", DB_VERSION))
+    version = context.params.get("checkv_db_version", DB_VERSION)
+    assert not isinstance(version, float), f"checkv_db_version [{version}] was read as a number; quote it, e.g. \"{version}\""
+    version = str(version)
     base = context.params.get("checkv_base_url", BASE_URL).rstrip("/")
     name = f"checkv-db-v{version}"
 

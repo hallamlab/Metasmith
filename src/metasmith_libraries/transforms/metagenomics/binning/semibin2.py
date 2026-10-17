@@ -10,6 +10,8 @@ bam         = model.AddRequirement(lib.GetType("alignment::bam"), parents={asm})
 bin_fasta   = model.AddProduct(lib.GetType("sequences::semibin2_bin_fasta"))
 table       = model.AddProduct(lib.GetType("binning::semibin2_contig_to_bin_table"))
 
+BYTES_PER_PAIR = 6
+
 def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     ibam = context.Input(bam)
@@ -39,24 +41,24 @@ def protocol(context: ExecutionContext):
 
     # Single-sample SemiBin2 holds a dense N x N matrix over the contigs it keeps, so
     # its memory grows with the square of the count: a 16 GB and then a 32 GB request
-    # were OOM-killed 20 minutes in. 8 bytes a pair is a float64 matrix, an estimate
-    # from the source rather than a measurement. A large assembly drops to the 2500 bp
-    # floor SemiBin2 would itself pick at a high --ratio, and one that cannot fit even
-    # then fails at once as an OOM, so the retry asks for more memory instead of
-    # paying 20 minutes to learn the same thing.
+    # were OOM-killed 20 minutes in. SemiBin 2.1.0 builds it from float32 depths
+    # (cal_kl), 4 bytes a pair, and 6 leaves room for the copies made around it. A large
+    # assembly drops to the 2500 bp floor SemiBin2 would itself pick at a high --ratio,
+    # and one that cannot fit even then fails at once as an OOM, so the retry asks for
+    # more memory instead of paying 20 minutes to learn the same thing.
+    floor = int(min_len) if min_len else 1000
     if context.LocalShell(
-        "awk '/^>/{if(l>=1000)a++; if(l>=2500)b++; l=0; next}{l+=length($0)}"
-        f"END{{if(l>=1000)a++; if(l>=2500)b++; print a+0, b+0}}' {iasm.local} > contig_counts.txt"
+        f"awk -v f={floor} '/^>/{{if(l>=f)a++; if(l>=2500)b++; l=0; next}}{{l+=length($0)}}"
+        f"END{{if(l>=f)a++; if(l>=2500)b++; print a+0, b+0}}' {iasm.local} > contig_counts.txt"
     ) != 0:
         return ExecutionResult(manifest=[], success=False)
-    n1000, n2500 = (int(x) for x in Path("contig_counts.txt").read_text().split())
+    n, n2500 = (int(x) for x in Path("contig_counts.txt").read_text().split())
     budget = (context.params.get('memory') or 64) * 1024**3
-    if not min_len and 8 * n1000**2 > budget:
-        Log.Info(f"{n1000} contigs of 1000 bp or more need ~{8*n1000**2/1024**3:.0f} GB; binning the {n2500} of 2500 bp or more")
-        min_len = 2500
-    n = n2500 if min_len and int(min_len) >= 2500 else n1000
-    if 8 * n**2 > budget:
-        Log.Error(f"{n} contigs need ~{8*n**2/1024**3:.0f} GB in SemiBin2's pairwise matrix, more than the {budget/1024**3:.0f} GB requested")
+    if not min_len and BYTES_PER_PAIR * n**2 > budget:
+        Log.Info(f"{n} contigs of 1000 bp or more need ~{BYTES_PER_PAIR*n**2/1024**3:.0f} GB; binning the {n2500} of 2500 bp or more")
+        min_len, n = 2500, n2500
+    if BYTES_PER_PAIR * n**2 > budget:
+        Log.Error(f"{n} contigs need ~{BYTES_PER_PAIR*n**2/1024**3:.0f} GB in SemiBin2's pairwise matrix, more than the {budget/1024**3:.0f} GB requested")
         return ExecutionResult(manifest=[], success=False, exit_code=137)
     min_len_arg = f" --min-len {min_len}" if min_len else ""
 
