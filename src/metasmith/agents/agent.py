@@ -233,7 +233,7 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
 
         def _no_bytecode(info: tarfile.TarInfo):
             name = Path(info.name)
-            if "__pycache__" in name.parts or name.suffix == ".pyc": return None
+            if {"__pycache__", "node_modules"} & set(name.parts) or name.suffix == ".pyc": return None
             return info
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -243,7 +243,8 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             with tarfile.open(part, "w") as tar:
                 tar.add(src, arcname="metasmith", filter=_no_bytecode)
             with tarfile.open(part) as tar:
-                n_files = sum(1 for m in tar.getmembers() if m.isfile())
+                # A hardlink member extracts as one more regular file.
+                n_files = sum(1 for m in tar.getmembers() if m.isfile() or m.islnk())
             mover = Logistics()
             mover.QueueTransfer(src=Source.FromLocal(tmpdir), dest=self.home)
             res = mover.ExecuteTransfers()

@@ -47,3 +47,25 @@ def test_a_second_overlay_replaces_the_first(tmp_path):
     assert (home / "dev" / "metasmith" / "version.txt").read_text() == "2"
     assert not (home / "dev" / "metasmith.next").exists()
     assert not (home / "dev" / "metasmith.tar.part").exists()
+
+
+def test_a_hardlinked_source_file_counts_once_per_name(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    pkg = _package(tmp_path / "src1", "1")
+    (pkg / "models" / "b.py").hardlink_to(pkg / "models" / "a.py")
+    agent = Agent(home=Source.FromLocal(home), runtime=Runtime.APPTAINER, container="docker://x/y:1")
+    report = agent.DeployDevOverlay(pkg)
+    assert report["files"] == 4
+    assert "models/b.py" in _tree(home / "dev" / "metasmith")
+
+
+def test_node_modules_stays_out_of_the_overlay(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    pkg = _package(tmp_path / "src1", "1")
+    (pkg / "frontend" / "node_modules" / "x").mkdir(parents=True)
+    (pkg / "frontend" / "node_modules" / "x" / "index.js").write_text("")
+    agent = Agent(home=Source.FromLocal(home), runtime=Runtime.APPTAINER, container="docker://x/y:1")
+    agent.DeployDevOverlay(pkg)
+    assert not (home / "dev" / "metasmith" / "frontend" / "node_modules").exists()

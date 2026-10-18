@@ -16,6 +16,8 @@ def protocol(context: ExecutionContext):
     staged = context.StagingDir()
     ncbi = context.params.get("ganon2_ncbi_url", NCBI).rstrip("/")
     threads = context.params.get("cpus") or 4
+    # A run param, so a smaller study or a test can fetch one group, e.g. archaea.
+    groups = context.params.get("ganon2_organism_groups", "archaea,bacteria")
     failed = ExecutionResult(manifest=[], success=False)
 
     # The selection and flags `ganon build --source refseq --organism-group archaea
@@ -28,7 +30,7 @@ def protocol(context: ExecutionContext):
         export ncbi_base_url={ncbi}/
         fix=""
         if [ -e {staged.container}/gu/assembly_summary.txt ]; then fix=-i; fi
-        genome_updater.sh -d refseq -g archaea,bacteria -A 1 -f genomic.fna.gz \
+        genome_updater.sh -d refseq -g {groups} -A 1 -f genomic.fna.gz \
             -t {threads} -o {staged.container}/gu -m -G -N split -w $fix
     """)
 

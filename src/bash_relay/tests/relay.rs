@@ -180,3 +180,19 @@ fn bounce_gives_up_without_a_watcher() {
     assert!(!out.status.success());
     assert!(t.elapsed() < Duration::from_secs(15), "took {:?}", t.elapsed());
 }
+
+#[test]
+fn two_homes_on_one_node_keep_their_own_watchers() {
+    let a = Sandbox::new("home_a");
+    let b = Sandbox { io: a.io.parent().unwrap().parent().unwrap().join("home_b").join("host"), tmpdir: a.tmpdir.clone() };
+    fs::create_dir_all(b.io.parent().unwrap()).unwrap();
+
+    assert!(a.run(&["start"]).status.success());
+    let first = a.owner().expect("home a has no watcher");
+    assert!(b.run(&["start"]).status.success());
+
+    assert_ne!(fs::read_link(&a.io).unwrap(), fs::read_link(&b.io).unwrap());
+    assert_eq!(a.owner(), Some(first), "starting home b replaced home a's watcher");
+    assert!(stdout(&a.run(&["status"])).contains("alive: true"));
+    assert!(stdout(&b.run(&["status"])).contains("alive: true"));
+}

@@ -115,7 +115,20 @@ fn calculate_default_io_path() -> PathBuf {
     default_io
 }
 
-fn workspace_target() -> PathBuf {
+// Every agent home on a node has its own workspace: a start that finds another home's
+// watcher in a shared one would shut it down along with that home's running jobs.
+// FNV-1a rather than std's hasher, whose output Rust does not promise across releases,
+// so a relay upgrade still finds the workspace its predecessor wrote.
+fn home_token(link: &Path) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in link.as_os_str().to_string_lossy().bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{:012x}", h & 0xffff_ffff_ffff)
+}
+
+fn workspace_target(link: &Path) -> PathBuf {
     let host = gethostname()
         .into_string()
         .unwrap_or_else(|_| "unknown_host".to_string());
@@ -128,13 +141,13 @@ fn workspace_target() -> PathBuf {
     let tmp_dir = env::var("TMPDIR")
         .unwrap_or_else(|_| "/tmp".to_string());
 
-    PathBuf::from(tmp_dir).join(format!("msm_{}_{}", host, username))
+    PathBuf::from(tmp_dir).join(format!("msm_{}_{}_{}", host, username, home_token(link)))
 }
 
 // The lock sits on node-local disk beside the workspace target, never in the agent home:
 // flock on Lustre is not reliable, and the race it closes is between starts on one node.
 fn lock_path(workspace: &Path, is_local: bool) -> PathBuf {
-    let base = if is_local { workspace.to_path_buf() } else { workspace_target() };
+    let base = if is_local { workspace.to_path_buf() } else { workspace_target(workspace) };
     let mut name = base.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     name.push(".lock");
     base.with_file_name(name)
@@ -172,7 +185,7 @@ fn setup_workspace(local_link_path: &Path, is_local: bool) -> io::Result<()> {
         return Ok(());
     }
 
-    let workspace_target = workspace_target();
+    let workspace_target = workspace_target(local_link_path);
     println!(" - Creating workspace at: {}", workspace_target.display());
     fs::create_dir_all(&workspace_target)?;
 
