@@ -65,6 +65,7 @@ TransformInstance(
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),
-        duration=Duration(hours=6),
+        # Measured on fir: 6 h 00 m, mostly Pfam-A.full (24 GB at 1.6 MB/s from EBI).
+        duration=Duration(hours=24),
     ),
 )
