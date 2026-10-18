@@ -243,19 +243,18 @@ def protocol(context: ExecutionContext):
     with open(script, "w") as f:
         f.write(WRAPPER)
 
+    clean_ws = context.Mount(context.external_cwd / "clean_ws", "/clean_ws")
+    wrapper = context.Mount(context.external_cwd / script.name, f"/work/{script.name}")
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (context.external_cwd / "clean_ws", "/clean_ws"),
-            (context.external_cwd / script.name, f"/work/{script.name}"),
-        ],
+        binds=[clean_ws, wrapper],
         args=["--env", "TORCH_HOME=/opt/torch_cache"],
         cmd=f"""
-            python /work/{script.name} \
+            python {wrapper} \
                 --fasta {iorfs.container} \
                 --out {opred.container} \
                 --app /app \
-                --workdir /clean_ws
+                --workdir {clean_ws}
         """,
     )
     n_rows = sum(1 for _ in open(opred.local)) - 1 if opred.local.exists() else 0

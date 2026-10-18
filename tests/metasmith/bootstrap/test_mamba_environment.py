@@ -113,3 +113,60 @@ def test_mamba_exec_no_relay_identity_cwd(tmp_path, monkeypatch):
     body = bounce.read_text()
     assert f"cd {real_cwd}" in body
     assert "cd /ws" not in body
+
+
+def _context(tmp_path, runtime):
+    env_file = tmp_path / "tool.env"
+    env_file.write_text("checkm-1.2.0\n")
+    image_dep = _dep("env")
+    cp = ContextPath(local=env_file, external=env_file, container=env_file)
+    cd = ContextData(input_group=[cp], endpoint=Endpoint(properties={"env"}), type_name="env")
+    ctx = ExecutionContext(
+        _inputs=[{image_dep: cd}],
+        _get_output_paths=lambda *a: None,
+        external_shell=RecordingShell(),
+        external_cwd=tmp_path,
+        external_agent_home=tmp_path / "msm_home",
+        _environment=runtime,
+    )
+    return ctx, image_dep
+
+
+def test_mount_names_the_host_path_and_binds_nothing_under_mamba(tmp_path):
+    ctx, image_dep = _context(tmp_path, Runtime.MAMBA)
+    db = ctx.Mount(Path("/refs/uniref50"), "/db")
+    assert f"--db {db}/uniref50.dmnd" == "--db /refs/uniref50/uniref50.dmnd"
+    model = ctx.GetContainerModel(image_dep, binds=[db])
+    assert model.container.binds == []
+
+
+def test_mount_names_the_container_path_and_binds_it_under_docker(tmp_path):
+    ctx, image_dep = _context(tmp_path, Runtime.DOCKER)
+    db = ctx.Mount(Path("/refs/uniref50"), "/db")
+    assert f"--db {db}/uniref50.dmnd" == "--db /db/uniref50.dmnd"
+    model = ctx.GetContainerModel(image_dep, binds=[db])
+    assert (Path("/refs/uniref50"), Path("/db")) in [
+        (Path(str(s)), Path(str(d))) for s, d in model.container.binds
+    ]
+
+
+def test_a_raw_bind_still_refuses_under_mamba(tmp_path):
+    ctx, image_dep = _context(tmp_path, Runtime.MAMBA)
+    with pytest.raises(AssertionError, match="context.Mount"):
+        ctx.GetContainerModel(image_dep, binds=[(Path("/refs"), Path("/db"))])
+
+
+def test_no_shipped_transform_passes_a_raw_bind():
+    import ast
+    root = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries" / "transforms"
+    raw = []
+    for p in sorted(root.rglob("*.py")):
+        if "_metadata" in p.parts: continue
+        for node in ast.walk(ast.parse(p.read_text())):
+            if not isinstance(node, ast.Call): continue
+            for kw in node.keywords:
+                if kw.arg == "binds" and isinstance(kw.value, ast.List) and any(
+                    isinstance(e, ast.Tuple) for e in kw.value.elts
+                ):
+                    raw.append(f"{p.relative_to(root)}:{node.lineno}")
+    assert not raw, f"raw binds assert under MAMBA, use context.Mount: {raw}"

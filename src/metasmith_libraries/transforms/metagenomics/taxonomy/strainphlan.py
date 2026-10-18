@@ -21,21 +21,22 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
+    db_dir = context.Mount(idb.external, "/mpa_db")
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/mpa_db")],
+        binds=[db_dir],
         cmd=f"""
             export HOME="$(pwd)/home"; mkdir -p "$HOME" markers work
             S=$(basename {ireads.container}); S=${{S%.gz}}; S=${{S%.fq}}; S=${{S%.fastq}}
             metaphlan {ireads.container} \
                 --input_type fastq --offline \
-                --db_dir /mpa_db --index {MPA_INDEX} \
+                --db_dir {db_dir} --index {MPA_INDEX} \
                 --nproc {threads} \
                 --mapout work/$S.mapout \
                 -s work/$S.sam.bz2 \
                 -o work/$S.profile.tsv
             sample2markers.py -i work/$S.sam.bz2 -f bz2 \
-                -d /mpa_db/{MPA_PKL} -o markers -n {threads}
+                -d {db_dir}/{MPA_PKL} -o markers -n {threads}
         """,
     )
 

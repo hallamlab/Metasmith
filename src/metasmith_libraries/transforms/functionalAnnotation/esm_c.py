@@ -29,14 +29,13 @@ def protocol(context: ExecutionContext):
 
     context.LocalShell(f"mkdir -p weights && tar -xzf {iw.local} -C weights")
 
+    weights_dir = context.Mount(context.external_cwd/"weights", "/weights")
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (context.external_cwd/"weights", "/weights"),
-        ],
+        binds=[weights_dir],
         cmd=f"""
             python {iplm.container}/esm_c.py \
-                --weights /weights \
+                --weights {weights_dir} \
                 --model-name {MODEL_NAME} \
                 --fasta {iorfs.container} \
                 --out-parquet {iemb.container} \

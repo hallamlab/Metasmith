@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable
 
 import yaml
@@ -97,6 +97,22 @@ def _materialised_test(env: Environment) -> str:
             return f'( {ok_sif} || {ok_sandbox} )'
 
 
+@dataclass(frozen=True)
+class Mount:
+    src: Path|str
+    dst: Path|str
+    path: PurePosixPath
+
+    def __str__(self) -> str:
+        return str(self.path)
+
+    def __fspath__(self) -> str:
+        return str(self.path)
+
+    def __truediv__(self, other) -> PurePosixPath:
+        return self.path/other
+
+
 @dataclass
 class ExecutionContext:
     _inputs: list[dict[Dependency, ContextData]]
@@ -115,6 +131,13 @@ class ExecutionContext:
     def __post_init__(self):
         if isinstance(self._environment, Runtime):
             self._environment = Environment(image="", runtime=self._environment)
+
+    def Mount(self, src: Path|str, dst: Path|str) -> Mount:
+        # One call names both the bind and the path the command uses, so the two
+        # cannot disagree: under a container the command sees `dst`, and on a
+        # host process, where there is nothing to bind into, it sees `src`.
+        seen = dst if self._environment.needs_relay else src
+        return Mount(src=src, dst=dst, path=PurePosixPath(str(seen)))
 
     def _tool_environment(self, image: str, **kw) -> Environment:
         container = replace(self._environment.container, **kw) if kw else self._environment.container
@@ -260,7 +283,7 @@ class ExecutionContext:
         self._detected_gpus = found
         return list(found)
 
-    def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
+    def GetContainerModel(self, image: Dependency, binds: list[Mount|tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
@@ -295,7 +318,11 @@ class ExecutionContext:
                         _binds[i] = ac, bc
                     else:
                         _binds.append((src, dest))
-        if binds is None: binds = []
+        binds = [
+            (b.src, b.dst) if isinstance(b, Mount) else b
+            for b in (binds or [])
+            if _probe.needs_relay or not isinstance(b, Mount)
+        ]
         if _probe.needs_relay:
             container_ws = AgentPaths.WORK_ROOT
             binds += [
@@ -306,7 +333,8 @@ class ExecutionContext:
             binds += sorted([(s, d) for s, d in _binds])
         else:
             assert not binds, (
-                f"binds are meaningless without a container boundary "
+                f"a raw bind has no meaning without a container boundary, so name the "
+                f"path with context.Mount(src, dst) "
                 f"(runtime [{_probe.runtime.name}]): {binds}"
             )
             container_ws = self.external_cwd
@@ -332,7 +360,7 @@ class ExecutionContext:
         env: Dependency,
         cmd: str,
         shell: str="bash",
-        binds: list[tuple[Path|str, Path|str]]|None=None,
+        binds: list[Mount|tuple[Path|str, Path|str]]|None=None,
         args: list[str]|None=None,
         exports: dict[str, str|Path]|None=None,
         history: bool=True,
@@ -348,7 +376,7 @@ class ExecutionContext:
             exports=exports, history=history,
         )
 
-    def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
+    def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[Mount|tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
         env = self.GetContainerModel(image, binds, args)
         assert env.container.workdir is not None
         use_cache = False

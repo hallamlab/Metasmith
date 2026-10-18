@@ -1,6 +1,6 @@
 # The numpy>=2 half. Kept separate from env.yml for the same reason
 # docker/ecspr_bake/dockerfile splits :aam from :direction: torch/scikit-sparse's numpy<2
-# world and polars' numpy>=2 world cannot share one env. Mirrors envs/polars.yml exactly.
+# world and polars' numpy>=2 world cannot share one env. Pins the polars minor of envs/metasmith_libraries/tools/polars.yml.
 #
 # ProteinBERT itself is out of this image (see env.yml) -- this env exists only for
 # parity with the repo's existing numpy>=2 lane, in case a future step here needs to

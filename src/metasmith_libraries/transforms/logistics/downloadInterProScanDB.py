@@ -25,9 +25,10 @@ def protocol(context: ExecutionContext):
     # so the indexing has to run from there. The downloaded `data/` is bound over
     # the image's missing one, so what runs is the installed tool indexing the
     # models we just fetched.
+    ipr_data = context.Mount(context.external_cwd/"ipr_data/data", "/opt/interproscan/data")
     context.ExecWithEnv(
         env=img_ipr,
-        binds=[(context.external_cwd/"ipr_data/data", "/opt/interproscan/data")],
+        binds=[ipr_data],
         cmd=f"""
             cd /opt/interproscan
             python3 setup.py -f interproscan.properties --force

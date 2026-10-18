@@ -114,17 +114,16 @@ def protocol(context: ExecutionContext):
         print(f"[kofamscan] closed gaps in {len(gapped):,} sequence(s): {shown}",
               flush=True)
 
+    profiles_dir = context.Mount(iprofiles.external, "/profiles")
+    ko_dir = context.Mount(iko_list.external.parent, "/ko")
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (iprofiles.external, "/profiles"),
-            (iko_list.external.parent, "/ko"),
-        ],
+        binds=[profiles_dir, ko_dir],
         cmd=f"""
             exec_annotation \
                 -o kofam_results.txt \
-                --profile=/profiles \
-                --ko-list=/ko/{iko_list.external.name} \
+                --profile={profiles_dir} \
+                --ko-list={ko_dir}/{iko_list.external.name} \
                 {cpus_string} \
                 --e-value=0.01 \
                 --format=detail \

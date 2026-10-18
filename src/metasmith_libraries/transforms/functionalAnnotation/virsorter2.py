@@ -76,15 +76,16 @@ def protocol(context: ExecutionContext):
     # under $HOME/.virsorter, and on a host whose /tmp is a small shared tmpfs that is
     # the wrong place for it.
 
+    db_dir = context.Mount(idb.external, "/db")
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/db")],
+        binds=[db_dir],
         cmd=f"""
             export HOME="$PWD"
 
             virsorter run \
                 --seqfile {iasm.container} \
-                --db-dir /db \
+                --db-dir {db_dir} \
                 --working-dir {workdir} \
                 --jobs {threads} \
                 --include-groups dsDNAphage,NCLDV,RNA,ssDNA,lavidaviridae \

@@ -25,13 +25,14 @@ def protocol(context: ExecutionContext):
     sample_slug = re.sub(r"[^A-Za-z0-9]+", "_", Path(ireads.container).name).strip("_") or "sample"
     bam = f"{sample_slug}.bam"
 
+    magref_dir = context.Mount(imagref.external, "/magref")
     context.ExecWithEnv(
         env=img_mm2,
-        binds=[(imagref.external, "/magref")],
+        binds=[magref_dir],
         cmd=f"""
             zcat {ireads.container} | awk '{{ if (NR%8>=1 && NR%8<=4) print | "gzip > r1.fq.gz"; else print | "gzip > r2.fq.gz" }}'
             minimap2 -x sr -a -2 -t {threads} \
-                /magref/mag_ref.mmi r1.fq.gz r2.fq.gz > temp.sam
+                {magref_dir}/mag_ref.mmi r1.fq.gz r2.fq.gz > temp.sam
             rm -f r1.fq.gz r2.fq.gz
         """,
     )
@@ -48,14 +49,14 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=img_is,
-        binds=[(imagref.external, "/magref")],
+        binds=[magref_dir],
         cmd=f"""
             inStrain profile \
                 {bam} \
-                /magref/mag_ref.fna \
+                {magref_dir}/mag_ref.fna \
                 -o instrain_out \
                 -p {threads} \
-                -s /magref/mag_ref.stb \
+                -s {magref_dir}/mag_ref.stb \
                 --database_mode \
                 --skip_plot_generation
         """,
