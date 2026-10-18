@@ -3,55 +3,34 @@ from metasmith.python_api import *
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
-img_ipr = model.AddRequirement(lib.GetType("env::interproscan.env"))
-data    = model.AddProduct(lib.GetType("ref::interproscan_data"))
+sources = model.AddProduct(lib.GetType("ref::interproscan_sources"))
 
 IPRSCAN_DATA_URL = "https://ftp.ebi.ac.uk/pub/databases/interpro/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz"
 
 def protocol(context: ExecutionContext):
-    idata = context.Output(data)
+    isrc = context.Output(sources)
+    staged = context.StagingDir()
 
-    context.ExecWithEnv(
-        env=image,
-        cmd="\n".join([
-            FetchCommand(IPRSCAN_DATA_URL, "interproscan-data.tar.gz"),
-            "mkdir -p ipr_data",
-            "tar xzf interproscan-data.tar.gz -C ipr_data --strip-components=1",
-        ]),
-    )
-
-    # setup.py and interproscan.properties are the IMAGE's copies at
-    # /opt/interproscan, and the container's working directory is the task's /ws,
-    # so the indexing has to run from there. The downloaded `data/` is bound over
-    # the image's missing one, so what runs is the installed tool indexing the
-    # models we just fetched.
-    ipr_data = context.Mount(context.external_cwd/"ipr_data/data", "/opt/interproscan/data")
-    context.ExecWithEnv(
-        env=img_ipr,
-        binds=[ipr_data],
-        cmd=f"""
-            cd /opt/interproscan
-            python3 setup.py -f interproscan.properties --force
-        """
-    )
-
-    threads = context.params.get('cpus')
-    threads = "" if threads is None else f"-p {threads}"
-    context.LocalShell(f"mv ipr_data/data ./ && tar -I 'pigz {threads}' -cf {idata.local} ./data")
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        FetchCommand(IPRSCAN_DATA_URL, staged.local/"interproscan-data.tar.gz"),
+        f"mv {staged.local}/interproscan-data.tar.gz {isrc.local}",
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
 
     return ExecutionResult(
-        manifest=[{data: idata.local}],
-        success=idata.local.exists(),
+        manifest=[{sources: isrc.local}],
+        success=isrc.local.is_file() and isrc.local.stat().st_size > 0,
     )
 
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=img_ipr,
+    group_by=image,
     labels=["local"],
     resources=Resources(
-        cpus=2,
-        memory=Size.GB(8),
+        cpus=1,
+        memory=Size.GB(2),
         duration=Duration(hours=8),
     ),
 )

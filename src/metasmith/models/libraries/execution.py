@@ -127,17 +127,31 @@ class ExecutionContext:
     _slot_keys: dict[Dependency, str] = field(default_factory=dict)
     _ambiguous_slots: set[str] = field(default_factory=set)
     _exit_codes: list[int] = field(default_factory=list)
+    _get_staging_dir: Callable[[int], ContextPath]|None = None
 
     def __post_init__(self):
         if isinstance(self._environment, Runtime):
             self._environment = Environment(image="", runtime=self._environment)
 
+    def RunsInContainer(self) -> bool:
+        return self._environment.needs_relay
+
     def Mount(self, src: Path|str, dst: Path|str) -> Mount:
         # One call names both the bind and the path the command uses, so the two
         # cannot disagree: under a container the command sees `dst`, and on a
         # host process, where there is nothing to bind into, it sees `src`.
-        seen = dst if self._environment.needs_relay else src
+        seen = dst if self.RunsInContainer() else src
         return Mount(src=src, dst=dst, path=PurePosixPath(str(seen)))
+
+    def StagingDir(self) -> ContextPath:
+        # Keyed by the member's cache key, so a retry, which Nextflow starts in a
+        # fresh work dir, finds what the attempt before it fetched. It sits under
+        # the cache root and is never cleaned, so a protocol moves its product out
+        # of it rather than copying.
+        assert self._get_staging_dir is not None, "only a context ExecuteStep builds has staging dirs"
+        d = self._get_staging_dir(self._batch_index)
+        d.local.mkdir(parents=True, exist_ok=True)
+        return d
 
     def _tool_environment(self, image: str, **kw) -> Environment:
         container = replace(self._environment.container, **kw) if kw else self._environment.container

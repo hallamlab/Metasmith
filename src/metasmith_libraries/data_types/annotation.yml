@@ -317,6 +317,10 @@ types:
   eggnog_source:
     properties:
       _: Marker for eggNOG database download
+  # The fetch half of eggnog_data.
+  eggnog_packed:
+    properties:
+      _: eggNOG-mapper database files as fetched, compressed, unpacked by buildEggnogDB
   eggnog_results:
     properties:
       _: eggNOG-mapper functional annotations (GO, KEGG, Pfam, COG)

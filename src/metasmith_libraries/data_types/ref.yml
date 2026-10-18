@@ -34,22 +34,48 @@ types:
     properties:
       _: KofamScan KO list file
       ext: tsv
+  # The fetch half of kofamscan_profiles + kofamscan_ko_list, packed as released.
+  kofam_sources:
+    extends:
+    - reference_data
+    properties:
+      _: KOfam release as fetched -- profiles.tar.gz and ko_list.gz from one archives/<date>/, unpacked by buildKofamDB
   interproscan_data:
     extends:
     - reference_data
     properties:
       _: InterProScan data directory
       ext: tgz
+  # The fetch half of interproscan_data.
+  interproscan_sources:
+    extends:
+    - reference_data
+    properties:
+      _: InterProScan release tarball as fetched, unindexed, for buildInterProScanDB
+      ext: tar.gz
   metabuli_ref:
     extends:
     - reference_data
     properties:
       _: metabuli reference database
+  # The fetch half of metabuli_ref.
+  metabuli_sources:
+    extends:
+    - reference_data
+    properties:
+      _: metabuli reference package tarball as fetched, unpacked by buildMetabuliDB
+      ext: tar.gz
   gtdb:
     extends:
     - reference_data
     properties:
       _: genome taxonomy database
+  # The fetch half of gtdb.
+  gtdb_sources:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB-Tk split data package as fetched, its md5-checked parts and a MANIFEST, joined and unpacked by buildGtdbDB
   kraken2_db:
     extends:
     - reference_data
@@ -349,3 +375,9 @@ types:
     - reference_data
     properties:
       _: iPHoP host database -- the shipped one, before this survey's own MAGs are added; viromics::iphop_augmented_db is what predict consumes
+  # The fetch half of iphop_db.
+  iphop_sources:
+    extends:
+    - reference_data
+    properties:
+      _: iPHoP release as fetched -- its split tar chunks and their md5 list, joined and unpacked by buildIphopDB

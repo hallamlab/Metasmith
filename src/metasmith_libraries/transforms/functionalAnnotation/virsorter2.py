@@ -64,6 +64,14 @@ def protocol(context: ExecutionContext):
     iboundary = context.Output(out_boundary)
     icalls = context.Output(out_calls)
 
+    # The conda envs `virsorter setup` builds are named by a hash over the path the
+    # database sits at, so setup and every run must see it at one path. Only a
+    # container can give it one: /db. On a host process the product moves between
+    # setup and use, and the run would build every env again with no network.
+    if not context.RunsInContainer():
+        Log.Error("virsorter2 needs a container runtime: its database is usable only at the path it was set up at")
+        return ExecutionResult(manifest=[], success=False)
+
     threads = context.params.get("cpus", 8)
     workdir = "vs2_out"
 

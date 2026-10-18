@@ -25,6 +25,14 @@ def protocol(context: ExecutionContext):
         path = name if key == "dbcan" else f"{isrc.container}/{name}"
         locs.append(f"--{key}_loc {path} --select_db {key}")
     dbcan = next(name for key, name, _ in rows if key == "dbcan")
+    # A server that answers with a web page passes wget, so check what each file is
+    # before DRAM-setup.py, which logs a bad database and carries on.
+    checks = [f"gzip -t {isrc.container}/{name}" for _, name, _ in rows if name.endswith(".gz")] + [
+        f'[ "$(head -c 6 {isrc.container}/{dbcan})" = HMMER3 ] || {{ echo "{dbcan} is not an HMMER3 file" >&2; exit 1; }}',
+        *(f"awk -F'\\t' 'NR==1 {{exit !(NF>1)}}' {isrc.container}/{name} || {{ echo \"{name} is not a TSV\" >&2; exit 1; }}"
+          for _, name, _ in rows if name.endswith(".tsv")),
+    ]
+    context.ExecWithEnv(env=image, cmd="\n".join(["set -euo pipefail", *checks]))
 
     context.ExecWithEnv(
         env=image,

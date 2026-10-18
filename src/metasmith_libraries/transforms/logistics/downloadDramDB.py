@@ -34,21 +34,13 @@ def protocol(context: ExecutionContext):
     sources = {key: (name, context.params.get(f"dram_{key}_url", url))
                for key, (name, url) in SOURCES.items()}
 
-    gz = [name for name, _ in sources.values() if name.endswith(".gz")]
-    tsv = [name for name, _ in sources.values() if name.endswith(".tsv")]
-    dbcan = sources["dbcan"][0]
-    # A server that answers with a web page passes wget, so check what each file is.
-    checks = [f"gzip -t {name}" for name in gz] + [
-        f'[ "$(head -c 6 {dbcan})" = HMMER3 ] || {{ echo "{dbcan} is not an HMMER3 file" >&2; exit 1; }}',
-        *(f"awk -F'\\t' 'NR==1 {{exit !(NF>1)}}' {name} || {{ echo \"{name} is not a TSV\" >&2; exit 1; }}"
-          for name in tsv),
-    ]
+    staged = context.StagingDir()
+    # Fetch only: what each file is gets checked by buildDramDB on a compute node.
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(url, name, label=f"DRAM {key}") for key, (name, url) in sources.items()),
-        *checks,
+        *(FetchCommand(url, staged.local/name, label=f"DRAM {key}") for key, (name, url) in sources.items()),
         f"mkdir -p {iout.local}",
-        f"mv {' '.join(name for name, _ in sources.values())} {iout.local}/",
+        *(f"mv {staged.local/name} {iout.local}/" for name, _ in sources.values()),
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)
 
