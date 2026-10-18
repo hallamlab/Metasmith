@@ -51,59 +51,69 @@ shared_input_paths: []
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/1fc7ca1437814951a27dfcc2820c8c3d:
-      type: ecspr::atom_pairs
-      instance_id: 1e20b9508af357e0139ece1bb8f29fafcbafb80fc1662aaa2f5cd6c44a57bcd60d2e
+    /msm_deferred/101b2d54112842cabebcbe8a93c3c4ed:
+      type: ecspr::direction_ratios
+      instance_id: 1e20dab999d4075ff58ad7c7b78e7b63b70b1c8e91e8363741e8799a36179fa11807
       origin: leaf
-    /msm_deferred/351bdb1db9944faa8c903087514741fe:
-      type: fabfos::vector_backbone
-      parents:
-        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
-      instance_id: 1e20bc1103fe1117d6c72d5dec95ac92c7d2adb58de9af18e068059cbd9c5f1a70dd
-      origin: leaf
-    /msm_deferred/38ec194cc9d846f78f8010b502757baa:
+    /msm_deferred/127cd0bb34d0420b9578f4604b12e34b:
       type: ref::label_transfer_landmarks
-      instance_id: 1e201aa9c60041ae54e36d2a4391b91149a77532e76174ca50a5aad7654b6827a93d
+      instance_id: 1e207e36472c9bf68a8b50204954358a5dba4c86fcedb71fd4d51021e58f34a9c0df
       origin: leaf
-    /msm_deferred/59ac013d911f4359a77f25e73ca6b563:
-      type: sequences::short_reads_pe
-      parents:
-        nkkSVrr6JOUj@read_metadata.json: sequences::read_metadata
-      instance_id: 1e20027b9995bb898c15a95c27990b0156998c15f2e7baf9b0d9864d4981b839637e
+    /msm_deferred/403aca9614104dde98563f8cc6368dae:
+      type: ref::lane_calibration
+      instance_id: 1e20ee5628af111cfa023e67ef239d60acb047e4f859f3b78da2b0c5e6b4da1d6dee
       origin: leaf
-    /msm_deferred/8a2aa4328b4845afaf62a5bf1551d1e1:
-      type: ref::mnxr_lookup
-      instance_id: 1e2048d5207f8fa9e1a8b94a5d8d5f7acafce99ed7a866ae2647d17100596b3b6c29
+    /msm_deferred/6990584b7df940fc87eea7a8a987c5e4:
+      type: algorithm::fabfos_recovery.py
+      instance_id: 1e2052870f91de5feca108f6f13d3fdc24de66340243e58f6c73f33a8d6085f31312
       origin: leaf
-    /msm_deferred/9503f86ca32f4796bde76cf1b06b2adb:
+    /msm_deferred/b2be4f79f75548f0b9b010982938f504:
       type: sequences::background_genome
       parents:
-        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
-      instance_id: 1e20fa3efe6640d89b8afab37aa8d4cc37625d6f85c71366c6b548260338c4a51de4
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e2095ac76c799e0316a5fb884c22c3c2619fcf8ef020ec5d24e3cd0b3dd2cc2e54c
       origin: leaf
-    /msm_deferred/aa0413c0c0a540e1ba01e3bed0e88dcb:
-      type: ecspr::direction_ratios
-      instance_id: 1e20cd0801983a785685a5144e9d47aca6702bbf175c3940db6ea3bd34054c4b82f8
+    /msm_deferred/ba123ef0de1043f49fa3556447178f30:
+      type: fabfos::vector_backbone
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e2015748826b00bafe2188cc0435b44e22639b4bd91ba4b1a94b4eeb6d9e6012a3f
       origin: leaf
-    /msm_deferred/b9f1b0e81fa94956ae733e9adfc649ff:
-      type: algorithm::fabfos_recovery.py
-      instance_id: 1e20ce9b2e418ee33a3271c8f0c1c2e8c5bbe8ad84d781141c0e1a1100d8db015bea
+    /msm_deferred/bb75787fad1f4ea89d4f86a9fc0e6398:
+      type: sequences::short_reads_pe
+      parents:
+        B3953eg5RMmC@read_metadata.json: sequences::read_metadata
+      instance_id: 1e20f91732ede26fd9732240dfdd81a7ea668979bfbcb7788c2a42b677ed09b3ecb5
       origin: leaf
-    /msm_deferred/f880fa134d8742a9960d1f30edf604fa:
+    /msm_deferred/cc2ded6429854584a8f055ae3cc58912:
+      type: ref::mnxr_lookup
+      instance_id: 1e2051d449ec188aa320224166e5bcc131aac6926802715e915432364d351684c9e6
+      origin: leaf
+    /msm_deferred/d54e61bda1e8490b98f53b167df5ea44:
+      type: ecspr::ecspr_tests
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e2047b0fe058d65dfa73d84a53a500b6ddabb0e379b4ec1eab5b331258de809f2d9
+      origin: leaf
+    /msm_deferred/e45784288350431dba2776dfbed77ffc:
       type: ecspr::conditions
       parents:
-        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
-      instance_id: 1e2048d14cc04c459b40b17e5bb8cdcabb2a6080608c2350f1d88dfc16330d908347
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e204fa0ba54cd8ab6d2948730adf7136158de3150cdd69fcb8f454428dd02f528ab
+      origin: leaf
+    /msm_deferred/fa3dbd6f15a84eab9ae3763732cf5f22:
+      type: ecspr::atom_pairs
+      instance_id: 1e2079f1d45ea974889060e53fc51edc44a3226213df292ecbc154bbfb9c9f105600
       origin: leaf
     experiment.txt:
       type: fabfos::experiment
-      instance_id: 1e20069cc8d5dc3bb4b39ec69f1afc7f9284c3c3ae49c86d5d0b8f882108dc7ca5b2
+      instance_id: 1e208e5b330b68e360f2fbfe1b363ba9a6b697251f6fd6917b624dfa7e65b077483f
       origin: leaf
     read_metadata.json:
       type: sequences::read_metadata
       parents:
-        nkkSVrr6JOUj@experiment.txt: fabfos::experiment
-      instance_id: 1e209dc20bca5cde618adfacea7571be0076d5f230f509b4e645ad860eb7029834ee
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e20dfcb127bc4a012902033fe5e4fadb8cd9fce9907a21a8bd50442e0e0400c632c
       origin: leaf
   values:
     experiment.txt: fosmid_pool_study

@@ -11,6 +11,7 @@ a landmark table of different widths, because a kNN vote across two embedding
 spaces is a number with no referent.
 """
 import os
+import re
 import sys
 
 
@@ -18,6 +19,7 @@ def _args():
     import argparse
     p = argparse.ArgumentParser(description="full-7 GPR mapper")
     p.add_argument("--bridge", required=True)
+    p.add_argument("--calibration", required=True)
     p.add_argument("--clean", required=True)
     p.add_argument("--deepec", required=True)
     p.add_argument("--esmc-emb", required=True)
@@ -52,10 +54,20 @@ def load_evidence(ev_lib):
 
 
 def finish(df, channel, projection_via=None):
-    """Stamp the columns every lane sets identically and order to the schema."""
+    """Stamp the columns every lane sets identically and order to the schema.
+
+    `raw_score` is consumed here and never reaches the table.
+
+    **CAUTION** Three of these seven lanes have no fitted curve. `deepec` is
+    score-less, and `ezpred` and `esmc` were never benchmarked -- only the chosen four
+    were. `fe.calibrate` gives them fe.UNCALIBRATED_LLR, which is "one call at the
+    corpus average", and a `full_7` table is therefore weighted on four of its lanes
+    and flat on three. That is a property of this lane set, not of the schema.
+    """
     df["source"] = SOURCE
     df["channel"] = channel
-    df["score_kind"] = fe.CHANNEL_SCORE_KIND[channel]
+    df["llr"] = fe.calibrate(CAL, channel, df.pop("raw_score").to_numpy())
+    df["llr_route"] = fe.llr_route_for(CAL, channel)
     df["lane_set"] = LANE_SET
     if projection_via is not None:
         df["projection_via"] = projection_via
@@ -64,22 +76,47 @@ def finish(df, channel, projection_via=None):
     df["intermediate_name"] = df["intermediate_name"].fillna("")
     if "evidence_quality" not in df.columns:
         df["evidence_quality"] = "reviewed"
+    # THE SYMBOL IS THE FASTA'S, read once in `orf_ids`. A lane names an EC or a KO
+    # and never learns what the gene is called, so nothing here can fill this in --
+    # and `intermediate_name` must not, because it holds an EC description, which is a
+    # different namespace from the one `gene` consolidates.
+    df["gene"] = df["orf"].map(GENES).astype("object")
+    df["gene"] = df["gene"].where(df["gene"].notna(), None)
     return df[SCHEMA]
 
+# `[gene=thrA]`, as NCBI writes it in a `_protein.faa` header. A prodigal contig has
+# no such tag and gets None, which is the honest answer for an ORF on an unnamed contig.
+_GENE_TAG = re.compile(r"\[gene=([^\]]+)\]")
+
+
 def orf_ids(fasta):
-    out = []
+    """`([id, ...], {id: gene or None})` -- the ORF set and what each ORF is called.
+
+    THE SYMBOL COMES OUT OF THE FASTA, not out of a lane. A lane names an EC or a KO
+    and never learns what the gene is called, so `gene` can only be populated here,
+    where the header that declares it is being read anyway. Every one of K-12's 4,318
+    records carries the tag; a metagenome's carry none, and both are described.
+    """
+    out, genes = [], {}
     with open(fasta) as fh:
         for line in fh:
-            if line.startswith(">"):
-                out.append(line[1:].split()[0])
-    return out
+            if not line.startswith(">"):
+                continue
+            oid = line[1:].split()[0]
+            out.append(oid)
+            m = _GENE_TAG.search(line)
+            genes[oid] = m.group(1) if m else None
+    return out, genes
 
 def lane_kofam(path, ko_to_mnxr):
     df = pd.read_csv(path)
     df["score"] = pd.to_numeric(df["score"], errors="coerce")
     df["thrshld"] = pd.to_numeric(df["thrshld"], errors="coerce")
-    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])]
-    df = df.rename(columns={"gene_name": "orf", "KO": "ko", "score": "raw_score"})
+    df = df[df["score"].notna() & df["thrshld"].notna() & (df["score"] >= df["thrshld"])].copy()
+    # The RATIO, not the bitscore -- the calibration is fitted on score/thrshld. See
+    # gpr_4lane.py::parse_kofam.
+    df["raw_score"] = df["score"] / df["thrshld"]
+    df = df.rename(columns={"gene_name": "orf", "KO": "ko"})
     df = df.merge(ko_to_mnxr, on="ko", how="inner")
     df["intermediate_id"] = df["ko"]
     return finish(df, "kofam", "kegg.reaction")
@@ -127,9 +164,9 @@ def lane_deepec(path, ec_to_mnxr):
     df = df[df["ec"].str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
     df = df.merge(ec_to_mnxr, on="ec", how="inner")
     df["intermediate_id"] = df["ec"]
-    # A score-less tool asserts PRESENCE, and 1.0 is how that is spelled. NaN made
-    # the downstream share-of-sum read the whole lane's total as zero and fall back
-    # to a uniform split with nothing raised.
+    # A score-less tool asserts PRESENCE, and 1.0 is how that is spelled. It carries
+    # no information, so `fe.calibrate` maps the whole lane to UNCALIBRATED_LLR --
+    # correctly, since there is nothing here to weight by.
     df["raw_score"] = 1.0
     return finish(df, "deepec", "ec")
 
@@ -329,7 +366,10 @@ def load_bridge(path):
             slice_as("uniprot", "uniprot_accession").assign(dr_source="rhea"))
 
 def main():
-    ids = orf_ids(str(A.orfs))
+    # `GENES` is module-level for the same reason SOURCE and CAL are: `finish` is
+    # called once per lane and every lane stamps the same value from it.
+    global GENES
+    ids, GENES = orf_ids(str(A.orfs))
     if not ids:
         raise SystemExit("[gpr] the input ORF FASTA has no records")
     ko_to_mnxr, ec_to_mnxr, up_to_mnxr = load_bridge(str(A.bridge))
@@ -356,6 +396,12 @@ def main():
 if __name__ == "__main__":
     fe = load_evidence(A.ev_lib)
     SCHEMA = fe.SCHEMA_COLS
+    CAL = fe.load_calibration(str(A.calibration))
+    if CAL is None:
+        raise SystemExit(
+            "[gpr] --calibration " + str(A.calibration) + " holds no "
+            "lane_calibration.json; every lane would fall back to a flat "
+            + str(fe.UNCALIBRATED_LLR) + " nats")
     LANE_SET = str(A.lane_set)
     SOURCE = str(A.source)
     # Every lane cut-off is fe's. See the block there for what each one gates and why

@@ -17,8 +17,8 @@ THE READOUT IS THE ELASTICITY, NOT A PERTURBATION. One solve carries every react
 distribution costs one solve rather than one solve per reaction -- and it is exact where a
 finite difference would be reporting float64 noise.
 
-CURATED ARM ONLY. `gpr_gem.parquet` carries `lane_set=curated`, every row `score_kind=
-presence`. The de-novo tables carry a `pbert` channel whose landmark index is under repair,
+CURATED ARM ONLY. `gpr_gem.parquet` carries `lane_set=curated`, every row at the declared
+`fabfos_evidence.ASSERTION_LLR`. The de-novo tables carry a `pbert` channel whose landmark index is under repair,
 so a number taken from them today is not a number about this instrument.
 
     mamba run -n ecspr python research/fabfos/benchmarks/laser/conditioning/decade_budget.py
@@ -40,7 +40,7 @@ from ecspr.model.graph import Terminal, solve                    # noqa: E402
 
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 ANNOT = BAKE / "seams/direction_annotation.parquet"
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 ASKA = ROOT / "data/fabfos/runs/eydallin_clones/ecspr/aska_sweep_gem_e_coli_ag1_fold2.0_C.tsv"
 
@@ -208,7 +208,7 @@ def main() -> int:
 
     rows: list = []
     for host in a.hosts:
-        gpr = pd.read_parquet(HOSTS / host / "gpr_gem.parquet")
+        gpr = pd.read_parquet(RUNS / host / "gpr" / "gpr_gem.parquet")
         assert set(gpr.lane_set.unique()) == {"curated"}, f"{host} is not the curated arm"
         weights = {m: 1.0 for m in gpr.mnxr.dropna().unique()}
         print(f"\n== {host}: {len(weights):,} reactions", file=sys.stderr)

@@ -1,0 +1,113 @@
+{
+  "borrowed_from": "e_coli_bw25113",
+  "source": "/home/tony/.claude/jobs/31139d4c/tmp/mig_applied/reparse/e_coli_bw25113/gpr_denovo.parquet",
+  "genotype": {
+    "dlacZ_WJ16": {
+      "gene": "lacZ",
+      "allele": "loss"
+    },
+    "daraBAD_AH33": {
+      "gene": "araB",
+      "allele": "loss"
+    },
+    "daraBAD_AH33/A": {
+      "gene": "araA",
+      "allele": "loss"
+    },
+    "daraBAD_AH33/D": {
+      "gene": "araD",
+      "allele": "loss"
+    },
+    "drhaBAD_LD78": {
+      "gene": "rhaB",
+      "allele": "loss"
+    },
+    "drhaBAD_LD78/A": {
+      "gene": "rhaA",
+      "allele": "loss"
+    },
+    "drhaBAD_LD78/D": {
+      "gene": "rhaD",
+      "allele": "loss"
+    },
+    "hsdR514": {
+      "gene": "hsdR",
+      "allele": "loss"
+    },
+    "lacIq": {
+      "gene": "lacI",
+      "allele": "variant"
+    },
+    "rrnB_T14": {
+      "gene": null,
+      "allele": "unresolved"
+    },
+    "drecA": {
+      "gene": "recA",
+      "allele": "loss"
+    },
+    "dldhA": {
+      "gene": "ldhA",
+      "allele": "loss"
+    },
+    "dackA": {
+      "gene": "ackA",
+      "allele": "loss"
+    },
+    "dfrdABCD": {
+      "gene": "frdA",
+      "allele": "loss"
+    },
+    "dfrdABCD/B": {
+      "gene": "frdB",
+      "allele": "loss"
+    },
+    "dfrdABCD/C": {
+      "gene": "frdC",
+      "allele": "loss"
+    },
+    "dfrdABCD/D": {
+      "gene": "frdD",
+      "allele": "loss"
+    },
+    "dadhE": {
+      "gene": "adhE",
+      "allele": "loss"
+    }
+  },
+  "withheld_kind": "loss",
+  "withheld_symbols": [
+    "ackA",
+    "adhE",
+    "frdA",
+    "frdB",
+    "frdC",
+    "frdD",
+    "ldhA"
+  ],
+  "withheld_orfs": [
+    "lcl|NZ_CP193896.1_prot_WP_000095707.1_2129",
+    "lcl|NZ_CP193896.1_prot_WP_000208757.1_3944",
+    "lcl|NZ_CP193896.1_prot_WP_000301651.1_1045",
+    "lcl|NZ_CP193896.1_prot_WP_000609663.1_3943",
+    "lcl|NZ_CP193896.1_prot_WP_000762236.1_1200",
+    "lcl|NZ_CP193896.1_prot_WP_000829498.1_3945",
+    "lcl|NZ_CP193896.1_prot_WP_001192973.1_3946"
+  ],
+  "parent_withholds_nothing": "GCF_050858555.1 is BW25113's own sequence; its proteome already lacks lacZ/araB/rhaB",
+  "rows_parent": 30838,
+  "rows_lw06": 30598,
+  "rows_withheld": 240,
+  "mnxr_only_in_parent": [
+    "MNXR101040",
+    "MNXR129650",
+    "MNXR130122",
+    "MNXR130123",
+    "MNXR131548",
+    "MNXR133365",
+    "MNXR133366",
+    "MNXR134068",
+    "MNXR134092",
+    "MNXR198547"
+  ]
+}

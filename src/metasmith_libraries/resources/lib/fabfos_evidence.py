@@ -7,10 +7,14 @@ paths). Ported verbatim (method-preserving) from:
   - 00_build_uniprot_to_mnxr.py   (UniProt->MNXR Rhea DR bridge)
   - 11_build_evidence_table_dlec.py (the dl_ec 4-channel compiler)
 
-Every lane reader emits the unified 11-column schema declared below as SCHEMA_COLS.
-The declarations there -- the channel vocabulary, the raw_score direction/range
-contract, and `validate_gpr` -- are the GPR table's definition, and both mappers in
-`transforms/fabfos/` read them from here rather than restating them.
+Every lane reader emits the unified 10-column schema declared below as SCHEMA_COLS.
+The declarations there -- the channel vocabulary, the raw-score range contract, the
+score-to-nats calibration, and `validate_gpr` -- are the GPR table's definition, and
+both mappers in `transforms/fabfos/` read them from here rather than restating them.
+
+Confidence leaves a lane as `llr`, one number in nats, and the lane's own scale does
+not survive the reader. `ref::lane_calibration` holds the per-lane curve that makes
+that conversion; `calibrate` is the only place it is applied.
 
 The compiler folds the four fresh-annotation lanes into one evidence table (the
 canonical `dl_ec` variant); ECSPr consumes it as functional_annotation::evidence_table.
@@ -114,11 +118,38 @@ def _from_polars(df) -> pd.DataFrame:
     return pd.DataFrame({c: df[c].to_numpy() for c in df.columns})
 
 SCHEMA_COLS = [
-    "source", "orf", "channel", "mnxr",
+    "source", "orf", "gene", "channel", "mnxr",
     "intermediate_id", "intermediate_name",
-    "raw_score", "score_kind", "projection_via",
+    "llr", "llr_route", "projection_via",
     "evidence_quality", "lane_set",
 ]
+
+# WHERE THIS ROW'S `llr` CAME FROM. A number in nats says nothing about whether anyone
+# measured it, and the tree holds both kinds at once: a `full_7` table is weighted on
+# its four fitted lanes and flat on the three that were never benchmarked. Without this
+# column the two are indistinguishable, and a ranking read off the flat half looks
+# exactly like a ranking read off the measured half.
+#
+# It is PER ROW, not per table, for that reason. It is core rather than an extension
+# block because every row has one -- there is no such thing as an llr from nowhere.
+LLR_ROUTES = (
+    # The lane's own score, through its fitted curve in `ref::lane_calibration`.
+    "calibrated",
+    # A lane with no fitted curve, at UNCALIBRATED_LLR. Not weighted-neutral --
+    # unweighted, and the difference matters when it is compared against a fitted lane.
+    "uncalibrated",
+    # An assertion channel at its declared constant (`ASSERTION_CHANNELS`). Nobody
+    # measured a curator; the constant is the strongest LLR any lane earned.
+    "asserted",
+    # A composition's bridge pseudo-reaction, at BRIDGE_LLR. Scaffolding the
+    # composition put there, not evidence about either member.
+    "bridge",
+    # Migrated off a pre-schema table that did not keep what the calibration reads.
+    # kofam stored a bare bitscore and dropped the family threshold the ratio needs,
+    # so there is nothing left to recover the score from. Re-run the mapper on the raw
+    # lane files to replace it.
+    "migrated",
+)
 
 # The grain: one row per (source, orf, channel, intermediate_id, mnxr). NO cross-lane
 # dedup -- the same ORF->MNXR claim from two lanes stays two rows, distinguished by
@@ -129,6 +160,18 @@ SCHEMA_COLS = [
 # names a construct rather than a sequence. One always-populated column is what lets
 # belief conservation group per nominator without a fallback chain deciding, per table,
 # which column that is.
+#
+# `gene` NAMES THE SAME THING A PERSON WOULD, and is null where nobody knows one. It is
+# core rather than an extension block because a conditions table selects on it by name:
+# a column that is present on the host table and absent on the clone table would make
+# one condition resolve differently depending on which tables were staged, which is the
+# silently-empty selection the algebra exists to refuse. An ORF from an unnamed contig
+# carries null here, and null is not selectable -- that is the honest answer, not a gap.
+
+# Core columns a row may leave null, and the only ones. `mnxr` is null exactly on a
+# roster row (a nominator in the population that resolves to no reaction); `gene` is
+# null wherever the producer knows no symbol.
+NULLABLE_CORE = ("mnxr", "gene")
 
 # ---------------------------------------------------------------------------
 # EXTENSION BLOCKS. Every GPR table in this tree is SCHEMA_COLS plus zero or more of
@@ -139,10 +182,21 @@ SCHEMA_COLS = [
 # A block is added when a LAYER needs it, not when a table happens to have it: a
 # consumer can then test for the block rather than for a column.
 SCHEMA_EXTENSIONS = {
-    # WHICH BUILD, WHICH ORGANISM, WHICH BACKGROUND. `unit_id` is the background
-    # selector `ecspr.model.gpr` reads -- the model or proteome these rows describe --
-    # and is what makes "this condition runs against this host" a concatenation.
-    "attribution": ("build_id", "host", "unit_id"),
+    # WHICH BUILD, WHICH ORGANISM, WHICH PHYSICAL COPY. `genome_unit` names ONE
+    # physically separate copy of DNA inside one cell -- a chromosome, a plasmid, a
+    # fosmid insert, an ASKA clone are each one -- and it is DECLARED here rather than
+    # inferred from a file name or from `source`, which is the engine's instance id on a
+    # pipeline-written table.
+    #
+    # It is the grain evidence pools over (`ecspr.model.evidence.ASSERTION_KEY`), and
+    # that is the whole account of what an overexpression is: the host's copy and the
+    # clone's copy are two units, so their conductances add. Collapse the two into one
+    # unit and every overexpression arm becomes a no-op.
+    #
+    # A unit is NOT an organism. Two organisms in one community are two `member`s, get
+    # private metabolites and are joined by bridges (`ecspr.model.compose`). Two units
+    # are one cell and simply add evidence.
+    "attribution": ("build_id", "host", "genome_unit"),
     # HOW THE NOMINATOR MAPS TO REACTIONS. An ORF maps per gene; a GEM gene maps
     # through a boolean rule, and `feature_kind=ruleless` says the model gave none.
     "feature": ("feature_kind", "feature_name", "gpr_rule"),
@@ -177,8 +231,13 @@ def extensions_of(df) -> tuple:
     Block membership is all-or-nothing: a table has the block or it does not. Counting
     columns cannot answer this -- core plus attribution+feature+universe is 18 wide,
     and so is the old cohort layout.
+
+    Retired spellings count as the column they became. A table on a pre-schema layout
+    HAS its blocks, under older names -- it is `to_unified`'s job to rename them, and
+    reading a legacy `unit_id` as a missing `genome_unit` would refuse the very tables
+    that mapping exists to accept.
     """
-    cols = set(df.columns)
+    cols = {_LEGACY_CORE.get(c, c) for c in df.columns}
     found = []
     for name, block in SCHEMA_EXTENSIONS.items():
         have = [c for c in block if c in cols]
@@ -222,80 +281,200 @@ CHANNELS = tuple(sorted(set(c for cs in LANE_SETS.values() for c in cs)))
 # ASSERTIONS, not lane evidence. A lane can fail -- which is why a lane set is checked
 # for completeness, by name. These cannot: there is no "the gem_gpr lane returned
 # nothing", only a table that does or does not carry a curated model. They are legal in
-# any table, exempt from the completeness check, and score `presence`.
-# channel -> the score_kind it carries.
+# any table and exempt from the completeness check.
+#
+# channel -> the LLR it carries, in nats. These are DECLARED, not measured: no truth set
+# adjudicates a curator. The value is the strongest LLR any lane earned on the DH10B
+# cohort (uniref50, 2.99), which is the conservative reading -- a curated GPR is at
+# least as good as the best annotator we can measure, and claiming more than the best
+# measured thing would be claiming something nothing here can check. `bridge` is
+# deliberately NOT one of them: a composition's bridge exists because the composition
+# put it there, and its conductance is set where the network is composed.
+ASSERTION_LLR = 2.99
+BRIDGE_LLR = 0.0
 ASSERTION_CHANNELS = {
-    "gem_gpr": "presence",           # a curated genome-scale model's own GPR
-    "manual_gpr": "presence",        # a curator's reading of a study
-    "curated_insertion": "presence", # an engineered construct the study introduced
-    "bridge": "bridge",              # an edge composed between two community members
+    "gem_gpr": ASSERTION_LLR,           # a curated genome-scale model's own GPR
+    "manual_gpr": ASSERTION_LLR,        # a curator's reading of a study
+    "curated_insertion": ASSERTION_LLR, # an engineered construct the study introduced
+    "bridge": BRIDGE_LLR,               # an edge composed between two community members
 }
 # The `lane_set` value for a table that carries assertions and no lane evidence.
 CURATED = "curated"
 
 # ---------------------------------------------------------------------------
-# `raw_score` is a DIRECTION AND RANGE contract, not a calibration.
+# `llr` IS ONE NUMBER IN ONE UNIT: what this call is worth as evidence, in nats.
 #
-# It is deliberately NOT comparable across channels: the one scheme that consumes it
-# numerically (buildlib/bench_evidence_weights.nomination_contributions) normalises
-# strictly within (orf, channel) as a share of sum, so a cross-channel calibration
-# would buy nothing. What that share-of-sum DOES require, and what was missing, is
-# that the number be non-null, finite, non-negative, and HIGHER-IS-STRONGER in every
-# channel -- otherwise the weakest call in a lane gets the largest weight, or a NaN
-# collapses the lane to uniform with nothing raised.
+#     llr = log P(this call | the reaction is real) / P(this call | it is not)
 #
-# `score_kind` says what the number is, so a consumer that reaches for a cross-channel
-# comparison can see that it must not.
-SCORE_KINDS = {
-    # HMM bitscore, above the family's own KOfam threshold. Unbounded above.
-    "hmm_bitscore": (0.0, None),
-    # CLEAN's GMM-calibrated confidence, exactly as its wrapper writes it. Already
-    # higher-is-stronger and already in [0, 1], so the lane stores it unchanged.
-    "clean_confidence": (0.0, 1.0),
-    # RETIRED, AND REVERSED. `clean_score` was read as a maxsep DISTANCE and stored
-    # as 1/(1+d), which ranked every CLEAN call backwards -- the weakest call in the
-    # lane got the largest weight. It is not a distance. Measured against the
-    # 1,288-ORF DH10B truth set: correct calls sit at a median clean_score of 0.9973
-    # and wrong ones at 0.1328 (AUC 0.897 in the higher-is-better direction), and
-    # ORFs with no curated EC at all average 0.044 against 0.884 for those that have
-    # one. The mechanism is CLEAN's GMM calibration, which its wrapper enables by
-    # linking `data/pretrained/gmm_ensumble.pkl`; the numbers above are the evidence,
-    # and they do not depend on that reading. The kind is kept so a table produced
-    # before the fix SAYS its CLEAN lane is inverted rather than passing as sound;
-    # nothing writes it now, and such a lane must be re-derived, not rescaled.
-    "clean_maxsep_inv": (0.0, 1.0),
-    # DIAMOND bit-score ratio. ~1.0 for a self-hit; the ceiling is slack, not a claim.
-    "blast_bsr": (0.0, 4.0),
-    # kNN label-transfer vote fraction over the top-K reference neighbours.
-    "knn_vote": (0.0, 1.0),
+# It replaces `raw_score` and `score_kind` together. Those two said "here is a number,
+# and here is which incomparable scale it is on" -- a pair that only existed because
+# nothing had measured the lanes against each other. `ref::lane_calibration` has, so
+# the second column has nothing left to say and the first is no longer a lane's own
+# scale. See research/fabfos/annotation_lanes/calibration/.
+#
+# ADDITIVITY IS THE PROPERTY THAT MATTERS. Two independent calls about one reaction
+# add, in log-odds and in no other coordinate, which is exactly what `pool_logodds`
+# does with them. A precision could not be added, and a share-of-sum could not be
+# compared between lanes.
+#
+# THE RANGE CONTRACT DID NOT GO AWAY, it moved. A lane's own score is still a
+# direction-and-range claim -- higher is stronger, within these bounds -- and it is
+# still worth refusing a violation, because a reversed or out-of-range score becomes a
+# confidently wrong number of nats rather than an obviously wrong one. It is checked
+# where the score is turned into nats (`calibrate`), which is the last place the raw
+# number exists.
+RAW_SCORE_RANGE = {
+    # score / the family's own KOfam threshold. >= 1 by construction; ~39 at the top of
+    # the DH10B cohort. The ceiling is slack.
+    "kofam": (1.0, 200.0),
+    # CLEAN's GMM-calibrated confidence, as its wrapper writes it. IT IS NOT A DISTANCE:
+    # it was read as maxsep and stored as 1/(1+d) for a while, which ranked every CLEAN
+    # call backwards. Correct calls sit at a median 0.9973 and wrong ones at 0.1328 on
+    # the DH10B truth set, which is what settled the direction.
+    "clean": (0.0, 1.0),
+    # DIAMOND bit-score ratio. ~1.0 for a self-hit; a little over is normal.
+    "uniref50": (0.0, 4.0),
+    # kNN label-transfer vote share over the admitted neighbours.
+    "pbert": (0.0, 1.0),
+    "esmc": (0.0, 1.0),
     # A classifier head's softmax over EC classes.
-    "softmax": (0.0, 1.0),
-    # A score-less tool asserting presence. Exactly 1.0 -- NOT NaN, which the
-    # share-of-sum reads as "no evidence anywhere in this lane".
-    "presence": (1.0, 1.0),
-    # A composed edge between two members of a community. Unit weight because the
-    # bridge's conductance is set where the network is composed, not where it is
-    # nominated -- see the compose step, which reads this as an existence claim.
-    "bridge": (1.0, 1.0),
+    "ezpred": (0.0, 1.0),
+    # A score-less tool asserting presence.
+    "deepec": (1.0, 1.0),
 }
 
-CHANNEL_SCORE_KIND = {
-    "kofam": "hmm_bitscore",
-    "clean": "clean_confidence",
-    "uniref50": "blast_bsr",
-    "pbert": "knn_vote",
-    "esmc": "knn_vote",
-    "deepec": "presence",
-    "ezpred": "softmax",
-}
+# THE PRIOR THE LLR IS MEASURED AGAINST, and the one `pool_logodds` combines it with.
+# They are THE SAME NUMBER and that is not a coincidence -- it is the invariant this
+# whole scheme rests on:
+#
+#     sigmoid(llr + POOL_LAM0) == P(this call is correct)
+#
+# so a reaction carrying exactly one assertion comes out at that assertion's own
+# calibrated accuracy, and further assertions move it from there. Let the two drift
+# apart and a single-assertion reaction lands at a number that is nobody's estimate of
+# anything.
+#
+# **CAUTION** This is NOT the benchmark's prevalence. `pi_fit` in the calibration
+# artifact is the share of correct calls among calls the lanes MADE, which is 0.947 on
+# curated K-12 -- the reference the fitted intercept is relative to, and the wrong
+# reference to floor against, because "worse than the average call" is not the same
+# claim as "evidence the reaction is absent". POOL_LAM0 is the declared prior that a
+# reaction is present at all before any lane speaks, which is where an LLR belongs.
+# It is inherited unchanged from the pre-calibration pooling, so a before/after
+# comparison moves the RELATIVE weights and nothing else.
+#
+# `ecspr.model.evidence.POOL_LAM0` carries the same value for the consumer side and
+# checks it against the artifact. Two homes, one number, one assertion that says so.
+POOL_LAM0 = -3.0
 
-# A score_kind no producer writes any more -> what replaced it. `validate_gpr` still
-# ACCEPTS a table carrying one, because refusing would only make an already-wrong
-# table unreadable; it names the retirement instead, so the reason is on screen where
-# the table is used rather than in a commit message.
-RETIRED_SCORE_KINDS = {
-    "clean_maxsep_inv": "clean_confidence",
-}
+# A sane ceiling on the column itself, in nats. e^20 is 4.9e8 to 1 -- far past anything
+# a single annotation call could earn, and the number a scale error lands on.
+LLR_CEILING = 20.0
+
+# A lane whose calibration the artifact does not carry. DeepEC is score-less and EZpred
+# was never fitted, so the 7-lane mapper needs a value for them. It is deliberately the
+# WEAKEST fitted lane's floor rather than an average: an unmeasured lane should not
+# outweigh a measured one, and a placeholder that happened to sit mid-pack would be
+# claiming a measurement nobody made.
+UNCALIBRATED_LLR = 2.0
+
+
+def load_calibration(path):
+    """`ref::lane_calibration` as a dict, or None.
+
+    None is legal and means "no lane is calibrated": every lane then gets
+    UNCALIBRATED_LLR and the table says so. That is the migration path for a table
+    built before the reference existed, not a mode to run in.
+    """
+    import json
+    if path is None:
+        return None
+    p = Path(path)
+    if p.is_dir():
+        p = p / "lane_calibration.json"
+    if not p.exists():
+        return None
+    doc = json.loads(p.read_text())
+    ref = (doc.get("prior") or {}).get("reference_lam0")
+    if ref is not None and abs(float(ref) - POOL_LAM0) > 1e-9:
+        raise SystemExit(
+            "[gpr] " + str(p) + " was fitted against a prior of " + str(ref)
+            + " but this library declares POOL_LAM0 = " + str(POOL_LAM0) + ". The two "
+            "must agree, or a reaction with one assertion lands at a number that is "
+            "nobody's estimate of anything. Re-emit the calibration or revert the "
+            "constant -- do not paper over it")
+    if doc.get("schema") != "lane_calibration/v1":
+        raise SystemExit(
+            "[gpr] " + str(p) + " declares schema " + repr(doc.get("schema"))
+            + ", not 'lane_calibration/v1'. The apply rule is versioned with the "
+            "parameters on purpose -- a v2 that changed the clamp or the floor would "
+            "read as v1 and silently reweight every reaction")
+    return doc
+
+
+def llr_route_for(cal, channel: str) -> str:
+    """Which of LLR_ROUTES `calibrate` will have taken for this channel.
+
+    Read from the same two inputs `calibrate` branches on, so the column cannot claim a
+    fitted curve the artifact does not carry. A lane absent from the artifact is
+    `uncalibrated` whether the artifact is missing entirely or merely missing that lane
+    -- both give UNCALIBRATED_LLR, and both are the same claim about the number.
+    """
+    if channel in ASSERTION_CHANNELS:
+        return "bridge" if channel == "bridge" else "asserted"
+    if cal is None or channel not in cal.get("lanes", {}):
+        return "uncalibrated"
+    return "calibrated"
+
+
+def calibrate(cal, channel: str, scores) -> np.ndarray:
+    """A lane's own scores -> nats, by that lane's fitted curve.
+
+        llr = max(0, A * transform(clip(score, score_min, score_max)) + B - lam0)
+
+    THE CLAMP. Outside the fitted range the curve is extrapolation and nothing supports
+    it, so a score below `score_min` is worth what `score_min` is worth rather than
+    less. A lane that saturates -- ProteinBERT votes exactly 1.0 for over half its
+    calls -- would otherwise run its LLR wherever the transform's asymptote goes.
+
+    THE FLOOR. These lanes do not emit disconfirming calls: every one of them is a
+    positive assertion that a reaction is there. A negative LLR would say the call is
+    evidence AGAINST the reaction, which no lane here means. It means the lane's own
+    abstain is set too loose, and the honest reading of a call that weak is that it is
+    worth nothing -- not that it argues the other way.
+
+    **CAUTION** The floor is only meaningful because `lam0` is POOL_LAM0 rather than
+    the benchmark's own call prevalence. Against the latter it fires on every
+    below-average call -- 58% of the CLEAN and ProteinBERT lanes on DH10B -- which
+    reads "worse than average" as "argues the reaction is absent". They are not the
+    same claim, and the reference is what separates them.
+    """
+    import numpy as np  # local: the module is pandas-only for its bridge callers
+    s = np.asarray(scores, dtype=float)
+    lo, hi = RAW_SCORE_RANGE.get(channel, (None, None))
+    if len(s) and lo is not None:
+        # 1e-6 of slack: a kNN vote is a convex combination that sums to 1 in exact
+        # arithmetic and to 1.0000001 in float32.
+        if s.min() < lo - 1e-6 or s.max() > hi + 1e-6:
+            raise SystemExit(
+                "[gpr] channel " + repr(channel) + " scores run ["
+                + ("%.6g" % s.min()) + ", " + ("%.6g" % s.max()) + "], outside the "
+                "declared [" + str(lo) + ", " + str(hi) + "]. A reversed or rescaled "
+                "score does not fail here -- it becomes a confident number of nats")
+    if cal is None or channel not in cal.get("lanes", {}):
+        return np.full(len(s), UNCALIBRATED_LLR, dtype=float)
+    p = cal["lanes"][channel]
+    lam0 = float(cal["prior"]["reference_lam0"])
+    x = np.clip(s, p["score_min"], p["score_max"])
+    kind, eps = p["transform"], float(p["eps"])
+    if kind == "log":
+        x = np.log(np.clip(x, eps, None))
+    elif kind == "logit":
+        q = np.clip(x, eps, 1.0 - eps)
+        x = np.log(q / (1.0 - q))
+    elif kind != "identity":
+        raise SystemExit("[gpr] unknown calibration transform " + repr(kind))
+    return np.maximum(0.0, float(p["A"]) * x + float(p["B"]) - lam0)
 
 # Carried from ref::mnxr_lookup, which already computes it and whose keep-first dedup
 # already retains the stronger claim -- it was simply being dropped at the join. It is
@@ -426,6 +605,11 @@ _LEGACY_CORE = {
     "feature_id": "orf",
     "evidence_id": "intermediate_id",
     "evidence_name": "intermediate_name",
+    # `unit_id` said "the model or proteome these rows describe", which conflated the
+    # organism with the copy. `genome_unit` names ONE physically separate copy, and the
+    # rename is the whole change -- every committed table's values are already units in
+    # that sense.
+    "unit_id": "genome_unit",
 }
 # `feature_id` is null on a curated row -- a curated set names a construct, not a
 # sequence -- so the nominator is recovered in this order and `orf` is populated once,
@@ -445,15 +629,20 @@ def normalise_channel(ch: str) -> str:
     return RETIRED_CHANNELS.get(ch, ch)
 
 
-def to_unified(df, extensions=("attribution", "feature", "universe")):
+def to_unified(df, extensions=("attribution", "feature", "universe"), *, gene=None):
     """One of the pre-schema layouts -> SCHEMA_COLS plus `extensions`.
+
+    `gene` names the column holding the gene symbol, or None when the table has none.
+    It is NOT guessed. `feature_name` holds a model gene on a GEM table and an EC
+    description on a de-novo one, so reading it blind would populate the ontology this
+    column exists to consolidate with strings out of a different namespace.
 
     Single place for the mapping, so a producer and a one-off data migration cannot
     disagree about it. The caller names the blocks because only the caller knows which
     layer the table belongs to; the 18-column cohort tables add `cohort`.
 
     Raises rather than guessing: an assertion channel whose `raw_score` is not 1.0, or
-    a table carrying more than one `unit_id`, is a table this mapping does not describe.
+    a table carrying more than one `genome_unit`, is a table this mapping does not describe.
     """
     import pandas as pd
 
@@ -468,6 +657,13 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
         raise SystemExit(f"[gpr] {int(orf.isna().sum()) if orf is not None else 'every'} "
                          f"row(s) name no nominator in any of {_ORF_SOURCES}")
     out["orf"] = orf.astype(str)
+    if gene is None:
+        out["gene"] = pd.Series([None] * len(out), dtype="object")
+    elif gene not in out.columns:
+        raise SystemExit(f"[gpr] --gene names {gene!r}, which is not a column of this "
+                         f"table (has {sorted(out.columns)})")
+    else:
+        out["gene"] = out[gene].astype("object").where(out[gene].notna(), None)
 
     out["channel"] = out["channel"].map(normalise_channel)
     lanes = sorted(set(out["channel"]) - set(ASSERTION_CHANNELS))
@@ -477,8 +673,6 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
                          f"an assertion; the vocabulary is {list(CHANNELS)} plus "
                          f"{sorted(ASSERTION_CHANNELS)}")
 
-    out["score_kind"] = out["channel"].map(
-        lambda c: "presence" if c in ASSERTION_CHANNELS else CHANNEL_SCORE_KIND[c])
     assertion = out["channel"].isin(ASSERTION_CHANNELS)
     bad = out.loc[assertion & (out["raw_score"].astype(float) != 1.0)]
     if len(bad):
@@ -486,16 +680,44 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
                          f"not 1.0, e.g. {sorted(set(bad['raw_score']))[:3]} -- an "
                          f"assertion is a presence claim, not a ranked one")
 
-    if "unit_id" in out.columns and out["unit_id"].nunique() != 1:
-        raise SystemExit(f"[gpr] {out['unit_id'].nunique()} unit_ids in one table "
-                         f"{sorted(out['unit_id'].unique())[:4]}; `source` names one "
+    # A PRE-SCHEMA TABLE CANNOT BE CALIBRATED, and this does not pretend otherwise.
+    # Its `raw_score` is on the lane's own scale, but not on the scale the fit was
+    # made against: kofam stored a bare bitscore and dropped the family threshold the
+    # ratio needs, so there is nothing left to recover it from. Lane rows therefore
+    # migrate to UNCALIBRATED_LLR -- "one call at the corpus average" -- and say so.
+    # Re-run the mapper against the raw lane files to get a weighted table.
+    import numpy as np
+    out["llr"] = np.where(assertion,
+                          out["channel"].map(ASSERTION_CHANNELS).astype(float),
+                          UNCALIBRATED_LLR)
+    # An assertion migrates EXACTLY -- its constant is declared, not fitted, so the
+    # pre-schema table and a freshly written one carry the same number for the same
+    # reason. Only the lane rows lose anything, and only they say `migrated`.
+    out["llr_route"] = np.where(
+        assertion, out["channel"].map(
+            {c: ("bridge" if c == "bridge" else "asserted") for c in ASSERTION_CHANNELS}),
+        "migrated")
+    n_lane = int((~assertion).sum())
+    if n_lane:
+        print(f"[gpr] WARNING: migrating {n_lane:,} lane rows with llr = "
+              f"{UNCALIBRATED_LLR}. A pre-schema table did not keep what the "
+              f"calibration reads, so this table is unweighted, not weighted-neutral. "
+              f"Re-run the mapper on the raw lane files.", flush=True)
+
+    if "genome_unit" in out.columns and out["genome_unit"].nunique() != 1:
+        raise SystemExit(f"[gpr] {out['genome_unit'].nunique()} genome_units in one table "
+                         f"{sorted(out['genome_unit'].unique())[:4]}; `source` names one "
                          f"artifact, so this table is really several")
-    # `source` names the artifact the rows were read out of. A pre-schema table did not
-    # record one, and `unit_id` is the closest thing it has -- so a migrated table says
-    # the model or proteome where a freshly produced one says the ORF set it was mapped
-    # from. Both are true of the table; they are not the same string, and a reader
+    # `source` names the artifact the rows were read out of. A table that RECORDS one
+    # keeps it: `source` is half the grain key, so overwriting a real value strands
+    # every row against anything joined to it -- which is what happened to the cohort
+    # graft, whose reparsed mapper says `eydallin_clones` where the unit says `clones`.
+    # Only the oldest layout is missing it, and there `genome_unit` is the closest thing
+    # the table has, so a migrated row from THAT era says the model or proteome where a
+    # freshly produced one says the ORF set. They are not the same string, and a reader
     # comparing `source` across the two eras has to know that.
-    out["source"] = out["unit_id"].astype(str) if "unit_id" in out.columns else ""
+    if "source" not in out.columns or out["source"].isna().all():
+        out["source"] = out["genome_unit"].astype(str) if "genome_unit" in out.columns else ""
     # The lane set is a property of the evidence, not of the file: a table with no lane
     # channels asserts rather than measures, whatever it is called.
     out["lane_set"] = _lane_set_for(set(lanes))
@@ -524,7 +746,7 @@ def read_gpr(paths, extensions=None):
     nominator lived in `feature_id`, `feature_name` or `evidence_id`.
 
     `extensions` defaults to the blocks the table already carries. Pass it to require
-    a block: a reader that needs `unit_id` should say so and fail on a table without it,
+    a block: a reader that needs `genome_unit` should say so and fail on a table without it,
     rather than discover the gap as a KeyError three frames later.
     """
     if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
@@ -611,14 +833,14 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
     # population and resolves to no reaction at all. A census keeps those rows on
     # purpose -- dropping them would silently shrink the denominator of every rate
     # measured over the population. On a lane row a null mnxr is a broken join.
-    core = [c for c in SCHEMA_COLS if c != "mnxr"]
+    core = [c for c in SCHEMA_COLS if c not in NULLABLE_CORE]
     nulls = {c: int(df[c].isna().sum()) for c in core if df[c].isna().any()}
     n_bad_mnxr = int((df["mnxr"].isna() & ~assertion).sum())
     if n_bad_mnxr:
         nulls["mnxr (on lane rows)"] = n_bad_mnxr
     if nulls:
         raise SystemExit(f"[gpr] null values in {nulls} -- every core column is "
-                         f"non-null by contract, except `mnxr` on an assertion row")
+                         f"non-null by contract, except {list(NULLABLE_CORE)}")
 
     allowed = set(expected) | set(ASSERTION_CHANNELS)
 
@@ -629,57 +851,35 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
             f"the vocabulary is {list(expected)} plus the assertion channels "
             f"{sorted(ASSERTION_CHANNELS)}")
 
-    # An assertion is a presence claim. Scoring one any other way would put it on a
-    # lane's scale, where the share-of-sum would then rank it against real evidence.
+    # An assertion carries the declared constant and nothing else. A curated row that
+    # picked up a lane's fitted value would be claiming a measurement nothing made.
+    tol = 1e-6
     bad_assert = sorted(
-        f"{c}:{k}" for c, k in
-        df.loc[assertion, ["channel", "score_kind"]].drop_duplicates().itertuples(index=False)
-        if k != ASSERTION_CHANNELS[c])
+        f"{c}:{v:.4g}" for c, v in
+        df.loc[assertion, ["channel", "llr"]].drop_duplicates().itertuples(index=False)
+        if abs(float(v) - ASSERTION_CHANNELS[c]) > tol)
     if bad_assert:
-        raise SystemExit(f"[gpr] assertion channel(s) carry the wrong score_kind "
-                         f"{bad_assert}; the declared kinds are {ASSERTION_CHANNELS}")
+        raise SystemExit(f"[gpr] assertion channel(s) carry an llr that is not their "
+                         f"declared constant: {bad_assert}; declared {ASSERTION_CHANNELS}")
 
-    # --- score contract
-    bad_kind = set(df["score_kind"].unique()) - set(SCORE_KINDS)
-    if bad_kind:
-        raise SystemExit(f"[gpr] unknown score_kind(s) {sorted(bad_kind)}; known: {sorted(SCORE_KINDS)}")
-    for ch, kind in df.groupby("channel")["score_kind"].agg(lambda s: sorted(set(s))).items():
-        want = ASSERTION_CHANNELS.get(ch) or CHANNEL_SCORE_KIND[ch]
-        # A retired kind is accepted ONLY when it is the whole channel. A table
-        # concatenated from a pre-fix and a post-fix run carries both kinds on one
-        # channel, and that is the one case that must not pass: both declare the
-        # range (0, 1) so no bound catches it, no consumer branches on score_kind,
-        # and nothing marks which rows are which -- half the column would be
-        # 1/(1+d) and half the raw confidence, unrecoverably.
-        retired = sorted(k for k in kind if RETIRED_SCORE_KINDS.get(k) == want)
-        if kind == retired:
-            print(f"[gpr] WARNING: channel {ch!r} carries the retired score_kind "
-                  f"{retired}, now {want!r}. The table is readable and its raw_score "
-                  f"is not -- see SCORE_KINDS for what that number actually is. "
-                  f"Re-run the mapper rather than rescaling it.", flush=True)
-        elif kind != [want]:
-            extra = f" -- it mixes the retired {retired} with {want!r}, so the column " \
-                    f"is half one scale and half the other" if retired else ""
-            raise SystemExit(f"[gpr] channel {ch!r} carries score_kind {kind}, "
-                             f"expected ['{want}']{extra}")
-    s = df["raw_score"].astype(float)
+    # --- the evidence contract. One number, one unit, one direction.
+    s = df["llr"].astype(float)
     if not np.isfinite(s).all():
         n = int((~np.isfinite(s)).sum())
         raise SystemExit(
-            f"[gpr] {n:,} raw_score values are NaN or infinite. The downstream "
-            f"share-of-sum reads a NaN lane total as zero and silently falls back "
-            f"to a uniform split, so this must never reach the table")
-    # float32 slack: a kNN vote is a convex combination that sums to 1 in exact
-    # arithmetic and to 1.0000001 in float32. The bound is a contract about the
-    # scale, not about the last mantissa bit.
-    tol = 1e-6
-    for kind, grp in df.groupby("score_kind"):
-        lo, hi = SCORE_KINDS[kind]
-        v = grp["raw_score"].astype(float)
-        if lo is not None and v.min() < lo - tol:
-            raise SystemExit(f"[gpr] score_kind {kind!r}: min {v.min():.9g} below the declared floor {lo}")
-        if hi is not None and v.max() > hi + tol:
-            raise SystemExit(f"[gpr] score_kind {kind!r}: max {v.max():.9g} above the declared ceiling {hi}")
+            f"[gpr] {n:,} llr values are NaN or infinite. Pooling sums this column, so "
+            f"one NaN takes a whole reaction's belief with it")
+    if s.min() < -tol:
+        raise SystemExit(
+            f"[gpr] {int((s < -tol).sum()):,} llr values are negative, the lowest "
+            f"{s.min():.4g}. These lanes do not emit disconfirming calls; `calibrate` "
+            f"floors at zero, so a negative here means the column was written by "
+            f"something that bypassed it")
+    if s.max() > LLR_CEILING:
+        raise SystemExit(
+            f"[gpr] llr reaches {s.max():.4g} nats, past the {LLR_CEILING} ceiling. "
+            f"e^{LLR_CEILING:.0f} is odds no single annotation call earns -- this is "
+            f"what a raw score written into the column looks like")
 
     # --- keys and vocabularies
     named = df.loc[df["mnxr"].notna()]
@@ -690,6 +890,20 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
     bad_eq = set(df["evidence_quality"].unique()) - set(EVIDENCE_QUALITY)
     if bad_eq:
         raise SystemExit(f"[gpr] unknown evidence_quality {sorted(bad_eq)}; known: {list(EVIDENCE_QUALITY)}")
+    bad_route = set(df["llr_route"].unique()) - set(LLR_ROUTES)
+    if bad_route:
+        raise SystemExit(f"[gpr] unknown llr_route {sorted(bad_route)}; known: "
+                         f"{list(LLR_ROUTES)}")
+    # An assertion's weight is a declared constant and a lane's is not, so the two
+    # cannot share a route. A lane row claiming `asserted` would read as a curator's
+    # call, which is the one thing this column exists to keep separable.
+    crossed = sorted(set(
+        f"{c}/{r}" for c, r in
+        df[["channel", "llr_route"]].drop_duplicates().itertuples(index=False)
+        if (c in ASSERTION_CHANNELS) != (r in ("asserted", "bridge"))))
+    if crossed:
+        raise SystemExit(f"[gpr] channel and llr_route disagree about whether the row "
+                         f"is an assertion: {crossed}")
     # A COMPOSED network is a community, and its rows come from two places: each
     # member's own lane evidence, and the bridges that join them. Those are different
     # claims, so they carry different `lane_set` values in one table -- which is why a
@@ -734,12 +948,16 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
                           if (df["channel"] == c).any()]
     for ch in tuple(expected) + tuple(present_assertions):
         g = df[df["channel"] == ch]
-        v = g["raw_score"].astype(float)
+        v = g["llr"].astype(float)
+        # The share at zero is the number to watch: it is how much of a lane the
+        # calibration floored, and a lane that is mostly zero has an abstain set too
+        # loose rather than a weighting problem.
         print(f"[gpr]   {ch:9s} {len(g):>9,} rows  {g['orf'].nunique():>7,} ORFs "
               f"({100.0*g['orf'].nunique()/max(n_ids,1):5.1f}% cover)  "
               f"{g['mnxr'].nunique():>6,} MNXR  "
-              f"score[{g['score_kind'].iat[0]}] min={v.min():.4g} "
-              f"med={v.median():.4g} max={v.max():.4g}", flush=True)
+              f"llr med={v.median():.4g} max={v.max():.4g} "
+              f"zero={100.0*(v <= 0).mean():.1f}%  "
+              f"{'/'.join(sorted(set(g['llr_route'])))}", flush=True)
     print(f"[gpr]   evidence_quality {df['evidence_quality'].value_counts().to_dict()}", flush=True)
     return df
 
@@ -838,22 +1056,32 @@ def _clean_stitle(stitle: str) -> str:
 # pipeline as it runs now. Both emit the same schema and the same channel names.
 # =====================================================================
 
-def _finish(df: pd.DataFrame, source: str, channel: str, lane_set: str) -> pd.DataFrame:
-    """Stamp the columns every lane sets identically and order to the schema."""
+def _finish(df: pd.DataFrame, source: str, channel: str, lane_set: str,
+            cal=None) -> pd.DataFrame:
+    """Stamp the columns every lane sets identically and order to the schema.
+
+    `raw_score` is consumed here and never leaves: it is the last point at which the
+    lane's own scale exists, so it is the only correct place to turn it into nats."""
     df["source"] = source
     df["channel"] = channel
-    df["score_kind"] = CHANNEL_SCORE_KIND[channel]
+    df["llr"] = calibrate(cal, channel, df.pop("raw_score").to_numpy())
+    df["llr_route"] = llr_route_for(cal, channel)
     df["lane_set"] = lane_set
     if "evidence_quality" not in df.columns:
         df["evidence_quality"] = "reviewed"
     if "intermediate_name" not in df.columns:
         df["intermediate_name"] = ""
     df["intermediate_name"] = df["intermediate_name"].fillna("")
+    # A lane annotates a sequence and never learns a gene symbol for it. Null here is
+    # the measurement, not a gap to be filled from `intermediate_name`, which holds an
+    # EC or KO description.
+    if "gene" not in df.columns:
+        df["gene"] = pd.Series([None] * len(df), dtype="object")
     return df[SCHEMA_COLS]
 
 
 def read_kofam(path, source: str, ko_to_mnxr: pd.DataFrame,
-               lane_set: str = "chosen_4") -> pd.DataFrame:
+               lane_set: str = "chosen_4", cal=None) -> pd.DataFrame:
     """Load *.kofam.csv, keep above-threshold hits, project KO -> MNXR."""
     if path is None or not Path(path).exists():
         return pd.DataFrame(columns=SCHEMA_COLS)
@@ -868,17 +1096,21 @@ def read_kofam(path, source: str, ko_to_mnxr: pd.DataFrame,
         df["orf_id"] = df["contig"].astype(str) + "_" + df["orf"].astype(str)
     else:
         df["orf_id"] = df["orf"].astype(str)
-    df = df[["orf_id", "ko", "score", "description"]].rename(
-        columns={"orf_id": "orf", "score": "raw_score", "description": "intermediate_name"}
+    # THE RATIO, not the bitscore. A bitscore is a length-and-family quantity; the
+    # family's own threshold is the only thing that makes two of them comparable, and
+    # it is already a column here.
+    df["raw_score"] = df["score"] / df["hmm_threshold"]
+    df = df[["orf_id", "ko", "raw_score", "description"]].rename(
+        columns={"orf_id": "orf", "description": "intermediate_name"}
     )
     df = df.merge(ko_to_mnxr, on="ko", how="inner")
     df["intermediate_id"] = df["ko"]
     df["projection_via"] = "kegg.reaction"
-    return _finish(df, source, "kofam", lane_set)
+    return _finish(df, source, "kofam", lane_set, cal)
 
 
 def read_dl_ec(path, source: str, ec_to_mnxr: pd.DataFrame,
-               lane_set: str = "full_7") -> pd.DataFrame:
+               lane_set: str = "full_7", cal=None) -> pd.DataFrame:
     """Load EZpred (ESM-C 600M DL-only) EC predictions, project EC -> MNXR.
 
     parquet columns: sequence_id, ec_number, score, head_kind. Keeps enzyme-head,
@@ -898,7 +1130,7 @@ def read_dl_ec(path, source: str, ec_to_mnxr: pd.DataFrame,
     df = df.rename(columns={"sequence_id": "orf", "score": "raw_score"})
     df["orf"] = df["orf"].str.replace(r"-(\d+)$", r"_\1", regex=True)
     df["projection_via"] = "ec"
-    return _finish(df, source, "ezpred", lane_set)
+    return _finish(df, source, "ezpred", lane_set, cal)
 
 
 _BLAST6_BSR_COLS = [
@@ -921,7 +1153,7 @@ def read_uniref50_titles(path) -> dict:
 
 
 def read_uniref50(path, source: str, uniprot_to_mnxr: pd.DataFrame,
-                  lane_set: str = "chosen_4", descriptions=None) -> pd.DataFrame:
+                  lane_set: str = "chosen_4", descriptions=None, cal=None) -> pd.DataFrame:
     """Load DIAMOND BLAST6+BSR; best-hit per ORF; project UniProt -> MNXR."""
     if path is None or not Path(path).exists():
         return pd.DataFrame(columns=SCHEMA_COLS)
@@ -949,11 +1181,11 @@ def read_uniref50(path, source: str, uniprot_to_mnxr: pd.DataFrame,
     joined = df.merge(uniprot_to_mnxr[cols], on="uniprot_accession", how="inner")
     joined["intermediate_id"] = joined["uniprot_accession"]
     joined["projection_via"] = joined["dr_source"]
-    return _finish(joined, source, "uniref50", lane_set)
+    return _finish(joined, source, "uniref50", lane_set, cal)
 
 
 def read_embed_transfer(path, source: str, _bridge=None,
-                        lane_set: str = "chosen_4") -> pd.DataFrame:
+                        lane_set: str = "chosen_4", cal=None) -> pd.DataFrame:
     """Load the embedding-transfer candidate table, ProteinBERT channel.
 
     Label transfer *is* the projection (mnxr already present,
@@ -969,7 +1201,7 @@ def read_embed_transfer(path, source: str, _bridge=None,
     # The pool is the bridge's `reviewed` cut by construction, so every transferred
     # label inherits that quality -- see compile/label_transfer_landmarks.py.
     df["evidence_quality"] = "reviewed"
-    return _finish(df, source, "pbert", lane_set)
+    return _finish(df, source, "pbert", lane_set, cal)
 
 
 # =====================================================================

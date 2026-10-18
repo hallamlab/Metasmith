@@ -1,24 +1,23 @@
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 
 def nomination_contributions(df: pd.DataFrame) -> pd.DataFrame:
+    # The build-side copy of `ecspr.model.evidence.nomination_contributions`. The split
+    # is UNIFORM: the score's discriminative job lives in `llr`, which `pool_logodds`
+    # reads, and splitting by score here as well would count the same evidence twice.
+    # See that module for the full argument.
     d = df.drop_duplicates(["orf", "channel", "intermediate_id", "mnxr"]).copy()
 
     nom = (
         d.groupby(["orf", "channel", "intermediate_id"], sort=False)
-        .agg(s_n=("raw_score", "max"), F_n=("mnxr", "nunique"))
+        .agg(F_n=("mnxr", "nunique"))
         .reset_index()
     )
     grp = nom.groupby(["orf", "channel"], sort=False)
-    nom["sum_s"] = grp["s_n"].transform("sum")
     nom["n_nom"] = grp["intermediate_id"].transform("count")
-
-    nonzero = nom["sum_s"] > 0
-    nom["w_n"] = np.where(nonzero, nom["s_n"] / nom["sum_s"], 1.0 / nom["n_nom"])
-    nom["contrib"] = nom["w_n"] / nom["F_n"]
+    nom["contrib"] = 1.0 / (nom["n_nom"] * nom["F_n"])
 
     out = d.merge(
         nom[["orf", "channel", "intermediate_id", "contrib"]],

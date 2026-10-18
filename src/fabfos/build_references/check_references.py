@@ -47,6 +47,9 @@ BREF = Path(__file__).resolve().parent
 
 from ecspr.bake import encoding as refs  # noqa: E402
 
+sys.path.insert(0, str(MLIB / "resources" / "lib"))
+import fabfos_evidence as fe  # noqa: E402
+
 FAILURES: list[str] = []
 
 
@@ -213,8 +216,8 @@ def check_gem_tables(results: Path) -> None:
         # exchanges and spontaneous chemistry are live in every condition.
         check(f"{host}: ruleless reactions have rows", n_ruleless > 0,
               f"{n_ruleless:,} of {len(d):,}")
-        uniform = bool((d["raw_score"] == 1.0).all())
-        check(f"{host}: raw_score is uniform 1.0", uniform,
+        uniform = bool((d["llr"].astype(float) == np.float32(fe.ASSERTION_LLR)).all())
+        check(f"{host}: llr is the uniform assertion constant", uniform,
               "a curated model asserts presence, not evidence strength")
 
     if "e_coli_epi300" in frames and "e_coli_dh10b" in frames:

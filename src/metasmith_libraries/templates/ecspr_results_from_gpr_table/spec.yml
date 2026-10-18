@@ -15,29 +15,35 @@ shared_input_paths: []
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/120147ec7de7440b8f21aa6711b414b2:
-      type: ecspr::atom_pairs
-      instance_id: 1e2053157c588ed3e461c5f19d372e84c37ef5ba272db936ea452719d7677ed806da
+    /msm_deferred/02770de549874521b5baaaa7ffc8a891:
+      type: ecspr::direction_ratios
+      instance_id: 1e200fb6f6c3c500c887ec3e1f51e3b7376614888b7f779f22322be0480813326cda
       origin: leaf
-    /msm_deferred/56cdc2995dca46bcb67980d57b731b15:
+    /msm_deferred/047b16967cff4aeba155da6fed50bff1:
+      type: ecspr::atom_pairs
+      instance_id: 1e2039fb0549855044348a4281eefeefe1681c46c6463d235b412a56bb3f51ba59fb
+      origin: leaf
+    /msm_deferred/4984b6c27c244e7d93a963352cae28b4:
       type: ecspr::conditions
       parents:
-        MwfMEJmSauYK@experiment.txt: fabfos::experiment
-      instance_id: 1e202c9a3b0ed108b99a0499a2fbde6123c98a0ffc6d0244b14dc7dc58e1cfceb2ba
+        34r3t62koKjY@experiment.txt: fabfos::experiment
+      instance_id: 1e2077907b59b1e33cc3698d5eb8b151dee6db20ebe5fad9407e887abbca04f9f223
       origin: leaf
-    /msm_deferred/b7e1210aae754aba9d53153e2ce01b6e:
-      type: ecspr::direction_ratios
-      instance_id: 1e2084d77fff72b33f158566f7763b79c8b13151f6e8c8f973fa85b8c102cbcfa314
+    /msm_deferred/89ea190cc08746e99a1d3f6767ab684c:
+      type: ecspr::ecspr_tests
+      parents:
+        34r3t62koKjY@experiment.txt: fabfos::experiment
+      instance_id: 1e20c831ade0d6e5880e4a3531832837871b426644da382df5b9253b462a94b2d264
       origin: leaf
-    /msm_deferred/fe06031e9a2b4ecdbda9676ae3b447f0:
+    /msm_deferred/999f2e65301b47fa81bb0f9ef9da52ff:
       type: annotation::gpr_table
       parents:
-        MwfMEJmSauYK@experiment.txt: fabfos::experiment
-      instance_id: 1e20ae3f65de37371acfe150b881c61a85e8daa835bad23b22fca33723c9dce40d69
+        34r3t62koKjY@experiment.txt: fabfos::experiment
+      instance_id: 1e20c308b92b612a859422098bec431c229028a65bea172b33567c260476e6b15af9
       origin: leaf
     experiment.txt:
       type: fabfos::experiment
-      instance_id: 1e20a4463c92423433c5cf6ccd738c532f5dbf90219d817dcbb5fcbf88818f98fcda
+      instance_id: 1e20ef893ec0c85f05a3fc9aac58d24ba3e2699735324fb857dadb5c846e11f5faf7
       origin: leaf
   values:
     experiment.txt: ecspr_measurement

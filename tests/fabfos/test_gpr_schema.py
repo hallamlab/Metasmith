@@ -15,12 +15,45 @@ EV_LIB = MLIB / "resources" / "lib" / "fabfos_evidence.py"
 sys.path.insert(0, str(EV_LIB.parent))
 import fabfos_evidence as fe  # noqa: E402
 
+# The retired spellings of the nominator column. A table on a pre-schema layout
+# names it in one of these, and `to_unified` is what renames it.
+_ORF_ALIASES = ("feature_id", "feature_name", "evidence_id")
+
 ORFS = ["pool1:megahit:k141_1:0-1200_1", "pool1:megahit:k141_1:1300-2400_2"]
 KOS = ["K00001", "K00002"]
 ECS = ["1.1.1.1", "2.7.1.1"]
 ACCS = ["P00001", "Q00002"]
 MNXRS = ["MNXR100001", "MNXR100002", "MNXR100003"]
 DIM = 16
+
+
+# `ref::lane_calibration`, cut down to the four fitted lanes and their real parameters.
+# REAL PARAMETERS ON PURPOSE: the fixture has to exercise the clamp, both transforms and
+# the constant-model branch, and a made-up curve would test `calibrate`'s arithmetic
+# against itself. `deepec`, `ezpred` and `esmc` are absent here because they are absent
+# from the artifact -- that is what makes a `full_7` table weighted on four lanes and
+# flat on three.
+_CALIBRATION = {
+    "schema": "lane_calibration/v1",
+    "prior": {"reference_lam0": fe.POOL_LAM0},
+    "lanes": {
+        "kofam": dict(transform="log", eps=1e-4, A=0.0, B=3.14485,
+                      score_min=1.00008, score_max=39.17484),
+        "clean": dict(transform="logit", eps=1e-4, A=0.45028, B=1.00176,
+                      score_min=0.0251, score_max=0.9989),
+        "uniref50": dict(transform="identity", eps=1e-4, A=0.0, B=5.86945,
+                         score_min=0.5872, score_max=1.0119),
+        "pbert": dict(transform="logit", eps=1e-4, A=0.25361, B=0.82117,
+                      score_min=0.03267, score_max=1.0),
+    },
+}
+
+
+def _write_calibration(d: Path) -> Path:
+    import json
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "lane_calibration.json").write_text(json.dumps(_CALIBRATION))
+    return d
 
 
 def _write_bridge(p: Path):
@@ -35,10 +68,17 @@ def _write_bridge(p: Path):
     pd.DataFrame(rows, columns=["id", "id_source", "mnxr", "evidence_quality"]).to_parquet(p, index=False)
 
 
+# ONE TAGGED RECORD AND ONE UNTAGGED ONE, in one FASTA. A RefSeq `_protein.faa` tags
+# every record; a prodigal contig tags none; and the mapper has to describe both without
+# a mode. `gene` is the tag or it is null, per record.
+GENE_OF = {ORFS[0]: "thrA", ORFS[1]: None}
+
+
 def _write_orfs(p: Path):
     with open(p, "w") as fh:
         for o in ORFS:
-            fh.write(f">{o} # some prodigal trailer\nMKV\n")
+            tag = f" [gene={GENE_OF[o]}]" if GENE_OF[o] else ""
+            fh.write(f">{o}{tag} # some prodigal trailer\nMKV\n")
 
 
 def _write_kofam(p: Path):
@@ -154,8 +194,10 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
     _write_bridge(work / "bridge.parquet")
     q = _write_query_embeddings(work / "pbert.parquet", rng)
     _write_landmarks(work / "landmarks", rng, table=lm_table, near=q)
+    _write_calibration(work / "calibration")
     kw = dict(
-        ev_lib=str(EV_LIB), orfs=str(work / "orfs.faa"),
+        ev_lib=str(EV_LIB), calibration=str(work / "calibration"),
+        orfs=str(work / "orfs.faa"),
         kofam=str(work / "kofam.csv"), clean=str(work / "clean.tsv"),
         uniref=str(work / "uniref.tsv"),
         uniref_descriptions=str(work / "uniref_descriptions.tsv"),
@@ -205,18 +247,24 @@ def _check_table(out: Path, lane_set: str):
     df = pd.read_parquet(out)
     assert list(df.columns) == fe.SCHEMA_COLS
     assert len(df) > 0
-    assert not df.isna().any().any(), "the schema is non-null in every column"
+    core = [c for c in fe.SCHEMA_COLS if c not in fe.NULLABLE_CORE]
+    assert not df[core].isna().any().any(), "the core is non-null in every column"
+    # The symbol is the FASTA header's, per record -- not a lane's, and not the table's.
+    assert dict(df.groupby("orf")["gene"].agg(
+        lambda s: s.dropna().unique()[0] if s.notna().any() else None)) == {
+        o: GENE_OF[o] for o in set(df["orf"])}
     expected = set(fe.LANE_SETS[lane_set])
     assert set(df["channel"]) == expected, f"missing channels: {expected - set(df['channel'])}"
     assert set(df["lane_set"]) == {lane_set}
     assert set(df["orf"]) <= set(ORFS)
     assert set(df["evidence_quality"]) <= set(fe.EVIDENCE_QUALITY)
-    for kind, grp in df.groupby("score_kind"):
-        lo, hi = fe.SCORE_KINDS[kind]
-        v = grp["raw_score"].astype(float)
-        assert np.isfinite(v).all(), f"{kind} carries a non-finite score"
-        assert lo is None or v.min() >= lo - 1e-6, f"{kind} min {v.min()} < {lo}"
-        assert hi is None or v.max() <= hi + 1e-6, f"{kind} max {v.max()} > {hi}"
+    # ONE COLUMN, ONE UNIT, ONE DIRECTION. The lane's own scale is gone by here --
+    # `calibrate` is the last place it exists -- so what survives to be checked is that
+    # every call is worth a non-negative, finite number of nats below the ceiling.
+    v = df["llr"].astype(float)
+    assert np.isfinite(v).all(), "a non-finite llr takes a whole reaction's belief"
+    assert v.min() >= -1e-6, "these lanes emit no disconfirming calls"
+    assert v.max() <= fe.LLR_CEILING, f"llr reaches {v.max()}, past the ceiling"
     key = ["source", "orf", "channel", "intermediate_id", "mnxr"]
     assert not df.duplicated(subset=key).any(), "the grain key is not unique"
     return df
@@ -233,7 +281,11 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     # a 1/(1+d) inversion on the reading that it was a distance, which ranked the
     # lane backwards -- the least confident call carried the largest weight.
     clean = df[df["channel"] == "clean"]
-    assert sorted(np.round(clean["raw_score"].unique(), 4)) == [0.15, 0.9974]
+    # The fixture's two admitted calls are 0.15 and 0.9974, and `clean` is the one lane
+    # here with a fitted SLOPE, so a reversal would show as an inverted order rather
+    # than as a flat column. Both land inside the fitted band [2.354, 7.069] nats.
+    lo, hi = sorted(np.round(clean["llr"].astype(float).unique(), 4))
+    assert 2.3 < lo < hi < 7.1, (lo, hi)
     # THE ABSTAIN. The 0.0008 call names an EC the bridge carries, so its absence is
     # the lane declining rather than a join that found nothing.
     assert len(clean[(clean["orf"] == ORFS[0]) & (clean["intermediate_id"] == ECS[1])]) == 0
@@ -256,9 +308,13 @@ def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "full_7")
 
-    deepec = df[df["channel"] == "deepec"]
-    assert (deepec["raw_score"] == 1.0).all()
-    assert set(deepec["score_kind"]) == {"presence"}
+    # THREE OF THESE SEVEN LANES HAVE NO FITTED CURVE. `deepec` is score-less, and
+    # `ezpred` and `esmc` were never benchmarked, so all three carry the declared
+    # placeholder and a `full_7` table is weighted on four lanes and flat on three.
+    for ch in ("deepec", "ezpred", "esmc"):
+        v = df.loc[df["channel"] == ch, "llr"].astype(float)
+        assert len(v) and (v == fe.UNCALIBRATED_LLR).all(), f"{ch}: {sorted(set(v))}"
+    assert df.loc[df["channel"] == "clean", "llr"].nunique() > 1
 
 
 def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):
@@ -376,33 +432,68 @@ def test_clean_lane_refuses_a_header_drift(tmp_path):
     assert not (tmp_path / "gpr.parquet").exists()
 
 
-def test_validator_rejects_an_out_of_range_score():
-    df = pd.DataFrame([{
-        "source": "orfs", "orf": ORFS[0], "channel": "pbert", "mnxr": MNXRS[0],
-        "intermediate_id": "REF0001", "intermediate_name": "",
-        "raw_score": 1.5, "score_kind": "knn_vote",
-        "projection_via": "embedding_knn", "evidence_quality": "reviewed",
-        "lane_set": "chosen_4",
-    }])
-    with pytest.raises(SystemExit, match="above the declared ceiling"):
+def _one_row(channel, lane_set, **over):
+    row = {
+        "source": "orfs", "orf": ORFS[0], "gene": None, "channel": channel,
+        "mnxr": MNXRS[0], "intermediate_id": ECS[0], "intermediate_name": "",
+        "llr": 4.0, "llr_route": fe.llr_route_for(_CALIBRATION, channel),
+        "projection_via": "ec", "evidence_quality": "reviewed",
+        "lane_set": lane_set,
+    }
+    row.update(over)
+    return pd.DataFrame([row])[fe.SCHEMA_COLS]
+
+
+def test_validator_rejects_an_llr_past_the_ceiling():
+    # What a raw score written straight into the column looks like. e^20 is odds no
+    # single annotation call earns, so past the ceiling is a scale error, not a strong
+    # call -- and it would otherwise pool as one.
+    df = _one_row("pbert", "chosen_4", llr=fe.LLR_CEILING + 1.0)
+    with pytest.raises(SystemExit, match="ceiling"):
         fe.validate_gpr(df, "chosen_4", ORFS, "orfs")
 
 
-def test_validator_rejects_a_nan_score():
-    df = pd.DataFrame([{
-        "source": "orfs", "orf": ORFS[0], "channel": "deepec", "mnxr": MNXRS[0],
-        "intermediate_id": ECS[0], "intermediate_name": "",
-        "raw_score": np.nan, "score_kind": "presence",
-        "projection_via": "ec", "evidence_quality": "reviewed",
-        "lane_set": "full_7",
-    }])
+def test_validator_rejects_a_negative_llr():
+    # These lanes emit no disconfirming calls and `calibrate` floors at zero, so a
+    # negative here means something bypassed it.
+    df = _one_row("pbert", "chosen_4", llr=-0.5)
+    with pytest.raises(SystemExit, match="negative"):
+        fe.validate_gpr(df, "chosen_4", ORFS, "orfs")
+
+
+def test_validator_rejects_a_nan_llr():
+    # Pooling SUMS this column, so one NaN takes a whole reaction's belief with it.
+    # The null check reaches it first, which is the same refusal by a shorter route --
+    # `llr` is core and not in NULLABLE_CORE. The finite check is what catches an inf.
+    df = _one_row("deepec", "full_7", llr=np.nan)
     with pytest.raises(SystemExit, match="null values"):
         fe.validate_gpr(df, "full_7", ORFS, "orfs")
+    with pytest.raises(SystemExit, match="NaN or infinite"):
+        fe.validate_gpr(_one_row("deepec", "full_7", llr=np.inf),
+                        "full_7", ORFS, "orfs")
+
+
+def test_validator_rejects_an_assertion_carrying_a_lanes_weight():
+    # A curated row that picked up a fitted value would claim a measurement nothing
+    # made. An assertion carries its declared constant or it is refused.
+    df = _one_row("manual_gpr", fe.CURATED, llr=6.157)
+    with pytest.raises(SystemExit, match="declared constant"):
+        fe.validate_gpr(df, fe.CURATED, ORFS, "orfs")
+
+
+def test_validator_accepts_a_null_gene():
+    # `gene` is core and nullable. A de-novo ORF from an unnamed contig has no symbol,
+    # and the validator must not read that as a malformed table.
+    fe.validate_gpr(_one_row("manual_gpr", fe.CURATED, llr=fe.ASSERTION_LLR),
+                    fe.CURATED, ORFS, "orfs")
 
 
 def test_the_channel_vocabulary_has_exactly_one_spelling():
-    assert set(fe.CHANNEL_SCORE_KIND) == set(fe.CHANNELS)
-    assert set(fe.CHANNEL_SCORE_KIND.values()) <= set(fe.SCORE_KINDS)
+    # Every lane declares the range its own score runs in, checked where that score is
+    # spent (`calibrate`). An undeclared lane turns an out-of-range score into a
+    # confident number of nats rather than a refusal.
+    assert set(fe.RAW_SCORE_RANGE) == set(fe.CHANNELS)
+    assert set(fe.ASSERTION_CHANNELS).isdisjoint(fe.CHANNELS)
     assert set(fe.LANE_SETS["chosen_4"]) < set(fe.LANE_SETS["full_7"])
     for mapper in ("gpr_4lane", "gpr_7lane"):
         # The transform declares the lane; the module under `lib::fabfos_gpr` is where
@@ -432,25 +523,38 @@ def test_the_schema_covers_every_gpr_table_in_the_tree():
     tables = sorted(set(
         glob.glob(str(REPO_ROOT / "data/fabfos/runs/*/gpr/*.parquet"))
         + glob.glob(str(REPO_ROOT / "data/fabfos/nostoc/annotation/*/gpr_4lane.parquet"))
-        + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/hosts/*/gpr_gem.parquet"))
         + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/*/gpr_manual.parquet"))))
     if not tables:
         pytest.skip("the DVC-tracked GPR tables are not materialised here")
 
-    refused, legacy_layout, checked = [], [], 0
+    # NOT EVIDENCE TABLES, and the walk says so by name rather than by falling through a
+    # column test. These two are reaction SETS -- mnxr x channel x origin, with no
+    # nominator and no weight -- written by an older host-plus-insert union arm. The
+    # schema describes nominations, so there is nothing here for it to describe.
+    NOT_EVIDENCE = {
+        "data/fabfos/runs/e_coli_epi300/gpr/gpr_epi300_clone2.parquet",
+        "data/fabfos/runs/e_coli_epi300/gpr/gpr_union_epi300_183.parquet",
+    }
+
+    refused, legacy_layout, unnamed, checked = [], [], [], 0
     for f in tables:
+        rel = str(Path(f).relative_to(REPO_ROOT))
         df = pd.read_parquet(f)
-        if not {"channel", "mnxr", "raw_score"} <= set(df.columns):
+        if not ({"orf", *_ORF_ALIASES} & set(df.columns)):
+            # A table with no nominator at all. Listed above, or it is news.
+            if rel not in NOT_EVIDENCE:
+                unnamed.append(rel)
             continue
+        assert rel not in NOT_EVIDENCE, f"{rel} grew a nominator; drop it from the list"
         ext = fe.extensions_of(df)
         try:
             if not fe.is_unified(df):
-                ext = ["attribution", "feature", "universe"]
-                if "condition_id" in df.columns:
-                    ext.append("cohort")
-                df = fe.to_unified(df, tuple(ext))
-                ext = tuple(ext)
-                legacy_layout.append(str(Path(f).relative_to(REPO_ROOT)))
+                # THE BLOCKS ARE READ OFF THE TABLE, not assumed. A mapper writes the
+                # core alone and the collector attaches attribution+feature+universe
+                # later, so demanding those three of every table refuses the 13
+                # perfectly good mapper outputs in this tree.
+                df = fe.to_unified(df, ext)
+                legacy_layout.append(rel)
             with contextlib.redirect_stdout(io.StringIO()):
                 fe.validate_gpr(df, df["lane_set"].iat[0], None, df["source"].iat[0],
                                 ext)
@@ -459,6 +563,9 @@ def test_the_schema_covers_every_gpr_table_in_the_tree():
             refused.append(f"{Path(f).relative_to(REPO_ROOT)}: {e}")
 
     assert checked, "the walk found no GPR table at all"
+    assert not unnamed, (
+        "these tables name no nominator in any spelling, so nothing here can group "
+        "belief over them:\n" + "\n".join(unnamed))
     assert not refused, "tables outside the schema:\n" + "\n".join(refused)
     assert not legacy_layout, (
         "these tables are on a pre-schema layout -- whatever wrote them is still "

@@ -19,15 +19,19 @@ shared_input_paths: []
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/489957f1aad94e6580cc871703492f59:
-      type: ref::mnxr_lookup
-      instance_id: 1e20b72a6f6af94fb7e870d7d4718e7147dbba4e5a2c3eb15e92fe151a390f362507
-      origin: leaf
-    /msm_deferred/5ad071967c0140e488c3affa6edb6fe3:
-      type: sequences::assembly
-      instance_id: 1e2041ec152185c4ce1bbe6b063ebed4a83ac8b6036dbdcdac21d5c9ee4b34431429
-      origin: leaf
-    /msm_deferred/99154cacdf57464291ec467c7c189f81:
+    /msm_deferred/619170b5152146c285038af993757fb7:
       type: ref::label_transfer_landmarks
-      instance_id: 1e20c495e6910b7518a4ad52a0873f01453f5614dcb336e962d0fccef2213bbd0239
+      instance_id: 1e20a737043eec887dfc0ca614b0dfc7aa5c91c5fc67e2966b7558ca7b5024708534
+      origin: leaf
+    /msm_deferred/78226614e07540b0ae7a3041247774a6:
+      type: ref::lane_calibration
+      instance_id: 1e20c36a78f9491f3dee5502f4889100fef7d58e28ccaea6d6e61d57cde9edcf4219
+      origin: leaf
+    /msm_deferred/c6afbb664a664ed593ea33f57e96ac2b:
+      type: sequences::assembly
+      instance_id: 1e2071a5b0be2792d3187635482b3bd91a1c85c368bf5e5821f27696e0b48c70c855
+      origin: leaf
+    /msm_deferred/e7657a89ef1241bcb64736c663a1f611:
+      type: ref::mnxr_lookup
+      instance_id: 1e20ae5cc1ed1cff98a798c89de1a1ca683ea8c3e647b1c652e7257bcfc16c18fe50
       origin: leaf

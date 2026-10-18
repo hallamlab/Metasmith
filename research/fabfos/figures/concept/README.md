@@ -246,9 +246,9 @@ Pointing the same instrument at a GPR table makes it one: the medium becomes the
 a host's called genes can run. E. coli EPI300's curated-GEM lane gives 2,290 MNXR, of which
 1,509 carry carbon atom-pair rows and the giant component keeps **1,489 reactions over 16,539
 atom nodes** — minutes, not the hours the universe cannot afford. The reaction set carries the
-organism claim on its own, so the graph is unweighted; folding in the per-call `raw_score`
-would additionally encode annotation confidence, and the two lanes do not score on one scale
-(`gpr_gem` is all 1.0 by construction, `gpr_denovo` spans 0.01 to 2293).
+organism claim on its own, so the graph is unweighted; folding in the per-call `llr`
+would additionally encode annotation confidence, which is a second claim the figure is not
+making.
 
 **99% of the current is not a sparsifying level.** Measured on this network with one ampere
 injected at D-glucose's six carbons: 99% of the current needs 88.3% of metabolites, 85.0% of

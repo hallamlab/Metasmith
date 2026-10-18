@@ -43,6 +43,11 @@ MAD_K = 1.4826  # MAD -> robust sigma for a normal
 # gets fitted over a population the combiner does not use.
 SIGMA_FLOOR_KJ = canon.DIR_SIGMA_FLOOR
 
+# The prior is fitted against THIS member's numbers, so it is THIS member's restaged
+# stoichiometry the correction has to come from. Taking dGbyG's would fit the prior to a
+# quantity no member on this path computed.
+CALIB_MEMBER = "eq"
+
 
 def robust(x: np.ndarray):
     med = float(np.median(x))
@@ -50,7 +55,27 @@ def robust(x: np.ndarray):
     return med, MAD_K * mad
 
 
-def points_from_member(curated_per_mnxr, reac_prop, eq_member):
+def attach_correction(points: pd.DataFrame, quotient=None) -> pd.DataFrame:
+    # Two quantities per point: `dg` as the member stated it, and `dg_physiological` with
+    # this reaction's quotient added. BOTH ARE KEPT even though the fit uses one, because a
+    # table holding only the selected column cannot be re-read to check the selection, and
+    # the held-out folds score the alternatives against each other.
+    #
+    # NO QUOTIENT MEANS NO CORRECTION, and then the two columns are equal by construction.
+    # That is what lets the standard-state arm of the re-bake run this same code.
+    corr = {}
+    if quotient is not None:
+        q = pd.read_parquet(quotient)
+        q = q[q["member"] == CALIB_MEMBER]
+        corr = dict(zip(q["mnxr"], q["dG_correction"].astype(float)))
+    points["dG_correction"] = points["mnxr"].map(corr).astype(float).fillna(0.0)
+    points["dg_physiological"] = (pd.to_numeric(points["dg"], errors="coerce")
+                                  + points["dG_correction"])
+    return points
+
+
+def points_from_member(curated_per_mnxr, reac_prop, eq_member,
+                       balance_gate=canon.DIR_BALANCE_GATE, quotient=None):
     # The same table as `compute_points`, READ rather than recomputed.
     #
     # WHY THIS EXISTS. `compute_points` instantiates `EquilibratorMember()` and re-scores
@@ -77,12 +102,11 @@ def points_from_member(curated_per_mnxr, reac_prop, eq_member):
             continue
         _st, is_bal, is_tr = s
         if is_tr:
+            # A transport reaction carries a membrane term that a standard dGr'0 does not
+            # model at all. Unlike the balance test below, restaging cannot fix that, so
+            # this gate stays above the member.
             rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
                              uses_gc=None, reason="transport", is_transport=True))
-            continue
-        if not is_bal:
-            rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
-                             uses_gc=None, reason="unbalanced", is_transport=False))
             continue
         if mnxr not in mem.index:
             # The member ran over the universe; a curated reaction outside it is a
@@ -91,15 +115,29 @@ def points_from_member(curated_per_mnxr, reac_prop, eq_member):
                              uses_gc=None, reason="not_in_member", is_transport=False))
             continue
         r = mem.loc[mnxr]
+        # THE BALANCE TEST BELONGS HERE, BELOW THE MEMBER, NOT ABOVE IT. `is_balanced`
+        # comes off raw `reac_prop`, but the member does not score the raw equation -- the
+        # substitution lane restages polymer and carrier chemistry first, and 546 curated
+        # reactions that reac_prop calls unbalanced come back from the member balanced and
+        # answered. Refusing them on the raw verdict discards a real measurement and, worse,
+        # changes the POPULATION the category prior is fitted on. An equation the member
+        # could not close still fails: it fails by the member declining it, which is a
+        # verdict about the equation that was actually scored.
+        answered = (balance_gate == "after_member"
+                    and r["reason"] == "ok" and pd.notna(r["dg"]))
+        if not is_bal and not answered:
+            rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
+                             uses_gc=None, reason="unbalanced", is_transport=False))
+            continue
         # The member writes the arm indicator as `flag`; calibration knows it as
         # `uses_gc`. One rename, in one place, rather than two schemas.
         rows.append(dict(mnxr=mnxr, category=cat, dg=r["dg"], sigma=r["sigma"],
                          uses_gc=r["flag"], reason=r["reason"], is_transport=False))
-    return pd.DataFrame(rows)
+    return attach_correction(pd.DataFrame(rows), quotient)
 
 
 def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None,
-                   substitutions=None):
+                   substitutions=None, quotient=None):
     cur = pd.read_parquet(curated_per_mnxr)
     cur = cur[cur["aligned"].notna()][["mnxr", "aligned"]]
     stoich = load_mnxr_stoich(reac_prop)
@@ -146,10 +184,14 @@ def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None,
             print(f"[calib] {n} eQ reactions attempted...", flush=True)
         if limit and n >= limit:
             break
-    return pd.DataFrame(rows)
+    return attach_correction(pd.DataFrame(rows), quotient)
 
 
-def calibrate(points: pd.DataFrame) -> pd.DataFrame:
+def calibrate(points: pd.DataFrame,
+              prior_quantity=canon.DIR_PRIOR_QUANTITY) -> pd.DataFrame:
+    if prior_quantity not in canon.DIR_PRIOR_QUANTITIES:
+        raise ValueError(f"unknown prior quantity {prior_quantity!r}; "
+                         f"expected one of {canon.DIR_PRIOR_QUANTITIES}")
     # One row per category from the MEASURED arm. tau deconvolves the eQ
     # measurement noise out of the observed spread (v = tau^2 + mean(sigma^2)).
     #
@@ -181,16 +223,27 @@ def calibrate(points: pd.DataFrame) -> pd.DataFrame:
         print(f"[calib] dropped {n_arm - len(measured)} of {n_arm} measured-arm anchors "
               f"with sigma at the {SIGMA_FLOOR_KJ} floor (no-information estimates)",
               flush=True)
+    # THE PRIOR IS FITTED ON THE QUANTITY THE COMBINER AVERAGES IT WITH. That is the
+    # physiological dG', for every category: what the combiner needs from a bin is the
+    # distribution of dG' inside it, and the label's semantics explain why the bins differ
+    # rather than which column each is fitted on. The scale is written into the table beside
+    # the centre, because a centre whose scale is not stated is exactly the defect this
+    # fixes.
+    scale = "unstated" if prior_quantity == "standard" else "physiological"
     out = []
     for cat, g in measured.groupby("category"):
-        dg = g["dg"].to_numpy(float)
+        dg = g["dg" if scale == "unstated" else "dg_physiological"].to_numpy(float)
         sig = g["sigma"].to_numpy(float)
         med, spread = robust(dg)
         var_obs = float(np.var(dg)) if len(dg) > 1 else 0.0
         tau2 = max(0.0, var_obs - float(np.mean(sig ** 2)))
         out.append(dict(category=cat, n=len(g), median=med, mad_spread=spread,
                         mean=float(np.mean(dg)), std=float(np.std(dg)),
-                        tau=float(np.sqrt(tau2)), mean_sigma=float(np.mean(sig))))
+                        tau=float(np.sqrt(tau2)), mean_sigma=float(np.mean(sig)),
+                        prior_quantity=scale,
+                        median_standard=float(np.median(g["dg"].to_numpy(float))),
+                        median_physiological=float(
+                            np.median(g["dg_physiological"].to_numpy(float)))))
     return pd.DataFrame(out).sort_values("n", ascending=False)
 
 
@@ -201,11 +254,21 @@ def sanity(cal: pd.DataFrame, points: pd.DataFrame):
     if "REVERSIBLE" in d:
         print(f"\n[check] REVERSIBLE median = {d['REVERSIBLE'].median:.2f} kJ/mol "
               f"(expect ~0)  n={d['REVERSIBLE'].n}")
+    # ANTISYMMETRY IS A LOOSER EXPECTATION ON THE CORRECTED NUMBER. A bin and its mirror
+    # would centre on opposite dG'o only if their chemistry mirrored too; the correction adds
+    # `molecularity`, which depends on the bin's dn distribution, and two directional bins do
+    # not mirror in dn. A gap here is a prompt to look, not a failure.
     for a, b in (("PHYSIOL-LEFT-TO-RIGHT", "PHYSIOL-RIGHT-TO-LEFT"),
                  ("LEFT-TO-RIGHT", "RIGHT-TO-LEFT")):
         if a in d and b in d:
             print(f"[check] antisymmetry {a} median={d[a].median:.2f} vs "
                   f"-({b}) = {-d[b].median:.2f}  (expect ~equal)")
+    moved = cal[cal["median_standard"] != cal["median_physiological"]]
+    if len(moved):
+        print("\n[check] the quotient moves each category's centre by:")
+        for r in moved.itertuples():
+            print(f"  {r.category:<24} {r.median_standard:8.2f} -> "
+                  f"{r.median_physiological:8.2f} kJ/mol   fitted on {r.prior_quantity}")
     ok = points[points["reason"] == "ok"]
     if len(ok):
         gc = int((ok["uses_gc"] == True).sum())    # noqa: E712
@@ -227,6 +290,19 @@ def main(argv=None):
                          "same transform, so re-instantiating component-contribution to "
                          "reproduce them is about half this lane's wall clock for no new "
                          "artifact and no new check")
+    ap.add_argument("--balance-gate", default=canon.DIR_BALANCE_GATE,
+                    choices=list(canon.DIR_BALANCE_GATES),
+                    help="whether the raw reac_prop balance test runs before or after the "
+                         "member is consulted")
+    ap.add_argument("--quotient", default=None,
+                    help="per-(MNXR, member) correction table from "
+                         "`ecspr.bake.direction.quotient annotate`. Omit and the two "
+                         "quantities coincide, which is the standard-state arm.")
+    ap.add_argument("--prior-quantity", default=canon.DIR_PRIOR_QUANTITY,
+                    choices=list(canon.DIR_PRIOR_QUANTITIES),
+                    help="'physiological' fits every category on the corrected number, "
+                         "which is what the combiner averages it with; 'standard' fits on "
+                         "dG'o and states no scale, which is r9")
     ap.add_argument("--out-calibration", required=True)
     ap.add_argument("--out-points", required=True)
     ap.add_argument("--limit", type=int, default=None, help="cap eQ reactions (testing)")
@@ -236,13 +312,16 @@ def main(argv=None):
                         "table, which already carries whatever the run was given.")
     a = ap.parse_args(argv)
     if a.eq_member:
-        points = points_from_member(Path(a.curated), Path(a.reac_prop), Path(a.eq_member))
+        points = points_from_member(Path(a.curated), Path(a.reac_prop), Path(a.eq_member),
+                                    balance_gate=a.balance_gate,
+                                    quotient=(Path(a.quotient) if a.quotient else None))
     elif a.chem_prop:
         points = compute_points(Path(a.curated), Path(a.reac_prop),
-                                Path(a.chem_prop), a.limit, a.substitutions)
+                                Path(a.chem_prop), a.limit, a.substitutions,
+                                quotient=(Path(a.quotient) if a.quotient else None))
     else:
         raise SystemExit("[calib] need --eq-member, or --chem-prop to re-score")
-    cal = calibrate(points)
+    cal = calibrate(points, prior_quantity=a.prior_quantity)
     points.to_parquet(a.out_points, index=False)
     cal.to_parquet(a.out_calibration, index=False)
     sanity(cal, points)

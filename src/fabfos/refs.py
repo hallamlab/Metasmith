@@ -81,6 +81,7 @@ REF_LAYOUT: dict[str, "str | tuple[str, ...]"] = {
     "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
     "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
     "ref::label_transfer_landmarks": "label_transfer_landmarks/landmarks",
+    "ref::lane_calibration": "lane_calibration/lane_calibration.json",
     "ecspr::atom_pairs": "metabolism_bake/atom_pairs.parquet",
     "ecspr::direction_ratios": "metabolism_bake/direction.parquet",
     "ref::esm_c_600m_weights": "esm_c_weights/esmc_600m.tgz",
@@ -94,6 +95,7 @@ ANNOTATION_REFS = (
     "ref::uniref50_diamond_db",
     "ref::mnxr_lookup",
     "ref::label_transfer_landmarks",
+    "ref::lane_calibration",
 )
 ECSPR_REFS = (
     "ecspr::atom_pairs",

@@ -29,7 +29,7 @@ FAILURES = ("medium_unresolved", "target_unresolved", "infeasible_base",
 
 
 def native_map(host_dir: str) -> dict:
-    g = C.read_gpr(C.HOSTS / host_dir / "gpr_gem.parquet")
+    g = C.read_gpr(C.RUNS / host_dir / "gpr" / "gpr_gem.parquet")
     out = {}
     for mnxr, ev in zip(g.mnxr.astype(str), g.intermediate_id.astype(str)):
         out.setdefault(mnxr, set()).add(ev)
