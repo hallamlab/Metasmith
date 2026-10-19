@@ -43,6 +43,9 @@ def protocol(context: ExecutionContext):
     # presence is what setup.py having run looks like.
     pressed = list(Path("data").rglob("*.h3i"))
     Log.Info(f"setup.py pressed [{len(pressed)}] HMM libraries")
+    # The unpacked tree is about 42,000 files, and on a noscratch step it stays in the
+    # work dir and counts against the inode quota. The product is the archive alone.
+    context.LocalShell("rm -rf ./data ./ipr_data")
     return ExecutionResult(
         manifest=[{data: idata.local}],
         success=idata.local.exists() and len(pressed) > 0,

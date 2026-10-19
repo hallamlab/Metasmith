@@ -77,7 +77,8 @@ def protocol(context: ExecutionContext):
     # HOME points into the work directory rather than at /tmp: setup runs snakemake
     # with --use-conda, and while the environments land under --conda-prefix the
     # package cache follows HOME. On a host whose /tmp is a small shared tmpfs that
-    # is how you fill it.
+    # is how you fill it. The installed envs hardlink into that cache, so emptying it
+    # afterwards frees its 27,000 unshared files and leaves the envs whole.
     Path("vs2_db").mkdir(exist_ok=True)
     db_dir = context.Mount(context.external_cwd/"vs2_db", "/db")
     context.ExecWithEnv(
@@ -89,6 +90,7 @@ def protocol(context: ExecutionContext):
             virsorter setup -d {db_dir} -j {cpus}
         """,
     )
+    context.LocalShell("rm -rf ./.conda/pkgs")
 
     Path("vs2_db").rename(idb.local)
 
