@@ -33,7 +33,10 @@ model = Transform()
 
 image = model.AddRequirement(lib.GetType("env::gtdbtk.env"))
 ref   = model.AddRequirement(lib.GetType("ref::gtdb"))
-asm   = model.AddRequirement(lib.GetType("sequences::putative_genome"))
+# The survey's quality MAGs, not any putative genome: add_to_db joins the tree's leaves to
+# the bins it adds by file name, so a tree over another bin set adds nothing, and as a
+# putative genome the planner fed it das_tool's bins, which no other target wanted.
+asm   = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"))
 raw   = model.AddProduct(lib.GetType("taxonomy::gtdbtk_raw"))
 
 # These are r232 names and the paper's are not. GTDB renamed its phyla to the

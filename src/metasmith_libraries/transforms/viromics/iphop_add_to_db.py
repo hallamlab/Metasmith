@@ -22,7 +22,7 @@ cluster = model.AddRequirement(lib.GetType("binning_local::cluster_table"), pare
 # gtdbtk_raw, not gtdbtk: add_to_db wants the DECORATED TREES, which only
 # de_novo_wf writes. The classification TSV that `taxonomy::gtdbtk` carries is a
 # different artifact and add_to_db never looks at it.
-tax     = model.AddRequirement(lib.GetType("taxonomy::gtdbtk_raw"), parents={study})
+tax     = model.AddRequirement(lib.GetType("taxonomy::gtdbtk_raw"), parents={study, bin})
 
 out_db  = model.AddProduct(lib.GetType("viromics::iphop_augmented_db"))
 
