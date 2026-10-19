@@ -17,6 +17,7 @@ SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
 # --select_db run keeps that config.
 # The set_database_locations CLI over it fails on its own camper_tar_gz_loc argument.
 DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec", "vog_annotations")
+VOG_FLAT = "vog_flat.tar"
 
 
 def protocol(context: ExecutionContext):
@@ -30,10 +31,12 @@ def protocol(context: ExecutionContext):
     rows = [row for row in rows if row[0] not in DESCRIPTIONS]
     for key, name, _ in rows:
         # process_dbcan MOVES its input into --output_dir, and the input is a cached
-        # product, so it is handed a copy. Every other database is only read.
-        path = name if key == "dbcan" else f"{isrc.container}/{name}"
+        # product, so it is handed a copy. vogdb gets a repack (below). Every other
+        # database is only read.
+        path = {"dbcan": name, "vogdb": VOG_FLAT}.get(key, f"{isrc.container}/{name}")
         locs.append(f"--{key}_loc {path} --select_db {key}")
     dbcan = next(name for key, name, _ in rows if key == "dbcan")
+    vog = next(name for key, name, _ in rows if key == "vogdb")
     # A server that answers with a web page passes wget, so check what each file is
     # before DRAM-setup.py, which logs a bad database and carries on.
     checks = [f"gzip -t {isrc.container}/{name}" for _, name, _ in rows if name.endswith(".gz")] + [
@@ -62,6 +65,13 @@ def protocol(context: ExecutionContext):
                 src=os.path.join(os.path.dirname(mag_annotator.__file__), 'CONFIG'); \
                 shutil.copyfile(src, '{idb.container}/DRAM.config')"
             cp {isrc.container}/{dbcan} {dbcan}
+            # VOG ships its models under hmm/, and process_vogdb globs VOG*.hmm at the
+            # top of what it extracts, so it merges nothing and hmmpress fails on an
+            # empty file. A flat, uncompressed repack is what DRAM 1.5.0 can read.
+            mkdir vog_flat
+            tar -xzf {isrc.container}/{vog} -C vog_flat --strip-components=1
+            tar -cf {VOG_FLAT} -C vog_flat .
+            rm -rf vog_flat
             {' '.join(f"cp {isrc.container}/{name} {idb.container}/{name};" for name in described.values())}
             python -c "import logging; from mag_annotator.database_handler import DatabaseHandler; \
                 DatabaseHandler(logging.getLogger('dram')).set_database_paths( \
@@ -81,6 +91,10 @@ def protocol(context: ExecutionContext):
             # kofam_profiles.hmm, and they are 28,000 files.
             rm -f {idb.container}/pfam.mmsmsa {idb.container}/pfam.mmsmsa.*
             rm -rf {idb.container}/kofam_profiles
+            # VOG's extracted models (38,000 files), now merged and pressed, and DRAM's
+            # own scratch.
+            rm -rf {idb.container}/vogdb_hmms {idb.container}/database_files {idb.container}/tmp
+            rm -f {VOG_FLAT}
             sed -i -e "s|\\"$(realpath {idb.container})/|\\"/db/|g" -e 's|"{idb.container}/|"/db/|g' \
                 {idb.container}/DRAM.config
         """,
