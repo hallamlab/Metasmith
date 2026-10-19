@@ -8,13 +8,16 @@ out   = model.AddProduct(lib.GetType("annotation::dram_sources"))
 KOFAM  = "https://www.genome.jp/ftp/db/kofam"
 PFAM   = "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release"
 DBCAN  = "https://pro.unl.edu/dbCAN2/download/Databases/V11"
+VOG    = "https://fileshare.lisc.univie.ac.at/vog/vog237"
 SHEETS = "https://raw.githubusercontent.com/WrightonLabCSU/DRAM/master/data"
 
 # What DRAM-setup.py 1.5.0 fetches for the databases buildDramDB selects, keyed by its
 # --select_db names, over HTTPS. Its own dbCAN address, bcb.unl.edu/dbCAN2/download/,
 # now redirects to an HTML page, which DRAM saved as the HMM file without complaint;
 # pro.unl.edu serves the same 100.9 MB V11 file. The two CAZy tables are the ones its
-# description db reads for dbcan, at DRAM's own default V11 upload date.
+# description db reads for dbcan, at DRAM's own default V11 upload date. DRAM-v's
+# distill reads VOG's functional categories, so without VOGDB it fails on every
+# contig set; DRAM's default is `latest`, pinned here to the release that was current.
 SOURCES = {
     "kofam_hmm":             ("kofam_profiles.tar.gz", f"{KOFAM}/profiles.tar.gz"),
     "kofam_ko_list":         ("ko_list.gz", f"{KOFAM}/ko_list.gz"),
@@ -25,6 +28,8 @@ SOURCES = {
                               f"{DBCAN}/CAZyDB.08062022.fam-activities.txt"),
     "dbcan_subfam_ec":       ("CAZyDB.08062022.fam.subfam.ec.txt",
                               f"{DBCAN}/CAZyDB.08062022.fam.subfam.ec.txt"),
+    "vogdb":                 ("vog.hmm.tar.gz", f"{VOG}/vog.hmm.tar.gz"),
+    "vog_annotations":       ("vog.annotations.tsv.gz", f"{VOG}/vog.annotations.tsv.gz"),
     "genome_summary_form":   ("genome_summary_form.tsv", f"{SHEETS}/genome_summary_form.tsv"),
     "module_step_form":      ("module_step_form.tsv", f"{SHEETS}/module_step_form.tsv"),
     "etc_module_database":   ("etc_module_database.tsv", f"{SHEETS}/etc_module_database.tsv"),

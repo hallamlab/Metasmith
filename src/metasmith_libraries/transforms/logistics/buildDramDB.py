@@ -11,11 +11,12 @@ db      = model.AddProduct(lib.GetType("annotation::dram_db"))
 SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
           "function_heatmap_form", "amg_database")
 # prepare_databases builds its locations from its `*_loc` arguments only, so the CLI's
-# --dbcan_fam_activities never arrives, and subfam_ec has no flag at all. Selected without
-# a location, DRAM downloads both from bcb.unl.edu, which answers with a web page.
-# DatabaseHandler.set_database_paths takes both, and a --select_db run keeps that config.
+# --dbcan_fam_activities and --vog_annotations never arrive, and subfam_ec has no flag at
+# all. Selected without a location, DRAM downloads the CAZy tables from bcb.unl.edu, which
+# answers with a web page. DatabaseHandler.set_database_paths takes all three, and a
+# --select_db run keeps that config.
 # The set_database_locations CLI over it fails on its own camper_tar_gz_loc argument.
-DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec")
+DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec", "vog_annotations")
 
 
 def protocol(context: ExecutionContext):
@@ -103,7 +104,7 @@ def protocol(context: ExecutionContext):
     search = config.get("search_databases") or {}
     descriptions = config.get("database_descriptions") or {}
     sheets = config.get("dram_sheets") or {}
-    whole = all(located(search.get(k)) for k in ("kofam_hmm", "kofam_ko_list", "pfam", "dbcan")) \
+    whole = all(located(search.get(k)) for k in ("kofam_hmm", "kofam_ko_list", "pfam", "dbcan", "vogdb")) \
         and all(located(descriptions.get(k)) for k in ("pfam_hmm", *DESCRIPTIONS)) \
         and all(located(sheets.get(k)) for k in SHEETS) \
         and located(config.get("description_db"))
