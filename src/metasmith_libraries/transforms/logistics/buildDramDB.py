@@ -10,6 +10,12 @@ db      = model.AddProduct(lib.GetType("annotation::dram_db"))
 
 SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
           "function_heatmap_form", "amg_database")
+# prepare_databases builds its locations from its `*_loc` arguments only, so the CLI's
+# --dbcan_fam_activities never arrives, and subfam_ec has no flag at all. Selected without
+# a location, DRAM downloads both from bcb.unl.edu, which answers with a web page.
+# DatabaseHandler.set_database_paths takes both, and a --select_db run keeps that config.
+# The set_database_locations CLI over it fails on its own camper_tar_gz_loc argument.
+DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec")
 
 
 def protocol(context: ExecutionContext):
@@ -19,6 +25,8 @@ def protocol(context: ExecutionContext):
 
     rows = [line.rstrip("\n").split("\t") for line in open(isrc.local/"sources.tsv") if line.strip()]
     locs = []
+    described = {key: name for key, name, _ in rows if key in DESCRIPTIONS}
+    rows = [row for row in rows if row[0] not in DESCRIPTIONS]
     for key, name, _ in rows:
         # process_dbcan MOVES its input into --output_dir, and the input is a cached
         # product, so it is handed a copy. Every other database is only read.
@@ -31,6 +39,8 @@ def protocol(context: ExecutionContext):
         f'[ "$(head -c 6 {isrc.container}/{dbcan})" = HMMER3 ] || {{ echo "{dbcan} is not an HMMER3 file" >&2; exit 1; }}',
         *(f"awk -F'\\t' 'NR==1 {{exit !(NF>1)}}' {isrc.container}/{name} || {{ echo \"{name} is not a TSV\" >&2; exit 1; }}"
           for _, name, _ in rows if name.endswith(".tsv")),
+        *(f'! grep -qi "<html" {isrc.container}/{name} || {{ echo "{name} is a web page" >&2; exit 1; }}'
+          for name in described.values()),
     ]
     context.ExecWithEnv(env=image, cmd="\n".join(["set -euo pipefail", *checks]))
 
@@ -51,6 +61,10 @@ def protocol(context: ExecutionContext):
                 src=os.path.join(os.path.dirname(mag_annotator.__file__), 'CONFIG'); \
                 shutil.copyfile(src, '{idb.container}/DRAM.config')"
             cp {isrc.container}/{dbcan} {dbcan}
+            {' '.join(f"cp {isrc.container}/{name} {idb.container}/{name};" for name in described.values())}
+            python -c "import logging; from mag_annotator.database_handler import DatabaseHandler; \
+                DatabaseHandler(logging.getLogger('dram')).set_database_paths( \
+                {', '.join(f"{key}_loc='{idb.container}/{name}'" for key, name in described.items())}, write_config=True)"
             # CAUTION the five sheets are NOT optional extras. prepare_databases narrows
             # its whole settings dict to `select_db`, and DRAM's distillation SHEETS are
             # members of that same dict -- so naming only the search databases drops
@@ -88,7 +102,7 @@ def protocol(context: ExecutionContext):
     descriptions = config.get("database_descriptions") or {}
     sheets = config.get("dram_sheets") or {}
     whole = all(located(search.get(k)) for k in ("kofam_hmm", "kofam_ko_list", "pfam", "dbcan")) \
-        and located(descriptions.get("pfam_hmm")) \
+        and all(located(descriptions.get(k)) for k in ("pfam_hmm", *DESCRIPTIONS)) \
         and all(located(sheets.get(k)) for k in SHEETS) \
         and located(config.get("description_db"))
     return ExecutionResult(
