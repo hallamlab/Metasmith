@@ -27,10 +27,18 @@ def protocol(context: ExecutionContext):
     idb = context.Input(db)
     threads = context.params.get("cpus", 8)
 
+    # Read from a copy in the work dir, which the cluster presets put on node-local disk.
+    # blastn memory-maps the 170 GB host genome database, and the job's memory limit
+    # counts page cache, so against Lustre it re-reads the volumes: on fir it read 226 GB
+    # in 4 h, at 3 MB/s by the end, and was still on the first of iPHoP's tools.
+    # WIsH reads another 111 GB of models.
+    local_db = Path("iphop_db")
     out_dir = Path("iphop_out")
     _cmd = f"""
+        cp -rH {idb.container} {local_db}
         iphop predict --fa_file {ifrozen.container} --out_dir {out_dir} \
-            --db_dir {idb.container} -t {threads} -m {MIN_SCORE}
+            --db_dir {local_db} -t {threads} -m {MIN_SCORE}
+        rm -rf {local_db}
     """
     context.ExecWithEnv(env=image, cmd=_cmd)
 
