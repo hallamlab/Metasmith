@@ -123,8 +123,10 @@ def test_the_token_scan_finds_what_left_the_group(tmp_path, reaper):
     _start(workspace)
     pgid = int((workspace/AgentPaths.RUN_PGID_FILE).read_text().strip())
     reaper.append(pgid)
-    assert wait_until(lambda: pids_matching("sleep 954"))
-    escaped = pids_matching("sleep 954")
+    # At the start of the cmdline: `setsid sleep 954` matches too, and until setsid(1)
+    # has exec'd it is still in the run group, so a loaded box fails the check below.
+    assert wait_until(lambda: pids_matching("sleep 954", at_start=True))
+    escaped = pids_matching("sleep 954", at_start=True)
     try:
         assert all(os.getpgid(p) != pgid for p in escaped), "setsid did not escape"
 

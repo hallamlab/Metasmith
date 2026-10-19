@@ -30,7 +30,7 @@ def group_alive(pgid: int) -> bool:
     return True
 
 
-def pids_matching(needle: str) -> list[int]:
+def pids_matching(needle: str, at_start: bool = False) -> list[int]:
     # /proc rather than pgrep: pgrep -f would also match this test process, whose
     # own cmdline mentions the needle.
     out = []
@@ -41,7 +41,7 @@ def pids_matching(needle: str) -> list[int]:
             cmd = (entry/"cmdline").read_bytes().replace(b"\0", b" ").decode()
         except OSError:
             continue
-        if needle in cmd:
+        if cmd.startswith(needle) if at_start else needle in cmd:
             out.append(int(entry.name))
     return out
 
