@@ -12,12 +12,15 @@ fasta_dir=$(realpath "$1"); mpdb=$(realpath "$2"); s=$(realpath -m "$3")
 cpus=$4; max_mem=$5; task_mem=$6
 mkdir -p "$s"/mp "$s"/pf
 export NXF_HOME=$s/nxf
+# MetaPathways searches swissprot unless told otherwise, so search every
+# functional database the MPDB holds.
+dbs=$(find "$mpdb/functional" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort | paste -sd' ' -)
 
 SECONDS=0
-metapathways run -i "$fasta_dir" -o "$s"/mp -d "$mpdb" --orf_mode single \
+metapathways run -i "$fasta_dir" -o "$s"/mp -d "$mpdb" --orf_mode single --annotation_dbs $dbs \
     --max_cpus "$cpus" --memory "$task_mem GB" --max_memory "$max_mem GB" \
     --work_dir "$s"/work > "$s"/metapathways.log 2>&1 < /dev/null
-echo "metapathways exited $? after $SECONDS s" >&2
+echo "metapathways ($dbs) exited $? after $SECONDS s" >&2
 
 printf 'genome\tannotation\tfailed_steps\tbatch_mp_seconds\n'
 for fa in "$fasta_dir"/*.fa; do
