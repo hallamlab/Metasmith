@@ -10,6 +10,7 @@ A plan takes one read shape, so each shape solves on its own:
   long_noisy      Nanopore or PacBio CLR: Filtlong, Flye --meta
   virome_pe       a VLP virome as paired short reads: the front end and the viral lane, no MAG lane
   given_assembly  reads plus an existing assembly (E5's hybrids, Spanish Lakes, Cyanoverse)
+  given_unbinned  an existing assembly that is not a metagenome: no MAG lane, so no host prediction
 
 After the front end every shape runs the same lanes on its assembly: the MAG lane (three binners,
 the CheckM2 filter, skani, GTDB-Tk, CarveMe and MEMOTE), the annotation layer (the 4-lane GPR and
@@ -50,6 +51,7 @@ SHAPES = {
     "long_noisy": ("noisy", "sequences::flye_assembly", {"mags", "annotation", "viral"}),
     "virome_pe": ("split", "sequences::megahit_assembly", {"viral"}),
     "given_assembly": ("given", "sequences::assembly", {"mags", "annotation", "viral"}),
+    "given_unbinned": ("given", "sequences::assembly", {"annotation", "viral"}),
 }
 # Each shape's assembler, by the file its transform lives in. metaSPAdes answers sequences::assembly too,
 # and Flye and hifiasm-meta both take long reads, so every other assembler leaves the search.
@@ -116,7 +118,7 @@ def build_targets(shape):
     _, assembly, lanes = SHAPES[shape]
     t = Targets()
     # A given cannot be a target, so a given assembly pins nothing and its targets go unparented.
-    given = shape == "given_assembly"
+    given = SHAPES[shape][0] == "given"
     asm = None if given else t.add(assembly)
     if not given:
         t.add("sequences::read_qc_stats")

@@ -355,15 +355,17 @@ open:
   U3: "Viral callers: geNomad, VirSorter2 and VIBRANT (the standard library)? Recommended. E5 also pooled DeepVirFinder, and Antonio called with geNomad alone."
   U4: "Annotation layer: the 4-lane GPR plus the six annotators Cyanoverse finished? Recommended. The other choices are GPR only, or adding EggNOG-mapper, DeepTFactor and PromoTech as SL metag did."
   U5: "Spanish Lakes extras: leave the read classifiers (kraken2, centrifuger, ganon2, MetaPhlAn, sylph) and the W4 AMR sweep out of the initial pipeline? Recommended. Their results stay importable for the SL datasets."
-  U7: "The 101 Spanish Lakes samples: the manifest flags them as viral-fraction metagenomes, yet SL metag W3 binned them into 31,149 bins. Run them as the full short-read shape, importing W1-W3 (recommended), or as the virome shape with no MAG lane?"
   U6: "Output layout: the catalogue form (<namespace-type>/<sample>.<ext> plus pooled tables, recommended) or the AB48 per-sample tree?"
+  U7: "The 101 Spanish Lakes samples: the manifest flags them as viral-fraction metagenomes, yet SL metag W3 binned them into 31,149 bins. Run them as the full short-read shape, importing W1-W3 (recommended), or as the virome shape with no MAG lane?"
+  U8: "Duplicate MAGs: skani only labels the 95% ANI clusters, so a genome all three binners recover reaches GTDB-Tk and CarveMe up to three times. Pass only the 95% centroids downstream (recommended, one small new transform), or keep every quality bin?"
+  U9: "Host prediction for datasets that are not binned: iPHoP needs our own MAGs in its database and CCTyper reads the MAGs, so these datasets get no host predictions or spacer links. Leave it that way (the plan as drawn), or add iPHoP on the stock Jun25_rw database and CCTyper on the whole assembly?"
 
 # One entry per read shape the driver solves. `datasets` names the manifest rows that take the shape.
 shapes:
   short_pe:
     title: Short reads, paired
     front: seqkit, BBDuk, MEGAHIT
-    datasets: metaGEM PE studies, Pratama short, Hydrocarbon, Anaerobic digester, Mycopots, Copper, Lung WGA, Saanich, Line P, Spanish lake and river
+    datasets: metaGEM PE studies, Pratama short, Anaerobic digester, Mycopots, Copper, Lung WGA, Saanich, Line P, Spanish lake and river
   short_se:
     title: Short reads, single-end
     front: seqkit, BBDuk, MEGAHIT
@@ -384,6 +386,10 @@ shapes:
     title: Existing assembly
     front: imported assembly and reads; no read QC or assembly
     datasets: E5 hybrids (CAMI, Pratama), Spanish Lakes W1, Cyanoverse v2
+  given_unbinned:
+    title: Existing assembly, not binned
+    front: imported assembly; annotation and viral lanes only
+    datasets: scadc, and any other dataset that is not a metagenome. Binning runs only on metagenomes.
 
 # What solving the pipeline on 0.25.0 changed, for the gate.
 findings:
