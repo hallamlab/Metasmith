@@ -55,7 +55,7 @@ LOCAL_IMAGES = {
     "docker..quay.io_hallamlab_metapathways..4.0.1.sif":
         Path("/scratch/phyberos/mp4/metapathways_4.0.1.sif"),
     "docker..quay.io_txyliu_pathologic..latest.sif":
-        Path("/scratch/phyberos/bench/e4_mm/ptools/pathologic.sif"),
+        Path("/scratch/phyberos/mp4/private/pathologic.sif"),
 }
 
 TYPE_LIBS = ["engcyc.yml", "lib.yml", "env.yml"]

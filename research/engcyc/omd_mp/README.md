@@ -9,7 +9,7 @@ This directory holds the fir scripts that regenerate MetaPathways and Pathway To
 - `/scratch/phyberos/mp4/metapathways_4.0.1.sif` is `quay.io/hallamlab/metapathways:4.0.1`.
 - `/scratch/phyberos/mpdb/<db>/` holds one MPDB per functional reference.
 - `/scratch/phyberos/mp4/private/` is mode 700 and holds the licensed Pathway Tools installer.
-- `/scratch/phyberos/bench/e4_mm/ptools/pathologic.sif` is the Pathway Tools 27.0 image that builds the PGDBs.
+- `/scratch/phyberos/mp4/private/pathologic.sif` is the Pathway Tools 27.0 image that builds the PGDBs.
 
 **WARNING** The Pathway Tools installer and every image built from it are licensed. Keep them in private paths. Never push or share them.
 

@@ -36,7 +36,7 @@ SECONDS=0
 cp mp/$name/ptools/0.pf ws/$name.pf
 apptainer exec --no-home --cleanenv --pwd /ws \
     --bind $PWD/ws:/ws,$PWD/ws/pgdbs:/data/ptools-local/pgdbs,$PWD/ws/home:/home/phyberos \
-    /scratch/phyberos/bench/e4_mm/ptools/pathologic.sif pathologic -i /ws/$name.pf -o /ws/cyc --silent \
+    /scratch/phyberos/mp4/private/pathologic.sif pathologic -i /ws/$name.pf -o /ws/cyc --silent \
     || echo "pathologic exited $?"
 echo "pathologic_seconds $SECONDS"
 # The image's wrapper moves an upper-case <name>cyc, but PathoLogic writes the PGDB lower-case,
