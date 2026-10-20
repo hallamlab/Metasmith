@@ -74,5 +74,8 @@ TransformInstance(
         out_genome: f"Host_prediction_to_genome_m{MIN_SCORE}.csv",
         out_detail: "Detailed_output_by_tool.csv",
     },
-    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=24)),
+    # On fir, 1,174 viral contigs against Jun25_rw plus 42 MAGs: the copy 3 m 53 s, predict
+    # 2 h 10 m. The memory holds the page cache of the 300 GB copy, which the job's
+    # limit counts, so a smaller request trades it for re-reads from local disk.
+    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=12)),
 )

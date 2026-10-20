@@ -161,5 +161,6 @@ TransformInstance(
     group_by=study,
     labels=["noscratch"],
     output_signature={out_db: "iphop_db"},
-    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=24)),
+    # On fir with 42 MAGs against Jun25_rw: 3 m 20 s and 19.8 GB, the graft 23 s.
+    resources=Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=4)),
 )
