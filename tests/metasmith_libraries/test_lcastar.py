@@ -64,6 +64,12 @@ class TestLcaStar:
         assert whole.lineage == scaled.lineage
         assert whole.fraction == pytest.approx(scaled.fraction)
 
+    def test_no_branch_over_alpha_is_the_root_at_p_one(self):
+        r = ls.lcastar([(ls.parse_ec("1.1.1.1"), 5.0), (ls.parse_ec("2.7.1.1"), 3.0),
+                        (ls.parse_ec("3.1.1.1"), 2.0)])
+        assert r.lineage == ()
+        assert r.p_value == 1.0
+
     def test_no_votes_is_no_result(self):
         assert ls.lcastar([]) is None
         assert ls.lcastar([(ls.parse_gtdb(ECOLI), 0.0)]) is None

@@ -91,7 +91,6 @@ def supremacy_pvalue(x_k: float, m: float) -> float:
 
 
 def lcastar(observations: Iterable[tuple[Lineage, float]], alpha: float = 0.51) -> Result | None:
-    """LCA* (Hanson et al. 2014): the minimum-entropy node holding more than alpha of the votes."""
     counts: dict[Lineage, float] = defaultdict(float)
     for lineage, weight in observations:
         if weight > 0:
@@ -128,6 +127,6 @@ def lcastar(observations: Iterable[tuple[Lineage, float]], alpha: float = 0.51) 
         votes=votes,
         total=total,
         fraction=votes / total,
-        p_value=supremacy_pvalue(votes, max(others, default=0.0)),
+        p_value=supremacy_pvalue(votes, max(others, default=0.0)) if chosen else 1.0,
         majority=majority,
     )
