@@ -1,0 +1,14 @@
+# The EngCyc rebuild of MetaPathways and Pathway Tools output for the Ocean
+# Microbiomics Database genomes. A genome batch is a directory of FASTAs, not one
+# item per genome: 34,815 per-genome tasks would each pay a Pathway Tools and
+# Nextflow start-up that costs more than the genome itself.
+types:
+  genome_batch:
+    properties:
+      _: Directory of genome FASTAs, one <name>.fa per genome. The file stem names every output of that genome
+  metapathways_db:
+    properties:
+      _: MetaPathways 4 reference directory (MPDB) as `metapathways build_db` leaves it, functional databases indexed for FAST
+  pgdb_batch:
+    properties:
+      _: Directory with one <name>.tar.gz per genome (MetaPathways 4 output with the PathoLogic PGDB under <name>/pgdb/) and stats.tsv, one row per genome of the batch with its annotation and PathoLogic status

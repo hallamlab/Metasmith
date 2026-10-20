@@ -106,3 +106,7 @@ types:
     properties:
       src: aspire
       usage: command line
+  metapathways_pgdb:
+    properties:
+      src: metapathways_pgdb
+      usage: command line
