@@ -44,6 +44,27 @@ types:
     - reference_data
     properties:
       _: genome taxonomy database
+  gtdb_metadata:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB r232 bac120 and ar53 genome metadata tables, gzipped TSV
+  gtdb_rrna:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB r232 SSU rRNA of every genome (ssu.fna, lineage in each header) with its BLAST nucleotide database (prefix ssu)
+  ncbi_taxdump:
+    extends:
+    - reference_data
+    properties:
+      _: NCBI taxonomy dump (nodes.dmp, names.dmp, merged.dmp), monthly archive snapshot
+  ncbi_to_gtdb_map:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB r232 lineage per NCBI taxid, voted from the GTDB genomes under each NCBI node (taxid, lineage, support, via)
+      ext: tsv.gz
   kraken2_db:
     extends:
     - reference_data

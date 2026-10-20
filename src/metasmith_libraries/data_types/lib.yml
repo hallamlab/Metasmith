@@ -110,3 +110,15 @@ types:
     properties:
       src: metapathways_pgdb
       usage: command line
+  lcastar:
+    properties:
+      src: lcastar
+      usage: command line
+  rna_scan:
+    properties:
+      src: rna_scan
+      usage: command line
+  pathologic:
+    properties:
+      src: pathologic
+      usage: command line

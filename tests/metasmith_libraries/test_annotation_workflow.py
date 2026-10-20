@@ -190,12 +190,11 @@ class TestAnnotationWorkflowGeneration:
         )
 
         if not task.ok:
-            pytest.skip("ptools_annotation_gather requires UniRef50/KofamScan DBs to be resolvable")
+            pytest.skip("ptools_annotation_gather requires the CLEAN lane to be resolvable")
 
         type_names = [step.transform_instance.transform_name for step in task.plan.steps]
-        assert any("deepec" in n for n in type_names), "DeepEC step missing"
-        assert any("kofamscan" in n for n in type_names), "KofamScan step missing"
-        assert any("diamond_uniref50" in n for n in type_names), "DIAMOND UniRef50 step missing"
+        assert any("clean" in n for n in type_names), "CLEAN step missing"
+        assert not any("deepec" in n for n in type_names), "PathoLogic takes ECs from CLEAN alone"
         assert any("ptools_annotation_gather" in n for n in type_names), "Gather step missing"
 
     def test_can_plan_pathologic_workflow(
@@ -203,7 +202,7 @@ class TestAnnotationWorkflowGeneration:
     ):
         targets = TargetBuilder()
         targets.Add("annotation::pgdb_archive")
-        targets.Add("annotation::pgdb_csv_tables")
+        targets.Add("annotation::pathway_table")
 
         task = agent.GenerateWorkflow(
             samples=list(orfs_input.AsSamples("sequences::orfs")),

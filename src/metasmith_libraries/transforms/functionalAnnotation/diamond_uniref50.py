@@ -79,7 +79,7 @@ def protocol(context: ExecutionContext):
                 --threads {threads} \
                 --block-size {block_size} \
                 --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore stitle \
-                --max-target-seqs 1 \
+                --max-target-seqs 5 \
                 --evalue 1e-5 \
                 --sensitive
         """,
@@ -110,7 +110,7 @@ def protocol(context: ExecutionContext):
         for sseqid in sorted(titles):
             fout.write(f"{sseqid}\t{titles[sseqid]}\n")
 
-    print(f"[diamond_uniref50] {n:,} best hits over {len(titles):,} clusters",
+    print(f"[diamond_uniref50] {n:,} hits over {len(titles):,} clusters",
           flush=True)
 
     return ExecutionResult(

@@ -67,8 +67,13 @@ def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_scor
 def _write_uniref(p: Path, descriptions: Path):
     # The hit table carries the key; the subject title lives once per key beside
     # it, which is the pair the lane joins.
+    # diamond_uniref50 keeps up to five hits per ORF. Each ORF's weaker hit names
+    # the OTHER ORF's accession and comes first, so a lane that skipped the
+    # best-hit sort would swap the two ORFs' reactions.
     rows, titles = [], []
-    for orf, acc in zip(ORFS, ACCS):
+    for orf, acc, other in zip(ORFS, ACCS, ACCS[::-1]):
+        rows.append([orf, f"UniRef50_{other}", "41.0", "120", "60", "4", "1", "120",
+                     "1", "120", "1e-8", "60.0", "0.14"])
         rows.append([orf, f"UniRef50_{acc}", "88.1", "300", "10", "1", "1", "300",
                      "1", "300", "1e-90", "410.0", "0.93"])
         titles.append([f"UniRef50_{acc}",
@@ -222,6 +227,11 @@ def _check_table(out: Path, lane_set: str):
     return df
 
 
+def _check_best_uniref_hit(df):
+    uniref = df[df["channel"] == "uniref50"]
+    assert set(zip(uniref["orf"], uniref["intermediate_id"])) == set(zip(ORFS, ACCS))
+
+
 def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(0)
     kw = _lanes(tmp_path, rng, seven=False)
@@ -247,6 +257,7 @@ def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
 
     assert set(df[df["channel"] == "uniref50"]["evidence_quality"]) == {"reviewed", "unreviewed"}
     assert set(df[df["channel"] == "pbert"]["evidence_quality"]) == {"reviewed"}
+    _check_best_uniref_hit(df)
 
 
 def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
@@ -259,6 +270,7 @@ def test_gpr_7lane_driver_writes_a_valid_table(tmp_path):
     deepec = df[df["channel"] == "deepec"]
     assert (deepec["raw_score"] == 1.0).all()
     assert set(deepec["score_kind"]) == {"presence"}
+    _check_best_uniref_hit(df)
 
 
 def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):

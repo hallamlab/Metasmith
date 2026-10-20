@@ -225,7 +225,12 @@ types:
   # DIAMOND UniRef50
   diamond_uniref50_results:
     properties:
-      _: DIAMOND alignment to UniRef50
+      _: DIAMOND alignment to UniRef50, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_uniref50_top1_results:
+    properties:
+      _: Legacy DIAMOND alignment to UniRef50 with one hit per ORF, for imported one-hit searches. No transform consumes it
       Format: BLAST6
       ext: tsv
   diamond_uniref50_descriptions:
@@ -378,11 +383,7 @@ types:
     properties:
       _: Canonical PathoLogic "cyc" folder (data/, kb/, reports/) packaged as a tarball
       Format: tar.gz
-      ext: tgz
-  pgdb_csv_tables:
-    properties:
-      _: Parsed PGDB tables (proteins, reactions, enzymes, pathways, genes, compounds + linkages) as plain CSVs packaged in a tarball
-      Format: tar.gz
+      granularity: whole
       ext: tgz
 
   # DIAMOND TCDB
@@ -445,7 +446,7 @@ types:
       ext: tsv
   diamond_uniref50_results_chunk:
     properties:
-      _: Per-chunk DIAMOND UniRef50 BLAST6 (sibling of diamond_uniref50_results)
+      _: Per-chunk DIAMOND UniRef50 BLAST6, up to five hits per ORF (sibling of diamond_uniref50_results)
       Format: BLAST6
       granularity: chunk
       ext: tsv
@@ -737,3 +738,38 @@ types:
     properties:
       _: per-genome feature counts and assembly statistics
       ext: txt
+
+  # MetaPathways 4, taken apart into its useful steps
+  rrna_gff:
+    properties:
+      _: rRNA genes from barrnap over the bacterial, archaeal and eukaryotic models, best call per overlap
+      Format: GFF3
+      ext: gff
+  trna_gff:
+    properties:
+      _: tRNA genes (ID, product tRNA-<aa>, anticodon) from one tRNA scanner
+      Format: GFF3
+      ext: gff
+  ec_consensus:
+    properties:
+      _: LCA* consensus EC per ORF over the GPR lanes (orf, ec, rank, p_value, fraction, votes, lanes)
+      Format: TSV
+      ext: tsv
+  pathway_table:
+    properties:
+      _: PathoLogic pathways of one PGDB with their ORFs (pathway, name, orf, reaction, ec)
+      Format: TSV
+      granularity: whole
+      ext: tsv
+  bin_pgdb_archive:
+    properties:
+      _: PathoLogic PGDB of one quality MAG, packaged as a tarball (sibling of pgdb_archive)
+      Format: tar.gz
+      granularity: bin
+      ext: tgz
+  bin_pathway_table:
+    properties:
+      _: PathoLogic pathways of one quality MAG with their ORFs (sibling of pathway_table)
+      Format: TSV
+      granularity: bin
+      ext: tsv
