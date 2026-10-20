@@ -240,11 +240,11 @@ groups:
       - stage: 4-lane GPR
         diff: true
         open: U4
-        engcyc: KOfamScan 1.3.0, CLEAN 2026.06.14 (GPU), DIAMOND 2.1.8 + UniRef50 2026_02, ProteinBERT 2024.03.28, folded to MetaNetX 4.5
+        engcyc: KOfamScan 1.3.0, CLEAN 2026.06.14 (CPU or GPU, U10), DIAMOND 2.1.8 + UniRef50 2026_02 with 5 hits per ORF (the GPR keeps the best), ProteinBERT 2024.03.28, folded to MetaNetX 4.5
         e5: "-"
         sl_metag: KOfamScan and DIAMOND UniRef50 only
         sl_virome: "-"
-        cyanoverse: "="
+        cyanoverse: "= but DIAMOND kept 1 hit per ORF, so its 99M ORFs are searched again"
       - stage: Domains
         engcyc: InterProScan 5.67-99.0
         e5: "-"
@@ -403,5 +403,7 @@ findings:
     body: prodigal-gv's ORFs on the viral frozen set also descend from the assembly, and the solver fed them to the GPR lanes and four annotators. prodigal-gv is out. Viral KOs are the assembly KOfam calls joined to vOTUs, and the driver fails any plan whose ORFs do not come from prodigal.
   - title: The de novo tree takes days
     body: GTDB-Tk de_novo_wf infers a FastTree over about 190,000 taxa, once per dataset, near fir's 7-day limit. Only iPHoP's MAG-augmented host database needs it. Running iPHoP against the stock Jun25_rw database removes it.
+  - title: DIAMOND keeps 5 hits everywhere
+    body: Tony standardised every Engcyc collection on 5 UniRef50 hits per ORF, which the contig LCA* vote needs. The GPR still reads the best hit. Results searched with 1 hit, including Cyanoverse's 99M ORFs, are imported under a legacy type, so the plan searches them again.
   - title: No de novo hybrid lane
     body: OPERA-MS is only in E5's bench library. Every hybrid dataset already has an E5 assembly, so hybrids enter as the existing-assembly shape.
