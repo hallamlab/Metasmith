@@ -58,6 +58,10 @@ LOCAL_IMAGES = {
         Path("/scratch/phyberos/mp4/private/pathologic.sif"),
 }
 
+# The engine's image store is $APPTAINER_CACHEDIR when it is set, and fir's
+# ~/.bashrc points it at the shared cache, where the licensed image must not go.
+SETUP_COMMANDS.append(f"export APPTAINER_CACHEDIR={HPC_MSM_HOME / 'container_images'}")
+
 TYPE_LIBS = ["engcyc.yml", "lib.yml", "env.yml"]
 BATCHES_TSV = CACHE_DIR / "batches.tsv"
 
