@@ -21,6 +21,8 @@ def calls(prefix):
 rows = []
 for js in sorted(glob.glob(f"{B}/out/*.json")):
     m = json.load(open(js))
+    if "mode" not in m:
+        continue
     prefix = js[:-5]
     name = os.path.basename(prefix)
     row = {k: m.get(k) for k in ("mode", "procs", "threads", "orfs", "embed_wall_s", "orf_per_s",

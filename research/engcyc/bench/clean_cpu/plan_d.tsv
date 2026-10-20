@@ -1,0 +1,16 @@
+name	mode	procs	threads	toks	n	pin	stack	flags	env
+d_6x8_t256	bf16	6	8	256	2400	1	stock	-	-
+d_6x8_t512	bf16	6	8	512	2400	1	stock	-	-
+d_6x8_t1024	bf16	6	8	1024	2400	1	stock	save	-
+d_6x8_t2048	bf16	6	8	2048	2400	1	stock	-	-
+d_12x4_t512	bf16	12	4	512	2400	1	stock	-	-
+d_12x4_t1024	bf16	12	4	1024	2400	1	stock	-	-
+d_1x12_t512	bf16	1	12	512	600	1	stock	-	-
+d_1x12_t1024	bf16	1	12	1024	600	1	stock	-	-
+d_fp32_6x8_t1024	fp32	6	8	1024	2400	1	stock	save	-
+d_t25sdpa_6x8_t1024	bf16	6	8	1024	2400	1	t25	--sdpa,save	-
+d_24x8_t1024	bf16	24	8	1024	4800	1	stock	-	-
+d_24x8_t512	bf16	24	8	512	4800	1	stock	-	-
+d_48x4_t1024	bf16	48	4	1024	4800	1	stock	-	-
+d_48x4_t512	bf16	48	4	512	4800	1	stock	-	-
+d_t25sdpa_24x8_t1024	bf16	24	8	1024	4800	1	t25	--sdpa	-
