@@ -360,6 +360,7 @@ open:
   U7: "The 101 Spanish Lakes samples: the manifest flags them as viral-fraction metagenomes, yet SL metag W3 binned them into 31,149 bins. Run them as the full short-read shape, importing W1-W3 (recommended), or as the virome shape with no MAG lane?"
   U8: "Duplicate MAGs: skani only labels the 95% ANI clusters, so a genome all three binners recover reaches GTDB-Tk and CarveMe up to three times. Pass only the 95% centroids downstream (recommended, one small new transform), or keep every quality bin?"
   U9: "Host prediction for datasets that are not binned: iPHoP needs our own MAGs in its database and CCTyper reads the MAGs, so these datasets get no host predictions or spacer links. Leave it that way (the plan as drawn), or add iPHoP on the stock Jun25_rw database and CCTyper on the whole assembly?"
+  U10: "CLEAN on CPU or GPU: on fir CPU, tuned bf16 CLEAN runs 0.6-0.75 proteins/s per core with no accuracy loss (DH10B F1 0.930, same as fp32), but costs 89-104 cores per GPU slice. Run it on CPU over ORF cluster centroids, with calls copied to members (recommended, about 30,000 core-hours for Engcyc), on CPU over every ORF (about 200,000 core-hours), or on GPU slices? A quantization sweep and the real ESM-1b GPU rate are still being measured."
 
 # One entry per read shape the driver solves. `datasets` names the manifest rows that take the shape.
 shapes:
