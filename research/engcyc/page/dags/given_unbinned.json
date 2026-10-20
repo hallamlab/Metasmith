@@ -1,7 +1,7 @@
 {
- "steps": 53,
- "tools": 35,
- "targets": 27,
+ "steps": 51,
+ "tools": 33,
+ "targets": 26,
  "transforms": [
   "antismash",
   "assembly_stats",
@@ -11,7 +11,6 @@
   "chunkOrfsForAnnotation",
   "clean",
   "contig_length_table",
-  "deepec",
   "diamond_uniref50",
   "dramv",
   "genomad",
@@ -20,7 +19,6 @@
   "interproscan",
   "kofamscan",
   "merge_candidate_calls",
-  "merge_deepec",
   "merge_diamond_uniref50",
   "merge_interproscan",
   "merge_kofamscan",

@@ -14,7 +14,7 @@ A plan takes one read shape, so each shape solves on its own:
 
 After the front end every shape runs the same lanes on its assembly: the MAG lane (three binners,
 the CheckM2 filter, skani, GTDB-Tk, CarveMe and MEMOTE), the annotation layer (the 4-lane GPR and
-Cyanoverse's six annotators), and the viral lane, whose callers run per sample and whose catalogue
+Cyanoverse's annotators less DeepEC), and the viral lane, whose callers run per sample and whose catalogue
 tools run once per dataset on the merged, frozen candidate set.
 
 `solve` builds every input as a deferred placeholder, solves and runs nothing. --dag renders each plan
@@ -145,7 +145,7 @@ def build_targets(shape):
     if "annotation" in lanes:
         for dtype in ("annotation::gpr_table", "annotation::kofamscan_results", "annotation::clean_predictions",
                       "annotation::diamond_uniref50_results", "annotation::proteinbert_embeddings",
-                      "annotation::interproscan_results", "annotation::deepec_predictions",
+                      "annotation::interproscan_results",
                       "annotation::busco_results", "annotation::predictf_results"):
             t.add(dtype, orfs)
         for dtype in ("annotation::bakta_tsv", "annotation::antismash_json"):

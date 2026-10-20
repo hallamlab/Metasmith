@@ -1,7 +1,7 @@
 {
- "steps": 72,
- "tools": 52,
- "targets": 44,
+ "steps": 70,
+ "tools": 50,
+ "targets": 43,
  "transforms": [
   "aggregator",
   "antismash",
@@ -17,7 +17,6 @@
   "clean",
   "comebin",
   "contig_length_table",
-  "deepec",
   "diamond_uniref50",
   "dramv",
   "genomad",
@@ -31,7 +30,6 @@
   "kofamscan",
   "memote_score",
   "merge_candidate_calls",
-  "merge_deepec",
   "merge_diamond_uniref50",
   "merge_interproscan",
   "merge_kofamscan",

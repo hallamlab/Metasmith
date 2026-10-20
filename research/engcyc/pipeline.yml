@@ -263,12 +263,13 @@ groups:
         sl_metag: "= ?"
         sl_virome: "-"
         cyanoverse: "= (539 of 2,844 ingested)"
-      - stage: EC numbers
-        engcyc: DeepEC 0.4.1
+      - stage: EC numbers, second caller
+        engcyc: "- (CLEAN in the GPR covers EC numbers)"
         e5: "-"
-        sl_metag: "= ?"
+        sl_metag: DeepEC (version not recorded)
         sl_virome: "-"
-        cyanoverse: "="
+        cyanoverse: DeepEC 0.4.1
+        diff: true
       - stage: Marker completeness
         engcyc: BUSCO 5.8.3, bacteria_odb10
         e5: "-"
@@ -353,7 +354,7 @@ open:
   U1: "Bin selection: the CheckM2 filter with skani dedup (Cyanoverse AB48, SL metag, 0.25.0), with E5's DAS Tool MAGs imported only as extras? Recommended. The other choice is DAS Tool everywhere, which matches E5's 24,087 MAGs but not the Cyanoverse layout."
   U2: "Virome assembly: MEGAHIT only, as E5, SL metag and the viromics port do? Recommended for the pilot. Antonio pooled metaSPAdes 4.2.0 and MEGAHIT contigs."
   U3: "Viral callers: geNomad, VirSorter2 and VIBRANT (the standard library)? Recommended. E5 also pooled DeepVirFinder, and Antonio called with geNomad alone."
-  U4: "Annotation layer: the 4-lane GPR plus the six annotators Cyanoverse finished? Recommended. The other choices are GPR only, or adding EggNOG-mapper, DeepTFactor and PromoTech as SL metag did."
+  U4: "Annotation layer: the 4-lane GPR plus InterProScan, Bakta (ncRNA), antiSMASH, BUSCO and PredicTF? DeepEC is dropped (Tony, 2026-10-20), since CLEAN already calls EC numbers. The other choices are GPR only, or adding EggNOG-mapper, DeepTFactor and PromoTech as SL metag did."
   U5: "Spanish Lakes extras: leave the read classifiers (kraken2, centrifuger, ganon2, MetaPhlAn, sylph) and the W4 AMR sweep out of the initial pipeline? Recommended. Their results stay importable for the SL datasets."
   U6: "Output layout: the catalogue form (<namespace-type>/<sample>.<ext> plus pooled tables, recommended) or the AB48 per-sample tree?"
   U7: "The 101 Spanish Lakes samples: the manifest flags them as viral-fraction metagenomes, yet SL metag W3 binned them into 31,149 bins. Run them as the full short-read shape, importing W1-W3 (recommended), or as the virome shape with no MAG lane?"
