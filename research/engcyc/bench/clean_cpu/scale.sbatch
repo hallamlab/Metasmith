@@ -12,7 +12,7 @@
 # name mode procs threads toks n pin(0|1) [stack flags env]. Runs use cpus 0..procs*threads-1.
 # stack: stock (the image's torch 2.0), t25 (torch 2.5.1 CPU wheel), ipex (t25 + IPEX 2.5.0), installed
 # per job onto node-local $SLURM_TMPDIR so the overlay costs no scratch inodes. flags: extra embed.py
-# flags joined by commas, or - (the token "save" keeps the embeddings). env: extra NAME=VALUE pairs joined by commas, or -.
+# flags joined by commas, or - (the token "save" keeps the embeddings; "slim" loads slim_ckpt.py's copy). env: extra NAME=VALUE pairs joined by commas, or -.
 set -euo pipefail
 B=/scratch/phyberos/engcyc_pipeline/bench/clean_cpu
 IMG=/scratch/phyberos/cache/apptainer/docker..quay.io_hallamlab_external_clean..2026.06.14.sif
@@ -31,6 +31,9 @@ if cut -f8 $B/$PLAN | grep -q -E "t25|ipex"; then
   apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG pip install -q --no-deps --target $SLURM_TMPDIR/ipex \
     $W/intel_extension_for_pytorch-2.5.0-cp310-cp310-manylinux2014_x86_64.whl $W/psutil-6.1.0-*.whl
 fi
+if cut -f9 $B/$PLAN | grep -q slim; then
+  apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG python $B/slim_ckpt.py $SLURM_TMPDIR/esm
+fi
 tail -n +2 $B/$PLAN | while read -r name mode procs threads toks n pin stack flags xenv; do
   cores=$((procs * threads))
   envs="OMP_NUM_THREADS=$threads,MKL_NUM_THREADS=$threads"
@@ -42,6 +45,7 @@ tail -n +2 $B/$PLAN | while read -r name mode procs threads toks n pin stack fla
   esac
   nosave=--no-save
   case ",${flags:-}," in *,save,*) nosave=""; flags=${flags//save/} ;; esac
+  case ",${flags:-}," in *,slim,*) extra="$extra --model $SLURM_TMPDIR/esm/esm1b_t33_650M_UR50S.pt"; flags=${flags//slim/} ;; esac
   for f in ${flags//,/ }; do [ "$f" != - ] && extra="$extra $f"; done
   [ -n "${xenv:-}" ] && [ "$xenv" != - ] && envs="$envs,$xenv"
   echo "### $name $(date +%T)"

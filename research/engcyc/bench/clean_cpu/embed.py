@@ -76,6 +76,11 @@ def worker(rank, items, a, out):
         MultiheadAttention.forward = no_weights
     if a.ipex:
         import intel_extension_for_pytorch as ipex
+        # ipex.optimize repacks Linear weights into a blocked layout that ESM's fused attention
+        # call rejects; onnx_trace keeps attention on the per-projection path.
+        for m in model.modules():
+            if type(m).__name__ == "MultiheadAttention":
+                m.onnx_trace = True
         model = ipex.optimize(model, dtype=torch.bfloat16 if a.mode == "bf16" else torch.float32)
     convert = alphabet.get_batch_converter()
 
