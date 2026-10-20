@@ -16,7 +16,7 @@ Every published file has exactly one of two paths:
 - `<dataset>` is the `dataset_id` from the Engcyc dataset manifest.
 - `<subject>` groups products by what they describe. Use the subjects in the table below.
 - `<product>` holds one kind of file. It is a directory with no subdirectories.
-- `<stem>` names the sample or bin the file describes. See *Stems*.
+- `<stem>` names the sample, bin or dataset the file describes. See *Stems*.
 - `<set>` names the input set when one product runs on more than one read set, such as `qc` and `disc`. Omit it otherwise.
 
 Subjects:
@@ -43,13 +43,27 @@ Name a product `<tool>_<kind>` in snake case, such as `genomad_virus_summary`, `
 
 A product directory holds one file per stem and nothing else. Keep superseded outputs, backups and intermediates out of it. Move them to `_redundant/<dataset>/`, outside the archived tree.
 
-Per-binner products put the binner in the product name: `<binner>_bins`, `<binner>_contig_to_bin`, `checkm2_<binner>`, `gtdbtk_<binner>`.
+Per-binner products put the binner in the product name: `<binner>_bins`, `<binner>_contig_to_bin`, `checkm2_<binner>`.
+
+The quality bins are a subset of the per-binner bins, flagged in `mags.parquet`. Never copy them into a product of their own. A product built only on the quality bins ends in `_quality`, such as `gtdbtk_quality`, and its stems are bin stems.
+
+Per-bin products for metabolic models:
+
+| Product | Subject | File |
+|---|---|---|
+| `bin_orfs` | `binning` | `<bin>.faa` |
+| `carveme_model` | `models` | `<bin>.xml` |
+| `memote_score` | `models` | `<bin>.json` |
 
 ## Stems
 
-- **Sample.** The `sample_id` from the dataset's `samples.tsv`. Use the run accession for public data (`SRR…`, `ERR…`, `DRR…`) and the study's own short code for internal data (`SG10E12`). A stem uses only letters, digits and `_`.
+- **Sample.** The `sample_id` from the dataset's `samples.tsv`. Use the run accession for public data (`SRR…`, `ERR…`, `DRR…`) and the study's own short code for internal data (`SG10E12`).
+- **Characters.** A stem uses only letters, digits and `_`. Replace every other character with `_`, so the versioned accession `GCF_000001405.1` becomes `GCF_000001405_1`. `samples.tsv` keeps the true accession.
 - **Bin.** `<sample>.<binner>.<NNN>`, with `NNN` the binner's own index zero-padded to three digits. The binner stays in the stem as well as the product, so a flat listing of every bin stays unique.
 - **Genome dataset.** For a dataset of isolate or MAG genomes, the genome is the sample.
+- **Dataset.** A product built once over the whole dataset, such as the viral catalogue's vOTU FASTA or the vConTACT3 network, uses the `dataset_id` as its stem: `viral/votu_representatives/<dataset>.fna`. IDs inside it carry the `<sample>~` prefix.
+
+Publish one assembly per sample. When a dataset holds several assemblies of one sample, such as MEGAHIT and SPAdes, publish the one the pipeline carries forward. Move the others to `_redundant/<dataset>/`. `samples.tsv` names the assembler.
 
 ## IDs inside files
 
@@ -62,7 +76,7 @@ Per-binner products put the binner in the product name: `<binner>_bins`, `<binne
 
 | Content | Extension |
 |---|---|
-| Nucleotide FASTA | `.fna` for contigs, `.fa` for bins |
+| Nucleotide FASTA | `.fna` for contigs and catalogues, `.fa` for bins, as in Spanish Lakes |
 | Protein FASTA | `.faa` |
 | Feature annotation | `.gff` |
 | Table up to about a million rows | `.tsv` with one header row |
@@ -74,13 +88,13 @@ Append `.gz` only to a full extension, such as `.tsv.gz`. Write a headerless BLA
 
 ## Pooled tables
 
-A file that describes the whole dataset goes in `<dataset>/tables/`, never in a product directory. Examples: `contig_stats.parquet`, `mags.parquet`, `bin_clusters.tsv`, `votus.parquet`, `gpr.parquet`, `feast_proportions.tsv`.
+A summary table over the whole dataset goes in `<dataset>/tables/`, never in a product directory. A dataset-level product that is not a summary table, such as a FASTA or a network, is a product with the dataset stem. Examples of tables: `contig_stats.parquet`, `mags.parquet`, `bin_clusters.tsv`, `votus.parquet`, `gpr.parquet`, `feast_proportions.tsv`.
 
-`mags.parquet` has one row per bin: `bin`, `sample`, `binner`, `completeness`, `contamination`, `gtdb_taxonomy`, `cluster` and `is_representative`.
+`mags.parquet` has one row per bin: `bin`, `sample`, `binner`, `completeness`, `contamination`, `is_quality`, `cluster`, `is_representative` and `gtdb_taxonomy`. `is_quality` marks the bins at or above the dataset's quality threshold, which the README states.
 
 ## Samples and gaps
 
-`<dataset>/samples.tsv` lists every sample: `sample_id`, `source_name` (the name the data arrived with), `accession` and `sets` (the read sets present).
+`<dataset>/samples.tsv` lists every sample: `sample_id`, `source_name` (the name the data arrived with), `accession`, `sets` (the read sets present) and `assembler`.
 
 When a product has fewer files than `samples.tsv` has samples, record each missing stem in `<dataset>/_logs/gaps.tsv`: `product`, `stem`, `reason`. A reason is one of these:
 
