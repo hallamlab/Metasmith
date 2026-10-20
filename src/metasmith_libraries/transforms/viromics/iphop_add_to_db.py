@@ -129,6 +129,19 @@ def protocol(context: ExecutionContext):
     # db_infos. So the union of the taxonomy tables plus a tree carrying every new MAG as
     # a leaf is exactly what one de_novo_wf over all the MAGs would have handed it, which
     # is how the paper ran it -- the per-binner split is ours, not theirs.
+    # add_to_db keeps a Host_Genomes.tsv row only if its representative is named in the
+    # tree-taxonomy it is handed, and a de_novo tree names GTDB's representatives alone. On
+    # Jun25_rw that dropped 133,705 of 1,155,965 hosts: 48,379 of iPHoP's own IMG and MGN
+    # representatives, which no GTDB-Tk tree carries, and 3,182 GTDB ones the r232 tree no
+    # longer has. So every representative the base database holds is named here too, with
+    # the taxonomy the database already gives it. Membership is all add_to_db reads from it.
+    base_reprs: dict[str, dict[str, str]] = {"ar": {}, "bac": {}}
+    with open(ibase.local/"db_infos"/"Host_Genomes.tsv") as f:
+        next(f)
+        for line in f:
+            r = line.rstrip("\n").split("\t")
+            base_reprs["ar" if r[5].startswith("d__Archaea") else "bac"].setdefault(r[4], r[5])
+
     merged = Path("gtdb_merged/infer")
     merged.mkdir(parents=True, exist_ok=True)
     for domain in DOMAINS:
@@ -149,6 +162,11 @@ def protocol(context: ExecutionContext):
         if best_tree is None:
             continue
         marker = best_tree.name.split(".")[1]
+        kept = 0
+        for gid, taxon in base_reprs["ar" if marker.startswith("ar") else "bac"].items():
+            if gid not in rows:
+                rows[gid] = taxon
+                kept += 1
         newick = best_tree.read_text()
         present = _leaves(newick)
         graft = [g for g in rows if g in staged_mags and g not in present]
@@ -161,7 +179,8 @@ def protocol(context: ExecutionContext):
                 f.write(f"{gid}\t{taxon}\n")
         Log.Info(
             f"{marker}: {len(rows)} taxonomy rows from {len(tree_handles)} directories,"
-            f" {best_leaves} tree leaves, {len(graft)} MAGs grafted"
+            f" {best_leaves} tree leaves, {len(graft)} MAGs grafted,"
+            f" {kept} base representatives kept"
         )
 
     named = sum(1 for stem in staged_mags if any(

@@ -36,7 +36,13 @@ ref   = model.AddRequirement(lib.GetType("ref::gtdb"))
 # The survey's quality MAGs, not any putative genome: add_to_db joins the tree's leaves to
 # the bins it adds by file name, so a tree over another bin set adds nothing, and as a
 # putative genome the planner fed it das_tool's bins, which no other target wanted.
-asm   = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"))
+#
+# One tree per study, gathered by group_by rather than folded out of a batch. The cache
+# keys each batch member on its own, so a batch folded into one tree records the first
+# member only, and the next run re-ran de_novo_wf on the other 99 bins beside the cached
+# tree over all 100.
+study = model.AddRequirement(lib.GetType("viromics::contig_study"))
+asm   = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"), parents={study})
 raw   = model.AddProduct(lib.GetType("taxonomy::gtdbtk_raw"))
 
 # These are r232 names and the paper's are not. GTDB renamed its phyla to the
@@ -57,8 +63,8 @@ def protocol(context: ExecutionContext):
     genome_dir = Path("./genomes")
     genome_dir.mkdir(exist_ok=True)
     n = 0
-    for item in context.AsBatch():
-        src = item.Input(asm).local
+    for handle in context.InputGroup(asm):
+        src = handle.local
         (genome_dir/src.name).write_bytes(src.read_bytes())
         n += 1
     if n == 0:
@@ -110,8 +116,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=asm,
-    batch_size=10_000,
+    group_by=study,
     resources=Resources(
         cpus=32,
         memory=Size.GB(240),
