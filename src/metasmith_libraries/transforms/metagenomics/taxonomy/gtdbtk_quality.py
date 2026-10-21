@@ -5,6 +5,9 @@
 # this copy. Lineage matching is ancestral and the pool descends from every binner's
 # bins, so CheckM2 on a retyped pool satisfies the aggregator's own per-binner CheckM2
 # inputs, and the solve cycles.
+# The product is its own type, not taxonomy::gtdbtk: as a second producer of that type this
+# copy answered the per-binner GTDB-Tk targets of metagenomics_from_paired_reads, which
+# then no longer solved.
 # Run as the Cyanoverse AB48 classifications were (GTDB-Tk 2.7.2 on r232, the
 # arbutus-infra GTDB-Tk service): skani ANI pre-screen on, pplacer on one thread
 # and memory-mapped to --scratch_dir, everything else on every core. That run peaked
@@ -20,7 +23,7 @@ model       = Transform()
 image       = model.AddRequirement(lib.GetType("env::gtdbtk.env"))
 ref         = model.AddRequirement(lib.GetType("ref::gtdb"))
 asm         = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"))
-tax         = model.AddProduct(lib.GetType("taxonomy::gtdbtk"))
+tax         = model.AddProduct(lib.GetType("taxonomy::gtdbtk_quality"))
 
 
 def _first_column(tables: list[Path]) -> set[str]:

@@ -7,7 +7,7 @@
 <path d="M 126.2,102.1 L 126.2,124.0" stroke="#EF553B"/>
 <path d="M 126.2,133.4 L 126.2,371.1" stroke="#EF553B"/>
 <path d="M 126.2,373.7 L 126.2,371.1 A 8.5,8.5 0 0 0 117.8,362.7 L 84.0,362.7 A 8.5,8.5 0 0 1 75.5,354.2" stroke="#636EFA"/>
-<path d="M 126.2,382.9 L 126.2,385.4 L 126.2,416.6 L 126.2,447.9 L 126.2,498.4" stroke="#00CC96"/>
+<path d="M 126.2,382.9 L 126.2,385.4 L 126.2,416.6 L 126.2,447.9 L 126.2,497.8" stroke="#00CC96"/>
 <path d="M 126.2,623.2 L 126.2,620.8 A 8.4,8.4 0 0 1 134.7,612.3 A 8.4,8.4 0 0 0 143.1,603.9" stroke="#EF553B"/>
 <path d="M 126.2,716.8 L 126.2,714.4 A 8.4,8.4 0 0 1 134.7,705.9 A 8.4,8.4 0 0 0 143.1,697.5" stroke="#00CC96"/>
 <path d="M 126.2,810.4 L 126.2,808.0 A 8.4,8.4 0 0 0 117.8,799.5 A 8.4,8.4 0 0 1 109.3,791.0" stroke="#EF553B"/>
@@ -30,8 +30,8 @@
 <path d="M 109.3,185.8 L 109.3,183.9 A 8.5,8.5 0 0 0 100.9,175.5 L 33.3,175.5 A 8.5,8.5 0 0 1 24.8,167.1" stroke="#636EFA"/>
 <path d="M 109.3,196.4 L 109.3,198.2 L 109.3,229.4 L 109.3,260.6 L 109.3,572.6 L 109.3,666.2 L 109.3,776.8 L 109.3,779.3" stroke="#636EFA"/>
 <path d="M 109.3,788.5 L 109.3,791.0 L 109.3,822.2 L 109.3,853.5 L 109.3,903.4" stroke="#EF553B"/>
-<path d="M 109.3,1028.2 L 109.3,1026.3 A 8.4,8.4 0 0 1 117.8,1017.9 A 8.4,8.4 0 0 0 126.2,1009.5" stroke="#EF553B"/>
-<path d="M 109.3,1060.0 L 109.3,1057.5 A 8.4,8.4 0 0 1 117.8,1049.1 A 8.4,8.4 0 0 0 126.2,1040.7" stroke="#EF553B"/>
+<path d="M 109.3,1028.8 L 109.3,1026.3 A 8.4,8.4 0 0 1 117.8,1017.9 A 8.4,8.4 0 0 0 126.2,1009.5" stroke="#EF553B"/>
+<path d="M 109.3,1059.4 L 109.3,1057.5 A 8.4,8.4 0 0 1 117.8,1049.1 A 8.4,8.4 0 0 0 126.2,1040.7" stroke="#EF553B"/>
 <path d="M 109.3,1131.7 L 109.3,1153.6" stroke="#636EFA"/>
 <path d="M 109.3,1163.0 L 109.3,1184.9" stroke="#EF553B"/>
 <path d="M 109.3,1194.1 L 109.3,1216.0" stroke="#EF553B"/>
@@ -72,7 +72,7 @@
 <path d="M 100.9,2109.9 L 117.8,2109.9 L 134.7,2109.9 A 8.5,8.5 0 0 0 143.1,2101.4" stroke="#636EFA"/>
 <path d="M 143.1,404.8 L 143.1,402.4 A 8.4,8.4 0 0 0 134.7,393.9 A 8.4,8.4 0 0 1 126.2,385.4" stroke="#00CC96"/>
 <path d="M 143.1,436.0 L 143.1,433.6 A 8.4,8.4 0 0 0 134.7,425.1 A 8.4,8.4 0 0 1 126.2,416.6" stroke="#00CC96"/>
-<path d="M 143.1,466.6 L 143.1,464.8 A 8.4,8.4 0 0 0 134.7,456.3 A 8.4,8.4 0 0 1 126.2,447.9" stroke="#00CC96"/>
+<path d="M 143.1,467.2 L 143.1,464.8 A 8.4,8.4 0 0 0 134.7,456.3 A 8.4,8.4 0 0 1 126.2,447.9" stroke="#00CC96"/>
 <path d="M 143.1,592.1 L 143.1,589.5 A 8.5,8.5 0 0 0 134.7,581.1 L 117.8,581.1 L 100.9,581.1 L 84.0,581.1 A 8.5,8.5 0 0 1 75.5,572.6" stroke="#636EFA"/>
 <path d="M 143.1,601.3 L 143.1,603.9 L 143.1,654.4" stroke="#EF553B"/>
 <path d="M 143.1,663.8 L 143.1,683.1 L 143.1,685.7" stroke="#EF553B"/>
@@ -95,8 +95,8 @@
 <path d="M 92.4,1808.8 L 92.4,1806.3 A 8.5,8.5 0 0 0 84.0,1797.9 A 8.5,8.5 0 0 1 75.5,1789.5" stroke="#EF553B"/>
 <path d="M 92.4,1964.8 L 92.4,1962.3 A 8.5,8.5 0 0 1 100.9,1953.9 A 8.5,8.5 0 0 0 109.3,1945.5" stroke="#EF553B"/>
 <path d="M 92.4,1996.0 L 92.4,1993.5 A 8.5,8.5 0 0 1 100.9,1985.1 A 8.5,8.5 0 0 0 109.3,1976.7" stroke="#EF553B"/>
-<path d="M 92.4,2026.6 L 92.4,2024.8 A 8.5,8.5 0 0 1 100.9,2016.3 A 8.5,8.5 0 0 0 109.3,2007.8" stroke="#EF553B"/>
-<path d="M 92.4,2058.4 L 92.4,2055.9 A 8.5,8.5 0 0 1 100.9,2047.5 A 8.5,8.5 0 0 0 109.3,2039.0" stroke="#EF553B"/>
+<path d="M 92.4,2027.2 L 92.4,2024.8 A 8.5,8.5 0 0 1 100.9,2016.3 A 8.5,8.5 0 0 0 109.3,2007.8" stroke="#EF553B"/>
+<path d="M 92.4,2057.8 L 92.4,2055.9 A 8.5,8.5 0 0 1 100.9,2047.5 A 8.5,8.5 0 0 0 109.3,2039.0" stroke="#EF553B"/>
 <path d="M 92.4,2152.0 L 92.4,2149.6 A 8.5,8.5 0 0 0 84.0,2141.1 A 8.5,8.5 0 0 1 75.5,2132.7" stroke="#00CC96"/>
 <path d="M 92.4,2214.5 L 92.4,2211.9 A 8.5,8.5 0 0 0 84.0,2203.5 A 8.5,8.5 0 0 1 75.5,2195.1" stroke="#636EFA"/>
 <path d="M 92.4,2223.7 L 92.4,2245.0" stroke="#636EFA"/>
@@ -176,22 +176,22 @@
 <polygon points="120.9,373.7 131.6,373.7 126.2,382.9" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="155.6" y1="369.7" x2="377.1" y2="369.7" stroke="#111111" stroke-width="1"/>
 <text x="155.6" y="383.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">phyloflash</text></g>
-<g><title>taxonomy::phyloflash_ntu_abundance</title>
+<g><title>taxonomy::phyloflash_ssu_spades</title>
 <circle cx="143.1" cy="409.5" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
 <text x="166.0" y="404.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="414.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_ntu_abundance</text></g>
-<g><title>taxonomy::phyloflash_report_html</title>
+<text x="166.0" y="414.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_ssu_spades</text></g>
+<g><title>taxonomy::phyloflash_ntu_abundance</title>
 <circle cx="143.1" cy="440.7" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
 <text x="166.0" y="435.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="445.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_report_html</text></g>
-<g><title>taxonomy::phyloflash_summary</title>
-<circle cx="143.1" cy="471.9" r="5.3" fill="#00CC96" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="166.0" y="445.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_ntu_abundance</text></g>
+<g><title>taxonomy::phyloflash_report_html</title>
+<circle cx="143.1" cy="471.9" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
 <text x="166.0" y="466.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="476.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_summary</text></g>
-<g><title>taxonomy::phyloflash_ssu_spades</title>
-<circle cx="126.2" cy="503.1" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="166.0" y="476.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_report_html</text></g>
+<g><title>taxonomy::phyloflash_summary</title>
+<circle cx="126.2" cy="503.1" r="5.3" fill="#00CC96" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="166.0" y="497.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="507.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_ssu_spades</text></g>
+<text x="166.0" y="507.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">phyloflash_summary</text></g>
 <g><title>seqkit_reads</title>
 <polygon points="87.1,529.7 97.8,529.7 92.4,538.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="155.6" y1="525.7" x2="377.1" y2="525.7" stroke="#111111" stroke-width="1"/>
@@ -256,14 +256,14 @@
 <polygon points="120.9,997.7 131.6,997.7 126.2,1006.9" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="155.6" y1="993.7" x2="377.1" y2="993.7" stroke="#111111" stroke-width="1"/>
 <text x="155.6" y="1007.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabuli</text></g>
-<g><title>taxonomy::metabuli</title>
-<circle cx="109.3" cy="1033.5" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="166.0" y="1028.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="1038.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metabuli</text></g>
 <g><title>taxonomy::metabuli_report</title>
-<circle cx="109.3" cy="1064.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<circle cx="109.3" cy="1033.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="166.0" y="1028.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
+<text x="166.0" y="1038.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metabuli_report</text></g>
+<g><title>taxonomy::metabuli</title>
+<circle cx="109.3" cy="1064.7" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="166.0" y="1059.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="1069.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metabuli_report</text></g>
+<text x="166.0" y="1069.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metabuli</text></g>
 <g><title>taxonomy::metabuli_krona</title>
 <circle cx="126.2" cy="1095.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="166.0" y="1090.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
@@ -376,22 +376,22 @@
 <polygon points="104.0,1933.7 114.7,1933.7 109.3,1942.9" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="155.6" y1="1929.7" x2="377.1" y2="1929.7" stroke="#111111" stroke-width="1"/>
 <text x="155.6" y="1943.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">genomad</text></g>
-<g><title>taxonomy::genomad_virus_summary</title>
+<g><title>taxonomy::genomad_virus_genes</title>
 <circle cx="92.4" cy="1969.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="166.0" y="1964.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="1974.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_summary</text></g>
+<text x="166.0" y="1974.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_genes</text></g>
 <g><title>taxonomy::genomad_plasmid_summary</title>
 <circle cx="92.4" cy="2000.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="166.0" y="1995.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
 <text x="166.0" y="2005.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_plasmid_summary</text></g>
-<g><title>taxonomy::genomad_taxonomy</title>
-<circle cx="92.4" cy="2031.9" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<g><title>taxonomy::genomad_virus_summary</title>
+<circle cx="92.4" cy="2031.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="166.0" y="2026.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="2036.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_taxonomy</text></g>
-<g><title>taxonomy::genomad_virus_genes</title>
-<circle cx="92.4" cy="2063.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="166.0" y="2036.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_summary</text></g>
+<g><title>taxonomy::genomad_taxonomy</title>
+<circle cx="92.4" cy="2063.1" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="166.0" y="2057.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">taxonomy</text>
-<text x="166.0" y="2067.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_virus_genes</text></g>
+<text x="166.0" y="2067.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genomad_taxonomy</text></g>
 <g><title>viromics::genomad_candidate_virus</title>
 <circle cx="109.3" cy="2094.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="166.0" y="2088.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">viromics</text>

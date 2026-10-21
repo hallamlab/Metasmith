@@ -138,7 +138,7 @@ def build_targets(shape):
             t.add("taxonomy::checkm_stats", b)
         mags = t.add("binning_local::quality_bin_fasta", asm)
         t.add("binning_local::cluster_table", asm)
-        t.add("taxonomy::gtdbtk", mags)
+        t.add("taxonomy::gtdbtk_quality", mags)
         gem = t.add("modelling::carveme_model", t.add("sequences::bin_orfs", mags))
         t.add("modelling::memote_score", gem)
 
