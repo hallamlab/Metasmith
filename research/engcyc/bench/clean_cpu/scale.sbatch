@@ -9,9 +9,10 @@
 #SBATCH --time=03:00:00
 #SBATCH --output=/scratch/phyberos/engcyc_pipeline/bench/clean_cpu/logs/%x_%j.log
 # Usage: sbatch scale.sbatch <plan.tsv>. Each plan row is one embed run on this otherwise idle node:
-# name mode procs threads toks n pin(0|1) [stack flags env]. Runs use cpus 0..procs*threads-1.
+# name mode procs threads toks n pin(0|1) [stack flags env input(mg|dh)]. Runs use cpus 0..procs*threads-1.
 # stack: stock (the image's torch 2.0), t25 (torch 2.5.1 CPU wheel), ipex (t25 + IPEX 2.5.0), installed
-# per job onto node-local $SLURM_TMPDIR so the overlay costs no scratch inodes. flags: extra embed.py
+# per job onto node-local $SLURM_TMPDIR so the overlay costs no scratch inodes; ort (onnx +
+# onnxruntime 1.20.1 over the stock torch, ort_export.py's models in $SLURM_TMPDIR/onnx). flags: extra embed.py
 # flags joined by commas, or - (the token "save" keeps the embeddings; "slim" loads slim_ckpt.py's copy). env: extra NAME=VALUE pairs joined by commas, or -.
 set -euo pipefail
 B=/scratch/phyberos/engcyc_pipeline/bench/clean_cpu
@@ -27,14 +28,23 @@ mkdir -p $B/out/scale
 W=$B/wheels
 if cut -f8 $B/$PLAN | grep -q -E "t25|ipex"; then
   apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG pip install -q --no-deps --target $SLURM_TMPDIR/t25 \
-    $W/torch-2.5.1+cpu-cp310-cp310-linux_x86_64.whl $W/fsspec-2024.10.0-py3-none-any.whl
+    $W/torch-2.5.1+cpu-cp310-cp310-linux_x86_64.whl $W/fsspec-2024.10.0-py3-none-any.whl $W/torchao-0.7.0-*.whl
   apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG pip install -q --no-deps --target $SLURM_TMPDIR/ipex \
     $W/intel_extension_for_pytorch-2.5.0-cp310-cp310-manylinux2014_x86_64.whl $W/psutil-6.1.0-*.whl
+fi
+if cut -f8 $B/$PLAN | grep -q ort; then
+  apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG pip install -q --no-deps --target $SLURM_TMPDIR/ort \
+    $W/onnx-1.17.0-*.whl $W/onnxruntime-1.20.1-*.whl $W/protobuf-5.28.3-*.whl $W/flatbuffers-*.whl \
+    $W/coloredlogs-*.whl $W/humanfriendly-*.whl
+  apptainer exec --cleanenv --env PYTHONPATH=$SLURM_TMPDIR/ort -B $B,$SLURM_TMPDIR $IMG \
+    python $B/ort_export.py /opt/torch_cache/hub/checkpoints/esm1b_t33_650M_UR50S.pt $SLURM_TMPDIR/onnx $MG \
+    || echo "### FAILED ort_export"
 fi
 if cut -f9 $B/$PLAN | grep -q slim; then
   apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG python $B/slim_ckpt.py $SLURM_TMPDIR/esm
 fi
-tail -n +2 $B/$PLAN | while read -r name mode procs threads toks n pin stack flags xenv; do
+tail -n +2 $B/$PLAN | while read -r name mode procs threads toks n pin stack flags xenv input; do
+  FA=$MG; [ "${input:-mg}" = dh ] && FA=$B/inputs/dh10b.faa
   cores=$((procs * threads))
   envs="OMP_NUM_THREADS=$threads,MKL_NUM_THREADS=$threads"
   extra=""
@@ -42,6 +52,7 @@ tail -n +2 $B/$PLAN | while read -r name mode procs threads toks n pin stack fla
   case "${stack:-stock}" in
     t25)  envs="$envs,PYTHONPATH=$SLURM_TMPDIR/t25" ;;
     ipex) envs="$envs,PYTHONPATH=$SLURM_TMPDIR/ipex:$SLURM_TMPDIR/t25"; extra="$extra --ipex" ;;
+    ort)  envs="$envs,PYTHONPATH=$SLURM_TMPDIR/ort"; extra="$extra --onnx-dir $SLURM_TMPDIR/onnx" ;;
   esac
   nosave=--no-save
   case ",${flags:-}," in *,save,*) nosave=""; flags=${flags//save/} ;; esac
@@ -50,7 +61,7 @@ tail -n +2 $B/$PLAN | while read -r name mode procs threads toks n pin stack fla
   [ -n "${xenv:-}" ] && [ "$xenv" != - ] && envs="$envs,$xenv"
   echo "### $name $(date +%T)"
   apptainer exec --cleanenv --env "$envs" -B $B,/project/6004975/phyberos/cyanoverse,$SLURM_TMPDIR $IMG \
-    python $B/embed.py --fasta $MG --n $n --mode $mode --procs $procs --threads $threads --toks $toks \
+    timeout ${ROW_TIMEOUT:-2400} python $B/embed.py --fasta $FA --n $n --mode $mode --procs $procs --threads $threads --toks $toks \
     --cpuset 0-$((cores - 1)) $extra $nosave --out $B/out/scale/$name || echo "### FAILED $name"
   if [ -z "$nosave" ] && [ -f $B/out/scale/$name.npy ]; then
     apptainer exec --cleanenv -B $B,$SLURM_TMPDIR $IMG python $B/calls.py --prefix $B/out/scale/$name \

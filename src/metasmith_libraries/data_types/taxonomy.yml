@@ -58,6 +58,10 @@ types:
   gtdbtk_raw:
     properties:
       _: gtdbtk raw workspace
+  gtdbtk_quality:
+    properties:
+      _: gtdbtk classifications of the aggregator's pool of quality MAGs
+      ext: tsv
 
   ani_table:
     properties:

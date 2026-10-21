@@ -9,6 +9,7 @@ import json
 import multiprocessing as mp
 import os
 import random
+import sys
 import time
 
 import numpy as np
@@ -39,10 +40,11 @@ def parse_cpus(spec):
     return cpus
 
 
-def worker(rank, items, a, out):
+def worker(rank, items, calib_items, a, out):
+    block = sorted(os.sched_getaffinity(0))
     if a.pin:
-        allowed = sorted(os.sched_getaffinity(0))
-        os.sched_setaffinity(0, allowed[rank * a.threads:(rank + 1) * a.threads])
+        block = block[rank * a.threads:(rank + 1) * a.threads]
+        os.sched_setaffinity(0, block)
     import torch
     import esm
 
@@ -51,18 +53,41 @@ def worker(rank, items, a, out):
         cap = [l.strip() for l in torch.__config__.show().splitlines() if "CPU capability" in l]
         print(json.dumps({"torch": torch.__version__, "capability": cap,
                           "affinity_r0": sorted(os.sched_getaffinity(0))[:4] + ["..."]}), flush=True)
-    model, alphabet = esm.pretrained.load_model_and_alphabet_local(a.model)
-    model.eval()
-    if a.mode == "int8":
-        # A quantized Linear's .bias is a method, which ESM's fused attention path cannot concatenate;
-        # onnx_trace routes attention through the per-projection calls instead.
-        for m in model.modules():
-            if type(m).__name__ == "MultiheadAttention":
-                m.onnx_trace = True
-        model = torch.ao.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
-    elif a.mode == "int8ffn":
-        ffn = {n for n, m in model.named_modules() if n.endswith((".fc1", ".fc2"))}
-        model = torch.ao.quantization.quantize_dynamic(model, ffn, dtype=torch.qint8)
+    if a.mode.startswith("ort_"):
+        import contextlib
+        import onnxruntime as ort
+        alphabet = esm.data.Alphabet.from_architecture("ESM-1b")
+        convert = alphabet.get_batch_converter()
+        # OMP_PROC_BIND binds this (main) thread to one cpu when torch loads, and ORT's pool would
+        # inherit that single cpu; give the thread its whole block back first.
+        os.sched_setaffinity(0, block)
+        so = ort.SessionOptions()
+        so.intra_op_num_threads, so.inter_op_num_threads = a.threads, 1
+        sess = ort.InferenceSession(f"{a.onnx_dir}/esm1b_{a.mode[4:]}.onnx", so, providers=["CPUExecutionProvider"])
+
+        def model(toks, repr_layers):
+            return {"representations": {33: torch.from_numpy(sess.run(["rep"], {"toks": toks.numpy()})[0])}}
+        ctx = contextlib.nullcontext()
+    else:
+        model, alphabet = esm.pretrained.load_model_and_alphabet_local(a.model)
+        model.eval()
+        convert = alphabet.get_batch_converter()
+    if a.mode.startswith("ort_"):
+        pass
+    elif a.device == "cuda":
+        model = model.cuda()
+        ctx = (torch.autocast("cuda", dtype=torch.bfloat16) if a.mode == "bf16"
+               else torch.autocast("cuda", enabled=False))
+        if rank == 0:
+            print(json.dumps({"cuda_visible": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                              "device": torch.cuda.get_device_name(0),
+                              "capability": torch.cuda.get_device_capability(0),
+                              "arch_list": torch.cuda.get_arch_list()}), flush=True)
+    else:
+        import quant
+        calib = [convert([(n, s[:TRUNC]) for n, s in calib_items[i:i + 8]])[2]
+                 for i in range(0, len(calib_items), 8)]
+        model, ctx = quant.prepare(model, a.mode, calib)
     if a.sdpa:
         # ESM asks attention for its averaged weights, which keeps torch off its fused
         # scaled_dot_product_attention kernel; CLEAN never reads them.
@@ -82,7 +107,6 @@ def worker(rank, items, a, out):
             if type(m).__name__ == "MultiheadAttention":
                 m.onnx_trace = True
         model = ipex.optimize(model, dtype=torch.bfloat16 if a.mode == "bf16" else torch.float32)
-    convert = alphabet.get_batch_converter()
 
     items = sorted(items, key=lambda x: len(x[1]))
     batches, cur, longest = [], [], 0
@@ -96,21 +120,23 @@ def worker(rank, items, a, out):
     if cur:
         batches.append(cur)
 
-    ctx = torch.autocast("cpu", dtype=torch.bfloat16) if a.mode == "bf16" else torch.autocast("cpu", enabled=False)
     ids, embs, residues = [], [], 0
     t0 = time.time()
     with torch.inference_mode(), ctx:
         for b in batches:
             _, _, toks = convert([(n, s[:TRUNC]) for n, s in b])
-            rep = model(toks, repr_layers=[33])["representations"][33].float()
+            if a.device == "cuda":
+                toks = toks.cuda(non_blocking=True)
+            rep = model(toks, repr_layers=[33])["representations"][33].float().cpu()
             for i, (n, s) in enumerate(b):
                 L = min(len(s), TRUNC)
                 ids.append(n)
                 embs.append(rep[i, 1:L + 1].mean(0).numpy())
                 residues += L
     wall = time.time() - t0
+    gpu_peak = round(torch.cuda.max_memory_allocated() / 1e9, 2) if a.device == "cuda" else None
     np.save(f"{out}.r{rank}.npy", np.stack(embs).astype(np.float32))
-    json.dump({"ids": ids, "wall": wall, "orfs": len(ids), "residues": residues, "batches": len(batches)}, open(f"{out}.r{rank}.json", "w"))
+    json.dump({"ids": ids, "wall": wall, "orfs": len(ids), "residues": residues, "batches": len(batches), "gpu_peak_gb": gpu_peak}, open(f"{out}.r{rank}.json", "w"))
 
 
 def main():
@@ -118,7 +144,9 @@ def main():
     p.add_argument("--fasta", required=True)
     p.add_argument("--n", type=int, default=0, help="sample this many ORFs; 0 takes them all")
     p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--mode", choices=["fp32", "bf16", "int8", "int8ffn"], default="fp32")
+    p.add_argument("--mode", default="fp32", help="see quant.py; on cuda only fp32 and bf16")
+    p.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    p.add_argument("--onnx-dir", default="", help="ort_* modes: the directory ort_export.py wrote")
     p.add_argument("--procs", type=int, default=1)
     p.add_argument("--threads", type=int, default=48)
     p.add_argument("--toks", type=int, default=4096)
@@ -135,12 +163,14 @@ def main():
     if a.pin:
         assert a.procs * a.threads <= len(os.sched_getaffinity(0)), "not enough cpus to pin"
 
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     items = list(read_fasta(a.fasta))
     if a.n and a.n < len(items):
         items = random.Random(a.seed).sample(items, a.n)
+    calib_items = random.Random(a.seed + 1000).sample(items, 32) if a.mode == "sq_int8" else []
     shards = [items[i::a.procs] for i in range(a.procs)]
     t0 = time.time()
-    ps = [mp.get_context("spawn").Process(target=worker, args=(r, s, a, a.out)) for r, s in enumerate(shards)]
+    ps = [mp.get_context("spawn").Process(target=worker, args=(r, s, calib_items, a, a.out)) for r, s in enumerate(shards)]
     for x in ps:
         x.start()
     for x in ps:
@@ -158,7 +188,8 @@ def main():
     compute = max(q["wall"] for q in parts)
     summary = {"mode": a.mode, "procs": a.procs, "threads": a.threads, "toks": a.toks, "orfs": orfs,
                "pin": a.pin, "cpuset": a.cpuset, "sdpa": a.sdpa, "ipex": a.ipex, "n_batches_r0": parts[0].get("batches"),
-               "per_proc_wall": [round(q["wall"], 1) for q in parts],
+               "per_proc_wall": [round(q["wall"], 1) for q in parts], "device": a.device,
+               "gpu_peak_gb": parts[0].get("gpu_peak_gb"),
                "residues": sum(q["residues"] for q in parts), "embed_wall_s": round(compute, 1),
                "total_wall_s": round(total, 1), "orf_per_s": round(orfs / compute, 3),
                "orf_per_s_per_core": round(orfs / compute / (a.procs * a.threads), 4), "ids": ids}
