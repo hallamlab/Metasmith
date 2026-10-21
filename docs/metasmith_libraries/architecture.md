@@ -82,6 +82,18 @@ Collapsing two nodes is a table edit and a regenerate — which stops being safe
 become real protocols. `ASPIRE_PORT.md` beside this file is the live correspondence map to
 `research/aspire/upstream/`, and is what anyone extending those transforms needs.
 
+## Consensus taxonomy and EC run LCA* over the library's own tree
+
+`lib::lcastar` takes votes from several sources and returns the deepest lineage a weighted majority supports. Contig taxonomy feeds it UniRef50 ORF LCAs, Metabuli matches and SSU rRNA. EC consensus feeds it the four GPR lanes' ECs.
+
+**Each vote is mapped to GTDB before LCA* runs, never after.** A UniRef50 hit carries an NCBI taxid, and `ref::ncbi_to_gtdb_map` turns it into a GTDB lineage first. LCA* therefore walks the GTDB tree. Running LCA* on the NCBI tree and mapping its answer afterwards would drop the votes that disagree between the two trees.
+
+**Weight sources before they meet.** Metabuli reports dozens of k-mer matches per contig, against one or two ORF LCAs per contig. Its matches are rescaled to one vote per contig. Raw counts would outvote every other source.
+
+**Do not trust the Cyanoverse port as a reference.** `protein-clusters/lib/local/lcastar.py` and upstream `hallamlab/LCAStar` sort branches the wrong way and descend into the minority branch. They also compute the p-value with log10. `lib::lcastar` follows the published algorithm and uses the natural log, so its p-values do not match old Cyanoverse tables.
+
+`diamond_uniref50` keeps five hits per ORF, so an ORF LCA has more than one taxon to work with. `annotation::diamond_uniref50_top1_results` is the legacy one-hit type, for importing older searches. No active transform consumes it. An imported one-hit search reaches a GPR or LCA* transform only through a fresh five-hit search.
+
 ## A rule that fails quietly, and belongs to this library rather than the engine
 
 **Anything downloaded from an accession is named by whoever asked for it, not by its header.**
