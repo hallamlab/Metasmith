@@ -5,10 +5,12 @@
   sg8w14  Spanish Lakes SG8W14 (MEGAHIT, 154 MB) with three COMEBin MAGs
 
 Subcommands: setup [--deploy], import --sample S, run --sample S [--trna T] [--dag]
-[--stage-only|--launch] [--clear], status.
+[--stage-only|--materialise|--launch] [--clear], status.
 
-Without --stage-only or --launch, `run` solves against a local dry-run home and stages nothing.
-Remote modes run inside submit_driver.sbatch on a compute node (sync_pilot.sh puts the checkout there).
+Without a mode, `run` solves against a local dry-run home and stages nothing. --materialise stages
+and pulls every tool image into the home's store; run it from the workstation, whose agent shell is a
+login node, because compute nodes cannot reach a registry. --launch runs inside submit_driver.sbatch
+on a compute node (sync_pilot.sh puts the checkout there).
 """
 
 import argparse
@@ -153,7 +155,7 @@ def cmd_setup(args):
 
 def cmd_run(args):
     importing = args.cmd == "import"
-    remote = importing or args.stage_only or args.launch
+    remote = importing or args.stage_only or args.materialise or args.launch
     smith = get_agent(remote)
     ensure = importing or not remote
     inputs = declare_sample(smith, args.sample, ensure)
@@ -179,7 +181,7 @@ def cmd_run(args):
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
         return 0
     c.stage_and_run(smith, task, CACHE_DIR / args.sample, args.tag or f"mp_pilot_{args.sample}_{args.trna}",
-                    stage_only=args.stage_only, params=dict(executor=dict(queueSize=200), process=dict(tries=3)),
+                    stage_only=args.stage_only, materialise=args.materialise, params=dict(executor=dict(queueSize=200), process=dict(tries=3)),
                     scaled=SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
     return 0
 
@@ -205,7 +207,7 @@ def main():
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--sample", required=True, choices=list(SAMPLES))
-        p.set_defaults(fn=cmd_run, stage_only=False, launch=False, dag=False, clear=False, tag=None,
+        p.set_defaults(fn=cmd_run, stage_only=False, materialise=False, launch=False, dag=False, clear=False, tag=None,
                        trna="aragorn", gem=False)
         if name == "run":
             p.add_argument("--trna", choices=list(TRNA), default="aragorn")
@@ -213,6 +215,7 @@ def main():
             p.add_argument("--dag", action="store_true")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
+            mode.add_argument("--materialise", action="store_true")
             mode.add_argument("--launch", action="store_true")
             p.add_argument("--tag")
             p.add_argument("--clear", action="store_true", help="restage from scratch; deletes the run's logs")
