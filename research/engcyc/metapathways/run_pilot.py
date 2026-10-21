@@ -66,6 +66,7 @@ LOCAL_IMAGES = {
     "docker..quay.io_txyliu_pathologic..latest.sif": Path("/scratch/phyberos/mp4/private/pathologic.sif"),
 }
 SETUP_COMMANDS = [*c.SETUP_COMMANDS, f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
+AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.24.2")
 
 TRNA = {"aragorn": "trna_aragorn.py", "trnascan": "trna_trnascan.py"}
 SCALED = {
@@ -78,7 +79,7 @@ def get_agent(remote):
     if not remote:
         return Agent(home=Source.FromLocal(CACHE_DIR / "dryrun_home"), runtime=Runtime.APPTAINER)
     source = Source.FromLocal(HOME) if c.ON_HOST else SshSource(host=c.HPC_HOST, path=HOME).AsSource()
-    return Agent(home=source, container=c.AGENT_IMAGE, runtime=Runtime.APPTAINER, setup_commands=SETUP_COMMANDS)
+    return Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER, setup_commands=SETUP_COMMANDS)
 
 
 def declare_sample(smith, sample, ensure):
@@ -139,11 +140,13 @@ def expected_counts(sample):
 
 def cmd_setup(args):
     store = HOME / "container_images"
-    links = "; ".join(f'[ -e "{store}/{name}" ] || ln "{src}" "{store}/{name}"' for name, src in LOCAL_IMAGES.items())
+    # The `.verified` stamp stops the engine re-pulling an image it finds without one, which fails here.
+    links = "; ".join(f'([ -e "{store}/{name}" ] || ln "{src}" "{store}/{name}") && touch "{store}/{name}.verified"'
+                      for name, src in LOCAL_IMAGES.items())
     print(c.host_sh(f'mkdir -p "{store}" && chmod 700 "{store}" && {links} && ls -la "{store}"'))
     if args.deploy:
         source = Source.FromLocal(HOME) if c.ON_HOST else SshSource(host=c.HPC_HOST, path=HOME).AsSource()
-        Agent(home=source, container=c.AGENT_IMAGE, runtime=Runtime.APPTAINER,
+        Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER,
               setup_commands=[SETUP_COMMANDS[0], SETUP_COMMANDS[-1]]).Deploy(assertive=True)
     return 0
 
