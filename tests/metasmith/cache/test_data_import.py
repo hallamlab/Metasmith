@@ -371,3 +371,34 @@ class TestPoolRetention:
         caplog.clear()
         ops.import_item(str(f), "cf::mid", agent_home=str(home))
         assert "unreadable" not in caplog.text
+
+
+class TestCheck:
+    def _check(self, store):
+        from metasmith.ops import cache as op_cache
+        return op_cache.check_imports(str(store))
+
+    def test_an_untouched_given_is_not_reported(self, tmp_path, store):
+        ops.import_item(str(_file(tmp_path)), "cf::seed", cache_root=str(store))
+        report = self._check(store)
+        assert report["checked"] == 1 and report["changed"] == []
+
+    def test_an_edited_given_is_reported_with_why(self, tmp_path, store):
+        import os
+        import time
+        f = _file(tmp_path)
+        rec = ops.import_item(str(f), "cf::seed", cache_root=str(store))
+        f.write_text(">x\nACGTACGT\n")
+        later = time.time() + 30
+        os.utime(f, (later, later))
+        [changed] = self._check(store)["changed"]
+        assert changed["instance_id"] == rec["instance_id"]
+        assert any(r.startswith("size") for r in changed["reasons"]), changed
+        assert "modified after import" in changed["reasons"]
+
+    def test_a_deleted_given_is_reported_missing(self, tmp_path, store):
+        f = _file(tmp_path)
+        ops.import_item(str(f), "cf::seed", cache_root=str(store))
+        f.unlink()
+        [changed] = self._check(store)["changed"]
+        assert changed["reasons"] == ["missing"]

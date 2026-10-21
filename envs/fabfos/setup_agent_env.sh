@@ -35,6 +35,8 @@ AGENT_ENV="msm-fabfos"
 
 # The step envs. Each name must match the `conda:` key of the matching
 # src/metasmith_libraries/resources/env/<tool>.env, or the step will not find it.
+# A recipe here wins over the library's tool recipe of the same name, so keep one
+# recipe per env: two recipes for one name build whichever env was created first.
 STEP_ENVS=(
     "python_for_data_science"
     "ncbi-datasets"
@@ -87,7 +89,8 @@ done
 # ---------------------------------------------------------------- step envs
 for e in "${STEP_ENVS[@]}"; do
     yml="$HERE/$e.yml"
-    [ -f "$yml" ] || { echo "!! no recipe at $yml"; exit 1; }
+    [ -f "$yml" ] || yml="$REPO/envs/metasmith_libraries/tools/$e.yml"
+    [ -f "$yml" ] || { echo "!! no recipe for $e here or in envs/metasmith_libraries/tools"; exit 1; }
     if have_env "$e"; then
         echo "== step env $e exists, skipping"
     else

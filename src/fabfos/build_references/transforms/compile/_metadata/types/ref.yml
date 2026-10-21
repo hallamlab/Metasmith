@@ -5,108 +5,11 @@ ontology:
   version: '1.25'
 schema: v1
 types:
-  ankh_base_weights:
-    properties:
-      _:
-      - Ankh-base weights (ElnaggarLab/ankh-base)
-      ext: tgz
-  ankh_large_weights:
-    properties:
-      _:
-      - Ankh-large weights (ElnaggarLab/ankh-large)
-      ext: tgz
-  antismash:
-    properties:
-    - for antiSMASH
-  atom_pairs:
-    properties:
-      _:
-      - Compiled atom-atom mapping, one row per single atom correspondence (element,
-        rxn, tail_node, head_node packed as met_code<<rank_bits|atom_rank, pair_w);
-        orientation stored as written
-      ext: parquet
-  boltz2_weights:
-    properties:
-      _:
-      - Boltz-2 weights (boltz-community/boltz-2)
-      ext: tgz
-  boltz_msa_db:
-    properties:
-    - ColabFold MSA databases for Boltz-2 (~2 TB; unused stub)
-  centrifuger_db:
-    properties:
-    - Centrifuger FM-index prefix (.1.cfr .. .4.cfr files share a common prefix)
-  direction_ratios:
-    properties:
-      _:
-      - Per-reaction directionality (rxn, ratio = g_rev/g_fwd = exp(dG'/RT), dir_tier);
-        ratio > 1 FLIPS the edge, it does not amplify it
-      ext: parquet
-  ec_to_mnxr:
-    properties:
-      _:
-      - EC -> MNXR fan-out bridge table (tab-separated; columns ec, mnxr)
-      ext: tsv
-  esm_c_300m_weights:
-    properties:
-      _:
-      - ESM-C 300M weights (EvolutionaryScale/esmc-300m)
-      ext: tgz
   esm_c_600m_weights:
     properties:
       _:
       - ESM-C 600M weights (EvolutionaryScale/esmc-600m)
       ext: tgz
-  esmfold_weights:
-    properties:
-      _:
-      - ESMFold v1 weights (facebook/esmfold_v1)
-      ext: tgz
-  ezpred_model:
-    properties:
-    - EZpred DL-only EC-head model bundle (kad-ecoli/EZpred predict.py + MLP heads)
-  ganon2_db:
-    properties:
-    - ganon2 database prefix (.hibf + .tax files share a common prefix)
-  genomad:
-    properties:
-    - for geNomad
-  gpr_table_denovo:
-    properties:
-      Format: DIRECTORY
-      _:
-      - Per-host GPR tables inferred from each host's own annotation lanes, hosts/<host>/gpr_denovo.parquet
-        (long-format, one row per ORF x channel x MNXR)
-  gpr_table_gem:
-    properties:
-      Format: DIRECTORY
-      _:
-      - Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet
-        (long-format, one row per gene x MNXR; uniform raw_score)
-  gtdb:
-    properties:
-    - genome taxonomy database
-  host_gem_identity_report:
-    properties:
-      _:
-      - Re-measured delta between a host and the host whose curated model it borrows
-      ext: md
-  interproscan_data:
-    properties:
-      _:
-      - InterProScan data directory
-      ext: tgz
-  ko_to_kegg_r:
-    properties:
-      _:
-      - KO -> KEGG reaction links from each KO's flat-file REACTION block (tab-separated;
-        columns ko, kegg_r)
-      ext: tsv
-  ko_to_mnxr:
-    properties:
-      _:
-      - KO -> MNXR fan-out bridge table (tab-separated; columns ko, mnxr)
-      ext: tsv
   kofamscan_ko_list:
     properties:
       _:
@@ -115,9 +18,6 @@ types:
   kofamscan_profiles:
     properties:
     - KofamScan HMM profile directory -- .hmm files directly under it, unpacked
-  kraken2_db:
-    properties:
-    - Kraken2 database directory (hash.k2d + Bracken kmer_distrib)
   label_transfer_landmarks:
     properties:
     - Reference ProteinBERT embeddings beside their MNXR labels, one row per accession
@@ -126,54 +26,12 @@ types:
     properties:
     - Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet
       + source.txt)
-  metabolism_vocab:
-    properties:
-      _:
-      - Int-code vocabulary for the compiled metabolism tables (kind, code, symbol;
-        met and rxn densely coded within kind)
-      ext: parquet
-  metabuli_ref:
-    properties:
-    - metabuli reference database
-  metaphlan_db:
-    properties:
-    - MetaPhlAn 4 database directory (bowtie2 + .pkl + .nwk)
   mnxr_lookup:
     properties:
       _:
       - Consolidated intermediate-id -> MNXR bridge (id, id_source in {ko,ec,uniprot},
         mnxr, evidence_quality); the three id spaces are disjoint, so id alone is
         unambiguous and id_source is a label
-      ext: parquet
-  phyloflash_db:
-    properties:
-    - phyloFlash SILVA SSU DB dir (bbmap + UDB + tax tree)
-  protein_model_weights:
-    properties:
-    - Weights bundle for a protein deep-learning model
-  prott5_xl_uniref50_weights:
-    properties:
-      _:
-      - ProtT5-XL UniRef50 encoder weights (Rostlab/prot_t5_xl_uniref50)
-      ext: tgz
-  reference_data:
-    properties:
-    - reference database
-  saprot_650m_weights:
-    properties:
-      _:
-      - SaProt 650M AF2 weights (westlake-repl/SaProt_650M_AF2)
-      ext: tgz
-  sylph_db:
-    properties:
-      _:
-      - sylph sketch database (single .syldb file)
-      ext: syldb
-  uniprot_to_mnxr:
-    properties:
-      _:
-      - UniProt -> MNXR bridge via Rhea DR (parquet; uniprot_accession, dr_source,
-        mnxr)
       ext: parquet
   uniref50_diamond_db:
     properties:

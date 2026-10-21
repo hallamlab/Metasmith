@@ -55,8 +55,10 @@ def build_spec(rebuild: bool = False) -> Spec:
 
         lib.AddItem(DEFERRED, "ref::mnxr_lookup")
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
+        lib.AddItem(DEFERRED, "ref::lane_calibration")
 
         lib.AddItem(DEFERRED, "ecspr::conditions", parents={exp})
+        lib.AddItem(DEFERRED, "ecspr::ecspr_tests", parents={exp})
         lib.AddItem(DEFERRED, "ecspr::atom_pairs")
         lib.AddItem(DEFERRED, "ecspr::direction_ratios")
 

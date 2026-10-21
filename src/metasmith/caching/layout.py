@@ -20,6 +20,7 @@ LOGS_DIR_NAME = "logs"
 MANIFEST_NAME = "manifest.cbor"
 
 IMPORTED_DIR_NAME = "imported"
+STAGING_DIR_NAME = "staging"
 
 _SHARD_PREFIX_LEN = 2
 
@@ -44,3 +45,7 @@ def logs_dir(shard: Path) -> Path:
 
 def imported_shard_dir(cache_root: Path, instance_id_hex: str) -> Path:
     return shard_dir(Path(cache_root) / IMPORTED_DIR_NAME, instance_id_hex)
+
+
+def staging_dir(cache_root: Path, transform_name: str, member: str) -> Path:
+    return Path(cache_root) / STAGING_DIR_NAME / transform_name / member

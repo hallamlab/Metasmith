@@ -21,6 +21,18 @@ assert (MLIB / "data_types").is_dir(), f"library root does not look like one: {M
 TEST_DATA_DIR = WORKSPACE / "test_data"
 TEST_MSM_HOME = WORKSPACE / "test_msm_home"
 
+OPT_IN_MARKS = ("slow", "network")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.option.markexpr or any("::" in a for a in config.args):
+        return
+    for item in items:
+        for mark in OPT_IN_MARKS:
+            if item.get_closest_marker(mark):
+                item.add_marker(pytest.mark.skip(reason=f"{mark}: opt in with -m {mark} or by node id"))
+                break
+
 
 @pytest.fixture(scope="session")
 def workspace():

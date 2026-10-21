@@ -2,6 +2,10 @@
 # arbutus-infra GTDB-Tk service): skani ANI pre-screen on, pplacer on one thread
 # and memory-mapped to --scratch_dir, everything else on every core. That run peaked
 # at 110.7 GB with --scratch_dir set and was OOM-killed at 116 GB without it.
+# On fir, the backbone placement peaked at 35.4 GB anonymous plus 68.8 GB of mapped
+# scratch, so 128 GB is that working set plus a quarter. The scratch file must sit on
+# node-local disk: on Lustre one class-level placement of 5 genomes ran past 12 h.
+# The step therefore keeps the preset's node-local scratch and must not be noscratch.
 # 2.7 removed --skip_ani_screen and --mash_db, and either is an argument error.
 # Never --full_tree: its own help asks for more than 320 GB.
 from metasmith.python_api import *

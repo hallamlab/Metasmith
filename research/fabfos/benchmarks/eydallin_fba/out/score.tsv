@@ -1,0 +1,37 @@
+channel	arm	medium	pin	n_total	n_answered	n_insertion_refused	n_no_gpr	n_nothing_to_add	n_no_reaction_in_host	n_infeasible	n_ok	n_degenerate	accuracy	base_rate	pred_all_down	spearman	spearman_p
+denovo	add	kornberg	0.1	86	0	50.0	31	5.0									
+denovo	add	kornberg	0.5	86	0	50.0	31	5.0									
+denovo	add	kornberg	0.9	86	0	50.0	31	5.0									
+denovo	add	m9	0.1	86	0	50.0	31	5.0									
+denovo	add	m9	0.5	86	0	50.0	31	5.0									
+denovo	add	m9	0.9	86	0	50.0	31	5.0									
+denovo	force	kornberg	0.1	86	13		31		17.0	17.0	13.0	8.0	0.9230769230769231	0.9230769230769231	True	0.25274725274725274	0.40477407127094633
+denovo	force	kornberg	0.5	86	12		31		17.0	18.0	12.0	8.0	0.9166666666666666	0.9166666666666666	True	0.35664335664335667	0.2551377517589572
+denovo	force	kornberg	0.9	86	12		31		17.0	18.0	12.0	8.0	0.9166666666666666	0.9166666666666666	True	0.4125874125874127	0.18256397857316675
+denovo	force	m9	0.1	86	13		31		17.0	17.0	13.0	8.0	0.9230769230769231	0.9230769230769231	True	0.23076923076923078	0.4481273823153657
+denovo	force	m9	0.5	86	12		31		17.0	18.0	12.0	8.0	0.9166666666666666	0.9166666666666666	True	0.2377622377622378	0.45680085263992326
+denovo	force	m9	0.9	86	9		31		17.0	21.0	9.0	8.0	0.8888888888888888	0.8888888888888888	True	-0.16666666666666669	0.668231040071504
+denovo	relax	kornberg	0.1	86	0		31		17.0			38.0					
+denovo	relax	kornberg	0.5	86	0		31		17.0			38.0					
+denovo	relax	kornberg	0.9	86	0		31		17.0			38.0					
+denovo	relax	m9	0.1	86	0		31		17.0			38.0					
+denovo	relax	m9	0.5	86	0		31		17.0			38.0					
+denovo	relax	m9	0.9	86	0		31		17.0			38.0					
+gem	add	kornberg	0.1	86	0		52	34.0									
+gem	add	kornberg	0.5	86	0		52	34.0									
+gem	add	kornberg	0.9	86	0		52	34.0									
+gem	add	m9	0.1	86	0		52	34.0									
+gem	add	m9	0.5	86	0		52	34.0									
+gem	add	m9	0.9	86	0		52	34.0									
+gem	force	kornberg	0.1	86	19		52			11.0	19.0	4.0	0.7894736842105263	0.7894736842105263	True	-0.3440105640517856	0.1492570026423958
+gem	force	kornberg	0.5	86	19		52			11.0	19.0	4.0	0.7894736842105263	0.7894736842105263	True	-0.3264590046613884	0.17253000818761507
+gem	force	kornberg	0.9	86	17		52			12.0	17.0	5.0	0.7647058823529411	0.7647058823529411	True	-0.37990196078431376	0.13254890262758853
+gem	force	m9	0.1	86	18		52			11.0	18.0	5.0	0.7777777777777778	0.7777777777777778	True	-0.38493292053663575	0.11470802686534462
+gem	force	m9	0.5	86	18		52			11.0	18.0	5.0	0.7777777777777778	0.7777777777777778	True	-0.23219814241486067	0.3538383254251315
+gem	force	m9	0.9	86	15		52			13.0	15.0	6.0	0.8	0.8	True	-0.1714285714285714	0.5412721760996332
+gem	relax	kornberg	0.1	86	0		52					34.0					
+gem	relax	kornberg	0.5	86	0		52					34.0					
+gem	relax	kornberg	0.9	86	0		52					34.0					
+gem	relax	m9	0.1	86	0		52					34.0					
+gem	relax	m9	0.5	86	0		52					34.0					
+gem	relax	m9	0.9	86	0		52					34.0					

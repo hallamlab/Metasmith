@@ -145,7 +145,7 @@ def test_binds_are_refused_where_there_is_no_boundary_to_cross(tmp_path, _bounce
     # silently dropping it would run the command against paths that are not there.
     env_dep = _dep("env")
     ctx = _mamba_context(tmp_path, env_dep)
-    with pytest.raises(AssertionError, match="binds are meaningless"):
+    with pytest.raises(AssertionError, match="a raw bind has no meaning"):
         ctx.ExecWithEnv(env=env_dep, cmd="echo hello", binds=[("/db", "/db")])
 
 

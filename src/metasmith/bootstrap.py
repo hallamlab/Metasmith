@@ -16,7 +16,8 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
-from .models.workflow.payload import output_file_name
+from .models.workflow.payload import member_token, output_file_name
+from .caching.layout import default_cache_root, staging_dir
 from .env import Environment, Rootfs
 from .models.lineage import ArityMismatchError, LinPayload, MissingInstanceError
 from .coms.via_file_watcher import RemoteShell
@@ -273,6 +274,13 @@ def ExecuteStep(
         _seen[chan] = _seen.get(chan, 0) + 1
     ambiguous_slots = {c for c, n in _seen.items() if n > 1}
 
+    def _get_staging_dir(batch: int) -> ContextPath:
+        external = staging_dir(
+            default_cache_root(Path(agent_home)), step.transform.name, member_token(lineages[batch]),
+        )
+        seen = external if host_local else path_map.ExternalToLocal(external)
+        return ContextPath(local=seen, external=external, container=seen)
+
     _rootfs = params.get("rootfs") or getattr(agent, "rootfs", Rootfs.AUTO)
     params = {k: v for k, v in params.items() if k != "rootfs"}
 
@@ -289,6 +297,7 @@ def ExecuteStep(
         params=params,
         _slot_keys=slot_keys,
         _ambiguous_slots=ambiguous_slots,
+        _get_staging_dir=_get_staging_dir,
     )
     BREAK_LENGTH = 60
     Log.Info(f">>> executing")

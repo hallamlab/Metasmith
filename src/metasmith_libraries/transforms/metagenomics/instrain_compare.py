@@ -19,13 +19,14 @@ def protocol(context: ExecutionContext):
     threads = context.params.get("cpus", 16)
     dirs = " ".join(str(p.container) for p in iprofiles)
 
+    magref_dir = context.Mount(imagref.external, "/magref")
     context.ExecWithEnv(
         env=image,
-        binds=[(imagref.external, "/magref")],
+        binds=[magref_dir],
         cmd=f"""
             inStrain compare \
                 -i {dirs} \
-                -s /magref/mag_ref.stb \
+                -s {magref_dir}/mag_ref.stb \
                 -o compare_out \
                 -p {threads}
         """,

@@ -58,7 +58,9 @@ A workspace has at most one watcher, and two records decide which one.
   publish. The lock file sits beside the node-local workspace target under `$TMPDIR`, never in
   the agent home. `flock` on Lustre is not reliable, and the race the lock closes is between two
   starts on one node. Each login node has its own `/tmp`, so a lock there cannot order starts
-  on different nodes, and does not need to: each node has its own workspace.
+  on different nodes, and does not need to: each node has its own workspace. Each agent home on
+  a node has its own workspace too, named by a digest of the home's relay link. A workspace
+  shared by two homes let the second home's `start` stop the first home's watcher and its jobs.
 - **The owner record.** `active` holds the owning watcher's pid and its pid namespace. A start
   leaves a live owner alone, even a silent one. A watcher exits when `active` names another pid.
   Its exit guard then leaves the successor's jobs and files alone.

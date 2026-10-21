@@ -21,9 +21,9 @@ def test_stage_real_libraries_clones_into_sandbox(tmp_path: Path) -> None:
     dest = stage_real_libraries(layout)  # type: ignore[arg-type]
 
     assert dest == tmp_path / "MetasmithLibraries"
-    assert (dest / ".git").exists(), "sandbox checkout should preserve .git provenance"
-    assert (dest / "data_types" / "containers.yml").exists()
-    assert (dest / "resources" / "containers" / "_metadata" / "index.yml").exists()
+    assert (dest / "STAGED_FROM").read_text().split("\n")[1], "the staged copy names the commit it came from"
+    assert (dest / "data_types" / "env.yml").exists()
+    assert (dest / "resources" / "env" / "_metadata" / "index.yml").exists()
     assert (dest / "resources" / "lib" / "_metadata").exists()
     assert (dest / "transforms" / "logistics").is_dir()
     assert (dest / "transforms" / "pangenome").is_dir()

@@ -41,6 +41,10 @@ def pytest_collection_modifyitems(config, items):
         for dir_prefix, markers in sorted(_DIR_MARKERS, key=lambda kv: -len(kv[0])):
             if rel_str.startswith(dir_prefix + "/"):
                 for m in markers:
+                    # Markers add up, so without this a test marked slow in a
+                    # fast directory stays in the `-m fast` loop.
+                    if m == "fast" and item.get_closest_marker("slow"):
+                        continue
                     item.add_marker(getattr(pytest.mark, m))
                 break
         else:

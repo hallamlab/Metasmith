@@ -177,6 +177,60 @@ class TestRunTransformApi:
         assert produced[0].read_text() == "written to the context-named path"
 
 
+def _staging_transform() -> dict[str, str]:
+    # Each attempt appends one line to its staging dir and reports the count, so a
+    # second attempt in a fresh work dir sees 2 only if the dir outlived the first.
+    return {
+        "stager": '''
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+reads = model.AddRequirement(lib.GetType("mock::reads"))
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    staged = context.StagingDir()
+    with open(staged.local / "attempts", "a") as f:
+        f.write("attempt\\n")
+    out_path = context.Output(out)
+    out_path.local.write_text(f"{sum(1 for _ in open(staged.local / 'attempts'))} {staged.external}")
+    return ExecutionResult(manifest=[{out: out_path.local}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=reads)
+'''
+    }
+
+
+class TestRunTransformStaging:
+    def test_a_retry_in_a_fresh_work_dir_finds_the_staging_dir(
+        self, mock_samples, mock_types, temp_dir, agent_home,
+    ):
+        tr_lib = create_transform_library(temp_dir / "tr_stage", mock_types, _staging_transform())
+        reads, _ = _alignment_inputs(mock_samples)
+        seen = []
+        for attempt in ("work_a", "work_b"):
+            work = temp_dir / attempt
+            result = RunTransform(
+                data_library=mock_samples,
+                transform=tr_lib.location / "stager.py",
+                inputs=[("reads", reads)],
+                work_dir=work,
+                agent_home=agent_home,
+            )
+            assert result.success
+            seen.append(next(work.glob("1-1-1.*")).read_text().split())
+        assert [n for n, _ in seen] == ["1", "2"]
+        staged = Path(seen[1][1])
+        assert staged.is_relative_to(agent_home / "task_cache" / "staging" / "stager")
+
+
 class TestRunTransformAgent:
     def test_no_agent_is_refused(self, mock_samples, mock_types, temp_dir, monkeypatch):
         monkeypatch.delenv("AGENT_HOME", raising=False)

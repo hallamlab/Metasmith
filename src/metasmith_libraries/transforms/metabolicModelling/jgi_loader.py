@@ -14,10 +14,11 @@ def protocol(context: ExecutionContext):
     ihelp    = context.Input(helpers)
     iout     = context.Output(out_ft)
 
+    dataset_dir = context.Mount(idataset.external, "/jgi_data")
     context.ExecWithEnv(
         env=image,
-        binds=[(idataset.external, "/jgi_data")],
-        cmd=f"python {ihelp.container}/jgi_loader.py /jgi_data {iout.container}",
+        binds=[dataset_dir],
+        cmd=f"python {ihelp.container}/jgi_loader.py {dataset_dir} {iout.container}",
     )
 
     return ExecutionResult(

@@ -134,6 +134,11 @@ def ping(agent_path: str, timeout_s: int = 15) -> dict:
     }
 
 
+def dev_overlay(agent_path: str, src: str | None = None) -> dict:
+    agent = load_agent(agent_path)
+    return agent.DeployDevOverlay(src) if src else agent.DeployDevOverlay()
+
+
 def deploy(agent_path: str, assertive: bool = False, on_phase=None) -> dict:
     agent = load_agent(agent_path)
     agent.Deploy(assertive, on_phase=on_phase)
@@ -155,6 +160,7 @@ def read_pool(
     name: str | None = None,
     refs: list[str] | None = None,
     timeout: int = 120,
+    check: bool = False,
 ) -> dict:
     """The agent's pool, read where it sits.
 
@@ -162,6 +168,8 @@ def read_pool(
     and a refusal naming the import call for anything the pool does not hold.
     """
     agent = Agent.Load(Path(agent_path))
+    if check:
+        return agent.CheckPool(timeout=timeout)
     out = agent.ReadPool(
         origin=origin, dtype=dtype, tag=tag, name=name, timeout=timeout,
     )

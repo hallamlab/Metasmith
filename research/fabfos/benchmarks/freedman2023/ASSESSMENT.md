@@ -53,8 +53,8 @@ enrichment rounds, not distinct conditions.
 
 ## What it would additionally cost
 
-No host background exists. `data/benchmarks/hosts/` holds `e_coli_k12`, `e_coli_dh10b` and
-`e_coli_epi300`. Adopting this study means building a *Ruminiclostridium cellulolyticum*
+No host background exists. Every `gpr_gem.parquet` under `data/fabfos/runs/` is an
+E. coli one. Adopting this study means building a *Ruminiclostridium cellulolyticum*
 H10 GEM and its `gpr_gem.parquet` from scratch — the largest single piece of work here, in
 service of three Y rows.
 

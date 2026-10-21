@@ -32,6 +32,14 @@ def _age_s(stamp: str | None) -> float:
     return max(0.0, (datetime.now(timezone.utc) - t).total_seconds())
 
 
+def first_run_since(runs: list[dict], stamp: str) -> int | None:
+    # A Slurm-hosted driver's launch returns once the job is queued, before the
+    # job's start.sh makes its logs dir, so the newest run at launch time is the
+    # previous one.
+    later = [r for r in runs if (r.get("timestamp") or "") >= stamp]
+    return later[0]["index"] if later else None
+
+
 class RunWatcher:
     def __init__(
         self,
@@ -110,15 +118,27 @@ class RunWatcher:
             return {"run": rec.name, "state": "failed"}
         if not agent_name or not key or not self.project.agent_exists(agent_name):
             return None
-        launch_age_s = _age_s(rec.record.get("launched_at"))
+        agent_path = str(self.project.agent_path(agent_name))
+        run_number = rec.record.get("run_number")
+        stamp = rec.record.get("launch_stamp")
+        if run_number is None and stamp:
+            run_number = first_run_since(op_runtime.list_runs(agent_path, key), stamp)
+            if run_number is None:
+                return None
+            self.project.update_run(rec.workflow, rec.name, {"run_number": run_number, "bound_at": utcnow()})
+            rec.record["bound_at"] = utcnow()
+        launch_age_s = min(
+            _age_s(rec.record.get("launched_at")),
+            _age_s(rec.record.get("bound_at")) if rec.record.get("bound_at") else float("inf"),
+        )
         driver_grace = launch_age_s <= _DRIVER_GRACE_S
         try:
             probe = op_runtime.wait(
-                str(self.project.agent_path(agent_name)),
+                agent_path,
                 key,
                 timeout_s=0.0,
                 poll_s=1.0,
-                run=rec.record.get("run_number"),
+                run=run_number,
                 grace_s=(0.0 if not driver_grace else _DRIVER_GRACE_S),
             )
         except Exception as exc:

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from .invocation import TOMBSTONE_NAME, read_manifest
+from .invocation import TOMBSTONE_NAME, member_intact, read_manifest
 from .keys import canonical_cbor, multihash_key
 from .layout import (
     MANIFEST_NAME,
@@ -361,7 +361,7 @@ def _servable(shard: Path) -> bool:
     if (shard / TOMBSTONE_NAME).exists():
         return False
     found = read_manifest(shard)
-    return found is not None and all((shard / f["relpath"]).exists() for f in found.get("files", []))
+    return found is not None and all(member_intact(shard, f) for f in found.get("files", []))
 
 
 def index_shard(

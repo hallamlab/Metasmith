@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import yaml
 
-from ..constants import AgentPaths, CONTAINER_TAG, MODULE_PATH, VERSION
+from ..constants import AgentPaths, BUILD_HASH, CONTAINER_TAG, MODULE_PATH, VERSION
 from ..coms.terminals import (
     IDLE_TIMEOUT, LiveShell, PROBE_TIMEOUT, RemoveLeadingIndent,
     SSH_CONNECT_TIMEOUT,
@@ -31,12 +33,86 @@ from .workflow_ops import _WorkflowOps
 from .agent_lock import exclusive
 
 
+DEFAULT_CONTAINER = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
+
+
+def _local_docker_image(container: str) -> bool:
+    ref = container.removeprefix("docker://")
+    try:
+        return subprocess.run(["docker", "image", "inspect", ref], capture_output=True, timeout=30).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _registry_has_tag(container: str) -> bool|None:
+    repo, _, tag = container.removeprefix("docker://").removeprefix("quay.io/").partition(":")
+    url = f"https://quay.io/api/v1/repository/{repo}/tag/?specificTag={tag}&onlyActiveTags=true"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            return bool(json.load(r).get("tags"))
+    except (OSError, ValueError):
+        return None
+
+
+def _assert_container_resolvable(container: str, runtime: Runtime, native: bool, local_home: bool = False) -> None:
+    # A source checkout has no build hash, so the default names the bare
+    # version: a tag that 404s until that version is published, and after that
+    # names whichever build was pushed last rather than this tree.
+    if native or runtime == Runtime.MAMBA or BUILD_HASH: return
+    if container != DEFAULT_CONTAINER: return
+    if runtime == Runtime.DOCKER and local_home and _local_docker_image(container): return
+    found = _registry_has_tag(container)
+    if found is False:
+        raise ValueError(
+            f"this metasmith [{VERSION}] runs from a source tree with no build hash, and [{container}] "
+            f"is not published. Pass container=<image> to Agent (image=<image> to Deploy), for "
+            f"example the image `dev/metasmith.sh -bd` built"
+        )
+    if found is None:
+        Log.Warn(f"could not check that [{container}] is published; deploying with it anyway")
+    else:
+        Log.Warn(f"[{container}] is the published {VERSION} image, not this source tree. Pass container= to run this tree's engine")
+
+
+_DEPLOY_PROBES = {
+    "agent home": 'realpath "{home}"',
+    "user home": "realpath ~",
+    "hostname": "hostname",
+}
+
+
+def _resolve_deploy_paths(shell, home) -> list[str]:
+    # Labelled, so a login banner or a profile's own output cannot shift the
+    # answers, and a probe that fails is named with what it printed.
+    cmds = [
+        f'printf "MSM_PROBE|{label}|%s\\n" "$({cmd.format(home=home)} 2>&1)"'
+        for label, cmd in _DEPLOY_PROBES.items()
+    ]
+    res = shell.Exec("\n".join(cmds), history=True, idle_timeout=PROBE_TIMEOUT)
+    found: dict[str, str] = {}
+    for ln in res.out:
+        tag, _, rest = ln.strip().partition("|")
+        if tag != "MSM_PROBE": continue
+        label, _, value = rest.partition("|")
+        found[label] = value.strip()
+    bad = [
+        f"{label} [{found.get(label, '')}]" for label in _DEPLOY_PROBES
+        if not found.get(label) or (label != "hostname" and not found[label].startswith("/"))
+    ]
+    if bad:
+        raise RuntimeError(
+            f"could not resolve {', '.join(bad)} on the agent host; "
+            f"the shell printed: {(res.out + res.err)[:10]}"
+        )
+    return [found[label] for label in _DEPLOY_PROBES]
+
+
 @dataclass
 class Agent(_WorkflowOps, _RunControl, _PoolAccess):
     home: Source
     id: str = field(default_factory=lambda: KeyGenerator().GenerateUID(l=8))
     setup_commands: list[str] = field(default_factory=list)
-    container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
+    container: str = DEFAULT_CONTAINER
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
     native: bool = False
@@ -147,6 +223,58 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
         pass
 
     @exclusive("deploying")
+    def DeployDevOverlay(self, src: Path|str = MODULE_PATH) -> dict:
+        """Put a source tree of the engine over the agent image's own, tree and tarball from one archive."""
+        import tarfile
+
+        src = Path(src).resolve()
+        if not (src/"__init__.py").is_file():
+            raise ValueError(f"[{src}] is not a metasmith package: it has no __init__.py")
+
+        def _no_bytecode(info: tarfile.TarInfo):
+            name = Path(info.name)
+            if {"__pycache__", "node_modules"} & set(name.parts) or name.suffix == ".pyc": return None
+            return info
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            part = tmpdir/"dev"/"metasmith.tar.part"
+            part.parent.mkdir(parents=True)
+            with tarfile.open(part, "w") as tar:
+                tar.add(src, arcname="metasmith", filter=_no_bytecode)
+            with tarfile.open(part) as tar:
+                # A hardlink member extracts as one more regular file.
+                n_files = sum(1 for m in tar.getmembers() if m.isfile() or m.islnk())
+            mover = Logistics()
+            mover.QueueTransfer(src=Source.FromLocal(tmpdir), dest=self.home)
+            res = mover.ExecuteTransfers()
+            for e in res.errors:
+                Log.Error(e)
+            assert len(res.completed) == 1, f"failed to send the dev overlay to [{self.home.address}]"
+
+        # The bootstrap stages the tarball per node and binds the tree where it
+        # cannot, so the two are swapped in only once the tree is whole.
+        dev = Path(self.home.GetPath())/"dev"
+        res = self._remote_oneshot("\n".join([
+            f"cd {dev} || exit 1",
+            "rm -rf metasmith.next && mkdir metasmith.next",
+            'tar -xf metasmith.tar.part -C metasmith.next || { echo "MSM_OVERLAY|FAIL|tar"; exit 1; }',
+            'n=$(find metasmith.next/metasmith -type f | wc -l | tr -d " ")',
+            f'[ "$n" = "{n_files}" ] || {{ echo "MSM_OVERLAY|FAIL|$n of {n_files} files"; exit 1; }}',
+            "rm -rf metasmith.prev",
+            "{ [ -e metasmith ] || [ -L metasmith ]; } && mv metasmith metasmith.prev",
+            "mv metasmith.next/metasmith metasmith && rmdir metasmith.next && mv -f metasmith.tar.part metasmith.tar",
+            'echo "MSM_OVERLAY|OK|$(stat -c %Y-%s metasmith.tar 2>/dev/null)"',
+        ]), timeout=300)
+        status = [ln.strip().split("|") for ln in res.out if ln.startswith("MSM_OVERLAY|")]
+        if not status or status[-1][1] != "OK":
+            raise RuntimeError(
+                f"the dev overlay did not land in [{dev}] on [{self.home.address}]: "
+                f"{(res.out + res.err)[-10:]}"
+            )
+        return {"src": str(src), "overlay": str(dev/"metasmith"), "files": n_files, "stage_key": status[-1][2]}
+
+    @exclusive("deploying")
     def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None, on_phase=None):
         _phase = on_phase or (lambda _: None)
         if runtime is not None:
@@ -157,6 +285,8 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
             self.native = native
         if rootfs is not None:
             self.rootfs = Rootfs.Parse(rootfs)
+        _assert_container_resolvable(self.container, self.runtime, self.native,
+                                     local_home=self.home.type in (SourceType.DIRECT, SourceType.SYMLINK))
         Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native}, rootfs={self.rootfs.value})")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
@@ -212,15 +342,13 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
 
             shell.Exec(f'mkdir -p {self.home.GetPath()}', idle_timeout=PROBE_TIMEOUT)
             _quiet = True
-            cmds = [
-                f'realpath {self.home.GetPath()}',
-                f'realpath ~',
-                f'hostname',
-            ]
-            res = shell.Exec('\n'.join(cmds), history=True, idle_timeout=PROBE_TIMEOUT)
+            resolved_agent_home, resolved_home, hostname = _resolve_deploy_paths(shell, self.home.GetPath())
             _quiet = False
-            assert len(res.out)==len(cmds), res.out
-            resolved_agent_home, resolved_home, hostname = [x.strip() for x in res.out]
+            if any(c.isspace() for c in resolved_agent_home):
+                raise ValueError(
+                    f"the agent home [{resolved_agent_home}] contains whitespace; the generated "
+                    f"workflow and its launchers pass it to bash, so deploy to a path without any"
+                )
             resolved_agent_home = Path(resolved_agent_home)
             resolved_home = Path(resolved_home)
 

@@ -4,10 +4,10 @@
 # CLI tools because it is the whole pipeline's runtime; this one carries a numeric
 # stack and one package, so it stays small enough to convert and cheap enough to
 # rebuild on every engine change. The two do share a numpy<2 constraint, and for
-# the same reason -- see src/ecspr/env.yml.
+# the same reason -- see envs/ecspr/base.yml.
 #
 # THE ENV SPEC IS NOT COPIED, IT IS THE SAME FILE. The build context is the REPO
-# ROOT (see dev.sh), so this reads src/ecspr/env.yml directly rather than a copy
+# ROOT (see dev.sh), so this reads envs/ecspr/base.yml directly rather than a copy
 # under docker/ that would drift.
 #
 # Base is version-pinned, not :latest: an image whose base moves under it is not a
@@ -15,7 +15,7 @@
 # principle repush it, which is the residual risk of not carrying a sha256 here.
 FROM condaforge/miniforge3:25.3.0-3 AS build-env
 
-COPY src/ecspr/env.yml /opt/ecspr_env.yml
+COPY envs/ecspr/base.yml /opt/ecspr_env.yml
 RUN --mount=type=cache,target=/opt/conda/pkgs \
     mamba env create -n ecspr -f /opt/ecspr_env.yml
 ENV PATH=/opt/conda/envs/ecspr/bin:$PATH

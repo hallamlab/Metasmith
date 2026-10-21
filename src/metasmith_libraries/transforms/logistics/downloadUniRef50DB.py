@@ -16,13 +16,15 @@ UNIREF50_URLS = [
 
 def protocol(context: ExecutionContext):
     ifasta = context.Output(fasta)
+    # In the staging dir, so a retry resumes the 12 h transfer rather than restarting it.
+    staged = context.StagingDir()
     url = context.params.get("uniref50_url")
     urls = UNIREF50_URLS if url is None else [url]
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(urls, "uniref50.fasta.gz", label="uniref50"),
-        f"mv uniref50.fasta.gz {ifasta.local}",
+        FetchCommand(urls, staged.local/"uniref50.fasta.gz", label="uniref50"),
+        f"mv {staged.local}/uniref50.fasta.gz {ifasta.local}",
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)
 

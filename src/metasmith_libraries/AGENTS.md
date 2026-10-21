@@ -91,6 +91,17 @@ ends and fail there, at module import, after the expensive lanes have already su
 statically. One call launches a tool — `context.ExecWithEnv(env=, cmd=)` — and the agent's
 runtime decides how. See `docs/metasmith_libraries/ENV_PORT.md`.
 
+**A bind goes through `context.Mount(src, dst)`.** Put the path it returns in the command. A
+raw `(src, dst)` tuple raises before the tool runs, under every runtime.
+
+## A large download is a fetch and a build
+
+Fetch on `local` into `context.StagingDir()` with `FetchCommand`, and move the files into the
+product. Unpack, index and check content in a second transform that runs on a compute node.
+`downloadKofamDB` and `buildKofamDB` are the reference. A check or an unpack inside the fetch
+runs on a shared login node, and a retry of it fetches everything again. The reasons are in
+`docs/metasmith_libraries/architecture.md`.
+
 ## Two rules that fail quietly
 
 **A collecting transform must not pair two grouped slots by position.**

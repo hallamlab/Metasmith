@@ -46,7 +46,7 @@ NXF_SHUTDOWN_GRACE_S = 60
 
 def RenderLauncher(
     task_key: str, setup_commands: list[str], binds: str, background: bool = True,
-    workdir: str | None = None,
+    workdir: str | None = None, start_relay: bool = False,
 ) -> str:
     # start.sh: the root of a run. Everything the run consists of descends from
     # the process it backgrounds, and carries the token it exports.
@@ -79,7 +79,18 @@ def RenderLauncher(
             f'echo "run token is [${AgentPaths.RUN_TOKEN_ENV}], run pgid is [$RUN_PGID]"',
         ]
     else:
-        tail = [
+        # A container agent submits every tool job through the relay on its own
+        # node, found by hostname. A login node runs one for every client that
+        # connects; a compute node has none until the job starts it, and without
+        # it nextflow logs each submission as ignored and the run sits forever.
+        # Never stopped here: Slurm ends it with the job, and a second driver on
+        # this node may be using it.
+        relay = [
+            'if ( cd ../.. && T=$(command -v timeout >/dev/null && echo "timeout -k 5 45"); $T ./relay/msm_relay start ); '
+            'then echo "relay started on [$(hostname)]"; '
+            'else echo "relay start failed on [$(hostname)]; no tool job can be submitted from this node" >&2; fi',
+        ] if start_relay else []
+        tail = relay + [
             f'hostname > ./{AgentPaths.RUN_HOST_FILE}',
             f'RUN_PGID=$$',
             f'set +m',

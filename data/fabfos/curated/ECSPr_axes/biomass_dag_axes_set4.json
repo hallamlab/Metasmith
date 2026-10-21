@@ -1,0 +1,1187 @@
+{
+ "catabolic__MNXM1364061__MNXM46__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> OAA",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM46"
+  ],
+  "element": "C",
+  "route": "tca",
+  "category": "catabolic",
+  "description": "glucose -> oxaloacetate (TCA / anaplerosis)",
+  "purpose": "M9 carbon source to OAA precursor (Asp-family carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM23__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> pyruvate",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM23"
+  ],
+  "element": "C",
+  "route": "glycolysis",
+  "category": "catabolic",
+  "description": "glucose -> pyruvate (full glycolysis)",
+  "purpose": "M9 carbon source to pyruvate precursor"
+ },
+ "catabolic__MNXM1364061__MNXM1104266__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> AcCoA",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1104266"
+  ],
+  "element": "C",
+  "route": "tca",
+  "category": "catabolic",
+  "description": "glucose -> acetyl-CoA (PDH)",
+  "purpose": "M9 carbon source to acetyl-CoA precursor (lipid/cofactor carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM1368744__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> 2-oxoglutarate",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1368744"
+  ],
+  "element": "C",
+  "route": "tca",
+  "category": "catabolic",
+  "description": "glucose -> 2-oxoglutarate (TCA)",
+  "purpose": "M9 carbon source to aKG precursor (Glu-family carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM1104774__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> succinyl-CoA",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1104774"
+  ],
+  "element": "C",
+  "route": "tca",
+  "category": "catabolic",
+  "description": "glucose -> succinyl-CoA (TCA)",
+  "purpose": "M9 carbon source to succinyl-CoA precursor (heme C4 carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM258__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> E4P",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM258"
+  ],
+  "element": "C",
+  "route": "ppp",
+  "category": "catabolic",
+  "description": "glucose -> erythrose-4P (non-oxidative PPP)",
+  "purpose": "M9 carbon source to E4P precursor (aromatic carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM1372045__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> glyceraldehyde-3P",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1372045"
+  ],
+  "element": "C",
+  "route": "glycolysis",
+  "category": "catabolic",
+  "description": "glucose -> G3P (aldolase)",
+  "purpose": "M9 carbon source to triose-P precursor"
+ },
+ "catabolic__MNXM1364061__MNXM73__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> PEP",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM73"
+  ],
+  "element": "C",
+  "route": "glycolysis",
+  "category": "catabolic",
+  "description": "glucose -> phosphoenolpyruvate",
+  "purpose": "M9 carbon source to PEP precursor (aromatic/PTS carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM1107898__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> F6P",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1107898"
+  ],
+  "element": "C",
+  "route": "glycolysis",
+  "category": "catabolic",
+  "description": "glucose -> fructose-6P (pgi)",
+  "purpose": "M9 carbon source to F6P precursor"
+ },
+ "catabolic__MNXM1364061__MNXM1363910__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> ribose-5P",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1363910"
+  ],
+  "element": "C",
+  "route": "ppp",
+  "category": "catabolic",
+  "description": "glucose -> R5P (oxidative PPP)",
+  "purpose": "M9 carbon source to pentose-P precursor (nucleotide carbon)"
+ },
+ "catabolic__MNXM1364061__MNXM1105855__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> glucose-6P",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM1105855"
+  ],
+  "element": "C",
+  "route": "glycolysis",
+  "category": "catabolic",
+  "description": "glucose -> G6P (PTS/glk)",
+  "purpose": "M9 carbon source to hexose-P precursor"
+ },
+ "catabolic__MNXM1364061__MNXM727604__C": {
+  "module_id": "SET4_catabolic_C",
+  "module_name": "D-glucose -> 3PG",
+  "source": [
+   "MNXM1364061"
+  ],
+  "sink": [
+   "MNXM727604"
+  ],
+  "element": "C",
+  "route": "glycolysis",
+  "category": "catabolic",
+  "description": "glucose -> 3-phosphoglycerate",
+  "purpose": "M9 carbon source to 3PG precursor (Ser/Gly carbon)"
+ },
+ "protein__MNXM46__MNXM1364497__C": {
+  "module_id": "SET4_protein_C",
+  "module_name": "OAA -> L-aspartate",
+  "source": [
+   "MNXM46"
+  ],
+  "sink": [
+   "MNXM1364497"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "protein",
+  "description": "aspC transamination (OAA backbone)",
+  "purpose": "Asp-family carbon-skeleton rep"
+ },
+ "protein__MNXM23__MNXM1106761__C": {
+  "module_id": "SET4_protein_C",
+  "module_name": "pyruvate -> L-leucine",
+  "source": [
+   "MNXM23"
+  ],
+  "sink": [
+   "MNXM1106761"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "protein",
+  "description": "leuABCD + ilvE (IPM arm)",
+  "purpose": "pyruvate-family rep; EPI300 dLeuB auxotroph probe (fosmid leuABCD)"
+ },
+ "protein__MNXM1364497__MNXM738804__C": {
+  "module_id": "SET4_protein_C",
+  "module_name": "L-aspartate -> L-methionine",
+  "source": [
+   "MNXM1364497"
+  ],
+  "sink": [
+   "MNXM738804"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "protein",
+  "description": "Asp -> homoSer -> homoCys -> Met",
+  "purpose": "Asp-family branch carrying the S-amino-acid"
+ },
+ "protein__MNXM258__MNXM741553__C": {
+  "module_id": "SET4_protein_C",
+  "module_name": "E4P -> L-tryptophan",
+  "source": [
+   "MNXM258"
+  ],
+  "sink": [
+   "MNXM741553"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "protein",
+  "description": "shikimate -> chorismate -> Trp",
+  "purpose": "aromatic-family rep (longest aromatic path)"
+ },
+ "protein__MNXM727604__MNXM737787__C": {
+  "module_id": "SET4_protein_C",
+  "module_name": "3PG -> L-serine",
+  "source": [
+   "MNXM727604"
+  ],
+  "sink": [
+   "MNXM737787"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "protein",
+  "description": "serA/serC/serB (3PG arm)",
+  "purpose": "Ser-family carbon-skeleton rep"
+ },
+ "protein__MNXM1368744__MNXM741173__C": {
+  "module_id": "SET4_protein_C",
+  "module_name": "2-oxoglutarate -> L-glutamate",
+  "source": [
+   "MNXM1368744"
+  ],
+  "sink": [
+   "MNXM741173"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "protein",
+  "description": "gdhA / gltBD (aKG -> Glu)",
+  "purpose": "Glu-family carbon-skeleton rep"
+ },
+ "nucleotide__MNXM1368456__MNXM1104823__C": {
+  "module_id": "SET4_nucleotide_C",
+  "module_name": "uracil -> UMP",
+  "source": [
+   "MNXM1368456"
+  ],
+  "sink": [
+   "MNXM1104823"
+  ],
+  "element": "C",
+  "route": "salvage",
+  "category": "nucleotide",
+  "description": "UPP (uracil + PRPP -> UMP)",
+  "purpose": "pyrimidine salvage carbon detector"
+ },
+ "nucleotide__MNXM1364497__MNXM1104823__C": {
+  "module_id": "SET4_nucleotide_C",
+  "module_name": "L-aspartate -> UMP",
+  "source": [
+   "MNXM1364497"
+  ],
+  "sink": [
+   "MNXM1104823"
+  ],
+  "element": "C",
+  "route": "denovo",
+  "category": "nucleotide",
+  "description": "pyrimidine ring C4-C6 from Asp (de novo)",
+  "purpose": "pyrimidine de novo carbon probe"
+ },
+ "nucleotide__MNXM732487__MNXM1101868__C": {
+  "module_id": "SET4_nucleotide_C",
+  "module_name": "hypoxanthine -> IMP",
+  "source": [
+   "MNXM732487"
+  ],
+  "sink": [
+   "MNXM1101868"
+  ],
+  "element": "C",
+  "route": "salvage",
+  "category": "nucleotide",
+  "description": "HGPRT (hypoxanthine + PRPP -> IMP)",
+  "purpose": "purine salvage carbon detector"
+ },
+ "nucleotide__MNXM29__MNXM1101868__C": {
+  "module_id": "SET4_nucleotide_C",
+  "module_name": "glycine -> IMP",
+  "source": [
+   "MNXM29"
+  ],
+  "sink": [
+   "MNXM1101868"
+  ],
+  "element": "C",
+  "route": "denovo",
+  "category": "nucleotide",
+  "description": "purine ring C4,C5 from Gly (de novo on PRPP)",
+  "purpose": "purine de novo carbon probe"
+ },
+ "cofactor__MNXM1105057__MNXM83__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "(R)-mevalonate -> isopentenyl-PP",
+  "source": [
+   "MNXM1105057"
+  ],
+  "sink": [
+   "MNXM83"
+  ],
+  "element": "C",
+  "route": "MVA",
+  "category": "cofactor",
+  "description": "mevalonate pathway (mvaK1/PMK/MDD)",
+  "purpose": "isoprenoid MVA route detector (fosmid)"
+ },
+ "cofactor__MNXM23__MNXM1371612__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "pyruvate -> (R)-pantothenate",
+  "source": [
+   "MNXM23"
+  ],
+  "sink": [
+   "MNXM1371612"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "cofactor",
+  "description": "panBCDE (ketopantoate -> pantoate)",
+  "purpose": "CoA-arm carbon probe"
+ },
+ "cofactor__MNXM258__MNXM337__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "E4P -> chorismate",
+  "source": [
+   "MNXM258"
+  ],
+  "sink": [
+   "MNXM337"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "cofactor",
+  "description": "shikimate pathway terminus",
+  "purpose": "aromatic-cofactor branch (ubiquinone, menaquinone, folate, enterobactin)"
+ },
+ "cofactor__MNXM23__MNXM622__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "pyruvate -> 1-deoxy-D-xylulose-5P",
+  "source": [
+   "MNXM23"
+  ],
+  "sink": [
+   "MNXM622"
+  ],
+  "element": "C",
+  "route": "MEP",
+  "category": "cofactor",
+  "description": "DXS (pyruvate + G3P -> DXP)",
+  "purpose": "thiamine/B6/MEP carbon branch"
+ },
+ "cofactor__MNXM622__MNXM83__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "1-deoxy-D-xylulose-5P -> isopentenyl-PP",
+  "source": [
+   "MNXM622"
+  ],
+  "sink": [
+   "MNXM83"
+  ],
+  "element": "C",
+  "route": "MEP",
+  "category": "cofactor",
+  "description": "MEP pathway (ispCDEFGH)",
+  "purpose": "isoprenoid MEP route detector (host)"
+ },
+ "cofactor__MNXM1364497__MNXM555__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "L-aspartate -> quinolinate",
+  "source": [
+   "MNXM1364497"
+  ],
+  "sink": [
+   "MNXM555"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "cofactor",
+  "description": "nadB/nadA (Asp + DHAP -> quinolinate)",
+  "purpose": "NAD de novo carbon probe (committed, non-hub)"
+ },
+ "cofactor__MNXM1103553__MNXM270__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "GTP -> riboflavin",
+  "source": [
+   "MNXM1103553"
+  ],
+  "sink": [
+   "MNXM270"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "cofactor",
+  "description": "GTP cyclohydrolase II + ribABEH",
+  "purpose": "flavin (FAD/FMN) carbon probe"
+ },
+ "cofactor__MNXM1453__MNXM405__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "glutamate-1-semialdehyde -> 5-aminolevulinate",
+  "source": [
+   "MNXM1453"
+  ],
+  "sink": [
+   "MNXM405"
+  ],
+  "element": "C",
+  "route": "C5",
+  "category": "cofactor",
+  "description": "hemL (GSA aminotransferase)",
+  "purpose": "heme C5 route detector (host); GSA is C5-specific"
+ },
+ "cofactor__MNXM1104774__MNXM405__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "succinyl-CoA -> 5-aminolevulinate",
+  "source": [
+   "MNXM1104774"
+  ],
+  "sink": [
+   "MNXM405"
+  ],
+  "element": "C",
+  "route": "C4",
+  "category": "cofactor",
+  "description": "Shemin ALA synthase (hemA/ALAS)",
+  "purpose": "heme C4 route detector (fosmid: a-proteo/mito)"
+ },
+ "cofactor__MNXM405__MNXM554__C": {
+  "module_id": "SET4_cofactor_C",
+  "module_name": "5-aminolevulinate -> porphobilinogen",
+  "source": [
+   "MNXM405"
+  ],
+  "sink": [
+   "MNXM554"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "cofactor",
+  "description": "hemB (ALA dehydratase)",
+  "purpose": "tetrapyrrole-committed carbon probe (heme rep)"
+ },
+ "phospholipid__MNXM1104266__MNXM115__C": {
+  "module_id": "SET4_phospholipid_C",
+  "module_name": "AcCoA -> phosphatidylethanolamine",
+  "source": [
+   "MNXM1104266"
+  ],
+  "sink": [
+   "MNXM115"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "phospholipid",
+  "description": "acyl chains via FAS-II -> PE",
+  "purpose": "dominant phospholipid carbon probe"
+ },
+ "phospholipid__MNXM1104266__MNXM725992__C": {
+  "module_id": "SET4_phospholipid_C",
+  "module_name": "AcCoA -> phosphatidylglycerol",
+  "source": [
+   "MNXM1104266"
+  ],
+  "sink": [
+   "MNXM725992"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "phospholipid",
+  "description": "acyl chains -> PG",
+  "purpose": "anionic phospholipid carbon probe (cardiolipin = 2xPG)"
+ },
+ "lps__MNXM1104266__MNXM731760__C": {
+  "module_id": "SET4_lps_C",
+  "module_name": "AcCoA -> lipid IV-A",
+  "source": [
+   "MNXM1104266"
+  ],
+  "sink": [
+   "MNXM731760"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "lps",
+  "description": "lipid A acyl chains",
+  "purpose": "LPS / lipid-A carbon probe"
+ },
+ "murein__MNXM732166__MNXM163519__C": {
+  "module_id": "SET4_murein_C",
+  "module_name": "UDP-MurNAc-PP -> lipid II",
+  "source": [
+   "MNXM732166"
+  ],
+  "sink": [
+   "MNXM163519"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "murein",
+  "description": "MraY / MurG lipid-linked disaccharide",
+  "purpose": "glycan terminus carbon probe"
+ },
+ "murein__MNXM1107898__MNXM1104529__C": {
+  "module_id": "SET4_murein_C",
+  "module_name": "F6P -> UDP-GlcNAc",
+  "source": [
+   "MNXM1107898"
+  ],
+  "sink": [
+   "MNXM1104529"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "murein",
+  "description": "GlmSMU amino-sugar synthesis",
+  "purpose": "glycan step-1 carbon probe"
+ },
+ "murein__MNXM1104529__MNXM732166__C": {
+  "module_id": "SET4_murein_C",
+  "module_name": "UDP-GlcNAc -> UDP-MurNAc-PP",
+  "source": [
+   "MNXM1104529"
+  ],
+  "sink": [
+   "MNXM732166"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "murein",
+  "description": "MurA-F + stem-peptide assembly",
+  "purpose": "glycan step-2 carbon probe"
+ },
+ "murein__MNXM46__MNXM529__C": {
+  "module_id": "SET4_murein_C",
+  "module_name": "OAA -> meso-DAP",
+  "source": [
+   "MNXM46"
+  ],
+  "sink": [
+   "MNXM529"
+  ],
+  "element": "C",
+  "route": "-",
+  "category": "murein",
+  "description": "DAP pathway (dapABDEF)",
+  "purpose": "peptidoglycan cross-link carbon probe"
+ },
+ "met_salvage__MNXM1101977__MNXM738804__C": {
+  "module_id": "SET4_met_salvage_C",
+  "module_name": "S-methyl-5'-thioadenosine -> L-methionine",
+  "source": [
+   "MNXM1101977"
+  ],
+  "sink": [
+   "MNXM738804"
+  ],
+  "element": "C",
+  "route": "salvage",
+  "category": "met_salvage",
+  "description": "Met salvage cycle (mtnKADWBN)",
+  "purpose": "methionine salvage carbon detector (fosmid)"
+ },
+ "catabolic__MNXM729302__MNXM741173__N": {
+  "module_id": "SET4_catabolic_N",
+  "module_name": "NH4+ -> L-glutamate",
+  "source": [
+   "MNXM729302"
+  ],
+  "sink": [
+   "MNXM741173"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "catabolic",
+  "description": "NH3 assimilation (GS-GOGAT / gdhA)",
+  "purpose": "M9 nitrogen source to the universal amine donor"
+ },
+ "catabolic__MNXM729302__MNXM37__N": {
+  "module_id": "SET4_catabolic_N",
+  "module_name": "NH4+ -> L-glutamine",
+  "source": [
+   "MNXM729302"
+  ],
+  "sink": [
+   "MNXM37"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "catabolic",
+  "description": "NH3 -> Gln (glutamine synthetase)",
+  "purpose": "M9 nitrogen source to the amide-N donor"
+ },
+ "protein__MNXM37__MNXM1107769__N": {
+  "module_id": "SET4_protein_N",
+  "module_name": "L-glutamine -> L-histidine",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM1107769"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "protein",
+  "description": "hisH amide-N donor",
+  "purpose": "His-family amide-N probe"
+ },
+ "protein__MNXM741173__MNXM738804__N": {
+  "module_id": "SET4_protein_N",
+  "module_name": "L-glutamate -> L-methionine",
+  "source": [
+   "MNXM741173"
+  ],
+  "sink": [
+   "MNXM738804"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "protein",
+  "description": "Met amine via Asp transamination",
+  "purpose": "Met amine-N probe"
+ },
+ "protein__MNXM741173__MNXM1364497__N": {
+  "module_id": "SET4_protein_N",
+  "module_name": "L-glutamate -> L-aspartate",
+  "source": [
+   "MNXM741173"
+  ],
+  "sink": [
+   "MNXM1364497"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "protein",
+  "description": "aspC (Glu amine donor)",
+  "purpose": "Asp-family amine-N probe"
+ },
+ "protein__MNXM741173__MNXM737787__N": {
+  "module_id": "SET4_protein_N",
+  "module_name": "L-glutamate -> L-serine",
+  "source": [
+   "MNXM741173"
+  ],
+  "sink": [
+   "MNXM737787"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "protein",
+  "description": "serC transamination",
+  "purpose": "Ser-family amine-N probe"
+ },
+ "protein__MNXM37__MNXM741553__N": {
+  "module_id": "SET4_protein_N",
+  "module_name": "L-glutamine -> L-tryptophan",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM741553"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "protein",
+  "description": "trpEGD amide-N (anthranilate)",
+  "purpose": "aromatic-family amide-N probe"
+ },
+ "protein__MNXM741173__MNXM1106761__N": {
+  "module_id": "SET4_protein_N",
+  "module_name": "L-glutamate -> L-leucine",
+  "source": [
+   "MNXM741173"
+  ],
+  "sink": [
+   "MNXM1106761"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "protein",
+  "description": "ilvE branched-chain transamination",
+  "purpose": "pyruvate-family amine-N probe"
+ },
+ "nucleotide__MNXM1368456__MNXM1104823__N": {
+  "module_id": "SET4_nucleotide_N",
+  "module_name": "uracil -> UMP",
+  "source": [
+   "MNXM1368456"
+  ],
+  "sink": [
+   "MNXM1104823"
+  ],
+  "element": "N",
+  "route": "salvage",
+  "category": "nucleotide",
+  "description": "UPP salvage, ring N conserved",
+  "purpose": "pyrimidine salvage nitrogen detector"
+ },
+ "nucleotide__MNXM138__MNXM1104823__N": {
+  "module_id": "SET4_nucleotide_N",
+  "module_name": "carbamoyl-P -> UMP",
+  "source": [
+   "MNXM138"
+  ],
+  "sink": [
+   "MNXM1104823"
+  ],
+  "element": "N",
+  "route": "denovo",
+  "category": "nucleotide",
+  "description": "pyrimidine ring N3 from carbamoyl-P",
+  "purpose": "pyrimidine de novo nitrogen probe"
+ },
+ "nucleotide__MNXM37__MNXM1101868__N": {
+  "module_id": "SET4_nucleotide_N",
+  "module_name": "L-glutamine -> IMP",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM1101868"
+  ],
+  "element": "N",
+  "route": "denovo",
+  "category": "nucleotide",
+  "description": "purine ring N3,N9 from Gln",
+  "purpose": "purine de novo nitrogen probe"
+ },
+ "nucleotide__MNXM732487__MNXM1101868__N": {
+  "module_id": "SET4_nucleotide_N",
+  "module_name": "hypoxanthine -> IMP",
+  "source": [
+   "MNXM732487"
+  ],
+  "sink": [
+   "MNXM1101868"
+  ],
+  "element": "N",
+  "route": "salvage",
+  "category": "nucleotide",
+  "description": "HGPRT salvage, ring N conserved",
+  "purpose": "purine salvage nitrogen detector"
+ },
+ "cofactor__MNXM1364497__MNXM1371612__N": {
+  "module_id": "SET4_cofactor_N",
+  "module_name": "L-aspartate -> (R)-pantothenate",
+  "source": [
+   "MNXM1364497"
+  ],
+  "sink": [
+   "MNXM1371612"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "cofactor",
+  "description": "panD (b-alanine from Asp decarboxylation)",
+  "purpose": "CoA-arm nitrogen probe"
+ },
+ "cofactor__MNXM1103553__MNXM270__N": {
+  "module_id": "SET4_cofactor_N",
+  "module_name": "GTP -> riboflavin",
+  "source": [
+   "MNXM1103553"
+  ],
+  "sink": [
+   "MNXM270"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "cofactor",
+  "description": "flavin ring N from GTP",
+  "purpose": "flavin nitrogen probe"
+ },
+ "cofactor__MNXM1453__MNXM405__N": {
+  "module_id": "SET4_cofactor_N",
+  "module_name": "glutamate-1-semialdehyde -> 5-aminolevulinate",
+  "source": [
+   "MNXM1453"
+  ],
+  "sink": [
+   "MNXM405"
+  ],
+  "element": "N",
+  "route": "C5",
+  "category": "cofactor",
+  "description": "C5 route amine",
+  "purpose": "heme C5 nitrogen detector"
+ },
+ "cofactor__MNXM1364497__MNXM555__N": {
+  "module_id": "SET4_cofactor_N",
+  "module_name": "L-aspartate -> quinolinate",
+  "source": [
+   "MNXM1364497"
+  ],
+  "sink": [
+   "MNXM555"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "cofactor",
+  "description": "quinolinate ring N from Asp",
+  "purpose": "NAD de novo nitrogen probe"
+ },
+ "cofactor__MNXM405__MNXM554__N": {
+  "module_id": "SET4_cofactor_N",
+  "module_name": "5-aminolevulinate -> porphobilinogen",
+  "source": [
+   "MNXM405"
+  ],
+  "sink": [
+   "MNXM554"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "cofactor",
+  "description": "hemB; pyrrole ring N",
+  "purpose": "tetrapyrrole nitrogen probe"
+ },
+ "phospholipid__MNXM737787__MNXM115__N": {
+  "module_id": "SET4_phospholipid_N",
+  "module_name": "L-serine -> phosphatidylethanolamine",
+  "source": [
+   "MNXM737787"
+  ],
+  "sink": [
+   "MNXM115"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "phospholipid",
+  "description": "PS -> PE decarboxylation; ethanolamine N from Ser",
+  "purpose": "only N-bearing lipid; amine probe"
+ },
+ "lps__MNXM37__MNXM731760__N": {
+  "module_id": "SET4_lps_N",
+  "module_name": "L-glutamine -> lipid IV-A",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM731760"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "lps",
+  "description": "2x glucosamine N",
+  "purpose": "LPS glucosamine nitrogen probe"
+ },
+ "murein__MNXM37__MNXM732166__N": {
+  "module_id": "SET4_murein_N",
+  "module_name": "L-glutamine -> UDP-MurNAc-PP",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM732166"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "murein",
+  "description": "amino-sugar + stem-peptide N",
+  "purpose": "glycan step-2 nitrogen probe"
+ },
+ "murein__MNXM37__MNXM1104529__N": {
+  "module_id": "SET4_murein_N",
+  "module_name": "L-glutamine -> UDP-GlcNAc",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM1104529"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "murein",
+  "description": "GlmS amino-sugar N (F6P + Gln -> GlcN6P)",
+  "purpose": "glycan amino-sugar N probe"
+ },
+ "murein__MNXM37__MNXM163519__N": {
+  "module_id": "SET4_murein_N",
+  "module_name": "L-glutamine -> lipid II",
+  "source": [
+   "MNXM37"
+  ],
+  "sink": [
+   "MNXM163519"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "murein",
+  "description": "terminus amino-sugar / peptide N",
+  "purpose": "glycan terminus nitrogen probe"
+ },
+ "murein__MNXM741173__MNXM529__N": {
+  "module_id": "SET4_murein_N",
+  "module_name": "L-glutamate -> meso-DAP",
+  "source": [
+   "MNXM741173"
+  ],
+  "sink": [
+   "MNXM529"
+  ],
+  "element": "N",
+  "route": "-",
+  "category": "murein",
+  "description": "DAP transamination (Glu amine)",
+  "purpose": "cross-link nitrogen probe"
+ },
+ "nucleotide__MNXM9__MNXM1101868__P": {
+  "module_id": "SET4_nucleotide_P",
+  "module_name": "phosphate -> IMP",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM1101868"
+  ],
+  "element": "P",
+  "route": "denovo",
+  "category": "nucleotide",
+  "description": "phosphate incorporation into IMP",
+  "purpose": "purine de novo phosphate probe"
+ },
+ "nucleotide__MNXM9__MNXM1104823__P": {
+  "module_id": "SET4_nucleotide_P",
+  "module_name": "phosphate -> UMP",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM1104823"
+  ],
+  "element": "P",
+  "route": "denovo",
+  "category": "nucleotide",
+  "description": "phosphate incorporation into UMP",
+  "purpose": "pyrimidine de novo phosphate probe"
+ },
+ "cofactor__MNXM1372045__MNXM622__P": {
+  "module_id": "SET4_cofactor_P",
+  "module_name": "glyceraldehyde-3P -> 1-deoxy-D-xylulose-5P",
+  "source": [
+   "MNXM1372045"
+  ],
+  "sink": [
+   "MNXM622"
+  ],
+  "element": "P",
+  "route": "MEP",
+  "category": "cofactor",
+  "description": "DXS phosphate",
+  "purpose": "thiamine/B6/MEP phosphate branch"
+ },
+ "cofactor__MNXM622__MNXM83__P": {
+  "module_id": "SET4_cofactor_P",
+  "module_name": "1-deoxy-D-xylulose-5P -> isopentenyl-PP",
+  "source": [
+   "MNXM622"
+  ],
+  "sink": [
+   "MNXM83"
+  ],
+  "element": "P",
+  "route": "MEP",
+  "category": "cofactor",
+  "description": "MEP pathway phosphate",
+  "purpose": "isoprenoid MEP phosphate detector"
+ },
+ "phospholipid__MNXM9__MNXM115__P": {
+  "module_id": "SET4_phospholipid_P",
+  "module_name": "phosphate -> phosphatidylethanolamine",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM115"
+  ],
+  "element": "P",
+  "route": "-",
+  "category": "phospholipid",
+  "description": "phosphodiester backbone",
+  "purpose": "PE phosphate probe"
+ },
+ "phospholipid__MNXM9__MNXM725992__P": {
+  "module_id": "SET4_phospholipid_P",
+  "module_name": "phosphate -> phosphatidylglycerol",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM725992"
+  ],
+  "element": "P",
+  "route": "-",
+  "category": "phospholipid",
+  "description": "phosphodiester backbone",
+  "purpose": "PG phosphate probe"
+ },
+ "lps__MNXM9__MNXM731760__P": {
+  "module_id": "SET4_lps_P",
+  "module_name": "phosphate -> lipid IV-A",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM731760"
+  ],
+  "element": "P",
+  "route": "-",
+  "category": "lps",
+  "description": "1,4'-bisphosphate",
+  "purpose": "LPS phosphate probe"
+ },
+ "murein__MNXM9__MNXM1104529__P": {
+  "module_id": "SET4_murein_P",
+  "module_name": "phosphate -> UDP-GlcNAc",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM1104529"
+  ],
+  "element": "P",
+  "route": "-",
+  "category": "murein",
+  "description": "UDP phosphates",
+  "purpose": "glycan step-1 phosphate probe"
+ },
+ "murein__MNXM9__MNXM732166__P": {
+  "module_id": "SET4_murein_P",
+  "module_name": "phosphate -> UDP-MurNAc-PP",
+  "source": [
+   "MNXM9"
+  ],
+  "sink": [
+   "MNXM732166"
+  ],
+  "element": "P",
+  "route": "-",
+  "category": "murein",
+  "description": "UDP / PP phosphates",
+  "purpose": "glycan step-2 phosphate probe"
+ },
+ "catabolic__MNXM58__MNXM738068__S": {
+  "module_id": "SET4_catabolic_S",
+  "module_name": "sulfate -> L-cysteine",
+  "source": [
+   "MNXM58"
+  ],
+  "sink": [
+   "MNXM738068"
+  ],
+  "element": "S",
+  "route": "-",
+  "category": "catabolic",
+  "description": "assimilatory sulfate reduction + O-acetylserine (cysDNCJIH + cysK)",
+  "purpose": "M9 sulfur source to the cysteine sulfur terminus"
+ },
+ "protein__MNXM738068__MNXM738804__S": {
+  "module_id": "SET4_protein_S",
+  "module_name": "L-cysteine -> L-methionine",
+  "source": [
+   "MNXM738068"
+  ],
+  "sink": [
+   "MNXM738804"
+  ],
+  "element": "S",
+  "route": "denovo",
+  "category": "protein",
+  "description": "transsulfuration (Cys -> homoCys -> Met)",
+  "purpose": "Met de novo S route; sole protein S terminus"
+ },
+ "cofactor__MNXM738068__MNXM1371179__S": {
+  "module_id": "SET4_cofactor_S",
+  "module_name": "L-cysteine -> lipoate",
+  "source": [
+   "MNXM738068"
+  ],
+  "sink": [
+   "MNXM1371179"
+  ],
+  "element": "S",
+  "route": "-",
+  "category": "cofactor",
+  "description": "LipA radical-SAM [4Fe-4S] insertion",
+  "purpose": "lipoate sulfur probe - LipA radical-SAM"
+ },
+ "cofactor__MNXM738068__MNXM304__S": {
+  "module_id": "SET4_cofactor_S",
+  "module_name": "L-cysteine -> biotin",
+  "source": [
+   "MNXM738068"
+  ],
+  "sink": [
+   "MNXM304"
+  ],
+  "element": "S",
+  "route": "-",
+  "category": "cofactor",
+  "description": "BioB radical-SAM [2Fe-2S] insertion",
+  "purpose": "biotin sulfur probe - BioB radical-SAM"
+ },
+ "cofactor__MNXM738068__MNXM727276__S": {
+  "module_id": "SET4_cofactor_S",
+  "module_name": "L-cysteine -> CoA",
+  "source": [
+   "MNXM738068"
+  ],
+  "sink": [
+   "MNXM727276"
+  ],
+  "element": "S",
+  "route": "-",
+  "category": "cofactor",
+  "description": "CoaBC condenses Cys (pantetheine thiol)",
+  "purpose": "CoA sulfur probe - direct Cys condensation"
+ },
+ "cofactor__MNXM738068__MNXM256__S": {
+  "module_id": "SET4_cofactor_S",
+  "module_name": "L-cysteine -> thiamine-PP",
+  "source": [
+   "MNXM738068"
+  ],
+  "sink": [
+   "MNXM256"
+  ],
+  "element": "S",
+  "route": "-",
+  "category": "cofactor",
+  "description": "ThiS-thiocarboxylate relay -> ThiG",
+  "purpose": "thiamine sulfur probe - ThiS relay"
+ },
+ "met_salvage__MNXM1101977__MNXM738804__S": {
+  "module_id": "SET4_met_salvage_S",
+  "module_name": "S-methyl-5'-thioadenosine -> L-methionine",
+  "source": [
+   "MNXM1101977"
+  ],
+  "sink": [
+   "MNXM738804"
+  ],
+  "element": "S",
+  "route": "salvage",
+  "category": "met_salvage",
+  "description": "recycles the methylthio group",
+  "purpose": "methionine salvage sulfur detector"
+ }
+}

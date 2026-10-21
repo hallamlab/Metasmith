@@ -7,7 +7,7 @@
 # output, so no single quality bin has one gtdbtk ancestor to recover. gtdbtk's
 # `user_genome` column names the bin file, which is the join every consumer of
 # these two files already uses.
-import re
+import json
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -22,7 +22,8 @@ cluster = model.AddRequirement(lib.GetType("binning_local::cluster_table"), pare
 # gtdbtk_raw, not gtdbtk: add_to_db wants the DECORATED TREES, which only
 # de_novo_wf writes. The classification TSV that `taxonomy::gtdbtk` carries is a
 # different artifact and add_to_db never looks at it.
-tax     = model.AddRequirement(lib.GetType("taxonomy::gtdbtk_raw"), parents={study})
+tax     = model.AddRequirement(lib.GetType("taxonomy::gtdbtk_raw"), parents={study, bin})
+graft   = model.AddRequirement(lib.GetType("lib::iphop_graft.py"))
 
 out_db  = model.AddProduct(lib.GetType("viromics::iphop_augmented_db"))
 
@@ -46,37 +47,6 @@ def _centroids(tables) -> set[str]:
                 if r[col["is_centroid_95"]] == "1":
                     keep.add(r[col["bin_id"]])
     return keep
-
-
-# add_to_db globs the tree itself at either the top of the directory or under `infer/`,
-# but the tree-taxonomy only under `infer/`. Read both, because which one de_novo_wf
-# writes has moved between GTDB-Tk versions. The marker set is a wildcard for the same
-# reason: GTDB-Tk 2 names the archaeal set ar53, and older releases ar122.
-DOMAINS = ("bac[0-9]*", "ar[0-9]*")
-
-def _domain_files(tree_dir: Path, domain: str, suffix: str) -> list[Path]:
-    found = []
-    for parent in (tree_dir, tree_dir/"infer"):
-        found += sorted(parent.glob(f"gtdbtk.{domain}.{suffix}"))
-    return found
-
-
-_LEAF = re.compile(r"[(,]\s*([^(),:;]+)\s*:")
-
-
-def _leaves(newick: str) -> set[str]:
-    return {m.group(1).strip() for m in _LEAF.finditer(newick)}
-
-
-def _tree_members(tree_dir: Path) -> set[str]:
-    members = set()
-    for domain in DOMAINS:
-        for table in _domain_files(tree_dir, domain, "decorated.tree-taxonomy"):
-            with open(table) as f:
-                for line in f:
-                    if line.strip():
-                        members.add(line.split("\t")[0].strip())
-    return members
 
 
 def protocol(context: ExecutionContext):
@@ -114,84 +84,68 @@ def protocol(context: ExecutionContext):
         o.local.symlink_to(ibase.local)
         return ExecutionResult(manifest=[{out_db: o.local}], success=o.local.exists())
 
-    # ONE call against ONE merged GTDB-Tk directory, because chaining a call per
-    # directory does not work and cannot be made to. add_to_db treats the tree it is
-    # handed as the authoritative membership list: it rebuilds Host_Genomes.tsv keeping
-    # only rows whose representative appears in that round's tree-taxonomy. So round 1,
-    # carrying the second sample's tree, DELETES the genomes round 0 added. Measured on
-    # the test database: two bacterial MAGs added in round 0, one archaeal MAG in round 1,
-    # and one row in the result. It also copies the whole database per round, which for
-    # the real Aug23 release is 350 GB of copying per extra directory.
+    # ONE call against ONE GTDB-Tk directory, because chaining a call per directory does
+    # not work: add_to_db treats the tree it is handed as the authoritative membership list
+    # and rebuilds Host_Genomes.tsv keeping only rows whose representative that round's
+    # tree-taxonomy names. Round 1 deletes what round 0 added, and each round copies the
+    # whole database.
     #
-    # Merging is sound because add_to_db never reads the tree's topology. It uses the
-    # tree twice, both times as a set: `get_tree_members` marks a user genome as a new
-    # representative if it is a leaf, and the tree is then copied verbatim into the new
-    # db_infos. So the union of the taxonomy tables plus a tree carrying every new MAG as
-    # a leaf is exactly what one de_novo_wf over all the MAGs would have handed it, which
-    # is how the paper ran it -- the per-binner split is ours, not theirs.
-    merged = Path("gtdb_merged/infer")
-    merged.mkdir(parents=True, exist_ok=True)
-    for domain in DOMAINS:
-        rows: dict[str, str] = {}
-        best_tree, best_leaves = None, -1
-        for handle in tree_handles:
-            for table in _domain_files(handle.local, domain, "decorated.tree-taxonomy"):
-                with open(table) as f:
-                    for line in f:
-                        if not line.strip():
-                            continue
-                        gid, _, taxon = line.rstrip("\n").partition("\t")
-                        rows.setdefault(gid, taxon)
-            for tree in _domain_files(handle.local, domain, "decorated.tree"):
-                leaves = _leaves(tree.read_text())
-                if len(leaves) > best_leaves:
-                    best_tree, best_leaves = tree, len(leaves)
-        if best_tree is None:
-            continue
-        marker = best_tree.name.split(".")[1]
-        newick = best_tree.read_text()
-        present = _leaves(newick)
-        graft = [g for g in rows if g in staged_mags and g not in present]
-        if graft:
-            body = newick.strip().rstrip(";").strip()
-            newick = f"({body}," + ",".join(f"{g}:0.1" for g in graft) + ");\n"
-        (merged/f"gtdbtk.{marker}.decorated.tree").write_text(newick)
-        with open(merged/f"gtdbtk.{marker}.decorated.tree-taxonomy", "w") as f:
-            for gid, taxon in rows.items():
-                f.write(f"{gid}\t{taxon}\n")
-        Log.Info(
-            f"{marker}: {len(rows)} taxonomy rows from {len(tree_handles)} directories,"
-            f" {best_leaves} tree leaves, {len(graft)} MAGs grafted"
-        )
-
-    named = sum(1 for stem in staged_mags if any(
-        stem in _tree_members(h.local) for h in tree_handles))
+    # The directory holds the base database's OWN trees with the MAGs grafted in, not the
+    # de_novo trees. A de_novo tree names GTDB's representatives alone, so on Jun25_rw it
+    # cost 133,705 of 1,155,965 hosts, 48,379 of them iPHoP's own IMG and MGN
+    # representatives that no GTDB-Tk tree carries. And predict walks the tree between
+    # hosts, so a host it cannot find there fails the whole prediction.
+    igraft = context.Input(graft)
+    trees = " ".join(str(h.container) for h in tree_handles)
+    context.ExecWithEnv(
+        env=image,
+        cmd=f"python {igraft.container} --base {ibase.container} --mags {mag_dir} "
+            f"--out ./gtdb_merged {trees} > graft.json",
+    )
+    summary = json.loads(Path("graft.json").read_text())
+    named = sum(len(d["mags"]) for d in summary.values())
+    for marker, d in summary.items():
+        Log.Info(f"{marker}: {d['base_leaves']} base leaves, {d['grafted']} MAGs grafted"
+                 f" beside a base leaf, {d['at_root']} at the root")
     if named == 0:
-        Log.Warn("no gtdbtk directory named a centroid MAG; passing the base database through")
+        Log.Warn("no gtdbtk directory placed a centroid MAG; passing the base database through")
         o.local.symlink_to(ibase.local)
         return ExecutionResult(manifest=[{out_db: o.local}], success=o.local.exists())
-    Log.Info(f"{named} of {n} staged MAGs are named by a decorated tree")
+    Log.Info(f"{named} of {n} staged MAGs are in a tree")
 
-    # A round's output is NOT a complete database: add_to_db silently drops
-    # `db/wish_data/`, the decoy phage set WIsH fits its null model against, so the
-    # product would be missing it. Backfill every entry the base database has and the
-    # output lacks. It is 28 MB.
-    backfill = "\n".join(
-        f"""
-        for src in {ibase.container}/{sub}/*; do
-            dst="./iphop_augmented/{sub}/$(basename "$src")"
-            [ -e "$dst" ] || cp -r "$src" "$dst"
+    context.ExecWithEnv(
+        env=image,
+        cmd=f"iphop add_to_db --fna_dir {mag_dir} --gtdb_dir ./gtdb_merged "
+            f"--db_dir {ibase.container} --out_dir ./iphop_augmented -t {threads}",
+    )
+
+    # add_to_db's output is not a database on its own. It omits `db/wish_data/` and more,
+    # it symlinks rafah_data and rewish_models into the base, and its Host_Genomes is a
+    # BLAST alias naming the base volumes and the new genomes by ABSOLUTE path, the second
+    # being this task's own work dir, gone once the product is promoted. Each is
+    # hardlinked in from the base and the alias is made relative, so the product reads
+    # nothing outside itself. That needs one filesystem with the cache, hence `noscratch`,
+    # and the host's paths, because two container binds of it refuse a link.
+    base_dir = ibase.local.resolve()
+    if context.LocalShell(f"""
+        set -euo pipefail
+        A=./iphop_augmented
+        for sub in db db_infos; do
+            for src in {base_dir}/$sub/*; do
+                dst="$A/$sub/$(basename "$src")"
+                [ -e "$dst" ] || [ -L "$dst" ] || cp -al "$src" "$dst"
+            done
         done
-        """
-        for sub in ("db", "db_infos")
-    )
-
-    _cmd = (
-        f"iphop add_to_db --fna_dir {mag_dir} --gtdb_dir ./gtdb_merged "
-        f"--db_dir {ibase.container} --out_dir ./iphop_augmented -t {threads}\n"
-        f"{backfill}\n"
-    )
-    context.ExecWithEnv(env=image, cmd=_cmd)
+        find $A -maxdepth 2 -type l | while read -r link; do
+            target=$(readlink -f "$link")
+            rm "$link"
+            cp -al "$target" "$link"
+        done
+        mkdir $A/db/Host_Genomes/base
+        cp -al {base_dir}/db/Host_Genomes/. $A/db/Host_Genomes/base/
+        sed -i 's|^DBLIST .*|DBLIST "base/Host_Genomes" "New_host_genomes"|' $A/db/Host_Genomes/Host_Genomes.nal
+    """) != 0:
+        return ExecutionResult(manifest=[], success=False)
 
     staged = Path("iphop_augmented")
     for half in ("db", "db_infos", "db/wish_data"):
@@ -205,6 +159,8 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=study,
+    labels=["noscratch"],
     output_signature={out_db: "iphop_db"},
-    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=24)),
+    # On fir with 42 MAGs against Jun25_rw: 3 m 20 s and 19.8 GB, the graft 23 s.
+    resources=Resources(cpus=16, memory=Size.GB(32), duration=Duration(hours=4)),
 )

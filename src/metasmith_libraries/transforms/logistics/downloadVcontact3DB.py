@@ -79,7 +79,8 @@ def protocol(context: ExecutionContext):
     # to turn `scratch` off for cached twins, which bends the execution environment for
     # every twin to work around one product's defect. The contract is fixed; the product is
     # what has to be made valid inside it.
-    scratch_dirs = sorted(staged.glob("*/*.mmseq_tmp"))
+    # Directories only: the release's macOS `._<name>.mmseq_tmp` files match the glob too.
+    scratch_dirs = sorted(d for d in staged.glob("*/*.mmseq_tmp") if d.is_dir() and not d.is_symlink())
     for d in scratch_dirs:
         shutil.rmtree(d)
     Log.Info(f"pruned {len(scratch_dirs)} mmseqs build-scratch dir(s) from the database")

@@ -47,7 +47,7 @@ from ecspr.model.graph import Terminal, measure_leak                     # noqa:
 from ecspr.model.scoring import responders                              # noqa: E402
 import bake_pairs                                                       # noqa: E402
 
-HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
+HOST_GEM = ROOT / "data/fabfos/runs/e_coli_k12/gpr/gpr_gem.parquet"
 CLONE_GPR = ROOT / "data/fabfos/runs/eydallin_clones/gpr/gpr_gem.parquet"
 MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
 OUT_DIR = Path(__file__).resolve().parent / "cache"

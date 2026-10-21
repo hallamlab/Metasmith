@@ -28,7 +28,10 @@ def protocol(context: ExecutionContext):
     iref = context.Input(ref)
     threads = context.params.get("cpus", 8)
 
-    out_dir = Path("vcontact3_out")
+    # In the staging dir, so a retry reuses the parquet intermediates the attempt
+    # before it wrote: vConTACT3 skips them on a re-run into the same -o.
+    staged = context.StagingDir()
+    out_dir = staged.local/"vcontact3_out"
 
     # -n, not the `-p proteins -g gene2genome -l lengths` trio Antonio used. The
     # -n route calls genes itself with pyrodigal-gv, which drops the dependency
@@ -46,7 +49,7 @@ def protocol(context: ExecutionContext):
     # it. `cosmograph` is the node/edge table pair. `ani` is deliberately absent;
     # see the note on the products above.
     _cmd = f"""
-        vcontact3 run -n {ifrozen.container} -o {out_dir} \
+        vcontact3 run -n {ifrozen.container} -o {staged.container}/vcontact3_out \
             --db-path {iref.container} -t {threads} \
             -e cosmograph
     """

@@ -19,6 +19,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         exp = lib.AddValue("experiment.txt", "ecspr_measurement", "fabfos::experiment")
         lib.AddItem(DEFERRED, "annotation::gpr_table", parents={exp})
         lib.AddItem(DEFERRED, "ecspr::conditions", parents={exp})
+        lib.AddItem(DEFERRED, "ecspr::ecspr_tests", parents={exp})
         lib.AddItem(DEFERRED, "ecspr::atom_pairs")
         lib.AddItem(DEFERRED, "ecspr::direction_ratios")
 

@@ -34,22 +34,48 @@ types:
     properties:
       _: KofamScan KO list file
       ext: tsv
+  # The fetch half of kofamscan_profiles + kofamscan_ko_list, packed as released.
+  kofam_sources:
+    extends:
+    - reference_data
+    properties:
+      _: KOfam release as fetched -- profiles.tar.gz and ko_list.gz from one archives/<date>/, unpacked by buildKofamDB
   interproscan_data:
     extends:
     - reference_data
     properties:
       _: InterProScan data directory
       ext: tgz
+  # The fetch half of interproscan_data.
+  interproscan_sources:
+    extends:
+    - reference_data
+    properties:
+      _: InterProScan release tarball as fetched, unindexed, for buildInterProScanDB
+      ext: tar.gz
   metabuli_ref:
     extends:
     - reference_data
     properties:
       _: metabuli reference database
+  # The fetch half of metabuli_ref.
+  metabuli_sources:
+    extends:
+    - reference_data
+    properties:
+      _: metabuli reference package tarball as fetched, unpacked by buildMetabuliDB
+      ext: tar.gz
   gtdb:
     extends:
     - reference_data
     properties:
       _: genome taxonomy database
+  # The fetch half of gtdb.
+  gtdb_sources:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB-Tk split data package as fetched, its md5-checked parts and a MANIFEST, joined and unpacked by buildGtdbDB
   kraken2_db:
     extends:
     - reference_data
@@ -184,6 +210,20 @@ types:
       ext: parquet
 
   # -------------------------------------------------
+  # The MetaNetX release itself, as the release directory rather than as three types.
+  # `ecspr fba` inserts an annotation-asserted reaction the curated frame never named,
+  # and doing that needs all three files together: reac_prop for the stoichiometry,
+  # chem_prop for formula, charge and InChIKey, chem_xref for the BiGG crosswalk that
+  # lands an MNXM on the frame's own metabolite. They are one pinned release and split
+  # them and a bridge built from one version indexes another version's equations.
+  metanetx_release:
+    extends:
+    - reference_data
+    properties:
+      _: A pinned MetaNetX MNXref release directory (reac_prop.tsv, chem_prop.tsv, chem_xref.tsv); the sliced parquets ecspr caches are written beside them
+      Format: DIRECTORY
+
+  # -------------------------------------------------
   # The pre-consolidation trio. Superseded by mnxr_lookup for the GPR mappers;
   # still typed because build-mnxr-lookup reads them.
   ko_to_mnxr:
@@ -224,6 +264,17 @@ types:
     - reference_data
     properties:
       _: Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet + source.txt)
+
+  # What one call from each annotation lane is worth, in nats, as a function of that
+  # lane's own score. Fitted on the DH10B Swiss-Prot cohort; the artifact carries its
+  # own apply rule, its prior, the score range each curve has support over, and the
+  # digest of every input the fit saw. `fabfos_evidence.load_calibration` is the only
+  # reader, so the rule lives in one place.
+  lane_calibration:
+    extends:
+    - reference_data
+    properties:
+      _: Per-lane score-to-log-likelihood-ratio calibration (lane_calibration.json + source.txt)
 
   # -------------------------------------------------
   # Compiled metabolism tables (build_references/bake_metabolism.py).
@@ -290,7 +341,7 @@ types:
     extends:
     - reference_data
     properties:
-      _: Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet (long-format, one row per gene x MNXR; uniform raw_score)
+      _: Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet (long-format, one row per gene x MNXR; every row carries the declared assertion `llr`, because a curated model asserts a reaction is PRESENT and says nothing about how strongly)
       Format: DIRECTORY
   gpr_table_denovo:
     extends:
@@ -349,3 +400,9 @@ types:
     - reference_data
     properties:
       _: iPHoP host database -- the shipped one, before this survey's own MAGs are added; viromics::iphop_augmented_db is what predict consumes
+  # The fetch half of iphop_db.
+  iphop_sources:
+    extends:
+    - reference_data
+    properties:
+      _: iPHoP release as fetched -- its split tar chunks and their md5 list, joined and unpacked by buildIphopDB

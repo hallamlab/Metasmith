@@ -440,7 +440,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
             f'echo "lin {LIN_ECHO_EXPR}" >>{METADATA_FILE}',
             f'echo "fmt 2" >>{METADATA_FILE}',
-            f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
+            f'cat "${{params.workspace}}/{step_meta_file}" >>{METADATA_FILE}',
             f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
             f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             f'__msm_wd="\\$(cd "\\$(dirname "\\$0")" && pwd)"',
@@ -451,7 +451,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         ] + [
             f'echo "{external_binds_param}" >{BIND_FILE}',
             f'{context.bootstrap_var}',
-            f'bootstrap {context.external_work_var} "{step.order}" ${{params.hostName}}',
+            f'bootstrap "{context.external_work_var}" "{step.order}" ${{params.hostName}}',
             # A record lost on the way out of scratch leaves an exit-0 task the
             # trace never sees, so a failed copy fails the task and it retries.
             f'[ "\\$__msm_wd" = "\\$PWD" ] || [ ! -e {CACHE_RECORD_FILE} ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" || exit 1',
@@ -460,7 +460,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             'stub:',
             'def dt = new Random().nextFloat()*params.testSpread',
             f'def hash = "${{index[0].findAll {{ k, v -> !({_RESERVED_KEYS_GROOVY}.contains(k)) }}'
-            '.sort().collectEntries { k, v -> [k, v.sort()] }}".md5()[0..11]',
+            '.sort().collectEntries { k, v -> [k, v.sort(false)] }}".md5()[0..11]',
             f'"""',
             f'sleep $dt',
             # The stub lane is the only lane the trace tests run in. Without the
@@ -469,7 +469,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "res 1/1.GB/1" >>{METADATA_FILE}',
             f'echo "lin {LIN_ECHO_EXPR}" >>{METADATA_FILE}',
             f'echo "fmt 2" >>{METADATA_FILE}',
-            f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
+            f'cat "${{params.workspace}}/{step_meta_file}" >>{METADATA_FILE}',
             f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
             f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             f'touch {" ".join(mock_outputs)}',

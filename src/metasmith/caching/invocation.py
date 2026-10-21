@@ -99,10 +99,26 @@ def read_manifest(shard: Path) -> Optional[dict]:
         return None
 
 
+def member_intact(shard: Path, entry: dict) -> bool:
+    # A file truncated after promotion still exists, and was served. Only a
+    # regular file's size is compared: a directory's is a tree walk, and a
+    # manifest written before sizes were recorded has none to compare.
+    path = shard / entry["relpath"]
+    try:
+        st = path.stat()
+    except OSError:
+        return False
+    recorded = int(entry.get("size", 0) or 0)
+    if recorded and path.is_file() and st.st_size != recorded:
+        return False
+    return True
+
+
 def probe(cache_root: Path, key: bytes) -> Optional[Path]:
     """The shard that can serve `key`, or None.
 
-    A hit needs a manifest, every file it lists present, and no tombstone.
+    A hit needs a manifest, every file it lists present at its recorded size,
+    and no tombstone.
     """
     shard = shard_dir(Path(cache_root), key.hex())
     if (shard / TOMBSTONE_NAME).exists():
@@ -111,7 +127,7 @@ def probe(cache_root: Path, key: bytes) -> Optional[Path]:
     if manifest is None:
         return None
     for f in manifest.get("files", []):
-        if not (shard / f["relpath"]).exists():
+        if not member_intact(shard, f):
             return None
     return shard
 

@@ -77,11 +77,26 @@ def register(subs):
     _pool.add_argument("--ref", action="append", default=[], dest="refs",
                        help="resolve this name or instance id to one entry, "
                             "instead of listing; repeatable")
+    _pool.add_argument("--check", action="store_true",
+                       help="list the imported givens that changed since their "
+                            "import, instead of listing")
     _pool.add_argument("--timeout", type=int, default=120)
     _pool.set_defaults(func=lambda a: _ops.read_pool(
         a.agent_path, origin=a.origin, dtype=a.dtype, tag=a.tag, name=a.name,
-        refs=a.refs or None, timeout=a.timeout,
+        refs=a.refs or None, timeout=a.timeout, check=a.check,
     ))
+
+    _dev = sp.add_parser(
+        "dev-overlay",
+        help="run a source tree of the engine inside the agent's image",
+        description="Send a metasmith package tree to the agent home as dev/metasmith "
+                    "and dev/metasmith.tar, built from one archive. Every task then "
+                    "binds it over the image's installed package.",
+    )
+    _dev.add_argument("agent_path")
+    _dev.add_argument("--src", default=None,
+                      help="the package directory to send; defaults to the running engine's")
+    _dev.set_defaults(func=lambda a: _ops.dev_overlay(a.agent_path, a.src))
 
     _dep = sp.add_parser("deploy", help="deploy an agent to its home location")
     _dep.add_argument("agent_path")

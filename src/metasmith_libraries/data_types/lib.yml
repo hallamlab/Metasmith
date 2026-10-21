@@ -23,6 +23,10 @@ types:
     properties:
       src: plm
       usage: command line
+  iphop_graft.py:
+    properties:
+      src: iphop_graft
+      usage: command line
   response_surface.py:
     properties:
       src: response_surface

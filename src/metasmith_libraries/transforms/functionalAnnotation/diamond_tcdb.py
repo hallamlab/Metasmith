@@ -22,13 +22,14 @@ def protocol(context: ExecutionContext):
         mem_gb = int(float(mem))
         block_size = max(1.0, min(12.0, (mem_gb - 4) / 6))
 
+    db_dir = context.Mount(idb.external.parent, "/db")
     context.ExecWithEnv(
-        binds=[(idb.external.parent, "/db")],
+        binds=[db_dir],
         env=image,
         cmd=f"""
             diamond blastp \
                 --query {iorfs.container} \
-                --db /db/{idb.external.name} \
+                --db {db_dir}/{idb.external.name} \
                 --out {iout.container} \
                 --threads {threads} \
                 --block-size {block_size} \

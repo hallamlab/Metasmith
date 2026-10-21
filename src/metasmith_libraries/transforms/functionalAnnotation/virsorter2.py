@@ -64,6 +64,14 @@ def protocol(context: ExecutionContext):
     iboundary = context.Output(out_boundary)
     icalls = context.Output(out_calls)
 
+    # The conda envs `virsorter setup` builds are named by a hash over the path the
+    # database sits at, so setup and every run must see it at one path. Only a
+    # container can give it one: /db. On a host process the product moves between
+    # setup and use, and the run would build every env again with no network.
+    if not context.RunsInContainer():
+        Log.Error("virsorter2 needs a container runtime: its database is usable only at the path it was set up at")
+        return ExecutionResult(manifest=[], success=False)
+
     threads = context.params.get("cpus", 8)
     workdir = "vs2_out"
 
@@ -76,15 +84,16 @@ def protocol(context: ExecutionContext):
     # under $HOME/.virsorter, and on a host whose /tmp is a small shared tmpfs that is
     # the wrong place for it.
 
+    db_dir = context.Mount(idb.external, "/db")
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/db")],
+        binds=[db_dir],
         cmd=f"""
             export HOME="$PWD"
 
             virsorter run \
                 --seqfile {iasm.container} \
-                --db-dir /db \
+                --db-dir {db_dir} \
                 --working-dir {workdir} \
                 --jobs {threads} \
                 --include-groups dsDNAphage,NCLDV,RNA,ssDNA,lavidaviridae \

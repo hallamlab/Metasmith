@@ -57,6 +57,17 @@ NAMES = {"MNXM137": "NAD(P)", "MNXM138": "NAD(P)H", "MNXM99": "ethanol"}
 PROPS = {"MNXM99": {"smiles": "CCO"}}
 
 
+def _needs_rdkit():
+    """Skip a test that reaches the SMILES parser.
+
+    rdkit is not an ecspr dependency -- the bake lane declares it in its own env -- so the
+    gates that parse a model compound cannot run everywhere. The guard is per-test rather
+    than per-module because the claim that the EMPTY configuration is a strict no-op touches
+    no structure at all, and it is the claim every r9 baseline rests on.
+    """
+    pytest.importorskip("rdkit", reason="the substitution gates parse model compounds")
+
+
 def _written(tmp_path, rows, models=MODELS):
     models.to_csv(tmp_path / "models.tsv", sep="\t", index=False)
     rows.to_csv(tmp_path / "substitutions.tsv", sep="\t", index=False)
@@ -65,6 +76,7 @@ def _written(tmp_path, rows, models=MODELS):
 
 def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES, formulas=None,
           member="eq"):
+    _needs_rdkit()
     rows = _pair() if rows is None else rows
     return S.load(_written(tmp_path, rows, models), props, names, formulas=formulas,
                   member=member)
@@ -209,6 +221,7 @@ def test_a_model_formula_disagreeing_with_its_source_accession_is_refused(tmp_pa
 
 
 def test_a_polymer_participant_is_readable_so_the_carrier_gate_would_refuse_it(tmp_path):
+    _needs_rdkit()
     with pytest.raises(S.Refused, match="already carries a usable structure"):
         S._gate_replaceable("MNXM738130", {"MNXM738130": {"smiles": "OCC1OC(O)C(O)C(O)C1O"}},
                             "carrier/MNXM738130")
@@ -386,6 +399,7 @@ def test_a_participant_repeating_with_different_terms_is_refused(tmp_path):
 
 
 def test_one_bad_couple_does_not_condemn_a_good_one(tmp_path):
+    _needs_rdkit()
     bad = _pair()
     bad["couple_id"] = "broken"
     bad = bad.iloc[[0]]
@@ -407,6 +421,20 @@ LANES = REPO / "src" / "fabfos" / "build_references" / "transforms" / "bake"
 STAGED_TABLES = "{libdir}/ecspr/bake/direction"
 
 
+def _lane(name: str) -> str:
+    """The member lane's source, or a skip where the repository is not around it.
+
+    These read the fabfos tree rather than the package, so they cannot run against an
+    INSTALLED ecspr -- which is what the container image tests. The claim they hold is
+    about a command string in another project's transform, and it is checked wherever
+    that project is checked out.
+    """
+    p = LANES / name
+    if not p.is_file():
+        pytest.skip(f"{p} is not in this checkout")
+    return p.read_text()
+
+
 @pytest.mark.parametrize("lane", ["equilibrator.py", "dgbyg.py"])
 def test_the_member_lanes_hand_the_tables_to_the_member(lane):
     # A member lane that omits `--substitutions` runs r8 chemistry and says nothing.
@@ -416,14 +444,14 @@ def test_the_member_lanes_hand_the_tables_to_the_member(lane):
     # is the STAGED one, so the tables the member reads are inside the tree
     # `evidence fingerprint --package direction` hashes -- a table and the DIRVER that
     # describes it cannot come apart.
-    src = (LANES / lane).read_text()
+    src = _lane(lane)
     assert "drive eval" in src
     assert f"--substitutions {STAGED_TABLES}" in src
 
 
 @pytest.mark.parametrize("lane", ["equilibrator.py", "dgbyg.py"])
 def test_both_member_lanes_shard_and_reap_their_shards(lane):
-    src = (LANES / lane).read_text()
+    src = _lane(lane)
     assert "--shard $i/" in src, "lane does not partition its universe"
     assert 'for p in $pids; do wait $p || rc=1; done' in src, (
         "lane does not check each shard's exit status")
@@ -431,7 +459,7 @@ def test_both_member_lanes_shard_and_reap_their_shards(lane):
 
 @pytest.mark.parametrize("lane", ["equilibrator.py", "dgbyg.py"])
 def test_the_merge_expects_the_count_the_lane_actually_ran(lane):
-    src = (LANES / lane).read_text()
+    src = _lane(lane)
     assert "--expect {SHARDS}" in src, "merge hardcodes a shard count"
     assert "$(seq 0 {SHARDS - 1})" in src, "loop hardcodes a shard count"
 
@@ -475,6 +503,7 @@ THIO_PROPS = {"MNXM1091247": {"smiles": "CCCCCCCC(=O)S*"}}
 
 
 def _thio(tmp_path, rows=None, member="dgbyg", props=None):
+    _needs_rdkit()
     rows = pd.DataFrame([_thio_row()]) if rows is None else rows
     return S.load(_written(tmp_path, rows, THIO_MODELS),
                   THIO_PROPS if props is None else props, THIO_NAMES, member=member)

@@ -14,10 +14,11 @@ def protocol(context: ExecutionContext):
     ihelp    = context.Input(helpers)
     iout  = context.Output(out_dir)
 
+    diff_mnt = context.Mount(idiff.external, "/diff_data")
     context.ExecWithEnv(
         env=image,
-        binds=[(idiff.external, "/diff_data")],
-        cmd=f"python {ihelp.container}/pathway_enrichment.py /diff_data {iout.container}",
+        binds=[diff_mnt],
+        cmd=f"python {ihelp.container}/pathway_enrichment.py {diff_mnt} {iout.container}",
     )
 
     return ExecutionResult(

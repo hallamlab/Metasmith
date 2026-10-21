@@ -254,3 +254,22 @@ def test_the_step_meta_carries_what_the_task_promotes_with(tmp_path):
         text = mp.read_text()
         for gone in ("cache_key ", "batches ", "sorted_inputs ", "out_identities "):
             assert gone not in text, f"{mp.name} still carries {gone.strip()}"
+
+
+def test_the_workspace_reaches_bash_quoted(tmp_path):
+    import re
+    task = linear_3step.build_task(tmp_path)
+    body = (_stage(task, tmp_path) / "workflow.nf").read_text()
+    bare = [
+        ln.strip() for ln in body.splitlines()
+        if re.search(r'(?<!")\$\{params\.workspace\}', ln) and ("cat " in ln or ln.strip().startswith("bootstrap "))
+    ]
+    assert bare == [], bare
+
+
+def test_the_stub_hash_sorts_copies_not_the_index(tmp_path):
+    task = linear_3step.build_task(tmp_path)
+    body = (_stage(task, tmp_path) / "workflow.nf").read_text()
+    stubs = [ln for ln in body.splitlines() if "collectEntries" in ln]
+    assert stubs, "no stub hash rendered"
+    assert all("v.sort(false)" in ln and "v.sort()" not in ln for ln in stubs), stubs

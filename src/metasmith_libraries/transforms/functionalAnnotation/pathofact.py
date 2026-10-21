@@ -24,13 +24,14 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 16)
 
+    db_dir = context.Mount(idb.external, "/pathofact_db")
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/pathofact_db")],
+        binds=[db_dir],
         cmd=f"""
             pathofact \
                 --input {iasm.container} \
-                --db /pathofact_db \
+                --db {db_dir} \
                 --outdir pf_out \
                 --threads {threads}
         """,

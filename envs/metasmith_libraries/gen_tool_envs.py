@@ -30,14 +30,13 @@ CURATED = {
     "minimap2": "minimap2=2.15",
     "nanoplot": "nanoplot=1.42.0",
     "checkm": "checkm2=1.1.0",
-    "antismash": "antismash=7.1.0",
     "genomad": "genomad=1.11.0",
     "bwa": "bwa=0.7.19",
 }
 
 BIOCONTAINERS = re.compile(r"quay\.io/biocontainers/([^:/]+):([^-\s]+)")
 
-HAND_WRITTEN = {"ecspr", "minimap2_samtools", "pysam"}
+HAND_WRITTEN = {"antismash", "ecspr", "instrain", "minimap2_samtools", "pysam"}
 
 
 def derive_spec(stem: str, uri: str) -> str | None:

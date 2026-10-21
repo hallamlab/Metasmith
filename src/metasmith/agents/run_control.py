@@ -104,6 +104,27 @@ fi
 echo __MSM_REAPED__
 """
 
+# Whether the run start.sh rooted is still alive before nextflow has written
+# PID.lock. A pgid outlives its run in RUN.pgid and can be handed to another
+# process, so the group only counts while a member still carries the run token.
+_START_WINDOW_SCRIPT = r"""
+WS="__WS__"
+TOKEN=$(head -n1 "$WS/__TOKENF__" 2>/dev/null)
+PGID=$(head -n1 "$WS/__PGIDF__" 2>/dev/null)
+STATE=NONE
+case "$PGID" in
+    ''|*[!0-9]*) ;;
+    *)
+        STATE=GONE
+        for p in $(ps -eo pid=,pgid= 2>/dev/null | awk -v g="$PGID" '$2==g {print $1}'); do
+            if [ ! -d /proc/$p ]; then STATE=LIVE; break; fi
+            [ -n "$TOKEN" ] || continue
+            tr '\0' '\n' 2>/dev/null < /proc/$p/environ | grep -qxF "METASMITH_RUN=$TOKEN" && { STATE=LIVE; break; }
+        done ;;
+esac
+echo "DRIVER|$STATE"
+"""
+
 
 def RenderScan(script: str, *, workspace, relay, **extra: str) -> str:
     subs = {
@@ -504,7 +525,7 @@ class _RunControl:
         )
         first = probe.out[0].strip() if probe.out else ""
         if first == "__MSM_NONE__":
-            return _finish("noop", None, "PID.lock not present")
+            return self._cancel_before_nextflow(task_key, _finish)
         try:
             pid = int(first)
         except ValueError:
@@ -546,6 +567,54 @@ class _RunControl:
             f"nextflow did not exit within {timeout_s:g}s of PID.lock removal; "
             "its process group was killed",
         )
+
+    def _cancel_before_nextflow(self, task_key: str, finish) -> dict:
+        # The start window: setup commands and the driver's own staging run for
+        # a minute or more before nextflow writes PID.lock. Nothing in it has
+        # cache state worth a graceful stop, so the whole run goes.
+        workspace = self._task_workspace(task_key)
+        scan = self._remote_oneshot(self._scan_cmd(_START_WINDOW_SCRIPT, task_key), timeout=60)
+        fields = dict(
+            ln.strip().split("|", 1) for ln in scan.out if "|" in ln
+        )
+        driver = fields.get("DRIVER", "UNKNOWN")
+        if "UNREACHABLE" in fields:
+            driver = "UNKNOWN"
+        slurm = self._remote_oneshot(
+            f"cd {workspace} || exit 0\n{RUN_HOST_FUNCTIONS}\n"
+            f"[ -s ./{AgentPaths.RUN_SLURM_JOB_FILE} ] && msm_slurm_state || echo NONE",
+            timeout=30,
+        )
+        slurm_state = slurm.out[-1].strip() if slurm.out else "UNKNOWN"
+        if "LIVE" not in (driver, slurm_state):
+            if "UNKNOWN" in (driver, slurm_state):
+                return {
+                    "task_key": task_key, "method": "none", "rung": "none", "killed_pid": None,
+                    "stopped": [], "survived": [], "status": "unknown",
+                    "detail": f"PID.lock not present, and the run's state could not be read "
+                              f"(driver {driver}, slurm job {slurm_state})",
+                }
+            return finish("noop", None, "PID.lock not present and no run is alive")
+        reaped = self.ReapWorkflow(task_key, scope=SCOPE_RUN)
+        unreachable = reaped["unreachable"]
+        detail = "cancelled before nextflow started: the run's process group and Slurm job were stopped"
+        if unreachable:
+            detail += f"; the run's host [{unreachable}] could not be reached to check for survivors"
+        return {
+            "task_key": task_key,
+            "method": "reap",
+            "rung": "start_window",
+            "killed_pid": None,
+            "stopped": reaped["stopped"],
+            "survived": reaped["survived"],
+            "status": "cancelled" if not (reaped["survived"] or unreachable) else "cancelling",
+            "detail": detail,
+        }
+
+    def AgentClock(self) -> str:
+        # In the format start.sh stamps a run's logs dir with, so the two compare as strings.
+        res = self._remote_oneshot('date +"%Y-%m-%d_%H-%M-%S"', timeout=15)
+        return res.out[-1].strip() if res.out else ""
 
     def ListWorkflowRuns(self, task: WorkflowTask | str) -> list[dict]:
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)

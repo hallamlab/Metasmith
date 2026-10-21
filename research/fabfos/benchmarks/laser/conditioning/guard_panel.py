@@ -50,7 +50,7 @@ from ecspr.model.scoring import responders                            # noqa: E4
 from analyse_aska_sweep import GLYCOGEN_MODULE, analyse               # noqa: E402
 import bake_pairs                                                     # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 ASKA_GPR = ROOT / "data/fabfos/runs/aska/gpr"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 
@@ -120,7 +120,7 @@ def main() -> int:
 
     pairs = EB.load_pairs(bake_pairs.atom_pairs(), element="C")
     raw = EB.load_direction_ratios(bake_pairs.direction_ratios())
-    host = pd.read_parquet(HOSTS / a.host / "gpr_gem.parquet")
+    host = pd.read_parquet(RUNS / a.host / "gpr" / "gpr_gem.parquet")
     assert set(host.lane_set.unique()) == {"curated"}, "not the curated arm"
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     lib = library(base_w)

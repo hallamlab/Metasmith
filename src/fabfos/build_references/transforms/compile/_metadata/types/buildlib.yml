@@ -5,47 +5,6 @@ ontology:
   version: '1.25'
 schema: v1
 types:
-  bench_cohorts.py:
-    properties:
-      _:
-      - the four benchmark arms, read out of the acquired literature products in one
-        schema
-      src: bench_cohorts
-      usage: library
-  bench_edges.py:
-    properties:
-      _:
-      - benchmark entry -> MNXR edge set -- the curated, override, MetaCyc, bridge
-        (accession/EC/KO) and literature routes, layered with every agreeing route
-        recorded
-      src: bench_edges
-      usage: library
-  bench_evidence_weights.py:
-    properties:
-      _:
-      - the deployed per-protein belief weight -- 1.0 per protein split across lanes,
-        then by score, then across fanout
-      src: bench_evidence_weights
-      usage: library
-  bench_universe.py:
-    properties:
-      _:
-      - the benchmark's atom universe -- the bake's mapped reactions less MetaNetX-flagged
-        transport, with the count both builders report
-      src: bench_universe
-      usage: library
-  benchmark:
-    properties:
-      _:
-      - the benchmark drivers -- the study tier, the condition table, the two host
-        GPR builders and the condition GPR
-      src: benchmark
-      usage: library
-  build_module:
-    properties:
-      _:
-      - python module imported by a build transform's driver; never ships in the wheel
-      usage: library
   ecspr:
     properties:
       _:
@@ -66,11 +25,4 @@ types:
       _:
       - builds ref::mnxr_lookup -- the reaction bridge, from MetaNetX, KEGG and Rhea
       src: mnxr_lookup
-      usage: library
-  pool:
-    properties:
-      _:
-      - the label-pool drivers -- selection from the bridge, the ESM-C embedding pass,
-        and the final index/stack assembly
-      src: pool
       usage: library

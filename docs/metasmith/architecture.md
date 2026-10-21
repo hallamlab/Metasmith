@@ -134,7 +134,17 @@ its author had in mind and is silently wrong under the other.
 `test_env_deploy_scripts.py::TestBindDialectPurity` holds that line by scanning each rendered
 script for the other dialect's tokens. `ExecWithEnv(args=[...])` appends verbatim runtime
 flags just before the image, so a flag passed there beats the framework default of the same
-name — but the dialect is the caller's problem, and mounts go through the typed `binds=`.
+name — but the dialect is the caller's problem, and mounts go through `context.Mount`.
+
+**A mount is one call, because the bind and the path a command uses must agree.**
+`context.Mount(src, dst)` is the bind itself and returns the path to put in the command: `dst`
+under a container and `src` on a host process. A command therefore cannot name a path the
+runtime did not bind. Without a container a Mount binds nothing, and a raw `(src, dst)` tuple
+still raises, so a transform that skipped the call fails before its tool runs. A transform
+that sets a fake `HOME` through a Mount gets the real `HOME` on a host process, which is
+writable there. `context.RunsInContainer()` is for a tool whose product records the path it
+was built at, never for a second command: VirSorter2's conda env names hash its database path,
+so both its transforms refuse a host runtime by name.
 
 The protocol sees three path views (`.local`, `.container`, `.external`), identical under a
 runtime with no container boundary.
@@ -380,6 +390,11 @@ agent image's `site-packages`, which is what lets an old base tag run a new engi
 engine gains a third-party import the image's env lacks. Adding `cbor2` was enough: on the older
 tag every task died *after* staging, so the first sign was a queued job failing. A new dependency
 in `envs/metasmith/base.yml` means the site's base tag has to move too.
+
+**The overlay is two artifacts that must hold one tree.** The bootstrap stages the tarball onto
+each node and binds the tree directly where it cannot, so a tarball and a tree that disagree run
+two engines inside one job. `agent dev-overlay` builds both from one archive and swaps them in
+only after the extracted tree has every file the archive holds.
 
 **A stage sends the plan, not the library.** Each library ships as an image: its `_metadata/`
 whole, plus the manifest entries the plan resolved against and every file the manifest does not
@@ -631,6 +646,16 @@ alone, which is why a second run does not re-fetch five gigabytes. A fresh agent
 the env files at new paths with new mtimes, so it re-fetches everything; so does any change to a
 downloader's protocol source, which is part of the signature.
 
+**A retry finds what the attempt before it fetched through the staging dir.** Nextflow starts a
+retry in a fresh work dir, so a partial download left in the old one helps nothing.
+`context.StagingDir()` is keyed by the transform name and the member token under the cache root,
+so every attempt at one member sees one directory, and `FetchCommand`'s `.part` resume reaches
+across retries and across runs on one agent home. Nothing cleans it, so a protocol moves its
+product out of it as its last command. A step that fails after that move has already emptied the
+staging dir, which is why a fetch step does nothing after it and every content check belongs to
+the build step that consumes the fetch. A protocol edit moves the member token, so it starts a
+new staging dir and leaves the old one where it was.
+
 **A hit runs as a task, on the local executor.** Nextflow publishes only paths under its own
 work directory and drops the rest without a log line, so a shard path on a channel never reaches
 `results/`. The emitter therefore writes a twin process `<name>_cached` beside each step:
@@ -658,7 +683,8 @@ bind. A device comparison alone would call the link possible and then copy.
 **CAUTION** A linked product shares its inodes with the cache. A step that edited its input in
 place would corrupt the cached member for every later run. A container step binds its
 references read-only. A step under the mamba runtime has no such guard, so a transform must
-never write into an input.
+never write into an input. The probe's size check turns a truncated member into a miss, but an
+edit that keeps the size is still served.
 
 **A product is whatever carries the canonical `<pos>-<item>-<branch>.<token>-<dtype><ext>` name**
 — a directory as readily as a file. `<token>` is the tail of the member key, or a lineage hash for
@@ -691,7 +717,9 @@ renamed to position `1`, and a manifest with each file's slot id, dtype key, dty
 `parents` from that member's `PROV`, and the member's `consumes`. A member whose required branch
 produced nothing mints no shard. The task then writes one `.command.cache` record beside
 `.command.metadata`, one JSON line per member. A hit is decided by the probe alone: a manifest,
-every listed file present, and no `tombstone` marker. `record_run` then reads every
+every listed file present, each regular file at its recorded size, and no `tombstone` marker. A
+condition on a hit belongs in the probe, which reads a manifest every shard already has, never in
+the key, where it would strand every shard. `record_run` then reads every
 `.command.cache` of the run's session and `_metasmith/cache_hits.jsonl`, appends one trace event
 per member, indexes one sqlite row per shard, and copies the producing task's `.command.*` into
 the shard's `logs/`. Sqlite is bookkeeping for `msm cache list` and `gc`, never the hit authority.

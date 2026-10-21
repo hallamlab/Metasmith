@@ -27,10 +27,18 @@ def protocol(context: ExecutionContext):
     idb = context.Input(db)
     threads = context.params.get("cpus", 8)
 
+    # Read from a copy in the work dir, which the cluster presets put on node-local disk.
+    # blastn memory-maps the 170 GB host genome database, and the job's memory limit
+    # counts page cache, so against Lustre it re-reads the volumes: on fir it read 226 GB
+    # in 4 h, at 3 MB/s by the end, and was still on the first of iPHoP's tools.
+    # WIsH reads another 111 GB of models.
+    local_db = Path("iphop_db")
     out_dir = Path("iphop_out")
     _cmd = f"""
+        cp -rH {idb.container} {local_db}
         iphop predict --fa_file {ifrozen.container} --out_dir {out_dir} \
-            --db_dir {idb.container} -t {threads} -m {MIN_SCORE}
+            --db_dir {local_db} -t {threads} -m {MIN_SCORE}
+        rm -rf {local_db}
     """
     context.ExecWithEnv(env=image, cmd=_cmd)
 
@@ -66,5 +74,8 @@ TransformInstance(
         out_genome: f"Host_prediction_to_genome_m{MIN_SCORE}.csv",
         out_detail: "Detailed_output_by_tool.csv",
     },
-    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=24)),
+    # On fir, 1,174 viral contigs against Jun25_rw plus 42 MAGs: the copy 3 m 53 s, predict
+    # 2 h 10 m. The memory holds the page cache of the 300 GB copy, which the job's
+    # limit counts, so a smaller request trades it for re-reads from local disk.
+    resources=Resources(cpus=16, memory=Size.GB(128), duration=Duration(hours=12)),
 )

@@ -1,0 +1,47 @@
+{
+  "catabolic__MNXM1364061__MNXM77__C": {
+    "module_id": "LIPIDEXT_catabolic_C",
+    "module_name": "D-glucose -> DHAP",
+    "source": [
+      "MNXM1364061"
+    ],
+    "sink": [
+      "MNXM77"
+    ],
+    "element": "C",
+    "route": "glycolysis",
+    "category": "catabolic",
+    "description": "glucose -> dihydroxyacetone phosphate (aldolase, the other triose)",
+    "purpose": "the aldolase product set4 omits; entry to the glycerol backbone"
+  },
+  "phospholipid__MNXM77__MNXM115__C": {
+    "module_id": "LIPIDEXT_phospholipid_C",
+    "module_name": "DHAP -> phosphatidylethanolamine",
+    "source": [
+      "MNXM77"
+    ],
+    "sink": [
+      "MNXM115"
+    ],
+    "element": "C",
+    "route": "-",
+    "category": "phospholipid",
+    "description": "glycerol backbone via gpsA, plsB/plsC and CDP-DAG -> PE",
+    "purpose": "the backbone carbon of PE, which AcCoA -> PE cannot carry"
+  },
+  "phospholipid__MNXM77__MNXM725992__C": {
+    "module_id": "LIPIDEXT_phospholipid_C",
+    "module_name": "DHAP -> phosphatidylglycerol",
+    "source": [
+      "MNXM77"
+    ],
+    "sink": [
+      "MNXM725992"
+    ],
+    "element": "C",
+    "route": "-",
+    "category": "phospholipid",
+    "description": "glycerol backbone via gpsA, plsB/plsC and CDP-DAG -> PG",
+    "purpose": "the backbone carbon of PG, which AcCoA -> PG cannot carry"
+  }
+}

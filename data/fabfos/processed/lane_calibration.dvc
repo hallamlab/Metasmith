@@ -1,0 +1,6 @@
+outs:
+- md5: 3aa365579964f4bec79e698bc1ab1add.dir
+  size: 13695
+  nfiles: 2
+  hash: md5
+  path: lane_calibration

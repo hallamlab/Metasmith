@@ -42,7 +42,9 @@ def protocol(context: ExecutionContext):
     # Single-sample SemiBin2 holds a dense N x N matrix over the contigs it keeps, so
     # its memory grows with the square of the count: a 16 GB and then a 32 GB request
     # were OOM-killed 20 minutes in. SemiBin 2.1.0 builds it from float32 depths
-    # (cal_kl), 4 bytes a pair, and 6 leaves room for the copies made around it. A large
+    # (cal_kl), 4 bytes a pair. Measured on a CAMI marine megahit assembly at 19.6k, 40.0k
+    # and 72.1k contigs, the peak fits 1.8 GB + 4.06 bytes a pair, so 6 with no intercept
+    # stays above it with a third to spare at the size where the check matters. A large
     # assembly drops to the 2500 bp floor SemiBin2 would itself pick at a high --ratio,
     # and one that cannot fit even then fails at once as an OOM, so the retry asks for
     # more memory instead of paying 20 minutes to learn the same thing.

@@ -253,6 +253,10 @@ def list_runs(agent_path: str, task_key: str) -> list[dict]:
     return agent.ListWorkflowRuns(task_key)
 
 
+def clock(agent_path: str) -> str:
+    return load_agent(agent_path).AgentClock()
+
+
 def check(task_key: str, run_num: int | None = None) -> dict:
     from ..agents import CheckWorkflow as _CheckWorkflow
     return _CheckWorkflow(task_key, run_num, quiet=True)

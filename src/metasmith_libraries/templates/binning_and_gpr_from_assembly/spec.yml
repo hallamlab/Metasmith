@@ -54,33 +54,39 @@ shared_input_paths: []
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/44c19330e3ba45f8b3690cb7b23fd5ef:
-      type: ref::mnxr_lookup
-      parents:
-        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20f4fb07036304fd0def727e138b76ece5e9cf8c55b8107f3be9b591e03a07832e
-      origin: leaf
-    /msm_deferred/81fc149efaf644ecb8ecc574c8540631:
-      type: sequences::long_reads
-      parents:
-        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e204ad09d252ab26bbc003f715234318966ec3f5f2859d8287875988627e05bbc9b
-      origin: leaf
-    /msm_deferred/a34387b9d4944e6383dbdc8550acc24c:
-      type: sequences::assembly
-      parents:
-        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20051ef743bd147f60358a2d8a819550ab8e84154e31ab52d117f75285972da283
-      origin: leaf
-    /msm_deferred/a524d06bbed44132a0d22a4a130215c9:
+    /msm_deferred/30a9183d584b4330929f9e26dd2ac270:
       type: ref::label_transfer_landmarks
       parents:
-        Gte56glvsTbQ@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20b26c2231789741d8fbc6b39e60e57b10a827fc854e812f5a1f94c8c02d399e46
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e2090f1e3b4785e65fb697a85ecc42576785918980cc479878ef72a8d86df5a3328
+      origin: leaf
+    /msm_deferred/5458d6a062374ba8a31056f27082e492:
+      type: ref::mnxr_lookup
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20c77675e1b09e1fed61d4148200331c69f04941487375f291077abef859a08eb3
+      origin: leaf
+    /msm_deferred/8c69f5bb5feb4dd3a838ec7a6693a945:
+      type: sequences::assembly
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e209ab0042eb81c6cd11b64fb74155587243ad9d02838f2166689cd1278b663e5d3
+      origin: leaf
+    /msm_deferred/90465fec362e4841a11274a24606a784:
+      type: sequences::long_reads
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20709b1abf4c34fcd6b7d169cee12e0f242dbdfda688f6c297cdd1f4d5ca792887
+      origin: leaf
+    /msm_deferred/ace8d3b3e4194f72be9432d88177c49a:
+      type: ref::lane_calibration
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e2037e825d2f90d4df937b05fb60aa27fea919b445df26a4a598580bf3b1a421b5e
       origin: leaf
     reads_metadata.json:
       type: sequences::read_metadata
-      instance_id: 1e20fe0ce8dc325e31efed7ce5f0da7d4278020e10d1c442b698ccdc2276f3cb64be
+      instance_id: 1e2032547691fc7096698c358995f91b4328af33191f1c96762c588c32d4c636be5f
       origin: leaf
   values:
     reads_metadata.json: '{"parity": "single", "length_class": "long"}'

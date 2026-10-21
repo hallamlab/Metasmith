@@ -72,10 +72,7 @@ mistaken for a contribution.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import math
-import shutil
 import sys
 from pathlib import Path
 
@@ -83,20 +80,19 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO / "research/fabfos/benchmarks"))
+
+import ecspr_axes  # noqa: E402
+
 CHUNK = REPO / "data/fabfos/nostoc/ecspr"
 RESULTS = CHUNK / "results"
 FIGS = CHUNK / "figures"
-
-AXES_SRC = Path("/home/tony/agentic_workspace/projects/fabfos/anaerobic-digester"
-                "/data/reference/ECSPr_axes/biomass.json")
-AXES_SHA = "f63c6c8c7636b099aa872634f0a2a327222df6165057407e01fbf9c283d8c44c"
 
 MEMBERS = ("NOS", "ERY", "RHI")
 TRIPLE = "NOS-ERY-RHI_bl-on"
 ELEMENTS = ("C", "N", "P", "S")
 
 TABLE = FIGS / "delta_ieff_set4"
-AXES_VENDORED = FIGS / "set4_axes.json"
 
 VALUE_COL = {"clr": "clr", "median": "log2fc_med"}
 
@@ -139,39 +135,16 @@ def _cat_rank(c):
     return CATEGORY_ORDER.index(c) if c in CATEGORY_ORDER else len(CATEGORY_ORDER)
 
 
-def _sha256(p: Path) -> str:
-    h = hashlib.sha256()
-    h.update(p.read_bytes())
-    return h.hexdigest()
-
-
 def _unlink(p: Path) -> None:
     if p.exists() or p.is_symlink():
         p.unlink()
 
 
-def load_axes(vendored: Path = AXES_VENDORED) -> pd.DataFrame:
-    if not vendored.exists():
-        assert AXES_SRC.exists(), f"missing set4 source {AXES_SRC}"
-        got = _sha256(AXES_SRC)
-        assert got == AXES_SHA, f"set4 source sha changed: {got}"
-        vendored.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(AXES_SRC, vendored)
-    got = _sha256(vendored)
-    assert got == AXES_SHA, f"vendored set4 sha changed: {got}"
-
-    spec = json.loads(vendored.read_text())
-    rows = []
-    for axis_id, r in spec.items():
-        assert len(r["source"]) == 1 and len(r["sink"]) == 1, f"{axis_id} not 1->1"
-        rows.append({"axis_id": axis_id, "element": r["element"],
-                     "src_mnxm": r["source"][0], "dst_mnxm": r["sink"][0],
-                     "category": r["category"], "route": r["route"],
-                     "module_name": r["module_name"],
-                     "description": r["description"]})
-    df = pd.DataFrame(rows)
-    assert len(df) == 79, f"expected 79 axes, got {len(df)}"
-    return df
+def load_axes() -> pd.DataFrame:
+    # set4 ONLY. The lipid backbone axes added beside it are a carbon extension for the
+    # scadc arm, and this panel's geometry, its `79` assertions and the sibling scope's
+    # published chords are all keyed to the frozen 79.
+    return ecspr_axes.load(lipid_ext=False)
 
 
 def gene_coverage() -> pd.DataFrame:

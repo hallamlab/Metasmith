@@ -227,11 +227,11 @@ def write_provenance(dest_root: Path, run_key: str) -> None:
                        f"{g['mnxr'].nunique():,} |")
         for ch in sorted(g["channel"].unique()):
             d = g[g["channel"] == ch]
-            v = d["raw_score"].astype(float)
+            v = d["llr"].astype(float)
             channel_rows.append(
                 f"| `{org}` | `{ch}` | {len(d):,} | "
                 f"{d['orf'].nunique():,} ({100.0 * d['orf'].nunique() / max(n_orfs, 1):.1f}%) | "
-                f"{d['mnxr'].nunique():,} | `{d['score_kind'].iat[0]}` | "
+                f"{d['mnxr'].nunique():,} | "
                 f"{v.min():.4g} / {v.median():.4g} / {v.max():.4g} |")
 
     pins = []
@@ -253,17 +253,19 @@ Produced by `research/fabfos/examples/nostoc_gpr.py --run` on fir, task `{run_ke
 `data/fabfos/nostoc/orfs/` through `kofamscan`, `CLEAN`, `diamond_uniref50` and
 `proteinbert` into `gpr_4lane`.
 
-One table per community member. Schema, channel vocabulary and the `raw_score`
-direction/range contract are declared in `lib::fabfos_evidence.py` and enforced by
-`validate_gpr` before each table is written; the `source` column is what attributes a
-table to an organism, and it is single-valued by that same check.
+One table per community member. Schema, channel vocabulary and the score-to-nats
+calibration are declared in `lib::fabfos_evidence.py` and enforced by `validate_gpr`
+before each table is written; the `source` column is what attributes a table to an
+organism, and it is single-valued by that same check. `llr` is what one call from that
+lane is worth as evidence, in nats -- one unit in every lane, so the columns below are
+comparable across rows.
 
 | organism | ORFs | rows | ORFs with a call (coverage) | distinct MNXR |
 |---|---|---|---|---|
 {chr(10).join(per_org)}
 
-| organism | channel | rows | ORFs (coverage) | MNXR | score_kind | min / med / max |
-|---|---|---|---|---|---|---|
+| organism | channel | rows | ORFs (coverage) | MNXR | llr min / med / max |
+|---|---|---|---|---|---|
 {chr(10).join(channel_rows)}
 
 ## All three come from ONE run, and that is load-bearing
@@ -272,7 +274,7 @@ The `pbert` lane picks its neighbours with `np.argpartition`, whose order among 
 unspecified, over embeddings whose last bits move with how the embedder's reductions
 were scheduled. Measured on identical inputs, references and code: `clean`, `kofam` and
 `uniref50` come back bit-identical and `pbert` does not — 1,118 of 68,824 shared keys
-carried a different `raw_score` between two runs, and the donor recorded in
+carried a different vote between two runs, and the donor recorded in
 `intermediate_id` can change outright.
 
 Three separate runs would therefore put that noise inside every cross-organism
