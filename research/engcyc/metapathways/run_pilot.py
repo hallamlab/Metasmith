@@ -66,7 +66,7 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
 # The licensed Pathway Tools image cannot be pulled. It is adopted into the store under the name
 # the engine derives from env::pathologic.env's container URI, and the store stays mode 700.
 LOCAL_IMAGES = {
-    "docker..quay.io_txyliu_pathologic..27.0.sif": Path("/scratch/phyberos/mp4/private/pathologic.sif"),
+    "docker..quay.io_txyliu_pathologic..27.0.sif": Path("/scratch/phyberos/engcyc/licensed/pathologic.sif"),
 }
 SETUP_COMMANDS = [*c.SETUP_COMMANDS, f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.24.2")

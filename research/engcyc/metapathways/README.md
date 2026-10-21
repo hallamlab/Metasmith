@@ -19,7 +19,11 @@ This directory proves the MetaPathways transforms on fir before the Engcyc lead 
 
 ## Host facts
 
-**WARNING** `pathologic.sif` is the licensed Pathway Tools image. `setup` hardlinks it into the home's mode-700 `container_images`. Never push or share it, and never loosen that mode.
+**WARNING** `pathologic.sif` is the licensed Pathway Tools 27.0 image. Never push or share it, and never loosen a mode on any copy.
+
+- The lasting copy is `/project/rpp-shallam/phyberos/licensed/pathway_tools_27.0/`, mode 700, with the installer it was built from. Scratch purges do not reach it.
+- `/scratch/phyberos/engcyc/licensed/` hardlinks both files on scratch. `setup` hardlinks the SIF from there into the home's mode-700 `container_images`.
+- After a scratch purge, hardlink or copy from the project copy back into `/scratch/phyberos/engcyc/licensed/`.
 
 - The agent home lives on scratch. A scratch purge loses its imported identities, so the next run re-imports every given.
 - The fir Metabuli database (`/home/phyberos/project-rpp/lib/metabuli/gtdb`) is GTDB 214.1 and ships no `names.dmp` or `nodes.dmp`. `contig_lcastar` then resolves a Metabuli match taxID only when some contig was called to it, and its lineages are in the 214 frame. The only GTDB r232 Metabuli database is the Arbutus volume `metabuli-ref-gtdb232`.
