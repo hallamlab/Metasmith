@@ -2,6 +2,8 @@
 # Microbiomics Database genomes. A genome batch is a directory of FASTAs, not one
 # item per genome: 34,815 per-genome tasks would each pay a Pathway Tools and
 # Nextflow start-up that costs more than the genome itself.
+# Tony dropped the OMD rebuild, so its producer is metapathways_pgdb.py.disabled.
+# pathologic and pathologic_mag build PGDBs from the CLEAN lane instead.
 types:
   genome_batch:
     properties:

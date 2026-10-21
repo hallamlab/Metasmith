@@ -111,7 +111,7 @@ def build_transforms():
 
     return [
         load("metagenomics", {"binning/das_tool.py", "taxonomy/gtdbtk_de_novo.py"}),
-        load("functionalAnnotation", {"metapathways_pgdb.py"}),
+        load("functionalAnnotation"),
         load("fabfos"),
         load("logistics"),
         load("metabolicModelling", keep={"prodigal_from_quality_bin.py", "carveme_from_orfs.py", "memote_score.py"}),
