@@ -115,7 +115,7 @@ def build_transforms(trna):
         load("functionalAnnotation", other | {"metapathways_pgdb.py"}),
         load("fabfos"),
         load("logistics"),
-        load("metabolicModelling", keep={"carveme_from_orfs.py", "memote_score.py"}),
+        load("metabolicModelling", keep={"prodigal_from_quality_bin.py", "carveme_from_orfs.py", "memote_score.py"}),
     ]
 
 
