@@ -185,17 +185,27 @@ def main():
     for orf, lineage in orf_lineage.items():
         votes[contig_of(orf)]["orf"].append((lineage, a.orf_weight))
     unresolved = 0
+    fallback = 0
     for contig, pairs in mb_matches.items():
-        # Metabuli 1.2.0 leaves the taxID:match_count column empty on contigs, so
-        # the contig's own call is then its one vote.
-        if not pairs and mb_calls[contig][1]:
-            votes[contig]["metabuli"].append((mb_calls[contig][1], a.metabuli_weight))
+        resolved = []
         for taxid, n in pairs:
             lineage = mb_taxonomy.get(taxid)
             if lineage is None:
                 unresolved += n
-                continue
-            votes[contig]["metabuli"].append((lineage, n * a.metabuli_weight))
+            else:
+                resolved.append((lineage, n))
+        # A contig averages ~58 matches against ~1.6 ORF votes (SG8W14 pilot), so
+        # raw counts would outvote the ORFs; Metabuli casts one vote per contig,
+        # split across its taxa by match share.
+        total = sum(n for _, n in resolved)
+        resolved = [(lin, a.metabuli_weight * n / total) for lin, n in resolved]
+        # Metabuli 1.2.0 often leaves taxID:match_count empty on contigs, and a
+        # database without its taxonomy dump cannot resolve most match taxIDs, so
+        # the contig's own call is then its one vote.
+        if not resolved and mb_calls[contig][1]:
+            resolved = [(mb_calls[contig][1], a.metabuli_weight)]
+            fallback += 1
+        votes[contig]["metabuli"].extend(resolved)
     for contig, lineages in rrna.items():
         votes[contig]["rrna"].extend((lin, a.rrna_weight) for lin in lineages)
 
@@ -220,7 +230,7 @@ def main():
             fh.write("\t".join(row) + "\n")
             n += 1
     print(f"[contig_lcastar] {n:,} contigs voted; {len(orf_lineage):,} ORF LCAs; "
-          f"{unresolved:,} Metabuli matches unresolved", flush=True)
+          f"{unresolved:,} Metabuli matches unresolved; {fallback:,} contigs vote their Metabuli call", flush=True)
 
 
 if __name__ == "__main__":

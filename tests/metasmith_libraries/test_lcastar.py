@@ -167,7 +167,7 @@ class TestContigTaxonomy:
         table = pd.read_csv(out, sep="\t").set_index("contig")
         assert table.loc["c1", "lineage"] == ECOLI
         assert (table.loc["c1", "orf_votes"], table.loc["c1", "metabuli_votes"],
-                table.loc["c1", "rrna_votes"]) == (3, 10, 1)
+                table.loc["c1", "rrna_votes"]) == (3, 1, 1)
         assert table.loc["c1", "metabuli_call"] == ECOLI
         # One Salmonella ORF in the assembly is below the support of 2, so it
         # votes for the family it shares with the E. coli ORFs.
