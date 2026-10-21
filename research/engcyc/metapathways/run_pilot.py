@@ -4,7 +4,7 @@
   smoke   OMD genome ENG000030922, given as the assembly and as its one quality MAG
   sg8w14  Spanish Lakes SG8W14 (MEGAHIT, 154 MB) with three COMEBin MAGs
 
-Subcommands: setup [--deploy], import --sample S, run --sample S [--trna T] [--dag]
+Subcommands: setup [--deploy], import --sample S, run --sample S [--dag]
 [--stage-only|--materialise|--launch] [--clear], status.
 
 Without a mode, `run` solves against a local dry-run home and stages nothing. --materialise stages
@@ -70,7 +70,6 @@ LOCAL_IMAGES = {
 SETUP_COMMANDS = [*c.SETUP_COMMANDS, f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.24.2")
 
-TRNA = {"aragorn": "trna_aragorn.py", "trnascan": "trna_trnascan.py"}
 SCALED = {
     "diamond_uniref50": (16, 64, 12),
     "pathologic": (2, 32, 24),
@@ -103,18 +102,16 @@ def declare_globals(smith, ensure):
     return c.cite(givens, CACHE_DIR / "globals.xgdb", TYPE_LIBS, ensure)
 
 
-def build_transforms(trna):
+def build_transforms():
     def load(name, masked=(), keep=None):
         lib = TransformInstanceLibrary.Load((c.MLIB / "transforms" / name).resolve())
         if keep is not None:
             return lib.AsView({Path(p) for p in keep})
         return lib.AsView({Path(p) for p in masked}, invert=True)
 
-    # The losing tRNA scanner leaves, so trna_gff has one producer. The OMD lane stays out of the search.
-    other = {p for k, p in TRNA.items() if k != trna}
     return [
         load("metagenomics", {"binning/das_tool.py", "taxonomy/gtdbtk_de_novo.py"}),
-        load("functionalAnnotation", other | {"metapathways_pgdb.py"}),
+        load("functionalAnnotation", {"metapathways_pgdb.py"}),
         load("fabfos"),
         load("logistics"),
         load("metabolicModelling", keep={"prodigal_from_quality_bin.py", "carveme_from_orfs.py", "memote_score.py"}),
@@ -169,7 +166,7 @@ def cmd_run(args):
         samples=list(inputs.AsSamples("sequences::assembly")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
                    DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), refs],
-        transforms=build_transforms(args.trna),
+        transforms=build_transforms(),
         targets=build_targets(args.gem),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
@@ -180,7 +177,7 @@ def cmd_run(args):
     if not remote:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
         return 0
-    c.stage_and_run(smith, task, CACHE_DIR / args.sample, args.tag or f"mp_pilot_{args.sample}_{args.trna}",
+    c.stage_and_run(smith, task, CACHE_DIR / args.sample, args.tag or f"mp_pilot_{args.sample}",
                     stage_only=args.stage_only, materialise=args.materialise, params=dict(executor=dict(queueSize=200), process=dict(tries=3)),
                     scaled=SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
     return 0
@@ -208,9 +205,8 @@ def main():
         p = sub.add_parser(name)
         p.add_argument("--sample", required=True, choices=list(SAMPLES))
         p.set_defaults(fn=cmd_run, stage_only=False, materialise=False, launch=False, dag=False, clear=False, tag=None,
-                       trna="aragorn", gem=False)
+                       gem=False)
         if name == "run":
-            p.add_argument("--trna", choices=list(TRNA), default="aragorn")
             p.add_argument("--gem", action="store_true", help="add CarveMe and MEMOTE per quality MAG")
             p.add_argument("--dag", action="store_true")
             mode = p.add_mutually_exclusive_group()
