@@ -22,9 +22,9 @@
 # repeats it, and only then does the domain flag select a tree to infer. The
 # bacterial inference is the wall: FastTree over 189,805 taxa, which is the whole
 # reference set plus the user's genomes. Identify and align together took three
-# minutes; the inference runs for days. The wall below is fir's 7-day limit, and
-# a survey with archaea may get only the bacterial tree before it expires -- which
-# iPHoP accepts.
+# minutes. On fir, both domains together took 16 h 43 m over 30 CAMI marine bins and
+# 16 h 03 m and 16 h 55 m over 100, so the wall barely moves with the bin count, and
+# peaked at 173.5 GB of 240 GB on about 8 of the 32 cores.
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -120,6 +120,6 @@ TransformInstance(
     resources=Resources(
         cpus=32,
         memory=Size.GB(240),
-        duration=Duration(hours=168),
+        duration=Duration(hours=48),
     ),
 )
