@@ -13,13 +13,14 @@ def protocol(context: ExecutionContext):
     isources = context.Input(sources)
     iout = context.Output(out_props)
 
+    sources_dir = context.Mount(isources.external, "/feast_sources")
     context.ExecWithEnv(
         env=image,
-        binds=[(isources.external, "/feast_sources")],
+        binds=[sources_dir],
         cmd=f"""
             FEAST \
-                --otus /feast_sources/FEAST_otus.csv \
-                --metadata /feast_sources/FEAST_metadata_final.csv \
+                --otus {sources_dir}/FEAST_otus.csv \
+                --metadata {sources_dir}/FEAST_metadata_final.csv \
                 --outdir feast_out
             cp feast_out/FEAST_results_source_contributions_matrix.txt {iout.container} \
                 || cp feast_out/*source_contributions* {iout.container}

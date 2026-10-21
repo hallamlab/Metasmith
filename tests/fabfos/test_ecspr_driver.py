@@ -14,11 +14,20 @@ EXPECTED_TRANSFORMS = {"ecspr_measure"}
 def _plan(work: Path):
     units = []
     for name in ("pool_a", "pool_b"):
-        gpr = work / f"gpr_{name}.parquet"
-        gpr.touch()
+        # TWO GPR TABLES PER UNIT, because that is the case the split exists for: a
+        # conditions table selects the host background out of one and the clone
+        # perturbation out of the other, and staging only one resolves half a condition.
+        tables = []
+        for which in ("host", "clones"):
+            g = work / f"{which}_{name}.parquet"
+            g.touch()
+            tables.append(g)
         cond = work / f"conditions_{name}.parquet"
         cond.touch()
-        units.append(ecspr.Unit(name=name, gpr_table=gpr, conditions=cond))
+        tests = work / f"tests_{name}.parquet"
+        tests.touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=tables, conditions=cond,
+                                tests=tests))
     return ecspr.generate_workflow(
         work, units=units, atom_pairs=None, direction_ratios=None,
         runtime=Runtime.APPTAINER,
@@ -54,10 +63,11 @@ def test_copy_staging_names_inputs_for_the_unit(tmp_path):
     for name in ("net_a", "net_b"):
         d = tmp_path / name
         d.mkdir()
-        (d / "gpr.parquet").touch()
-        (d / "conditions.parquet").touch()
-        units.append(ecspr.Unit(name=name, gpr_table=d / "gpr.parquet",
-                                conditions=d / "conditions.parquet"))
+        for f in (f"{name}_gpr.parquet", "conditions.parquet", "tests.parquet"):
+            (d / f).touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=[d / f"{name}_gpr.parquet"],
+                                conditions=d / "conditions.parquet",
+                                tests=d / "tests.parquet"))
 
     work = tmp_path / "work"
     seen = []
@@ -71,9 +81,81 @@ def test_copy_staging_names_inputs_for_the_unit(tmp_path):
     assert len(seen) == 1, "on_inputs must run once, after staging and before planning"
 
     staged = {p.name for p in (work / "inputs.xgdb").iterdir() if p.suffix == ".parquet"}
-    assert {"net_a.gpr.parquet", "net_b.gpr.parquet",
+    # THE GPR TABLES KEEP THEIR OWN NAMES. Everything else is renamed for the unit, but
+    # a conditions table's `table` column is a basename, so renaming a GPR table would
+    # make every condition naming it select nothing.
+    assert {"net_a_gpr.parquet", "net_b_gpr.parquet",
             "net_a.conditions.parquet", "net_b.conditions.parquet",
+            "net_a.ecspr_tests.parquet", "net_b.ecspr_tests.parquet",
             "atom_pairs.parquet", "direction.parquet"} <= staged, sorted(staged)
+
+
+def test_two_units_may_share_one_gpr_table(tmp_path):
+    # A COMPOSED NETWORK MEASURED IN BOTH DIRECTIONS is two units on one `gpr.parquet` and
+    # one conditions table -- only the terminals move, which is what makes the pair a
+    # comparison rather than two unrelated numbers. Staging it twice is an assertion
+    # failure; staging it under the first unit alone would leave the second unit's
+    # `group_by=exp` with no GPR table and measure the wrong set without saying so.
+    shared_gpr = tmp_path / "gpr.parquet"
+    shared_cond = tmp_path / "conditions.parquet"
+    for f in (shared_gpr, shared_cond):
+        f.touch()
+    units = []
+    for name in ("net__ERY", "net__RHI"):
+        t = tmp_path / f"tests_{name}.parquet"
+        t.touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=[shared_gpr],
+                                conditions=shared_cond, tests=t))
+    seen = []
+    agent, task, stubs = ecspr.generate_workflow(
+        tmp_path / "work", units=units, atom_pairs=None, direction_ratios=None,
+        runtime=Runtime.APPTAINER, on_inputs=seen.append,
+    )
+    assert task.ok, f"shared-table plan failed: {task.plan}"
+    lib = seen[0]
+    staged = [p for p in lib.manifest if Path(str(p)).name == "gpr.parquet"]
+    assert len(staged) == 1, f"the shared table must be staged once, got {staged}"
+    # ONE PLAN STEP, TWO SAMPLES. `ecspr_measure` is `group_by=exp`, so the fan-out is at
+    # run time -- the plan is the template and both units resolve through it.
+    assert len(list(lib.AsSamples("fabfos::experiment"))) == 2
+
+
+def test_both_arms_plan_in_one_run(tmp_path):
+    # WHY ONE PLAN. The two arms are only comparable if they measured the same
+    # construction, and the thing that guarantees it is that they read one conditions
+    # table inside one run rather than two invocations that agreed by hand.
+    units = []
+    for name in ("pool_a",):
+        tables = []
+        for which in ("host", "clones"):
+            g = tmp_path / f"{which}_{name}.parquet"
+            g.touch()
+            tables.append(g)
+        for f in (f"conditions_{name}.parquet", f"tests_{name}.parquet",
+                  f"gem_tests_{name}.parquet", f"media_{name}.parquet",
+                  "iECDH1ME8569_1439.json"):
+            (tmp_path / f).touch()
+        units.append(ecspr.Unit(name=name, gpr_tables=tables,
+                                conditions=tmp_path / f"conditions_{name}.parquet",
+                                tests=tmp_path / f"tests_{name}.parquet"))
+    mnx = tmp_path / "metanetx"
+    mnx.mkdir()
+    ecspr.attach_fba(units, [(
+        "pool_a", tmp_path / "gem_tests_pool_a.parquet",
+        [tmp_path / "iECDH1ME8569_1439.json"], tmp_path / "media_pool_a.parquet")])
+
+    agent, task, stubs = ecspr.generate_workflow(
+        tmp_path / "work", units=units, atom_pairs=None, direction_ratios=None,
+        metanetx=mnx, runtime=Runtime.APPTAINER,
+    )
+    assert task.ok, f"two-arm plan failed: {task.plan}"
+    assert {"ecspr_measure", "fba_measure"} <= common.step_transform_names(task)
+
+
+def test_a_unit_with_no_fba_arm_plans_exactly_as_before(tmp_path):
+    agent, task, stubs = _plan(tmp_path)
+    assert task.ok
+    assert "fba_measure" not in common.step_transform_names(task)
 
 
 if __name__ == "__main__":

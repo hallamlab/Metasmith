@@ -1,6 +1,9 @@
+# Unpinned, the solver picks python 3.6, which has no `dataclasses` and inStrain dies on
+# import. 3.8 is the newest python instrain 1.10.0 solves with (checked 2026-10-17).
 name: instrain
 channels:
   - conda-forge
   - bioconda
 dependencies:
+  - python=3.8
   - instrain=1.10.0

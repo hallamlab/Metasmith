@@ -79,3 +79,30 @@ def test_a_tombstoned_shard_is_not_a_hit(tmp_path):
     shard = shard_dir(cache_root, KEY)
     (shard / TOMBSTONE_NAME).touch()
     assert probe(cache_root, bytes.fromhex(KEY)) is None
+
+
+def test_a_shard_whose_file_was_truncated_is_not_a_hit(tmp_path):
+    import os
+    _records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=1)
+    shard = shard_dir(cache_root, KEY)
+    member = shard / "out" / "1-1-1.abcdef-out0.txt"
+    assert probe(cache_root, bytes.fromhex(KEY)) == shard
+    os.chmod(member, 0o644)
+    os.truncate(member, 3)
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
+
+
+def test_a_manifest_without_sizes_is_still_served(tmp_path):
+    import cbor2
+    from metasmith.caching.invocation import MANIFEST_NAME
+    _records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=1)
+    shard = shard_dir(cache_root, KEY)
+    path = shard / MANIFEST_NAME
+    manifest = cbor2.loads(path.read_bytes())
+    for f in manifest["files"]:
+        f.pop("size", None)
+    os_mode = path.stat().st_mode
+    path.chmod(0o644)
+    path.write_bytes(cbor2.dumps(manifest))
+    path.chmod(os_mode)
+    assert probe(cache_root, bytes.fromhex(KEY)) == shard

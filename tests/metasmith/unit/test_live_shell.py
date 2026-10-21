@@ -514,7 +514,7 @@ def test_exec_inherit_stdin_passes_through_to_child():
 _REMOTE_HOST = os.environ.get("LIVESHELL_REMOTE_HOST", "")
 
 
-@pytest.mark.network
+@pytest.mark.remote_host
 @pytest.mark.skipif(not _REMOTE_HOST, reason="set LIVESHELL_REMOTE_HOST to an ssh-reachable host")
 def test_exec_ssh_one_shot_returns_rc_zero():
     with LiveShell() as sh:
@@ -522,7 +522,7 @@ def test_exec_ssh_one_shot_returns_rc_zero():
         assert r.exit_code == 0
 
 
-@pytest.mark.network
+@pytest.mark.remote_host
 @pytest.mark.skipif(not _REMOTE_HOST, reason="set LIVESHELL_REMOTE_HOST to an ssh-reachable host")
 def test_exec_ssh_one_shot_returns_rc_nonzero():
     with LiveShell() as sh:
@@ -530,7 +530,7 @@ def test_exec_ssh_one_shot_returns_rc_nonzero():
         assert r.exit_code == 1
 
 
-@pytest.mark.network
+@pytest.mark.remote_host
 @pytest.mark.skipif(not _REMOTE_HOST, reason="set LIVESHELL_REMOTE_HOST to an ssh-reachable host")
 def test_exec_ssh_then_rsync_compound():
     with LiveShell() as sh:

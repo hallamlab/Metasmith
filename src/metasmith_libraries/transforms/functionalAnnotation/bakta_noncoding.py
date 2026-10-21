@@ -29,12 +29,13 @@ def protocol(context: ExecutionContext):
     offn = context.Output(out_ffn)
     otxt = context.Output(out_txt)
 
+    db_dir = context.Mount(idb.external, "/db")
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/db")],
+        binds=[db_dir],
         cmd=f"""
             bakta \
-                --db /db/db-light \
+                --db {db_dir}/db-light \
                 --skip-cds --skip-sorf --skip-pseudo --skip-plot --skip-crispr \
                 --force \
                 --prefix bakta_noncoding \

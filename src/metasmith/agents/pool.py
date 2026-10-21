@@ -110,6 +110,22 @@ class _PoolAccess:
                 f"[{self.home.address}]: {e}"
             ) from None
 
+    def CheckPool(self, *, timeout: int = 600) -> dict:
+        """The imported givens whose bytes moved since their import, checked where they sit."""
+        from ..ops import cache as op_cache
+
+        if not self._is_ssh():
+            return op_cache.check_imports(agent_home=str(self.home.GetPath()))
+        flags = [f"--cache-root {shlex.quote(str(self._pool_root()))}"]
+        res = self._remote_oneshot(self._pool_command("cache check", flags), timeout=timeout)
+        try:
+            return first_json(res.out)
+        except ValueError as e:
+            raise ValueError(
+                f"could not check the pool at [{self._pool_root()}] on "
+                f"[{self.home.address}]: {e}"
+            ) from None
+
     def ImportToPool(
         self,
         path,

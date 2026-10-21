@@ -24,19 +24,18 @@ def protocol(context: ExecutionContext):
     ipred = context.Output(out_pred)
     context.LocalShell("mkdir -p ezpred_run")
 
+    run_dir = context.Mount(context.external_cwd/"ezpred_run", "/work/ezpred_run")
+    ezpred_src = context.Mount(iez.local, "/work/EZpred")
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (context.external_cwd/"ezpred_run", "/work/ezpred_run"),
-            (iez.local, "/work/EZpred"),
-        ],
+        binds=[run_dir, ezpred_src],
         cmd=f"""
             EZPRED_LAYERS={ilay.container} \
             EZPRED_INDEX={iidx.container} \
             EZPRED_ORFS={iorfs.container} \
             EZPRED_OUT_CSV={ipred.container} \
             EZPRED_TOP_TERMS={TOP_TERMS} \
-            EZPRED_WORK=/work/ezpred_run \
+            EZPRED_WORK={run_dir} \
             python {iwrap.container}
         """,
     )

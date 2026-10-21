@@ -18,6 +18,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(A.lib))
 from bench_cohorts import load_all_cohorts, is_native
 from bench_evidence_weights import nomination_contributions, assert_conservation
+import fabfos_evidence as fe
 import bench_edges as be
 import bench_universe as bu
 
@@ -119,9 +120,9 @@ for route, df in frames.items():
     ev["channel"] = route
     ev["intermediate_id"] = ev["route_key"].astype(str)
     # Every route here asserts a mapping rather than scoring a hit, so nominations enter
-    # at equal score and the split is by fanout alone. Inventing a score would be
+    # at equal weight and the split is by fanout alone. Inventing a score would be
     # inventing evidence strength for a crosswalk.
-    ev["raw_score"] = 1.0
+    ev["llr"] = fe.ASSERTION_LLR
     c = nomination_contributions(ev)
     assert_conservation(c, f"condition_gpr/{route}")
     contrib[route] = (c.groupby(["orf", "mnxr"], sort=False)["contrib"].sum()

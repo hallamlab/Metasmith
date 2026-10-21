@@ -47,7 +47,7 @@ change shape takes its templates down here, by name, rather than in someone's GU
 
 One `.env` per tool declares a container image and a conda env, serving both worlds; the engine
 picks by the global runtime, and a transform never learns which it got. Declaring only one of
-the two is what makes a tool unrunnable on the other kind of agent, and the staging preflight
+the two is what makes a tool unrunnable on the other kind of agent, and the launch preflight
 refuses it there by name — in both directions.
 
 `ExecWithContainer` and the retired per-runtime arms are rejected **statically** by the engine's
@@ -60,6 +60,30 @@ one tool was pinned to a digest resolving to an *older* image than its version n
 carrying none of the library it advertised, and 80 tasks in one run died after their expensive
 work had already succeeded. Container tags come from `mamba search -c bioconda`; biocontainer
 hash suffixes are not guessable.
+
+## A large database is a fetch and a build
+
+A large reference database is two transforms joined by a type for what was fetched, such as
+`ref::kofam_sources`. The `local`
+step only fetches, into `context.StagingDir()`, and moves the archive into its product. A
+compute step unpacks, indexes and checks the content. Three reasons hold the shape:
+
+- A login node is shared, and a cluster reaps long jobs on it. Metabuli's `gunzip` alone took
+  about 9 h there.
+- The fetch is its own cache entry, so a failed build keeps the archive and its retry starts at
+  the build.
+- A fetch that does nothing after its move cannot fail with its staging dir already emptied.
+
+The cost is disk at rest, not only at the peak. The archive stays cached beside what was built
+from it, so a database holds about twice its size until an operator drops the archive: on fir,
+iPHoP's 299 GB archive and its unpack held 593 GB. A build that rejects a damaged fetch rejects
+it again on every retry, because the fetch is a cache hit. Put a `tombstone` file in that
+fetch's shard. The next run then misses, fetches again and replaces the shard.
+
+**A `noscratch` step must remove what it unpacked beside its product.** It runs in its work
+dir, and every file left there counts against the cluster's inode quota until the work dir is
+removed. InterProScan's unpacked tree was 42,000 files beside its archive, and VirSorter2's
+conda package cache 27,000, and together they helped fill a one-million-inode quota on fir.
 
 ## Templates
 

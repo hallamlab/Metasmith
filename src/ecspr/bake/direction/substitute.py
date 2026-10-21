@@ -305,6 +305,19 @@ class Substitutions:
             return False
         return bool(self._applied(stoich))
 
+    def balances(self, stoich: dict[str, float]) -> bool | None:
+        # Does this equation close on heavy atoms? None when it cannot be decided, which
+        # is not the same as False -- a participant with no formula leaves the question
+        # open, and reporting that as "unbalanced" would blame the equation for a gap in
+        # the reference.
+        #
+        # PUBLIC BECAUSE THE QUOTIENT LANE NEEDS THE VERDICT ON THE RESTAGED EQUATION.
+        # `reac_prop`'s own is_balanced describes the form MetaNetX wrote, and a polymer
+        # reaction that only closes once the substitution has put the acceptor on both
+        # sides is exactly the case where the two disagree.
+        res = self._residual(stoich)
+        return None if res is None else (res == {})
+
     def sigma_sub(self, stoich: dict[str, float]) -> float:
         # Congener spread over the participants this reaction substituted, in quadrature.
         #

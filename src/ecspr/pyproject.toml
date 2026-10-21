@@ -25,8 +25,12 @@ license = { text = "GPL-3.0" }
 ecspr = "ecspr.cli:main"
 
 [tool.setuptools]
+# EVERY PACKAGE WITH AN `__init__.py`, and the list is checked by the image build rather
+# than by eye: `ecspr.bake.direction.sources` was absent here, so an INSTALLED ecspr could
+# not import the concentration adapters at all while an editable one could. A missing
+# subpackage fails at import time in the container and nowhere else.
 packages = ["ecspr", "ecspr.bake", "ecspr.bake.aam", "ecspr.bake.direction",
-            "ecspr.commands", "ecspr.model"]
+            "ecspr.bake.direction.sources", "ecspr.commands", "ecspr.model"]
 
 [tool.setuptools.package-dir]
 ecspr = "."
@@ -36,6 +40,11 @@ ecspr = "."
 # report FULL_VERSION, so leaving it out makes every container claim the bare
 # release segment and a result stops being traceable to a source state.
 ecspr = ["version.txt", "env.yml", "build_hash.txt"]
+# The direction lane's tables are DATA THE CODE READS BY `__file__`, not fixtures: the
+# substitution set and the model compounds are what an r9 direction cut is a claim about,
+# so an install that omits them silently runs r8 chemistry.
+"ecspr.bake.direction" = ["*.tsv"]
+"ecspr.bake.direction.sources" = ["*.tsv"]
 
 [tool.setuptools.dynamic]
 version = { file = ["version.txt"] }

@@ -4,3 +4,9 @@
 /*/*/*
 !/*/*/*.dvc
 /benchmarks
+
+# curated/ is the one category here that is hand-authored git text rather than a pin.
+# REFERENCES.md C1 says so: the axis definitions are graph-independent, so there is no
+# producer to re-run and nothing for a DVC chunk to version.
+!/curated/
+!/curated/**

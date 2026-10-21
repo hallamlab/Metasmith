@@ -12,6 +12,7 @@ uniref_d  = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_descr
 pbert_emb = model.AddRequirement(lib.GetType("annotation::proteinbert_embeddings"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
+calib     = model.AddRequirement(lib.GetType("ref::lane_calibration"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 out_gpr   = model.AddProduct(lib.GetType("annotation::gpr_table"))
@@ -29,6 +30,7 @@ def protocol(context: ExecutionContext):
     ipe   = context.Input(pbert_emb)
     ibr   = context.Input(bridge)
     ilm   = context.Input(landmarks)
+    ical  = context.Input(calib)
     iev   = context.Input(ev_lib)
     igpr  = context.Input(gpr_lib)
     iout  = context.Output(out_gpr)
@@ -44,6 +46,7 @@ def protocol(context: ExecutionContext):
             --pbert-emb {ipe.container} \
             --bridge {ibr.container} \
             --landmarks {ilm.container} \
+            --calibration {ical.container} \
             --out {iout.container} \
             --lane-set {LANE_SET} \
             --source {iorfs.local.stem} \

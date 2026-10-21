@@ -20,6 +20,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "sequences::assembly")
         lib.AddItem(DEFERRED, "ref::mnxr_lookup")
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
+        lib.AddItem(DEFERRED, "ref::lane_calibration")
 
     return Spec(
         input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),

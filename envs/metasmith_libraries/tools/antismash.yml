@@ -1,6 +1,10 @@
+# antiSMASH's cassis module refuses any MEME but 4.11.2, and unpinned the solver picks
+# 5.x, so `antismash --check-prereqs` fails after a complete database download
+# (seen 2026-10-17 with MEME 5.5.9).
 name: antismash
 channels:
   - conda-forge
   - bioconda
 dependencies:
   - antismash=7.1.0
+  - meme=4.11.2

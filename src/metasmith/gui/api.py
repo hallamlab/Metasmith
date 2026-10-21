@@ -33,6 +33,7 @@ from . import recipe as op_recipe
 from . import share as op_share
 from . import stdlib
 from .jobs import LogCapture
+from .watcher import first_run_since
 from .names import (
     AGENT_LOCAL_HOST,
     agent_sort_name,
@@ -1758,12 +1759,18 @@ def create_run():
             for warning in warnings:
                 Log.Warn(warning)
             try:
+                stamp = op_runtime.clock(agent_path)
                 key = _launch_setup() if kind == "setup" else _launch_run()
                 runs = op_runtime.list_runs(agent_path, key)
+                if stamp:
+                    run_number = first_run_since(runs, stamp)
+                else:
+                    run_number = runs[-1].get("index") if runs else None
                 p.update_run(workflow, run_name, {
                     "state": "running",
                     "launched_at": utcnow(),
-                    "run_number": runs[-1].get("index") if runs else None,
+                    "launch_stamp": stamp or None,
+                    "run_number": run_number,
                 })
             except Exception as exc:
                 p.update_run(workflow, run_name, {

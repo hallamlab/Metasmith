@@ -271,3 +271,24 @@ def test_verify_and_restamp_are_reachable_on_a_drifted_library(tmp_path):
     assert report["entries"]["item_0.txt"]["verdict"] == "DRIFTED"
     DataInstanceLibrary.Load(lib.location, check_pinned_stamps=False).Restamp()
     DataInstanceLibrary.Load(lib.location)  # cleared
+
+
+def test_a_compile_over_a_pinned_library_refuses_by_name(tmp_path):
+    from metasmith.models.build_libraries import CompileUniqueLibrary
+    from metasmith.models.libraries import DataTypeLibrary
+
+    types_yml = tmp_path / "t.yml"
+    types_yml.write_text(yaml.safe_dump(TYPES))
+    lib = DataInstanceLibrary(tmp_path / "t")
+    lib.AddTypeLibrary(types_yml, namespace="t")
+    (lib.location / "item_0.txt").write_text("contents\n")
+    lib.AddItem(Path("item_0.txt"), "t::thing")
+    lib.Save()
+    lib.Pin()
+    index = lib.location / "_metadata" / "index.yml"
+    before = index.read_text()
+
+    with pytest.raises(PinnedLibraryError) as e:
+        CompileUniqueLibrary(lib.location, {"t": DataTypeLibrary.Load(types_yml)})
+    assert "unpin" in str(e.value)
+    assert index.read_text() == before, "the refused compile still rewrote the index"

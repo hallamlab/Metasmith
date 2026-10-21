@@ -1,0 +1,5 @@
+outs:
+- md5: c80a011e190d2ef9f1fc5891ac64ce48
+  size: 433
+  hash: md5
+  path: census.tsv

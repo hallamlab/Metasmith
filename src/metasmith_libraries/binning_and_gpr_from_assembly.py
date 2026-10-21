@@ -72,6 +72,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         # do have download transforms and are deliberately left out.
         lib.AddItem(DEFERRED, "ref::mnxr_lookup", parents={meta})
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks", parents={meta})
+        lib.AddItem(DEFERRED, "ref::lane_calibration", parents={meta})
 
     return Spec(
         input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),

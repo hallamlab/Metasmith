@@ -54,11 +54,14 @@ def protocol(context: ExecutionContext):
     # Every hit is emitted with its identity, alignment length and mismatch count.
     # The paper's acceptance rule -- at most one mismatch over at least 95% of the
     # spacer -- is deliberately NOT applied here: it belongs to the join, where it
-    # can be varied without re-running an alignment.
+    # can be varied without re-running an alignment. That is also why -evalue is
+    # loose: against 3 Gbp of contigs a 31 bp spacer scores 6e-5 with one mismatch
+    # and 6e-6 with none, so a 1e-5 cutoff drops hits the join would keep. At 1 the
+    # table carries about one chance hit per spacer.
     _cmd = f"""
         makeblastdb -in {ifrozen.container} -dbtype nucl -out frozen_db
         blastn -task blastn-short -query {pooled} -db frozen_db \
-            -evalue 1e-5 -word_size 7 -reward 1 -penalty -1 -ungapped -dust no \
+            -evalue 1 -word_size 7 -reward 1 -penalty -1 -ungapped -dust no \
             -num_threads {threads} \
             -outfmt "6 qseqid sseqid pident length mismatch qlen qstart qend sstart send evalue bitscore qcovs" \
             -out hits.raw.tsv

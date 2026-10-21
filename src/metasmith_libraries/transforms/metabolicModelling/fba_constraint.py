@@ -16,13 +16,12 @@ def protocol(context: ExecutionContext):
     isbml  = context.Input(sbml)
     iout   = context.Output(out_dir)
 
+    diff_mnt = context.Mount(idiff.external, "/diff_data")
+    model_dir = context.Mount(isbml.external.parent, "/model_dir")
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (idiff.external, "/diff_data"),
-            (isbml.external.parent, "/model_dir"),
-        ],
-        cmd=f"python {ihelp.container}/fba_constraint.py /diff_data /model_dir/{isbml.external.name} {iout.container}",
+        binds=[diff_mnt, model_dir],
+        cmd=f"python {ihelp.container}/fba_constraint.py {diff_mnt} {model_dir}/{isbml.external.name} {iout.container}",
     )
 
     return ExecutionResult(

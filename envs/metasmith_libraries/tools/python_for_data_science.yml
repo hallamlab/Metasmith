@@ -1,0 +1,34 @@
+# The conda side of `env::python_for_data_science.env`, for every transform that names it:
+# the fabfos build-ref acquisition steps (tables, git, wget, the HF hub client) and the
+# standard library's plotting, clustering and parquet steps.
+#
+# The analysis packages carry the minor of quay.io/hallamlab/python_for_data_science:1.4.0
+# (read from the image 2026-10-17), so a figure or a parquet file comes out the same on
+# either side of the runtime switch. pandas 2.3 and numpy<2 stay below the image's 3.0 and
+# 2.5 for the fabfos acquisition steps written against them. The image has no pyarrow,
+# and `lib::fabfos_evidence` picks whichever parquet engine the interpreter has.
+#
+# kaleido 0.2.1 is the self-contained static exporter that `fig.write_image` needs.
+# kaleido 1.x drives a separate Chrome install, which the image does not carry.
+name: python_for_data_science
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas=2.3.*
+  - numpy<2
+  - pyarrow>=24
+  - polars=1.43.*
+  - plotly=6.0.*
+  - python-kaleido=0.2.1
+  - scipy
+  - scikit-learn
+  - umap-learn
+  - numba
+  - biopython
+  - pillow
+  - requests
+  - git
+  - wget
+  - unzip
+  - huggingface_hub

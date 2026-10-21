@@ -16,6 +16,7 @@ esmc_emb  = model.AddRequirement(lib.GetType("annotation::esm_c_embeddings"), pa
 esmc_idx  = model.AddRequirement(lib.GetType("annotation::esm_c_index"), parents={orfs})
 bridge    = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
+calib     = model.AddRequirement(lib.GetType("ref::lane_calibration"))
 lm_esmc   = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks_esmc"))
 ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
@@ -37,6 +38,7 @@ def protocol(context: ExecutionContext):
     iei   = context.Input(esmc_idx)
     ibr   = context.Input(bridge)
     ilm   = context.Input(landmarks)
+    ical  = context.Input(calib)
     ilme  = context.Input(lm_esmc)
     iev   = context.Input(ev_lib)
     igpr  = context.Input(gpr_lib)
@@ -57,6 +59,7 @@ def protocol(context: ExecutionContext):
             --esmc-idx {iei.container} \
             --bridge {ibr.container} \
             --landmarks {ilm.container} \
+            --calibration {ical.container} \
             --lm-esmc {ilme.container} \
             --out {iout.container} \
             --lane-set {LANE_SET} \

@@ -17,29 +17,46 @@ changing.
 
 **In**: a baked basis — atom pairs, optionally direction ratios, an element, an orientation
 — one or more GPR tables, which are annotation evidence at one row per ORF × channel ×
-nominated reaction, and either explicit terminals or a conditions table whose every row
-carries its own terminals and its own mask.
+nominated reaction, and either explicit terminals or **two tables**: a conditions table
+saying what each network *is*, and a tests table saying what is *measured* on it.
 
-**Out**: one long table keyed by condition, probe, orientation, element and readout. `total`
+**Out**: one long table keyed by test, probe, orientation, element and readout. `total`
 is the measurement, a metabolite readout is what that metabolite drew, and a readout named
-with a leading `_` is a per-condition diagnostic — coverage, convergence, abstention — carried
+with a leading `_` is a per-test diagnostic — coverage, convergence, abstention — carried
 inline so a result cannot be read without what it rests on. Significance is not in it:
-`ecspr score` subtracts a named baseline and ranks the difference against a null pool that
-`ecspr draw` emits *in the conditions schema*, which is what makes the null arm the same
-command with a different file. Both schemas are declared in
+`ecspr score` subtracts the baseline each test names and ranks the difference against a null
+pool that `ecspr draw` emits *in the same two schemas*, which is what makes the null arm the
+same command with different files. Every schema is declared in
 `src/metasmith_libraries/data_types/ecspr.yml`.
 
 **ECSPr measures; it does not edit.** There is no weight builder, no metabolite resolver, no
 add/delete policy and no background flag, because each is an API for manipulating a network,
-and a network manipulation belongs to whoever is designing the experiment. A condition is a
-**mask over the rows of a GPR table**: an overexpression is the host row and the clone row
-both selected and their conductances summing, a knockout is a drop, and the difference
-between two conditions is a subtraction the caller does over the results.
+and a network manipulation belongs to whoever is designing the experiment.
+
+**A condition is an ordered set algebra over GPR rows.** Each step is a predicate — this
+table, this column, these values — and the condition is the left fold of its steps in `step`
+order under `union`, `intersect` and `subtract`. Order decides the answer, which is why
+`step` is a column rather than a file position: a subtract before the union that would have
+added the rows is a no-op, and the two read identically in a diff. An overexpression is a
+union onto rows already present, and `factor` is how much that union is worth — DOSAGE IS A
+WEIGHT, NOT A COPY, exact rather than approximate because pooling reads `llr` linearly inside
+its saturating term. A knockout subtracts on a gene or a `genome_unit`, never on a reaction:
+belief conservation is recomputed on the survivors, so removing one of a gene's reactions
+pushes its belief onto the siblings, which is a claim about a gene the experiment did not
+make.
+
+**Two arms read that one table.** `ecspr ground` and `ecspr two-point` measure atom
+conductance; `ecspr fba` carves a stoichiometric frame with the same rows and solves an LP on
+what survives. A construction measured both ways is therefore the *same* construction rather
+than two hand-written approximations of one. They differ in which tests table they take, and
+in what a weight is allowed to mean: an LP has no use for evidence in nats, so `factor` and a
+calibrated `llr` reach the flux-balance arm through exactly one route — a belief floor that
+can put a reaction INTO the carve. Neither ever moves a bound, because raising a bound that
+was not binding is a bit-exact no-op.
 
 **A probe infers its shape from its inputs**: given terminals it measures the whole table as
-one unit and accepts no mask; given a conditions table it measures every row. There is no
-mode flag and no batch verb — two entry points into one probe is exactly the drift this
-package exists to end.
+one network; given the two tables it measures every test. There is no mode flag and no batch
+verb — two entry points into one probe is exactly the drift this package exists to end.
 
 **A two-point solve already knows its own derivative, so a perturbation sweep is usually the
 wrong tool.** Effective conductance is homogeneous of degree one in the conductances, so each
@@ -97,15 +114,41 @@ is separate evidence, a paralog within one copy is not. The pre-pooling sum surv
 `belief_mass` because that, not `E_r`, is the additive ledger per-ORF conservation is a
 statement about and what a gene *count* has to read.
 
+## Two levels of separateness, and they are not interchangeable
+
+A **`genome_unit`** is one physically separate copy of DNA inside ONE CELL — a chromosome, a
+plasmid, a fosmid insert, an ASKA clone. Two units are one cell: their evidence ADDS, on one
+graph. The producer declares it, and nothing infers it from a file name or from `source`,
+which on a pipeline-written table is the engine's instance id.
+
+A **member** is one CELL. Two members are two cells, so each gets a PRIVATE copy of every
+metabolite and a molecule made by one reaches the other only across a declared bridge. A
+community is a compositions table naming members and the metabolites that join them, and a
+member is a *condition_id* — which is what lets a member be perturbed, so a strain and a
+knockout of it are two members built by one code path.
+
+Putting the unit in the assertion key is not enough on its own to make a second copy count:
+the nomination dedup runs first and deletes the second copy's row outright, so the ORF is
+namespaced by its unit before any of it. Measured on a toy frame, `E` is 0.397797066112 for
+one copy, *the same* 0.397797066112 for two units without that namespacing, and
+0.897586872438 with it.
+
 ## Engine and experiment
 
 The split inside `ecspr.model` is what keeps the contract honest. The **engine** measures one
 network and sees only a dict of per-reaction conductances, a pair table, a ratio table and
-metabolite id strings — never an ORF, a channel, a mask or a condition id. The **experiment
-layer** runs it over a set of conditions: it builds the weights, applies the mask, draws a
-size-matched null pool *as a conditions table* so the null and the observation traverse the
+metabolite id strings — never an ORF, a channel, a condition or a test id. The **experiment
+layer** runs it over a set of tests: it resolves each condition to a weighted row set, draws a
+size-matched null pool *as the same two tables* so the null and the observation traverse the
 identical code path, and scores against that pool — the empirical p taken two-sided by
 deviation from the null's own centre, since fed and starved are both departures.
+
+A composed community stays inside that split. Private copies are bought by PREFIXING the
+metabolite ids and a bridge is one more pair row with a pseudo-reaction id, so nothing in the
+graph builder, the solver or either measurement transform learns that communities exist — the
+same indifference that lets those transforms treat a knockout and a null draw as "another GPR
+table". The one cost is that a composed pair table is **not** network-agnostic the way the
+reference bake is, so it is staged per network and carries its own type.
 
 ## The bake
 
@@ -120,7 +163,27 @@ The **AAM lane** adjudicates the whole reaction universe before any mapper runs,
 down an additive layer stack — curated maps, an ensemble discounting its two neural members
 for shared architectural bias while its combinatorial member votes independently, a curation
 sweep, conservation algebra, per-element partial maps — where a layer claims only what the
-layers above left unclaimed and the gates refuse rather than warn. The **direction lane** fuses
+layers above left unclaimed and the gates refuse rather than warn.
+
+Three rules hold the stack's arithmetic to what a mapper actually said. Each one was absent
+for at least two generations, and each cost the atom lane real edges while it was.
+
+- **A member must be a bijection before it may vote.** An atom-map number names one
+  correspondence. A member that reuses one sends a single substrate atom to two molecules,
+  which is a transfer no chemistry performed. The extractor drops the contradicted atoms and
+  keeps the rest of the reaction, so a member abstains where it argues with itself.
+- **A participant written `c` times may hold `c` destinations.** Its copies share one atom
+  identity, so keeping a single destination dropped a real edge wherever `2 A = B + C` sent
+  them to different products. The weight divides across the destinations rather than
+  doubling. `graph_from_pairs` folds it into conductance on the strength of its summing to
+  one.
+- **A multi-component participant is one metabolite and several templates.** MetaNetX writes
+  a salt as one `.`-joined SMILES, and the submission builder joins participants the same
+  way, so the mapper returns more templates than the reaction has participants. Merging them
+  back before the count guard runs is exact rather than approximate: a canonical labelling
+  returns the metabolite's own atom ranks whatever order its components arrive in.
+
+The **direction lane** fuses
 two correlated thermodynamic estimates with a curated category prior, shrinks a wide posterior
 toward reversible, and hands the model `ratio = exp(ΔG'°/RT)`.
 
@@ -146,3 +209,10 @@ The bake reaches a job as **one staged input**: `build_references/build.sh` vend
 into the transform library as `buildlib::ecspr`, whose `instance_id` is the tree digest — that
 digest is what carries provenance from source to baked table, so the vendored copy is
 regenerated by the same script that compiles the index, never by hand and never committed.
+
+**CAUTION** — the deployed generation breaks that chain. `aam_redox` cannot run under the
+engine, so r11 was assembled by `research/fabfos/bake_r11/` over the previous generation's
+mapper caches. Its provenance is the commit that pins the script beside the data, not a run's
+lineage. Everything it changed is downstream of the mappers, so no mapper ran and `aam_cache/`
+and `logs/` are the previous generation's bytes. Restore the chain before treating a lineage
+query against this chunk as authoritative.

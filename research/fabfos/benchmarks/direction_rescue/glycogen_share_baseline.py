@@ -47,7 +47,7 @@ from ecspr.model.build import (load_pairs, load_direction_ratios,             # 
                                graph_from_pairs)
 from ecspr.model.graph import Terminal, measure_leak                          # noqa: E402
 
-HOSTS = ROOT / "data/fabfos/benchmarks/hosts"
+RUNS = ROOT / "data/fabfos/runs"
 AG1_GEM = ROOT / "data/fabfos/originals/genomes/e_coli_dh1/GEM/iECDH1ME8569_1439.json"
 CHEM_XREF = ROOT / "data/fabfos/originals/metanetx/4.5/chem_xref.tsv"
 CACHE = HERE / "cache"
@@ -106,7 +106,7 @@ def main() -> None:
     ratios = load_direction_ratios(
         bake_identity.build_direction_ratios(sub / "direction_ratios.parquet", args.bake))
 
-    gpr = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
+    gpr = pd.read_parquet(RUNS / args.host / "gpr" / "gpr_gem.parquet")
     weights = {m: 1.0 for m in gpr.mnxr.dropna().astype(str).unique()}
     graph = graph_from_pairs(pairs, args.element, weights, ratios)
 

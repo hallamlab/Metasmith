@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/tony/agentic_workspace/projects/metasmith/fabfos/bake
+configfile: pyproject.toml
+collected 16 items
+
+tests/ecspr/bake/test_layer_stack.py .............FFF                    [100%]
+
+=================================== FAILURES ===================================
+___________ test_a_doubled_substrate_keeps_both_of_its_destinations ____________
+tests/ecspr/bake/test_layer_stack.py:133: in test_a_doubled_substrate_keeps_both_of_its_destinations
+    df, _tally = L.fuse_members({"a": both, "b": both.copy()}, coefficients=coef)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: fuse_members() got an unexpected keyword argument 'coefficients'
+_____ test_a_singly_written_substrate_may_not_fan_out_past_its_coefficient _____
+tests/ecspr/bake/test_layer_stack.py:148: in test_a_singly_written_substrate_may_not_fan_out_past_its_coefficient
+    assert bad.all(), "two copies cannot reach three molecules either"
+E   AssertionError: two copies cannot reach three molecules either
+E   assert np.False_
+E    +  where np.False_ = <built-in method all of numpy.ndarray object at 0x73f7badbe610>()
+E    +    where <built-in method all of numpy.ndarray object at 0x73f7badbe610> = array([False, False, False]).all
+__________ test_a_fractional_coefficient_is_not_a_coefficient_of_zero __________
+tests/ecspr/bake/test_layer_stack.py:161: in test_a_fractional_coefficient_is_not_a_coefficient_of_zero
+    assert sub["MNXM2"] >= 1, "a trace coefficient still names one participant, not none"
+E   AssertionError: a trace coefficient still names one participant, not none
+E   assert 0 >= 1
+=========================== short test summary info ============================
+FAILED tests/ecspr/bake/test_layer_stack.py::test_a_doubled_substrate_keeps_both_of_its_destinations - TypeError: fuse_members() got an unexpected keyword argument 'coefficients'
+FAILED tests/ecspr/bake/test_layer_stack.py::test_a_singly_written_substrate_may_not_fan_out_past_its_coefficient - AssertionError: two copies cannot reach three molecules either
+FAILED tests/ecspr/bake/test_layer_stack.py::test_a_fractional_coefficient_is_not_a_coefficient_of_zero - AssertionError: a trace coefficient still names one participant, not none
+========================= 3 failed, 13 passed in 0.64s =========================

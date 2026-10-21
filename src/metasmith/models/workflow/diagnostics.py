@@ -16,6 +16,36 @@ class PlanHint:
     chain: list[str] = field(default_factory=list)
     candidate_transforms: list[str] = field(default_factory=list)
     near_misses: list[str] = field(default_factory=list)
+
+
+# By properties only: a lineage constraint that blocks a route is what the
+# lineage_mismatch hint reports.
+def _forward_closure(givens: set[Endpoint], transform2inst: dict[Transform, TransformInstance]) -> list:
+    produced: list = list(givens)
+    satisfied: set[str] = set()
+    pending = list(transform2inst)
+    while True:
+        fired = []
+        for model in pending:
+            ok = True
+            for req in model.requires:
+                if req.key in satisfied:
+                    continue
+                if any(e.IsA(req) for e in produced):
+                    satisfied.add(req.key)
+                    continue
+                ok = False
+                break
+            if ok:
+                fired.append(model)
+        if not fired:
+            return produced
+        for model in fired:
+            for pgroup in model.produces:
+                produced.extend(pgroup)
+        pending = [m for m in pending if m not in fired]
+
+
 def _diagnose_plan_failure(
     target_model: Transform,
     target_names: list[str],
@@ -227,8 +257,89 @@ def _diagnose_plan_failure(
                 out.append(name)
         return out
 
+    reachable = _forward_closure(all_givens, transform2inst)
+
+    def _reachable(d) -> bool:
+        return any(e.IsA(d) for e in reachable)
+
+    necessary: dict[str, frozenset[str]] = {}
+    leaf_of: dict[str, Dependency] = {}
+    required_by: dict[str, set[str]] = {}
+
+    # The unproduced requirements every route to `d` needs: a union over one
+    # producer's unmet requirements, intersected across producers. A route that
+    # cycles back to a demand still being computed is no route.
+    def _necessary(d, stack: frozenset[str]) -> frozenset[str]|None:
+        if d.key in necessary:
+            return necessary[d.key]
+        if d.key in stack:
+            return None
+        producers = _producers_of(d)
+        if not producers:
+            leaf_of[d.key] = d
+            necessary[d.key] = frozenset({d.key})
+            return necessary[d.key]
+        routes: list[frozenset[str]] = []
+        for prod in producers:
+            route: set[str] = set()
+            for req in prod.requires:
+                if _matches_any_given(req) or _reachable(req):
+                    continue
+                sub = _necessary(req, stack | {d.key})
+                if sub is None:
+                    route = None
+                    break
+                if req.key in leaf_of:
+                    required_by.setdefault(req.key, set()).add(_model_name(prod))
+                route |= sub
+            if route is not None:
+                routes.append(frozenset(route))
+        out = frozenset.intersection(*routes) if routes else frozenset()
+        necessary[d.key] = out
+        return out
+
+    unreachable_targets: list[str] = []
+    leaf_targets: dict[str, list[str]] = {}
+    for tr_req in target_model.requires:
+        if _matches_any_given(tr_req) or _reachable(tr_req) or not _producers_of(tr_req):
+            continue
+        target_name = _name(tr_req)
+        unreachable_targets.append(target_name)
+        leaves = sorted(_necessary(tr_req, frozenset()) or ())
+        if any(_too_general_givens(leaf_of[leaf]) for leaf in leaves):
+            continue
+        for leaf in leaves:
+            leaf_targets.setdefault(leaf, []).append(target_name)
+
+    for leaf, targets in sorted(leaf_targets.items(), key=lambda kv: (-len(kv[1]), _name(leaf_of[kv[0]]))):
+        leaf_name = _name(leaf_of[leaf])
+        users = sorted(required_by.get(leaf, ()))
+        hints.append(PlanHint(
+            kind='unproduced_requirement',
+            target=targets[0] if len(targets) == 1 else f"{len(targets)} targets",
+            message=(
+                f"no transform in the loaded libraries produces {leaf_name} and no given "
+                f"input matches it, and every route to {', '.join(targets)} needs it"
+                + (f" (required by {', '.join(users)})" if users else "")
+            ),
+            chain=[f"{u} needs {leaf_name}" for u in users],
+            candidate_transforms=users,
+        ))
+
     for tr_req in target_model.requires:
         target_name = _name(tr_req)
+        if unreachable_targets and target_name not in unreachable_targets and (
+                _matches_any_given(tr_req) or _reachable(tr_req)):
+            hints.append(PlanHint(
+                kind='blocked_by_other_target',
+                target=target_name,
+                message=(
+                    f"{target_name} can be produced from the given inputs. It was dropped "
+                    f"because the plan fails on "
+                    f"{', '.join(unreachable_targets)}"
+                ),
+            ))
+            continue
         producers = _producers_of(tr_req)
         if not producers:
             hints.append(PlanHint(
@@ -258,7 +369,7 @@ def _diagnose_plan_failure(
             if d.key in visited:
                 continue
             visited.add(d.key)
-            if _matches_any_given(d):
+            if _matches_any_given(d) or _reachable(d):
                 continue
             for ep, _insts in _too_general_givens(d):
                 wanted_by = chain[-1].split(" produces ")[0] if chain else "a transform"

@@ -15,6 +15,7 @@ task would have.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -37,11 +38,8 @@ pytestmark = [pytest.mark.docker, pytest.mark.slow]
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
 
-def _bind_root(work_dir: Path) -> Path:
-    root = work_dir
-    while root.parent != root and root.parent != Path("/tmp"):
-        root = root.parent
-    return root
+def _bind_root(*paths: Path) -> Path:
+    return Path(os.path.commonpath([str(p.resolve()) for p in paths]))
 
 
 def run_cached_stub(
@@ -79,7 +77,7 @@ def run_cached_stub(
     lib_dir.mkdir(exist_ok=True)
     shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
 
-    bind = _bind_root(work_dir)
+    bind = _bind_root(work_dir, agent_home)
     result = subprocess.run(
         [
             "docker", "run", "--rm",

@@ -22,9 +22,9 @@
 # repeats it, and only then does the domain flag select a tree to infer. The
 # bacterial inference is the wall: FastTree over 189,805 taxa, which is the whole
 # reference set plus the user's genomes. Identify and align together took three
-# minutes; the inference runs for days. The wall below is fir's 7-day limit, and
-# a survey with archaea may get only the bacterial tree before it expires -- which
-# iPHoP accepts.
+# minutes. On fir, both domains together took 16 h 43 m over 30 CAMI marine bins and
+# 16 h 03 m and 16 h 55 m over 100, so the wall barely moves with the bin count, and
+# peaked at 173.5 GB of 240 GB on about 8 of the 32 cores.
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -33,7 +33,16 @@ model = Transform()
 
 image = model.AddRequirement(lib.GetType("env::gtdbtk.env"))
 ref   = model.AddRequirement(lib.GetType("ref::gtdb"))
-asm   = model.AddRequirement(lib.GetType("sequences::putative_genome"))
+# The survey's quality MAGs, not any putative genome: add_to_db joins the tree's leaves to
+# the bins it adds by file name, so a tree over another bin set adds nothing, and as a
+# putative genome the planner fed it das_tool's bins, which no other target wanted.
+#
+# One tree per study, gathered by group_by rather than folded out of a batch. The cache
+# keys each batch member on its own, so a batch folded into one tree records the first
+# member only, and the next run re-ran de_novo_wf on the other 99 bins beside the cached
+# tree over all 100.
+study = model.AddRequirement(lib.GetType("viromics::contig_study"))
+asm   = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"), parents={study})
 raw   = model.AddProduct(lib.GetType("taxonomy::gtdbtk_raw"))
 
 # These are r232 names and the paper's are not. GTDB renamed its phyla to the
@@ -54,8 +63,8 @@ def protocol(context: ExecutionContext):
     genome_dir = Path("./genomes")
     genome_dir.mkdir(exist_ok=True)
     n = 0
-    for item in context.AsBatch():
-        src = item.Input(asm).local
+    for handle in context.InputGroup(asm):
+        src = handle.local
         (genome_dir/src.name).write_bytes(src.read_bytes())
         n += 1
     if n == 0:
@@ -107,11 +116,10 @@ def protocol(context: ExecutionContext):
 TransformInstance(
     protocol=protocol,
     model=model,
-    group_by=asm,
-    batch_size=10_000,
+    group_by=study,
     resources=Resources(
         cpus=32,
         memory=Size.GB(240),
-        duration=Duration(hours=168),
+        duration=Duration(hours=48),
     ),
 )

@@ -68,6 +68,13 @@ def proteins_for(host: str, symbols: set[str]) -> dict[str, list[str]]:
     return out
 
 
+def _rel(p: Path) -> str:
+    try:
+        return str(p.relative_to(REPO))
+    except ValueError:
+        return str(p)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--from", dest="src", type=Path,
@@ -78,7 +85,7 @@ def main() -> int:
 
     if not a.src.exists():
         raise SystemExit(
-            f"no DH1 de-novo table at {a.src.relative_to(REPO)}.\n  Build it: "
+            f"no DH1 de-novo table at {_rel(a.src)}.\n  Build it: "
             f"`python research/fabfos/examples/clone_gpr_on_hpc.py --orfs "
             f"data/fabfos/originals/genomes/{DH1}/genome/NC_017638.1.faa --into "
             f"data/fabfos/runs/{DH1} --site sockeye --run`, then --publish")
@@ -102,7 +109,10 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     keep.to_parquet(out / "gpr_denovo.parquet", index=False, compression="zstd")
     (out / "BUILD_borrow.json").write_text(json.dumps(dict(
-        borrowed_from=DH1, source=str(a.src.relative_to(REPO)),
+        # Repo-relative when it can be, absolute otherwise. `--from` is how a
+        # rebuilt DH1 table outside the tree gets borrowed, and refusing to record
+        # where it came from is the worst of both.
+        borrowed_from=DH1, source=_rel(a.src),
         genotype={k: dict(gene=v[0], allele=v[1]) for k, v in MARKERS.items()},
         withheld_kind="loss",
         withheld_orfs=sorted(withheld),

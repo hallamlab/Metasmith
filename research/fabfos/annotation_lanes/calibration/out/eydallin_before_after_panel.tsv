@@ -1,0 +1,3 @@
+weighting	n	n_moved	n_tied_at_zero	rho_all	p_all	rho_moved	p_moved	top4_predicted	top4_measured	top4_overlap
+legacy	54	30	24	0.0681	0.6245	0.1606	0.3966	glgA;glgB;glgC;glgP	clpA;glgC;recQ;ylcG	1
+calibrated	54	24	30	0.0464	0.7389	0.1392	0.5166	glgA;glgB;glgC;glgP	clpA;glgC;recQ;ylcG	1

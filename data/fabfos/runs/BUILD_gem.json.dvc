@@ -1,0 +1,5 @@
+outs:
+- md5: e95241dd5cf3d7682392c684f21469d3
+  size: 3595
+  hash: md5
+  path: BUILD_gem.json

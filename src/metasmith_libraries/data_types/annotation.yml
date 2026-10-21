@@ -194,16 +194,22 @@ types:
   # GPR table (gene-attributed reaction evidence, long format).
   #
   # THE SCHEMA IS DECLARED IN CODE, not here: resources/lib/fabfos_evidence.py
-  # holds SCHEMA_COLS, the channel vocabulary (LANE_SETS), the per-channel
-  # score_kind and its declared range, and the validator both mappers call before
-  # writing. A column list transcribed into this comment is a second copy that
-  # goes stale without anything raising, which is how two channel vocabularies
-  # came to exist at once.
+  # holds SCHEMA_COLS, the channel vocabulary (LANE_SETS), the calibration that
+  # turns a lane's own score into `llr`, and the validator both mappers call
+  # before writing. A column list transcribed into this comment is a second copy
+  # that goes stale without anything raising, which is how two channel
+  # vocabularies came to exist at once.
   #
   # Grain: one row per (source, orf, channel, intermediate_id, mnxr). No
   # cross-lane dedup -- the same ORF->MNXR claim from two lanes stays two rows.
-  # `raw_score` is non-null, finite, >= 0 and higher-is-stronger in EVERY channel,
-  # and is deliberately NOT comparable across them; `score_kind` says what it is.
+  #
+  # `llr` IS ONE NUMBER IN NATS AND IT IS COMPARABLE ACROSS CHANNELS, which is
+  # what replaced a per-lane `raw_score` that was explicitly not. It is the
+  # log-odds a call of this strength is correct, less the pooling prior, so
+  # pooling can add two lanes' evidence rather than picking between two scales.
+  # `llr_route` says which of the four routes produced it, so a measured weight
+  # is distinguishable from a placeholder one; a table whose lanes were never
+  # calibrated says `uncalibrated` rather than looking calibrated.
   #
   # CANONICAL. The chosen-4 lane set (kofam, CLEAN, uniref50, ProteinBERT) IS the
   # GPR table: `gpr_4lane` produces this type directly rather than a subtype, so
@@ -317,6 +323,10 @@ types:
   eggnog_source:
     properties:
       _: Marker for eggNOG database download
+  # The fetch half of eggnog_data.
+  eggnog_packed:
+    properties:
+      _: eggNOG-mapper database files as fetched, compressed, unpacked by buildEggnogDB
   eggnog_results:
     properties:
       _: eggNOG-mapper functional annotations (GO, KEGG, Pfam, COG)

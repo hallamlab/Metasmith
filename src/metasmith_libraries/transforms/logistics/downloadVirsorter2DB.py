@@ -58,6 +58,13 @@ sys.exit(1)
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
+    # The conda envs `virsorter setup` builds are named by a hash over the path the
+    # database sits at, so setup and every run must see it at one path. Only a
+    # container can give it one: /db. On a host process the product moves between
+    # setup and use, and the run would build every env again with no network.
+    if not context.RunsInContainer():
+        Log.Error("virsorter2 needs a container runtime: its database is usable only at the path it was set up at")
+        return ExecutionResult(manifest=[], success=False)
 
     cpus = context.params.get("cpus", 4)
 
@@ -70,15 +77,20 @@ def protocol(context: ExecutionContext):
     # HOME points into the work directory rather than at /tmp: setup runs snakemake
     # with --use-conda, and while the environments land under --conda-prefix the
     # package cache follows HOME. On a host whose /tmp is a small shared tmpfs that
-    # is how you fill it.
+    # is how you fill it. The installed envs hardlink into that cache, so emptying it
+    # afterwards frees its 27,000 unshared files and leaves the envs whole.
+    Path("vs2_db").mkdir(exist_ok=True)
+    db_dir = context.Mount(context.external_cwd/"vs2_db", "/db")
     context.ExecWithEnv(
         env=image,
+        binds=[db_dir],
         cmd=f"""
             export HOME="$PWD"
             export PATH="$PWD/{shim_dir}:$PATH"
-            virsorter setup -d vs2_db -j {cpus}
+            virsorter setup -d {db_dir} -j {cpus}
         """,
     )
+    context.LocalShell("rm -rf ./.conda/pkgs")
 
     Path("vs2_db").rename(idb.local)
 

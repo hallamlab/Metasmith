@@ -74,6 +74,23 @@ def main() -> None:
                     help="passed to combine; omit to use canon.DIR_SIGMA_0")
     ap.add_argument("--metacyc", type=Path, default=None,
                     help="MetaCyc reactions.dat (default: newest under data/fabfos/originals)")
+    ap.add_argument("--balance-gate", default=None,
+                    help="r10 arm: where the raw reac_prop balance test runs relative to "
+                         "the member ('before_member' is r9)")
+    ap.add_argument("--quotient", type=Path, default=None,
+                    help="r10 arm: per-(MNXR, member) correction table")
+    ap.add_argument("--no-widen-suspect", action="store_true",
+                    help="r10 arm: report dG_suspect without widening those rows")
+    ap.add_argument("--clamp", default=None,
+                    help="r10 arm: magnitude bound in kJ/mol ('100' is what r9 was baked "
+                         "with; canon has since moved to three decades without a re-bake)")
+    ap.add_argument("--prior-quantity", default=None,
+                    help="r10 arm: 'physiological' fits the curated prior against the "
+                         "corrected number, which also hands --quotient to calibrate; "
+                         "'standard' is r9")
+    ap.add_argument("--prior-width", default=None,
+                    help="r10 arm: which stored spread the curated prior uses "
+                         "('tau' is r9, 'robust' is r10)")
     ap.add_argument("--supplementary-crosswalk", action="store_true",
                     help="build the curated table with the r9 supplementary crosswalk; "
                          "ignored when --curated supplies a table already built")
@@ -110,13 +127,28 @@ def main() -> None:
         calibration = out / "_calibration.parquet"
         run("calibrate", "--curated", curated, "--reac-prop", MNX / "reac_prop.tsv",
             "--eq-member", eq, "--out-calibration", calibration,
-            "--out-points", out / "_calibration_points.parquet")
+            "--out-points", out / "_calibration_points.parquet",
+            *(["--balance-gate", a.balance_gate] if a.balance_gate else []),
+            *(["--prior-quantity", a.prior_quantity] if a.prior_quantity else []),
+            # The fit sees the correction only where the prior is being stated on the
+            # corrected scale. Handing it over unconditionally would move the arm that
+            # prices the concentration term into the one that prices the prior.
+            *(["--quotient", str(a.quotient)]
+              if (a.quotient and a.prior_quantity == "physiological") else []))
 
     combine = ["--base-mnxrs", out / "_universe.json", "--eq", eq, "--dgbyg", dgbyg,
                "--curated", curated, "--calibration", calibration,
                "--out", out / "direction_annotation.parquet"]
     if a.sigma0 is not None:
         combine += ["--sigma0", a.sigma0]
+    if a.prior_width is not None:
+        combine += ["--prior-width", a.prior_width]
+    if a.clamp is not None:
+        combine += ["--clamp", a.clamp]
+    if a.quotient is not None:
+        combine += ["--quotient", a.quotient]
+    if a.no_widen_suspect:
+        combine += ["--no-widen-suspect"]
     run("combine", *combine)
 
     got = pd.read_parquet(out / "direction_annotation.parquet")

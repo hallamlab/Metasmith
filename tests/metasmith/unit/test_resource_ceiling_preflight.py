@@ -254,3 +254,23 @@ def test_a_scheduler_sizes_its_local_executor_at_launch(launch, agent):
     assert f"executor {{ cpus = {ROOMY_CPUS}; memory = '{ROOMY_GB} GB' }}" in config
     per_step = config[config.index("withName"):]
     assert SMALL_STEP in per_step and BIG_STEP not in per_step, per_step
+
+
+def test_an_override_that_fits_the_ceiling_is_launched(launch, local_ceiling):
+    # The refusal tells the operator to lower the steps' requests with a resource
+    # override, so the check has to read the requests the override leaves.
+    fits = Resources(cpus=CEILING_CPUS, memory=Size.GB(CEILING_GB / 2), duration=Duration(hours=12))
+    shell = launch("local", params=local_ceiling, resource_overrides={"interproscan": fits})
+    assert shell.launched
+    config = RecordingMover.sent.get(AgentPaths.NXF_CONFIG, "")
+    caps = config[config.rindex(f"withName: '{BIG_STEP}'"):]
+    assert f"{CEILING_GB / 2:g} GB" in caps, (
+        f"the retry cap was written for the declared request, not the override: {caps[:300]}"
+    )
+
+
+def test_an_override_that_raises_a_request_past_the_ceiling_is_refused(launch, roomy_ceiling):
+    too_big = Resources(cpus=1, memory=Size.GB(ROOMY_GB * 2), duration=Duration(hours=1))
+    with pytest.raises(Exception) as e:
+        launch("local", params=roomy_ceiling, resource_overrides={"prodigal": too_big})
+    assert "prodigal" in str(e.value), str(e.value)

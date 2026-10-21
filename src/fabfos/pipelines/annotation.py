@@ -9,13 +9,14 @@ rather than a subtype, so this stage has exactly one producer and no tiebreak
 is needed (unlike ``gpr_7lane`` -> ``gpr_table_7lane``, which stays available
 but is not this driver's target). See ``transforms/fabfos/gpr_4lane.py``.
 
-REFERENCE DEFAULTS. All five staged references this stage needs have real
+REFERENCE DEFAULTS. All six staged references this stage needs have real
 pinned copies in this repo's DVC-tracked ``data/processed/`` and are used as
 defaults when not overridden: KOfam profiles + KO list, the UniRef50 DIAMOND db,
-the MNXR lookup bridge, and ``ref::label_transfer_landmarks`` -- the labelled
+the MNXR lookup bridge, ``ref::label_transfer_landmarks`` -- the labelled
 ProteinBERT references the fourth lane votes against, built by
-``compile/label_transfer_landmarks.py``
-over Swiss-Prot. Every default can be overridden with the matching flag; omit
+``compile/label_transfer_landmarks.py`` over Swiss-Prot -- and
+``ref::lane_calibration``, which is what turns each lane's own score into nats.
+Every default can be overridden with the matching flag; omit
 both and a stub is staged so planning still succeeds.
 
 SEVERAL ORF SETS, ONE RUN. ``--orfs`` repeats. Every lane and the mapper are
@@ -78,6 +79,7 @@ NAMESPACES = ("sequences", "annotation", "ref")
 def build_inputs(agent, work: Path, *, orfs, kofam_profiles: Path | None,
                  kofam_ko_list: Path | None,
                   uniref50_db: Path | None, mnxr_lookup: Path | None, landmarks: Path | None,
+                  lane_calibration: "Path | None" = None,
                   refs_root: "str | Path | None" = None, verify_refs: bool = True,
                   stage_orfs: str = "copy", use_pinned_refs: bool = True,
                   ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
@@ -110,13 +112,23 @@ def build_inputs(agent, work: Path, *, orfs, kofam_profiles: Path | None,
         # are one pool entry and the two staging modes do not fork the campaign.
         givens.Add(str(target), "sequences::orfs", name=f"orfs/{p.name}")
 
-    given = {
+    # AN OVERRIDE FOR EVERY ANNOTATION REF, and the loop below indexes this by every
+    # key in `REF_LAYOUT`. Spelling the five out and leaving the sixth to be added by
+    # hand is what made adding `ref::lane_calibration` a KeyError on every plan, so the
+    # keys come from the declaration and only the values are named here.
+    overrides = {
         "ref::kofamscan_profiles": kofam_profiles,
         "ref::kofamscan_ko_list": kofam_ko_list,
         "ref::uniref50_diamond_db": uniref50_db,
         "ref::mnxr_lookup": mnxr_lookup,
         "ref::label_transfer_landmarks": landmarks,
+        "ref::lane_calibration": lane_calibration,
     }
+    unknown = sorted(set(overrides) - set(REF_LAYOUT))
+    if unknown:
+        raise ValueError(f"{unknown} are not annotation references; known: "
+                         f"{sorted(REF_LAYOUT)}")
+    given = {dtype: overrides.get(dtype) for dtype in REF_LAYOUT}
     stubs: dict[str, Path] = {}
     pinned = None
     if use_pinned_refs and verify_refs and refs_root is None:
@@ -153,6 +165,7 @@ def build_inputs(agent, work: Path, *, orfs, kofam_profiles: Path | None,
 
 def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
                        uniref50_db: Path | None, mnxr_lookup: Path | None, landmarks: Path | None,
+                       lane_calibration: "Path | None" = None,
                        runtime: Runtime, agent_env: str | None = None,
                        refs_root: "str | Path | None" = None,
                        verify_refs: bool = True, stage_orfs: str = "copy",
@@ -163,6 +176,7 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     inputs, stubs, pinned_refs = build_inputs(
         agent, work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
         uniref50_db=uniref50_db, mnxr_lookup=mnxr_lookup, landmarks=landmarks,
+        lane_calibration=lane_calibration,
         refs_root=refs_root, verify_refs=verify_refs, stage_orfs=stage_orfs,
     )
     if on_inputs is not None:
@@ -211,6 +225,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--uniref50-db", default=None, metavar="FILE")
     p.add_argument("--mnxr-lookup", default=None, metavar="FILE")
     p.add_argument("--landmarks", default=None, metavar="DIR")
+    p.add_argument("--lane-calibration", default=None, metavar="DIR",
+                   help="ref::lane_calibration -- what one call from each lane is "
+                        "worth, in nats. Without it every lane falls back to a flat "
+                        "weight, which is an UNWEIGHTED table, not a neutral one.")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
     p.add_argument("--output", default="./fabfos_annotation_out", help="output directory")
     p.add_argument("--dag", default="research/fabfos/reports/dag/annotation", help="path base for the rendered SVG")
@@ -272,6 +290,7 @@ def main(argv=None) -> int:
         uniref50_db=_given(a.uniref50_db),
         mnxr_lookup=_given(a.mnxr_lookup),
         landmarks=_given(a.landmarks),
+        lane_calibration=_given(a.lane_calibration),
         runtime=runtime, agent_env=a.agent_env, refs_root=a.refs_root, verify_refs=a.verify_refs,
     )
 

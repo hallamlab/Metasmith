@@ -18,14 +18,13 @@ def protocol(context: ExecutionContext):
         mkdir -p ./fake_home/.config
         mkdir -p ./fake_home/.pki
     """)
+    fake_home = [
+        context.Mount(f"$(pwd -P)/fake_home/{d}", f"$HOME/{d}")
+        for d in (".cache", ".local", ".config", ".pki")
+    ]
     context.ExecWithEnv(
         env=image,
-        binds=[
-            ("$(pwd -P)/fake_home/.cache",  "$HOME/.cache"),
-            ("$(pwd -P)/fake_home/.local",  "$HOME/.local"),
-            ("$(pwd -P)/fake_home/.config", "$HOME/.config"),
-            ("$(pwd -P)/fake_home/.pki",    "$HOME/.pki"),
-        ],
+        binds=fake_home,
         cmd=f"""\
             export NUMBA_CACHE_DIR=$TMPDIR
             python {iscript.container} {iblast.container} {iout.container}

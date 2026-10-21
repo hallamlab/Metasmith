@@ -34,10 +34,12 @@ floor to clear rather than a number to reproduce.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ELEMENTS = ("C", "N", "S", "P")
@@ -87,7 +89,8 @@ def explode(path, method: str, source: str, confidence: float = 1.0,
     return df[list(ATOM_COLS)]
 
 
-def fuse_members(members: dict, single_credit: float = SINGLE_MEMBER_CREDIT):
+def fuse_members(members: dict, single_credit: float = SINGLE_MEMBER_CREDIT,
+                 coefficients: dict | None = None):
     key = ["mnxr", "element", "substrate", "sub_idx"]
     speak = defaultdict(dict)
     for name, d in members.items():
@@ -102,41 +105,104 @@ def fuse_members(members: dict, single_credit: float = SINGLE_MEMBER_CREDIT):
     tally = defaultdict(int)
     for k, per_member in speak.items():
         mnxr, el, sm, s_idx = k
+        # A participant written `c` times is `c` copies sharing one atom identity, and
+        # their atoms may end up in different products -- `2 A = B + C` is one atom of A
+        # to B and one to C. The member is allowed `c` destinations for that reason and
+        # no more. Keeping one was a lost edge; the cap is what keeps it from becoming a
+        # licence to fan out.
+        cap = 1
+        if coefficients is not None:
+            cap = max(1, coefficients.get(mnxr, ({}, {}))[0].get(sm, 1))
         picks = {}
         for name, lst in per_member.items():
-            best = max(lst, key=lambda t: t[2])
-            picks[name] = best
+            # Ties on pair_w break on the destination, never on row order.
+            best = {}
+            for p, pi, w, c in lst:
+                cur = best.get((p, pi))
+                if cur is None or w > cur[0]:
+                    best[(p, pi)] = (w, c)
+            ordered = sorted(best.items(),
+                             key=lambda kv: (kv[1][0], kv[0][0], kv[0][1]), reverse=True)
+            picks[name] = [(p, pi, w, c) for (p, pi), (w, c) in ordered[:cap]]
+            if len({p for p, _i, _w, _c in lst}) > 1:
+                tally["member_offered_two_molecules"] += 1
         srcs = "+".join(sorted(picks))
-        distinct = {(p, pi) for p, pi, _w, _c in picks.values()}
+        offered = {n: frozenset((p, pi) for p, pi, _w, _c in v) for n, v in picks.items()}
+
+        # WHY THE WEIGHT IS A SHARE AND NOT A COUNT. `graph_from_pairs` folds `pair_w`
+        # straight into conductance BECAUSE it is margin-conserving -- a source atom's
+        # candidate weights sum to one. Two copies of a participant are still one atom
+        # node here, so the margin divides across the destinations rather than doubling;
+        # letting it reach 2.0 would inflate conductance out of that node and break the
+        # solve's conservation. At one destination this is 1.0 and nothing moves.
+        share = defaultdict(float)
+        denom = 0.0
+        for name, v in picks.items():
+            for p, pi, _w, c in v:
+                if c != c:
+                    c = 1.0
+                share[(p, pi)] += c
+                denom += c
+        if not (denom > 0):
+            share = defaultdict(float)
+            denom = float(sum(len(v) for v in picks.values()))
+            for name, v in picks.items():
+                for p, pi, _w, _c in v:
+                    share[(p, pi)] += 1.0
 
         if len(picks) == 1:
             name = next(iter(picks))
-            pm, p_idx, _w, c = picks[name]
-            rows.append((mnxr, el, sm, pm, s_idx, p_idx, single_credit,
-                         f"{name}_only", name, c * single_credit))
+            for (pm, p_idx), s in share.items():
+                w = single_credit * s / denom
+                rows.append((mnxr, el, sm, pm, s_idx, p_idx, w,
+                             f"{name}_only", name, w))
             tally[f"{name}_only"] += 1
-        elif len(distinct) == 1:
-            pm, p_idx = distinct.pop()
-            cbar = sum(c for *_x, c in picks.values()) / len(picks)
-            rows.append((mnxr, el, sm, pm, s_idx, p_idx, 1.0,
-                         "consensus", srcs, cbar))
+        elif len(set(offered.values())) == 1:
+            cbar = (sum(c for v in picks.values() for *_x, c in v)
+                    / max(1, sum(len(v) for v in picks.values())))
+            for (pm, p_idx), s in share.items():
+                rows.append((mnxr, el, sm, pm, s_idx, p_idx, s / denom,
+                             "consensus", srcs, cbar))
             tally["consensus"] += 1
         else:
-            confs = {n: c for n, (*_x, c) in picks.items()}
-            wsum = sum(v for v in confs.values() if v == v)
-            if not (wsum > 0):
-                wsum = float(len(picks))
-                confs = {n: 1.0 for n in picks}
-            for name, (pm, p_idx, _w, _c) in picks.items():
-                c = confs.get(name, 1.0)
-                if c != c:
-                    c = 1.0
-                rows.append((mnxr, el, sm, pm, s_idx, p_idx, c / wsum,
-                             "disagree_diluted", srcs, c / wsum))
+            for (pm, p_idx), s in share.items():
+                rows.append((mnxr, el, sm, pm, s_idx, p_idx, s / denom,
+                             "disagree_diluted", srcs, s / denom))
             tally["disagree_diluted"] += 1
 
     df = pd.DataFrame(rows, columns=list(ATOM_COLS))
     return df, dict(tally)
+
+
+def injectivity_violations(df: pd.DataFrame, coefficients: dict | None = None):
+    a = df.groupby(["mnxr", "element", "substrate", "sub_idx"])["product"].nunique()
+    b = df.groupby(["mnxr", "element", "product", "prod_idx"])["substrate"].nunique()
+    mA = pd.MultiIndex.from_frame(
+        df[["mnxr", "element", "substrate", "sub_idx"]]).isin(a[a > 1].index)
+    mB = pd.MultiIndex.from_frame(
+        df[["mnxr", "element", "product", "prod_idx"]]).isin(b[b > 1].index)
+    if coefficients is None:
+        return mA, mB, mA | mB
+
+    # THE BOUND IS THE COEFFICIENT, not a blanket exemption. A participant written `c`
+    # times is genuinely `c` copies, and the atom identity `(metabolite, canonical rank)`
+    # cannot tell them apart -- glutamate synthase writes `2 L-glutamate`, so both
+    # substrates correctly reach one node. But that buys the participant `c` destinations
+    # and no more: exempting it outright let one atom of a doubled participant fan out to
+    # five molecules unreported. An unknown coefficient takes 1, so ignorance stays
+    # conservative rather than permissive.
+    def cap(idx: pd.MultiIndex, side: int):
+        return np.array([coefficients.get(r, ({}, {}))[side].get(m, 1)
+                         for r, m in zip(idx.get_level_values(0),
+                                         idx.get_level_values(2))])
+
+    over_a = a.index[a.to_numpy() > cap(a.index, 0)]
+    over_b = b.index[b.to_numpy() > cap(b.index, 1)]
+    bad = (pd.MultiIndex.from_frame(
+               df[["mnxr", "element", "substrate", "sub_idx"]]).isin(over_a)
+           | pd.MultiIndex.from_frame(
+               df[["mnxr", "element", "product", "prod_idx"]]).isin(over_b))
+    return mA, mB, bad
 
 
 def additive_gates(below: pd.DataFrame, added: pd.DataFrame, name: str):
@@ -202,6 +268,99 @@ def stack(layers: list):
     return acc.reset_index(drop=True), report
 
 
+def load_coefficients(reac_prop: Path) -> dict:
+    term = re.compile(r"(\d+(?:\.\d+)?)\s+(MNXM\w+)@")
+    out = {}
+    for line in open(reac_prop):
+        if line.startswith("#"):
+            continue
+        f = line.rstrip("\n").split("\t")
+        if len(f) < 2 or not f[0].startswith("MNXR") or "=" not in f[1]:
+            continue
+        # Floored at one. 2,729 terms over 86 reactions carry a sub-1 coefficient
+        # (`0.000503 MNXM1101285@`), and rounding those to zero would say the reaction
+        # does not contain a participant it does contain -- which reads downstream as a
+        # fanout cap of zero and deletes every row the participant has.
+        out[f[0]] = tuple({m: max(1, int(round(float(c)))) for c, m in term.findall(side)}
+                          for side in f[1].split("=", 1))
+    return out
+
+
+def report_collapsed_splits(worklist: Path, df: pd.DataFrame, coefficients: dict):
+    # A COLLAPSED SUBMISSION CANNOT CARRY A SPLIT, and the fusion cannot tell that from a
+    # mapper simply not finding one. `worklist.collapse` writes each distinct molecule
+    # once, so a mapper handed `2 A = B + C` sees one A and has one atom to place -- the
+    # second destination is absent from the input, not lost in the arithmetic. The one
+    # way it could still be expressed is by reusing a map number, which the extractor's
+    # injectivity gate now drops, so raising the fanout cap buys these reactions nothing.
+    #
+    # The two collapsed populations are NOT the same bargain and are counted apart:
+    # a reaction the expanded caps refused is one collapse RESCUED (there would be no map
+    # at all otherwise), while an `oversize` reaction goes to Indigo either way and was
+    # collapsed only to shrink it. The second is a choice that could be revisited by
+    # handing Indigo the expanded string; the first is not.
+    wl = pd.read_parquet(worklist, columns=["mnxr", "verdict", "collapsed"])
+    wl = wl[wl["collapsed"].astype(bool)]
+    dbl = {r for r, (s, _p) in coefficients.items() if any(c > 1 for c in s.values())}
+    have = set(df["mnxr"])
+    rescued = set(wl.loc[wl["verdict"] == "mappable", "mnxr"]) & dbl & have
+    oversize = set(wl.loc[wl["verdict"] == "oversize", "mnxr"]) & dbl & have
+    print(f"\n  collapsed submissions that write a substrate more than once:")
+    print(f"    rescued by the collapse (no map without it) : {len(rescued):>6,}")
+    print(f"    oversize, collapsed only to shrink it       : {len(oversize):>6,}")
+    print(f"    -- their duplicated participants cannot reach a second destination, "
+          f"because the copy is absent from the submission.")
+
+
+def cmd_audit(args):
+    df = pd.read_parquet(args.pairs)
+    coef = load_coefficients(Path(args.reac_prop)) if args.reac_prop else None
+    mA, mB, bad = injectivity_violations(df, coef)
+    n_rxn = df.mnxr.nunique()
+    hit = df.loc[bad, "mnxr"].nunique()
+
+    print("=" * 68)
+    print("ATOM-MAP INJECTIVITY")
+    print("=" * 68)
+    print(f"  A  substrate atom split across molecules : {int(mA.sum()):>9,} rows")
+    print(f"  B  product atom claimed by two molecules : {int(mB.sum()):>9,} rows")
+    if coef is not None:
+        print(f"     stoichiometric multiplicity explains : "
+              f"{int(((mA | mB) & ~bad).sum()):>9,} rows")
+    print(f"  UNEXPLAINED                              : {int(bad.sum()):>9,} rows "
+          f"({100*bad.sum()/max(len(df),1):.2f}%), {hit:,} of {n_rxn:,} reactions "
+          f"({100*hit/max(n_rxn,1):.2f}%)")
+    if int(bad.sum()):
+        print("\n  by method:")
+        print(df[bad].groupby("method").size().sort_values(ascending=False).to_string())
+        print("\n  molecules receiving the contested weight:")
+        top = (df[bad & mA].groupby("product")["pair_w"].sum()
+               .sort_values(ascending=False).head(10))
+        for m, w in top.items():
+            print(f"    {m:<16} {w:>10,.1f}")
+    if args.worklist and coef is not None:
+        report_collapsed_splits(Path(args.worklist), df, coef)
+
+    if args.out:
+        (df[bad].groupby("mnxr")
+         .agg(rows=("pair_w", "size"), weight=("pair_w", "sum"))
+         .sort_values("weight", ascending=False)
+         .to_csv(args.out, sep="\t"))
+        print(f"\nwrote {args.out}")
+
+    if args.max_reactions is not None and hit > args.max_reactions:
+        raise SystemExit(
+            f"[layers] GATE FAILED (injectivity): {hit:,} reactions carry an atom "
+            f"correspondence that contradicts another, over a ceiling of "
+            f"{args.max_reactions:,}. A cross-MOLECULE split is not an abstention -- "
+            f"`compile_atom_graph` sums the diluted rows into one edge set, so a solve "
+            f"enters on one member's map and leaves on the other's. What survives "
+            f"`atom_pairs.duplicate_map_numbers` is members with valid maps that disagree "
+            f"about the destination MOLECULE, so raising the ceiling is a statement about "
+            f"how much of that the graph may carry -- not a way past a broken member.")
+    return 0
+
+
 def _spec(s: str):
     name, _, rest = s.partition("=")
     parts = rest.split(",")
@@ -221,7 +380,12 @@ def cmd_fuse(args):
               f"correspondences over {members[name].mnxr.nunique():,} reactions"
               + (f"  [{args.submission_class}]" if args.submission_class else ""),
               flush=True)
-    df, tally = fuse_members(members)
+    coef = load_coefficients(Path(args.reac_prop)) if args.reac_prop else None
+    if coef is not None:
+        n = sum(1 for s, _p in coef.values() if any(c > 1 for c in s.values()))
+        print(f"[layers] coefficients for {len(coef):,} reactions, {n:,} of which write a "
+              f"substrate more than once", flush=True)
+    df, tally = fuse_members(members, coefficients=coef)
     df.to_parquet(args.out, index=False)
     print(f"\n[layers] fused -> {args.out}  ({len(df):,} rows, "
           f"{df.mnxr.nunique():,} reactions)")
@@ -241,7 +405,12 @@ def cmd_stack(args):
             layers.append((name, None))
             continue
         d = pd.read_parquet(p)
-        if "sub_idx" in d.columns and d["sub_idx"].dtype == object:
+        # A packed layer writes its three lists as comma-joined STRINGS and a fused one
+        # writes one row per correspondence. Asked as "is this integer yet", never as "is
+        # this dtype `object`": pandas stopped backing string columns with `object` and
+        # the old test silently stopped exploding, which loads a packed layer with its
+        # indices still strings and only fails several gates later.
+        if "sub_idx" in d.columns and not pd.api.types.is_integer_dtype(d["sub_idx"]):
             d = explode(p, method=method, source=name, confidence=conf)
         elif "method" not in d.columns:
             d["method"], d["source"], d["confidence"] = method, name, conf
@@ -278,6 +447,13 @@ def parse_args(argv=None):
     p = sub.add_parser("fuse"); p.set_defaults(fn=cmd_fuse)
     p.add_argument("--member", action="append", required=True,
                    help="name=path[,method[,confidence]] -- an extractor pairs parquet")
+    p.add_argument("--reac-prop", default=None,
+                   help="MetaNetX reac_prop.tsv, read for stoichiometric coefficients "
+                        "ONLY. A participant written c times is c copies sharing one atom "
+                        "identity, so one of its atoms may reach up to c destinations. "
+                        "Omit and every coefficient is 1, which is what the fusion did "
+                        "before this existed -- a doubled participant then keeps one "
+                        "destination and the other real edge is dropped.")
     p.add_argument("--submission-class", default=None,
                    choices=("whole", "completed", "reduced"),
                    help="keep only the rows this class of submission produced. One pass "
@@ -286,6 +462,23 @@ def parse_args(argv=None):
                         "file', because it stops layer membership depending on "
                         "scheduling")
     p.add_argument("--out", required=True)
+
+    p = sub.add_parser("audit"); p.set_defaults(fn=cmd_audit)
+    p.add_argument("--pairs", required=True,
+                   help="a fused or stacked correspondence table")
+    p.add_argument("--reac-prop", default=None,
+                   help="MetaNetX reac_prop.tsv. Without it a duplicated participant "
+                        "reads as a violation, because nothing else says a reaction "
+                        "writes one metabolite twice")
+    p.add_argument("--worklist", default=None,
+                   help="the aam_worklist seam. Reports how many reactions writing a "
+                        "substrate more than once were submitted COLLAPSED, and so "
+                        "cannot express a split whatever the fusion allows. Needs "
+                        "--reac-prop.")
+    p.add_argument("--out", default=None, help="per-reaction violation counts")
+    p.add_argument("--max-reactions", type=int, default=None,
+                   help="refuse when more reactions than this carry an unexplained "
+                        "violation. Omit to report without gating")
 
     p = sub.add_parser("stack"); p.set_defaults(fn=cmd_stack)
     p.add_argument("--layer", action="append", required=True,

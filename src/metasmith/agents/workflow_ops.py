@@ -44,6 +44,100 @@ def GetNxfConfigPresets(folder: Path = MODULE_PATH/"nextflow_config") -> dict[st
     return presets
 
 
+# The first release whose ExecutionContext takes ExecWithEnv(env=, cmd=). An
+# older engine stages and launches such a library cleanly, then raises a
+# TypeError inside every task.
+ONE_CALL_DISPATCH_SINCE = (0, 23, 0)
+_ENGINE_VERSION = re.compile(r"\bmetasmith (\d+)\.(\d+)\.(\d+)\b")
+
+
+class EngineMismatch(RuntimeError):
+    pass
+
+
+def _library_dispatch_floor(task) -> "tuple[int, int, int]|None":
+    for step in task.plan.steps:
+        scan = getattr(step.transform, "_env_scan", None)
+        if scan is not None and scan.runs:
+            return ONE_CALL_DISPATCH_SINCE
+    return None
+
+
+def _assert_engine_runs_library(sh_remote, task) -> None:
+    floor = _library_dispatch_floor(task)
+    if floor is None: return
+    res = sh_remote.Exec(
+        "./msm --version 2>&1", history=True, quiet=True,
+        idle_timeout=PROBE_TIMEOUT, what="reading the agent's engine version",
+    )
+    found = [_ENGINE_VERSION.search(ln) for ln in res.out]
+    found = [m for m in found if m]
+    if not found:
+        Log.Warn(
+            "could not read the agent's engine version, so the library's dispatch API "
+            f"was not checked against it: {res.out[-5:]}"
+        )
+        return
+    engine = tuple(int(x) for x in found[-1].groups())
+    if engine >= floor: return
+    need = ".".join(str(x) for x in floor)
+    have = ".".join(str(x) for x in engine)
+    raise EngineMismatch(
+        f"the agent runs metasmith {have}, but this library launches its tools with "
+        f"ExecWithEnv(env=, cmd=), which needs metasmith {need} or later; every task would "
+        f"fail with a TypeError on the agent. Redeploy the agent with an image of {need} or "
+        f"later, or stage the library release that matches {have}"
+    )
+
+
+# Keys the engine itself reads from a run's params, beside those the preset and
+# the plan's transforms read.
+ENGINE_PARAM_KEYS = frozenset({
+    "executor", "localExecutor", "process", "slurmAccount", "hostName", "workspace",
+    "home", "output", "testSpread", "bootstrap_def", "gpus", "rootfs",
+})
+_PRESET_PARAM = re.compile(r"\bparams\.([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _plan_param_keys(task) -> "list[str]|None":
+    keys: set[str] = set()
+    for step in task.plan.steps:
+        scan = getattr(step.transform, "_env_scan", None)
+        if scan is None or scan.param_keys_dynamic:
+            return None
+        keys |= scan.param_keys
+    return sorted(keys)
+
+
+def _unread_params(given: dict, plan_keys: list[str], preset_text: str) -> list[str]:
+    known = set(ENGINE_PARAM_KEYS) | set(plan_keys) | set(_PRESET_PARAM.findall(preset_text))
+    # A driver spells a nested key with underscores, and the engine nests it again.
+    prefixes = {x[:-1] for x in known if x.endswith("*")}
+    def _read(k: str) -> bool:
+        if any(k.startswith(p) for p in prefixes): return True
+        return k in known or any(k.startswith(f"{x}_") or x.startswith(f"{k}_") for x in known)
+    return sorted(str(k) for k in given if not _read(str(k)))
+
+
+def _warn_unread_params(sh_remote, workspace: Path, given: dict, preset_text: str) -> None:
+    import json as _json
+    res = sh_remote.Exec(
+        f"cat {workspace/AgentPaths.INTERNALS/AgentPaths.PARAM_KEYS_FILE} 2>/dev/null",
+        history=True, quiet=True,
+        idle_timeout=PROBE_TIMEOUT, what="reading the params the plan reads",
+    )
+    try:
+        plan_keys = _json.loads("\n".join(res.out) or "null")
+    except ValueError:
+        return
+    if not isinstance(plan_keys, list): return
+    for k in _unread_params(given, plan_keys, preset_text):
+        Log.Warn(
+            f"run param [{k}] is read by no transform in this plan, by the preset or by the "
+            f"engine, so it changes nothing; check its spelling"
+        )
+
+
 def _read_step_resources(sh_remote, workspace: Path) -> str:
     # The per-step requests a stage wrote. A workspace staged before this file
     # existed simply has nothing to check, which is not an error.
@@ -57,6 +151,39 @@ def _read_step_resources(sh_remote, workspace: Path) -> str:
     except Exception as e:
         Log.Warn(f"could not read [{AgentPaths.NXF_RES}]: {e}")
         return ""
+
+
+def _render_resource_overrides(resource_overrides) -> str:
+    if resource_overrides is None: return ""
+    TAB="\t"
+    lines = [
+        "",
+        "process {"
+    ]
+    for tr, res in resource_overrides.items():
+        if tr=="all" or tr=="*":
+            key = f".*"
+        elif isinstance(tr, int):
+            p = tr
+            key = f"p{p:02}__.*"
+        elif isinstance(tr, str):
+            key = f".*__{tr}"
+        else:
+            key = f".*__{tr.name}"
+
+        if isinstance(res, Resources):
+            lines += [
+                TAB+f"withName: '{key}' "+"{",
+            ]+[TAB+TAB+x for x in res.AsNextflowFormat(is_config=True)]+[
+                TAB+"}",
+            ]
+        else:
+            raise TypeError(f"resouce specification in unexpected format: [{type(res)}]")
+    lines += [
+        "}",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _render_executor_config(executor: dict|None) -> list[str]:
@@ -271,6 +398,7 @@ class _WorkflowOps:
                         Log.Warn(f"recompiling workflow for previously staged task")
                         task_stage_partial = "transforms_only"
 
+            _assert_engine_runs_library(sh_remote, task)
             Log.Info(f"sending context for workflow [{task._key}]")
             task.SaveAs(
                 self.home.ReplacePathWith(remote_path),
@@ -327,6 +455,13 @@ class _WorkflowOps:
                 raise RuntimeError(
                     f"staging [{task._key}] failed on the agent (exit {sres.exit_code}):\n{tail}"
                 )
+            import json as _json
+            keys_file = remote_work_path / AgentPaths.INTERNALS / AgentPaths.PARAM_KEYS_FILE
+            sh_remote.Exec(
+                f"cat > {keys_file} <<'MSM_PARAM_KEYS'\n{_json.dumps(_plan_param_keys(task))}\nMSM_PARAM_KEYS",
+                history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="recording the params the plan reads",
+            )
             launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
             res = sh_remote.Exec(
                 f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True,
@@ -504,6 +639,8 @@ class _WorkflowOps:
                 idle_timeout=PROBE_TIMEOUT, what="checking the staged workspace",
             )
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+            if _given:
+                _warn_unread_params(sh_remote, workspace, _given, Path(config_file).read_text())
 
             def _detect_gpu_on_target() -> str:
                 probe = sh_remote.Exec(
@@ -639,43 +776,16 @@ class _WorkflowOps:
                         if LOCAL_LABEL in (step.get("labels") or [])
                     }
                     _knob = "localExecutor"
+                overrides_text = _render_resource_overrides(resource_overrides)
+                if overrides_text:
+                    with open(local_config, "a") as f:
+                        f.write(overrides_text)
                 _caps = check_launch(
-                    local_config.read_text(), _resources, _on_this_host, _knob,
+                    local_config.read_text(), _resources, _on_this_host, _knob, overrides_text,
                 )
                 if _caps:
                     with open(local_config, "a") as f:
                         f.write("\n".join(_caps))
-                if resource_overrides is not None:
-                    with open(local_config, "a") as f:
-                        TAB="\t"
-                        lines = [
-                            "",
-                            "process {"
-                        ]
-                        for tr, res in resource_overrides.items():
-                            if tr=="all" or tr=="*":
-                                key = f".*"
-                            elif isinstance(tr, int):
-                                p = tr
-                                key = f"p{p:02}__.*"
-                            elif isinstance(tr, str):
-                                key = f".*__{tr}"
-                            else:
-                                key = f".*__{tr.name}"
-
-                            if isinstance(res, Resources):
-                                lines += [
-                                    TAB+f"withName: '{key}' "+"{",
-                                ]+[TAB+TAB+x for x in res.AsNextflowFormat(is_config=True)]+[
-                                    TAB+"}",
-                                ]
-                            else:
-                                raise TypeError(f"resouce specification in unexpected format: [{type(res)}]")
-                        lines += [
-                            "}",
-                            "",
-                        ]
-                        f.write("\n".join(lines))
                 mover.ExecuteTransfers(wait_for_complete=True)
 
             if is_dry_run:
@@ -727,7 +837,7 @@ class _WorkflowOps:
                 binds = bind_line.split("=", 1)[1].strip().strip('"')
                 fg_script = RenderLauncher(
                     task_key, self.setup_commands, binds, background=False,
-                    workdir=str(workspace),
+                    workdir=str(workspace), start_relay=self._environment().needs_relay,
                 )
                 slurm_launcher = workspace / "start.slurm.sh"
                 tag = "MSM_SLURM_LAUNCHER"

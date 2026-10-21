@@ -1,4 +1,6 @@
 /cache
+/research/fabfos/annotation_lanes/cache/
+cache
 *.sif
 __pycache__
 # stamped from the source tree immediately before each build; committing one would
@@ -8,6 +10,9 @@ __pycache__
 .ipynb_checkpoints
 .virtual_documents
 /*.ipynb
+# names this worktree's src/ absolutely, so the editor's notebook kernels resolve
+# metasmith here rather than through whichever checkout an ambient PYTHONPATH won
+/.env
 
 **/build/
 **/dist/

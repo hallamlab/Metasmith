@@ -76,9 +76,10 @@ def protocol(context: ExecutionContext):
 
     context.LocalShell(f"pigz -dc {idata.local} | tar xf -")
 
+    ipr_data = context.Mount(context.external_cwd/"data", "/opt/interproscan/data")
     context.ExecWithEnv(
         env=image,
-        binds=[(context.external_cwd/"data", "/opt/interproscan/data")],
+        binds=[ipr_data],
         cmd=f"""
             mkdir -p output
             export I5OPTS="-Xms4g -Xmx48g"

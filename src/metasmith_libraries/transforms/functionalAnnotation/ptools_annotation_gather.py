@@ -20,6 +20,7 @@ def protocol(context: ExecutionContext):
 
     script = f"""
 import csv
+import re
 import pandas as pd
 import polars as pl
 
@@ -32,14 +33,17 @@ with open("{iorfs.container}") as fh:
 rows = []
 
 # DeepEC: TSV; first column = gene id, second column = predicted EC.
-# Skip header / rows whose second field is not a dotted EC.
+# DeepEC writes `EC:4.2.1.47`, and Pathway Tools reads a bare EC, so the prefix
+# goes here, as in fabfos_gpr/gpr_7lane.py. The header and partial calls fail
+# the four-level match.
 with open("{iecs.container}") as fh:
     reader = csv.reader(fh, delimiter="\\t")
     for r in reader:
         if len(r) < 2:
             continue
-        gene, ec = r[0].strip(), r[1].strip()
-        if ec.count(".") < 1 or ec.lower().startswith("predicted"):
+        gene = r[0].strip()
+        ec = re.sub(r"^EC:", "", r[1].strip(), flags=re.IGNORECASE)
+        if not re.fullmatch(r"\\d+\\.\\d+\\.\\d+\\.\\d+", ec):
             continue
         rows.append({{"orf_id": gene, "kind": "EC", "value": ec,
                       "score": None, "confidence": None}})

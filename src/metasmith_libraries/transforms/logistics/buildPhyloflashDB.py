@@ -52,7 +52,8 @@ TransformInstance(
     labels=["noscratch"],
     resources=Resources(
         cpus=4,
-        memory=Size.GB(32),
+        # 8.3 GB peak on the SILVA 138.2 build (fir, 2026-10).
+        memory=Size.GB(16),
         duration=Duration(hours=12),
     ),
 )

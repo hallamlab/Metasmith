@@ -100,6 +100,12 @@ preference: one graph spanning both cannot execute.
   bake-identity block; v1 carries MetaNetX's `EMPTY` sentinel, so a v1/v2 mix shifts every code by
   one and decodes each node to the wrong metabolite. `refs.assert_same_bake()` is the guard —
   never repin one of the three alone.
+- **Reading `direction`'s ratio as a standard-state number.** From r10 it is a PHYSIOLOGICAL
+  quantity: `exp(dG'/RT)` with a reaction quotient formed from measured E. coli
+  concentrations, where every bake before it shipped `exp(dG'o/RT)`. Nothing in the type or
+  the column name says which, so a consumer that assumes the old meaning gets a plausible
+  number and no error. The annotation seam carries `dG_standard`, `dG_correction` and
+  `sigma_conc` so any ratio comes apart again.
 - **Two staged inputs with the same basename.** Nextflow stages by basename, so two reference
   directories both named `pool/` collide.
 - **`mamba run -n msm-fabfos` overriding `PYTHONPATH`.** That env's activation hook prepends
@@ -112,8 +118,8 @@ preference: one graph spanning both cannot execute.
   missing relay binary, none of which says so. Name the site's own tag instead. Under mamba the
   same field means a conda env NAME, and the derived default is a `docker://` URI that mamba
   rejects as a filename. The dev overlay reaches a remote run as **two** artifacts — one for the
-  login node, one for every SLURM task — and shipping one without the other runs two different
-  engines inside one job.
+  login node, one for every SLURM task. Write both with `msm agent dev-overlay`. A hand-copied
+  tree without its tarball runs two different engines inside one job.
 
 ## Where to read next
 

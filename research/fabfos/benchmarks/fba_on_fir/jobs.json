@@ -1,0 +1,58 @@
+{
+  "eydallin_obs": {
+    "tasks": 1,
+    "hours": 1,
+    "frame": "iML1515",
+    "mnx": false,
+    "gpr": [
+      "gpr_gem.parquet"
+    ]
+  },
+  "eydallin_null": {
+    "tasks": 4,
+    "hours": 2,
+    "frame": "iML1515",
+    "mnx": false,
+    "gpr": [
+      "gpr_gem.parquet"
+    ]
+  },
+  "fuhrer_obs": {
+    "tasks": 32,
+    "hours": 3,
+    "frame": "iML1515",
+    "mnx": false,
+    "gpr": [
+      "gpr_gem.parquet"
+    ]
+  },
+  "fuhrer_null": {
+    "tasks": 16,
+    "hours": 3,
+    "frame": "iML1515",
+    "mnx": false,
+    "gpr": [
+      "gpr_gem.parquet"
+    ]
+  },
+  "scadc_obs": {
+    "tasks": 4,
+    "hours": 2,
+    "frame": "iECDH10B_1368",
+    "mnx": true,
+    "gpr": [
+      "epi300_gem.parquet",
+      "scadc_fosmids_4lane.parquet"
+    ]
+  },
+  "scadc_null": {
+    "tasks": 32,
+    "hours": 6,
+    "frame": "iECDH10B_1368",
+    "mnx": true,
+    "gpr": [
+      "epi300_gem.parquet",
+      "scadc_fosmids_4lane.parquet"
+    ]
+  }
+}

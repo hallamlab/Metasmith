@@ -24,13 +24,22 @@ from metasmith.python_api import (                                      # noqa: 
 FIR_HOST = "fir"
 FIR_AGENT_HOME = "/scratch/phyberos/fabfos_refs/agent_home"
 
-FIR_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.19.0-fabfos"
+# 0.19.0-fabfos was a locally built SIF that was never pushed; `docker pull` cannot
+# reach it and only fir's apptainer cache still holds one. This tracks the released
+# image the source tree matches, so the dev overlay patches source rather than papering
+# over a two-release gap in the base env.
+FIR_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.21.0"
 FIR_SETUP_COMMANDS = ["module load apptainer"]
 
 FIR_ACCOUNT = "rrg-shallam-ab"
 FIR_GPU_ACCOUNT = "def-shallam"
 
-FIR_GPU = Gpu(memory=Size.GB(80), type="h100", count=4, flag="--gpus-per-node=")
+# `DevicesFor` divides the step's declared gpu_memory by this, so the declared size is
+# what one device HOLDS, not what the job wants. CLEAN asks for 16 GB and is the only
+# GPU step in the four-lane graph; a 2g.20gb MIG slice covers it and fir has far more of
+# those free than whole H100s.
+FIR_GPU = Gpu(memory=Size.GB(20), type="nvidia_h100_80gb_hbm3_2g.20gb",
+              flag="--gpus-per-node=")
 
 
 SOCKEYE_HOST = "sockeye"
@@ -49,7 +58,7 @@ SOCKEYE_GPU_ACCOUNT = "st-shallam-1-gpu"
 SOCKEYE_GPU = Gpu(memory=Size.GB(32), extra=["--partition=gpu"])
 
 
-SOCKEYE_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
+SOCKEYE_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.21.1"
 
 
 def ssh_once(host: str, command: str) -> str:
@@ -194,20 +203,34 @@ def preflight(host: str, agent_home: str, container: str, tool_envs, *,
     roots = "${APPTAINER_CACHEDIR:-$HOME/.apptainer} " + f"{agent_home}/container_images"
     if image_store:
         roots = f"{image_store} " + roots
+    # A `.sif` alone is not readiness. The engine gates on `<sif>` AND `<sif>.verified`,
+    # and an unstamped image sends the task down the re-verify path: flock the store,
+    # exec the image, stamp it. On sockeye the store is /arc, which is READ-ONLY from a
+    # compute node, so the flock fails, the fallback is `apptainer pull`, and that dies
+    # with `no route to host`. Checking only existence passed that store and let the run
+    # fail four lanes later.
     for label, uri in wanted.items():
+        sif = sif_name(uri)
         checks.append(
-            f'find {roots} '
-            f'-maxdepth 1 -name "{sif_name(uri)}" -print -quit 2>/dev/null | grep -q . '
-            f'&& echo "OK   {label}: {uri}" '
-            f'|| echo "MISSING {label}: {uri} -- a compute node cannot pull it"')
+            f'f=$(find {roots} -maxdepth 1 -name "{sif}" -print -quit 2>/dev/null); '
+            f'if [ -z "$f" ]; then '
+            f'echo "MISSING {label}: {uri} -- a compute node cannot pull it"; '
+            f'elif [ ! -e "$f.verified" ]; then '
+            f'echo "UNVERIFIED {label}: {uri} -- $f has no .verified sidecar; a task '
+            f'will try to stamp one and cannot if that store is read-only"; '
+            f'else echo "OK   {label}: {uri}"; fi')
     out = ssh_once(host, "; ".join(checks))
     print(out.rstrip())
-    bad = [ln for ln in out.splitlines() if ln.startswith("MISSING")]
-    if bad:
-        print(f"\n{len(bad)} prerequisite(s) absent on {host}. Pull the images on the "
-              f"LOGIN node (`apptainer pull`) before running.", file=sys.stderr)
-        return 1
-    return 0
+    missing = [ln for ln in out.splitlines() if ln.startswith("MISSING")]
+    unverified = [ln for ln in out.splitlines() if ln.startswith("UNVERIFIED")]
+    if missing:
+        print(f"\n{len(missing)} prerequisite(s) absent on {host}. Pull the images on "
+              f"the LOGIN node (`apptainer pull`) before running.", file=sys.stderr)
+    if unverified:
+        print(f"\n{len(unverified)} image(s) unstamped on {host}. On the LOGIN node: "
+              f"`apptainer exec --no-home --cleanenv <sif> true && : > <sif>.verified`.",
+              file=sys.stderr)
+    return 1 if (missing or unverified) else 0
 
 
 def check_staged_executor(host: str, agent_home: str, task_key: str) -> int:

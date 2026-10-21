@@ -15,6 +15,7 @@ from metasmith.models.workflow import WorkflowPlan
 from metasmith.testing.pool_fixtures import pool_backed
 
 
+@pytest.mark.slow
 class TestSolverScalingCyanoverse:
     @pytest.fixture
     def temp_dir(self):

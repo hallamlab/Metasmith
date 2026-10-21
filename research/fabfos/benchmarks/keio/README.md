@@ -125,8 +125,10 @@ question this pilot leaves open.
 - **Carbon only.** The Keio conditions carry N/P/S rows and none were run. Cysteine and
   methionine auxotrophs in particular are the wrong thing to read off a C solve, and
   sulfate has no atom-mapped route to any S precursor in this reference tier at all.
-- **tier4 atom pairs, not the canonical MNXref release** — the same caveat
-  `examples/scadc_ecspr.py` carries. A pilot, not a number to publish as-is.
+- **tier4 atom pairs, not the canonical MNXref release.** A pilot, not a number to publish
+  as-is. The pin is gone, so this no longer degrades: `data/fabfos/benchmark/reference_tier4`
+  was retired and `run_ko_panel.py` cannot run until it reads `processed/metabolism_bake`
+  instead. `examples/scadc_ecspr_basis.py` is what re-basing one of these costs.
 - **This worktree ships no submodules.** `docker/fabfos/bin/ecspr_cli.py` imports the
   ECSPr library from `src/metasmith_libraries/resources/lib`, so the run dies with
   `ModuleNotFoundError: ecspr_build` until the submodules are checked out. Do it from

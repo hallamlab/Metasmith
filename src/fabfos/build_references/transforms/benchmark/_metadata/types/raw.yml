@@ -5,18 +5,6 @@ ontology:
   version: '1.25'
 schema: v1
 types:
-  acquired:
-    properties:
-    - acquired verbatim from an upstream source; never derived here
-  equilibrator_cache:
-    properties:
-    - eQuilibrator compound cache. Pinned explicitly so a build is not silently dependent
-      on the package's first-use fetch
-  eydallin_records:
-    properties:
-      _:
-      - Eydallin 2010 screen hits
-      ext: tsv
   het_screen_records:
     properties:
     - The benchmark's gene labels resolved to UniProt, one row per (label, source
@@ -25,92 +13,6 @@ types:
       is the host genes the host's own GEM does not carry, which is the only thing
       standing between the screen arm and an entry with no reaction at all. `unresolved.tsv`
       names every miss.
-  host_gem:
-    properties:
-      _:
-      - Curated genome-scale metabolic model for a host, as published (BiGG JSON)
-      ext: json
-  kegg_ko_to_kegg_r:
-    properties:
-      _:
-      - KO -> KEGG reaction, lifted from each KO flat-file's REACTION block via KEGG
-        REST
-      ext: tsv
-  keio_records:
-    properties:
-    - Keio single-gene knockout collection supplementary tables (Baba 2006)
-  kofam_ko_list:
-    properties:
-      _:
-      - KOfam KO list -- per-family reporting threshold, score type, definition (carries
-        the EC tags)
-      ext: tsv
-  kofam_profiles_archive:
-    properties:
-      _:
-      - KOfam HMM profiles, as shipped (tarball; untarred by the compile step)
-      ext: tar.gz
   laser_records:
     properties:
     - LASER engineering records (an upstream git checkout, pinned by url+sha256)
-  licensed:
-    properties:
-    - licensed third-party data -- manual drop-in, never fetched, never redistributed
-  literature_source:
-    properties:
-    - a publication's supplementary tables, as downloaded
-  metacyc_atom_mappings_smiles:
-    properties:
-      _:
-      - MetaCyc curated mapped reaction SMILES ([C:n]...>>...), the AAM ensemble's
-        independent member
-      ext: dat
-  metacyc_flatfiles:
-    properties:
-    - 'The MetaCyc flat-file distribution, as dropped in. THE ONE GIVEN of the whole
-      build: everything else in the reference DAG is fetched or derived, and this
-      is the only thing that cannot be, because it is licensed and not redistributable.
-      Its acquire transform verifies and splits it; it must never fetch.'
-  metacyc_reactions:
-    properties:
-      _:
-      - MetaCyc reactions flat-file; carries REACTION-DIRECTION, the direction ensemble's
-        curated member
-      ext: dat
-  metanetx_chem_prop:
-    properties:
-      _:
-      - MetaNetX metabolite properties -- MNXM, name, formula, charge, mass, InChI,
-        SMILES
-      ext: tsv
-  metanetx_chem_xref:
-    properties:
-      _:
-      - MetaNetX metabolite cross-references (source-prefixed ids -> MNXM)
-      ext: tsv
-  metanetx_reac_prop:
-    properties:
-      _:
-      - MetaNetX reaction properties -- MNXR, equation, EC classifs, balance flags
-      ext: tsv
-  metanetx_reac_xref:
-    properties:
-      _:
-      - MetaNetX reaction cross-references (kegg.reaction / rhea / bigg / metacyc
-        -> MNXR)
-      ext: tsv
-  rhea2uniprot:
-    properties:
-      _:
-      - Rhea -> UniProtKB/Swiss-Prot DR mappings
-      ext: tsv
-  rhea2uniprot_trembl:
-    properties:
-      _:
-      - Rhea -> UniProtKB/TrEMBL DR mappings (gzipped; the bulk of the 35.7M rows)
-      ext: gz
-  uniref50_fasta:
-    properties:
-      _:
-      - UniRef50 cluster representative sequences
-      ext: fasta.gz

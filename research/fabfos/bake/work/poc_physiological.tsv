@@ -1,0 +1,15 @@
+mnxr	label	truth	why	std	sigma	phys	cnc	held	n_default	defaulted	note
+MNXR153519	FBA aldolase	forward	glycolysis, FBP -> DHAP + GAP	22.047924530096907	2.299335998767466	4.933086995375874	-0.11589505849644155		1	D-glyceraldehyde 3-phosphate	
+MNXR191943	GAPDH	reverse	written as the reductive direction	-1.162463761099012	0.4056263392393614	-18.277301295820045	-6.2213909346508665		2	(2R)-3-phospho-glyceroyl phosphate;D-glyceraldehyde 3-phosphate	
+MNXR145952	PFK	forward	committed step, ATP-driven	-21.05010908198642	1.240895361908208	-21.05010908198642	-23.94076068841101		0		
+MNXR146574	TPI	reverse	glycolysis runs DHAP -> GAP	-5.617742386692498	0.5486662102928137	-5.617742386692498	-8.51625833605195		1	D-glyceraldehyde 3-phosphate	
+MNXR97932	enolase	forward	glycolysis, 2PG -> PEP	-3.8108419943564513	0.3049103879957317	-3.8108419943564513	-5.045988433294553		1	(2R)-2-phosphoglycerate	
+MNXR102547	phosphoglycerate mutase	reverse	glycolysis runs 3PG -> 2PG	-4.474954330214274	0.36085049219679854	-4.474954330214274	-2.6167434938695724		1	(2R)-2-phosphoglycerate	
+MNXR191159	PGK	forward	glycolysis, substrate-level ATP	-19.549800047386384	0.4412773407676601	-19.549800047386384	-9.399616523098599		1	(2R)-3-phospho-glyceroyl phosphate	
+MNXR197738	PGI	reverse	glycolysis runs G6P -> F6P	-6.993980646999034	1.4273710209673844	-6.993980646999034	-7.837602238174775		0		
+MNXR147046	FBP + H2O = F6P + Pi	reverse	written backwards; FBPase hydrolyses	8.591644191957528	1.2467083431376367	25.70648172667856	27.12021678624565		0		
+MNXR145036	glycogen phosphorylase	reverse	glgP/malP are degradative	224.75175026552824	0.9734647508746145	224.75175026552824	228.73933628747966	Glycogen	1	D-glucopyranose 1-phosphate	
+MNXR145038	glycogen phosphorylase (branched)	reverse	same enzyme class	224.75175026552824	0.9734647508746145	224.75175026552824	228.73933628747966	Branching glycogen	1	D-glucopyranose 1-phosphate	
+MNXR147516	starch phosphorylase	reverse	same enzyme class	215.3902341526849	1.4804119441050778	215.3902341526849	224.92330518004624	Amylose;Starch	0		
+MNXR133777	purine nucleoside phosphorylase	reverse	deoD degrades nucleosides	-8.13851065629077	1.3255828665107958	-8.13851065629077	-9.14021956027715		0		
+MNXR145046	glycogen synthase	forward	glgA is anabolic, ADP-glucose driven	219.9852634618561	1.6317423279120309	219.9852634618561	230.23089186070104	Glycogen	0		

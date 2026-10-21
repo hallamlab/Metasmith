@@ -164,9 +164,6 @@ types:
         a reaction that was never attempted are different rows, and the tier-4 gate
         reads the verdict to say WHY a reaction is missing.'
       ext: parquet
-  build_intermediate:
-    properties:
-    - transient; produced and consumed within one build, never pinned
   direction_annotation:
     properties:
       _:

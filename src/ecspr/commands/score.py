@@ -2,21 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..model import conditions as cond_mod
 from ..model import probes, scoring
+from ..model import tests as test_mod
 
 
 def score(args, log):
     obs = probes.read_results(args.results)
     nul = probes.read_results(args.null)
-    conds = cond_mod.read(args.conditions) if args.conditions else None
-    if args.null_conditions:
-        conds = (conds or []) + cond_mod.read(args.null_conditions)
-    scored = scoring.score(obs, nul, baseline=args.baseline, conditions=conds)
+    ts = test_mod.read(args.tests, args.arm) if args.tests else None
+    if args.null_tests:
+        ts = (ts or []) + test_mod.read(args.null_tests, args.arm)
+    scored = scoring.score(obs, nul, baseline=args.baseline, tests=ts, arm=args.arm)
     out = probes.write_results(scored, args.out)
     log(f"[score] {len(scored):,} scored rows -> {out}")
 
-    g = scoring.gate(scored)
+    g = scoring.gate(scored, args.arm)
     if g.empty:
         log("[score] no readouts to gate")
         return 0
@@ -26,7 +26,7 @@ def score(args, log):
     log(f"[score] the gate -- null spread beside the control spread -> {gate_path}")
     log(g.to_string(index=False))
     if g.n_controls.max() == 0:
-        log("[score] NOTE no conditions are marked is_control, so the noise floor "
+        log("[score] NOTE no tests are marked is_control, so the noise floor "
             "was not measured; null_sd alone does not say a z is meaningful.")
     elif g.n_controls.max() < 2:
         log("[score] NOTE fewer than two controls, so control_sd (and with it "

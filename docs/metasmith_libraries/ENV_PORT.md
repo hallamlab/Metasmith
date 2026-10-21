@@ -9,7 +9,7 @@ asking the author. Per-library counts belong to `dispatch_scan`, which recompute
 
 A transform body names what to run and the environment to run it in:
 
-    context.ExecWithEnv(env=<env dep>, cmd=..., binds=..., args=..., exports=...)
+    context.ExecWithEnv(env=<env dep>, cmd=..., binds=[context.Mount(src, dst)], args=..., exports=...)
 
 and nothing about the runtime. `ExecWithContainer` and the two arms that preceded this
 — `ifContainerDo` and `ifVirtualEnvDo` — are in `_FORBIDDEN_CALLS` in
@@ -30,8 +30,9 @@ silently unrunnable under MAMBA — a claim nobody had made deliberately.
 The eligibility rule that used to live here — a chain may declare a conda arm when its
 `.env` has `conda:` and it passes no `binds=` or `args=` — was the same two checks written
 a second time, in prose, for a human to apply. Both are now enforced where they can fail
-honestly: the environment half by the staging preflight, in both directions, and the mount
-half by the `assert not binds` in `GetContainerModel`.
+honestly: the environment half by the launch preflight, in both directions, and the mount
+half by `GetContainerModel`, which drops a `context.Mount` where there is no container and
+refuses a raw bind there.
 
 `ifVirtualEnvDo` never meant a Python virtualenv. It meant "no container boundary", and
 that misnomer is part of why the arm read as a portability claim rather than as dispatch.
