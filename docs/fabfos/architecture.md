@@ -118,8 +118,8 @@ preference: one graph spanning both cannot execute.
   missing relay binary, none of which says so. Name the site's own tag instead. Under mamba the
   same field means a conda env NAME, and the derived default is a `docker://` URI that mamba
   rejects as a filename. The dev overlay reaches a remote run as **two** artifacts — one for the
-  login node, one for every SLURM task — and shipping one without the other runs two different
-  engines inside one job.
+  login node, one for every SLURM task. Write both with `msm agent dev-overlay`. A hand-copied
+  tree without its tarball runs two different engines inside one job.
 
 ## Where to read next
 

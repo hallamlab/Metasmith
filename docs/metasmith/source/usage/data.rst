@@ -283,6 +283,17 @@ The following information is required when adding new data instances:
     every cached result keyed on an import dies with the agent home that holds
     the pool, and reuse does not cross from one agent home to another.
 
+    The pool never reads an imported file again. A file edited after its import
+    keeps its identity, and every step that read it is served from the cache.
+    List the givens that vanished, changed size or changed after their import,
+    then import each changed one again:
+
+    .. code-block:: bash
+
+        metasmith agent pool <agent> --check
+
+    The check reads the size of every file in a directory given.
+
 Once added, softlinks can by automatically generated for each input file within the XGDB.
 A prefix is added to ensure that file names are unique.
 

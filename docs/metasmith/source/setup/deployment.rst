@@ -159,9 +159,10 @@ Downloads run on the login node
 
 On a cluster, the large downloads run on the node that runs the workflow's
 driver, which is normally a login node, not on a compute node. Compute nodes on
-many clusters download slowly or not at all. Each download fetches in resumable
-parts, so a download that fails partway continues from where it stopped when
-the step runs again.
+many clusters download slowly or not at all. A separate build step then
+unpacks, indexes and checks each large download on a compute node. A download
+that stops partway continues from where it stopped when the step runs again,
+in the same run or a later one on the same agent.
 
 Each large download takes its source address from a run parameter, for example
 ``gtdb_release_url``, ``uniref50_url`` and ``metabuli_db_url``. Point one at a
@@ -178,6 +179,13 @@ local mirror to skip the internet download:
     GTDB-Tk uses GTDB release 232, whatever newer release exists. A GTDB
     mirror must serve release 232 in the layout of its ``232.0`` directory,
     ``MD5SUM.txt`` included.
+
+.. caution::
+
+    A download's parameters are not part of its cache key. A run that changes
+    what a download fetches, such as another release, a subset or a test
+    database, caches the result as the default database, and every later run
+    on that agent is served it. Run such a test on its own agent home.
 
 .. _Container Runtime:
 
@@ -219,6 +227,44 @@ The agent must be configured to use the installed container runtime.
         ...
         runtime=Runtime.DOCKER,
     )
+
+Running tools without a container
+------------------------------------------------------------
+
+An agent with :python:`runtime=Runtime.MAMBA` runs each tool in a conda
+environment on its host instead of in a container. ``workflow setup`` and
+``workflow setup-env`` build the environments a workflow needs, as they fetch
+images for a container agent.
+
+Some tools run only in a container:
+
+- A tool whose environment declares no conda package. The run refuses to launch
+  and names the environment.
+- A tool whose database records the path it was built at, such as VirSorter2.
+  Its step fails and says it needs a container runtime.
+
+Run a workflow that needs one of them on a Docker or Apptainer agent.
+
+Running a development engine
+------------------------------------------------------------
+
+To run an engine from a source tree inside the agent's image, send the tree to
+the agent:
+
+.. code-block:: bash
+    :caption: Terminal
+
+    metasmith agent dev-overlay <agent> --src /path/to/src/metasmith
+
+Without ``--src`` it sends the engine the command itself runs from. Every task
+then runs that tree in place of the image's own engine. Send it again after
+each change to the tree. To return to the image's engine, move
+``dev/metasmith`` in the agent home aside.
+
+.. caution::
+
+    The overlay carries code, not dependencies. A tree that imports a package
+    the image lacks fails in every task, after staging succeeds.
 
 SLURM
 ------------------------------------------------------------
