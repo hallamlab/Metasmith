@@ -29,7 +29,7 @@ def protocol(context: ExecutionContext):
     # dropped 90% of the reads.
     #
     # The same latent bug is in interleave_short_reads, ora2fastq, filtlong,
-    # sylph, ganon2 and phyloflash. They are untouched because the run that
+    # sylph and ganon2. They are untouched because the run that
     # found this did not exercise them, and an untested edit is not a fix.
 
     _cmd = f'''

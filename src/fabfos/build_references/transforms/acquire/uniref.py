@@ -18,9 +18,9 @@ def protocol(context: ExecutionContext):
     _cmd = f"""
         set -e
         wget -q {BASE_URL}/{METALINK} -O _metalink.xml
-        REL=$(grep -oE '<version>[^<]+' _metalink.xml | head -1 | sed 's/.*>//')
+        REL=$(grep -oE '<version>[^<]+' _metalink.xml | sed -n 1p | sed 's/.*>//')
         WANT=$(grep -A4 'file name="{DATA_FILE}"' _metalink.xml \\
-               | grep -oE '<hash type="md5">[^<]+' | head -1 | sed 's/.*>//')
+               | grep -oE '<hash type="md5">[^<]+' | sed -n 1p | sed 's/.*>//')
         if [ -z "$REL" ] || [ -z "$WANT" ]; then
             echo "[uniref] {METALINK} gave release [$REL] md5 [$WANT] -- one is empty," \\
                  'so the layout upstream serves has changed and this would write an' \\

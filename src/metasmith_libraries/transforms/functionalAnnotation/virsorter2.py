@@ -93,7 +93,7 @@ def protocol(context: ExecutionContext):
                 --keep-original-seq \
                 --prep-for-dramv \
                 all \
-                || true
+                || {{ c=$?; case $c in 125|137) exit $c ;; esac; }}
         """,
     )
 

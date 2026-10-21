@@ -75,11 +75,15 @@ def TwinPlaceBash(external_home: Path, src: str = TWIN_SRC, dst: str = TWIN_DST)
     """Bash that places one shard product at `dst`, after `TwinHomeBash` set `h`."""
     # A driver container binds the agent home at its host path and again at /msm_home. The two
     # binds share a device, yet a hard link between them fails with EXDEV, so the shard is linked
-    # through the bind the work dir sits on first. A copy costs a product's bytes twice, so say so.
+    # through the bind the work dir sits on first. A directory cannot be hard linked, so its files
+    # are (`cp -al`), and a partial tree is cleared before the next try. A copy costs a product's
+    # bytes twice, so say so.
     return (
-        f"m='{src}'; ln -f \"$h${{m#'{external_home}'}}\" '{dst}' 2>/dev/null"
-        f" || ln -f \"$m\" '{dst}' 2>/dev/null"
-        f" || {{ echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
+        f"m='{src}'; v=\"$h${{m#'{external_home}'}}\";"
+        f" ln -f \"$v\" '{dst}' 2>/dev/null || ln -f \"$m\" '{dst}' 2>/dev/null"
+        f" || cp -al \"$v\" '{dst}' 2>/dev/null"
+        f" || {{ rm -rf '{dst}'; cp -al \"$m\" '{dst}' 2>/dev/null; }}"
+        f" || {{ rm -rf '{dst}'; echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
     )
 
 
@@ -100,7 +104,6 @@ class NextflowGenContext:
     external_work_var: str = "${params.workspace}"
     bootstrap_var: str = "${params.bootstrap_def}"
     cache_root: Path | None = None
-    cache_hit_strategy: str = "link"
     cache_helper: tuple[str, ...] = DEFAULT_CACHE_HELPER
     rootfs: "Rootfs|None" = None
 
@@ -133,36 +136,6 @@ def _read_env_declarations(step) -> dict[str, dict[str, str]|None]:
                 # else; asking `ResolveEnvImage` for its conda form returns the same URI.
                 found[name] = {"container": ResolveEnvImage(content, Runtime.APPTAINER, p)}
     return found
-
-def apply_fs_strategy(context: NextflowGenContext) -> None:
-    if context.cache_root is None:
-        return
-    if os.environ.get("METASMITH_CACHE", "1").lower() in {
-        "0", "false", "off", "no"
-    }:
-        return
-    from ...caching.fs import (
-        StraddleMountError,
-        assert_same_mount,
-        detect_strategy,
-    )
-
-    anchor = context.cache_root
-    while not anchor.exists() and anchor != anchor.parent:
-        anchor = anchor.parent
-    try:
-        assert_same_mount(anchor, context.work_dir)
-    except StraddleMountError as e:
-        Log.Warn(
-            "cache_root and work_dir straddle mounts; forcing "
-            f"publishDir 'copy' strategy. ({e})"
-        )
-        context.cache_hit_strategy = "copy"
-        return
-    context.cache_hit_strategy = detect_strategy(
-        anchor, default=context.cache_hit_strategy
-    )
-
 
 _REF_NAMESPACE = "ref::"
 _ENV_NAMESPACE = "env::"
@@ -229,7 +202,6 @@ def prepare_nextflow(task, context: NextflowGenContext):
         return s[2:-1]
     if context.cache_root is None:
         context.cache_root = default_cache_root(context.external_home)
-    task._apply_fs_strategy(context)
     cache_decisions = task._compute_cache_decisions(context)
     path_map = PathMap(
         extern_home=context.external_home,
@@ -355,6 +327,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "process": process_name,
             "runs": None if _scan is None else len(_scan.runs),
             "envs": _read_env_declarations(step),
+            "labels": list(step.transform.labels),
         }
         duration_is_strict = res is not None and res.duration is not None and res.duration.strict
         memory_is_strict = res is not None and res.memory is not None and res.memory.strict
@@ -511,9 +484,11 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # products into its work dir under the member's position. Nextflow then
         # publishes and traces it like any other task, and no scheduler saw it.
         # No `stub:` block: under `-stub` the copy is still the twin's whole job,
-        # and a touched stand-in cannot serve a directory product. `array 0` overrides a
-        # preset's catch-all `process { array = N }`, which the local executor refuses at
-        # compile time, killing the whole run before any task starts.
+        # and a touched stand-in cannot serve a directory product. `array 0` and
+        # `scratch false` override a Slurm preset's catch-all `process` settings, as
+        # its `xlocalx` block does: the local executor refuses a job array at compile
+        # time, killing the run before any task starts, and a login node's scratch is
+        # a tmpfs that turns every link into a copy charged to the user's memory.
         process_name = NextflowProcessName(step.order, step.transform.name)
         twin_name = CachedProcessName(process_name)
         _used, produced_archetypes = get_io_signature(step)
@@ -524,6 +499,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f"process {twin_name}"+" {",
             TAB+"executor 'local'",
             TAB+"array 0",
+            TAB+"scratch false",
             TAB+"cache false",
             "input:",
             TAB+"tuple val(index), val(sources)",

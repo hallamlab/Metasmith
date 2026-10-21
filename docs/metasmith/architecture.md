@@ -319,10 +319,22 @@ not destroy an eleven-sample run — and `workflow.failOnIgnore` stays false for
 The driver therefore reads the trace itself and ends the run on one of two sentinel lines,
 `AgentPaths.RUN_DONE_SENTINEL` or `RUN_FAILED_SENTINEL`. `WaitForWorkflow` counts both and the
 GUI's watcher maps them to a run state. A driver that emitted only the done sentinel would report
-a run completed with its products missing, which is what a user reads as "finished". The
-errorStrategy's retry branch is guarded by `params.process.tries`, and `maxRetries` must stay
-above that threshold or nextflow stops retrying before the strategy asks it to — a `tries` of 1
-makes the retry branch unreachable and sends every first failure straight to `ignore`.
+a run completed with its products missing, which is what a user reads as "finished".
+
+**A retry escalates only what the exit code names, and never past the site's ceiling.** The
+scheduler presets retry on four exit codes and on a lost node, up to `params.process.tries`. Every
+other failure is deterministic, so a second slot would only repeat it.
+
+- **137 or 125 (out of memory):** double the memory.
+- **140 (time limit):** double the time.
+- **143 or a lost node:** retry unchanged.
+
+Each rung reads the previous attempt's trace, so a per-step override is the first rung and
+escalates from there. `maxMemory` and `maxDuration` clamp every rung, the override included,
+because Slurm refuses a job over the site's limits at submit and an ignored refusal wedges the
+run. `maxRetries` is 99 so that `errorStrategy` owns the limit. A preset key that is not a closure
+is fixed when the config is read, before the params file merges, so the launch appends a literal
+block for those keys (`array`, the local executor's size) instead of reading them from `params`.
 
 **Everything written after Nextflow exits depends on the driver surviving, so lineage is also
 written while it runs.** `trace.jsonl` and `results/_metadata` are written once, after the exit,
@@ -354,6 +366,14 @@ is deliberate: a cancelled job dies with its allocation.
 home re-parses it on the next save. It was not: `SshSource` renders `ssh://host:path` while
 `Parse` read the `:` as part of the host, so a remote home grew a colon per save until nothing
 could reach it. Pinned by `tests/metasmith/unit/test_source_parse.py`.
+
+**A run is probed on the host that launched it.** A cluster's login nodes sit behind one name,
+and each has its own process table and its own `/tmp`. The launcher writes `RUN.host`, and
+liveness, cancel and reap hop there over `ssh` from wherever the connection landed. A probe that
+gets no answer reads as unknown and the wait keeps polling. Reading it as gone reported live runs
+as errored, and the GUI then marked them failed. **CAUTION** The hop must not read standard input
+(`ssh -n`). A script fed to `bash` on stdin, as a live shell sends it, otherwise loses every line
+after the hop.
 
 **The remote dev overlay delivers CODE, not DEPENDENCIES.** It binds the pinned engine over the
 agent image's `site-packages`, which is what lets an old base tag run a new engine — until the
@@ -459,6 +479,21 @@ host may hold neither the library nor the images. A tool whose env resource carr
 entry is reported by name with the container it does have, rather than guessed at: a package spec
 inferred from an image tag would produce a plausible env that is not the one the transform was
 written against.
+
+**A setup run prepares an agent before the real run.** `SetupWorkflow` prepares every
+environment the full plan names. Then it runs a slice of that plan: the steps whose inputs trace
+to no sample. Their products land in the agent's cache, and the real run serves them as hits.
+Two things must hold for those hits.
+
+- **The slice keeps the solved steps.** A fresh solve could choose another producer or env,
+  and its keys would miss. A member key hashes the transform, its protocol source and its
+  inputs' lineage, never the task key or a step's position.
+- **The setup run and the real run use one agent home and one resource library record.** A new
+  home has an empty cache, and a rebuilt library moves its leaf ids.
+
+**CAUTION** The bootstrap and the runner find step N at `steps[N-1]`. The slice is therefore
+renumbered from one, on copies of the steps. A slice that kept the full plan's numbers ran the
+wrong transform at every step after the first gap.
 
 **Nextflow is pinned**, and the pinned line's strict syntax parser is on by default: generated `.nf`
 and `Orchestrator.groovy` must avoid single-element parenthesized assignment and range-based for
@@ -608,6 +643,22 @@ or copies each source into its work dir under the member's position, so publish,
 Under `-stub` the copy is still its whole job, and a touched stand-in cannot serve a directory
 product. `mixOuts` joins the two processes' outputs per branch before `o.post`, so downstream sees
 one producer. The resource ceiling reads the twin's resources like any other process.
+
+**A cached directory is hardlinked, not copied.** Promotion and the twin both place a product
+with links (`cp -al` for a directory) and copy only when a link fails. A GTDB-sized product
+copied at promotion and again on every hit cost about 250 GB of I/O each time. A step that runs
+in node-local scratch still copies, because its products sit on another device from the cache. A
+transform with large products takes the `noscratch` label, so it runs in its work dir and links.
+
+**CAUTION** Two binds of one filesystem share a device and still refuse a link across them with
+`EXDEV`. A driver container binds the agent home at its host path and again at `/msm_home`.
+Promotion and the twin therefore link through the spelling of the path that shares the cache's
+bind. A device comparison alone would call the link possible and then copy.
+
+**CAUTION** A linked product shares its inodes with the cache. A step that edited its input in
+place would corrupt the cached member for every later run. A container step binds its
+references read-only. A step under the mamba runtime has no such guard, so a transform must
+never write into an input.
 
 **A product is whatever carries the canonical `<pos>-<item>-<branch>.<token>-<dtype><ext>` name**
 — a directory as readily as a file. `<token>` is the tail of the member key, or a lineage hash for

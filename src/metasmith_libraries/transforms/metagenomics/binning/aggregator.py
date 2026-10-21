@@ -28,15 +28,10 @@ asm   = model.AddRequirement(lib.GetType("sequences::assembly"))
 #      bin sets by the same mechanism, so the three-way fork survives their removal --
 #      verified by bindings, not argued.
 #   4. They made GTDB-Tk load-bearing for a chain that does not want it. gtdbtk requires
-#      `ref::gtdb`, and gtdbtk 2.6.1's classify step runs a post-placement skani
-#      verification that `--skip_ani_screen` does NOT gate (classify.py ~1230; the
-#      `if not prescreening and ...` guard is commented out upstream). Without a
-#      skani/database/ tree it raises `Reference genome missing from skani database` and
-#      exits -- AFTER pplacer, measured at 33m44s for ONE genome. With retry-then-ignore
-#      that starves this transform silently, and with it the whole quality-MAG chain:
-#      skani_dedup, derep_mag_reference and the published-MAG recovery comparison.
-#      Restoring the requirement therefore means staging GTDB's ~179 GB / ~113 K-file
-#      representative-genome set, for output no consumer reads.
+#      `ref::gtdb`, a ~100 GB reference, and its classify step is a 128 GB, multi-hour
+#      task per batch. A failure there starved this transform silently, and with it the
+#      whole quality-MAG chain: skani_dedup, derep_mag_reference and the published-MAG
+#      recovery comparison -- all for output no consumer of this transform reads.
 #
 # A driver that genuinely wants per-bin taxonomy should target `taxonomy::gtdbtk`
 # directly. It must not be forced through this transform, which discards it.

@@ -17,7 +17,7 @@ from ..libraries import (
 from ..paths import DeferredPathError, is_deferred
 from ..remote import Logistics, Source, SourceType
 from .cache_decisions import compute_cache_decisions
-from .nextflow_codegen import NextflowGenContext, apply_fs_strategy, prepare_nextflow
+from .nextflow_codegen import NextflowGenContext, prepare_nextflow
 from .plan import WorkflowPlan
 
 
@@ -27,6 +27,9 @@ class WorkflowTask:
     plan: WorkflowPlan
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
+    # The leading data_libraries that hold samples; the rest are resources. None
+    # for a bundle written before it was recorded.
+    sample_library_count: int|None = None
 
     def __post_init__(self):
         self._update_hash()
@@ -36,9 +39,6 @@ class WorkflowTask:
 
     def GetKey(self):
         return self._key
-
-    def _apply_fs_strategy(self, context: NextflowGenContext) -> None:
-        apply_fs_strategy(context)
 
     def _compute_cache_decisions(self, context: NextflowGenContext) -> dict[int, dict]:
         return compute_cache_decisions(self, context)
@@ -105,6 +105,7 @@ class WorkflowTask:
             key=self._key,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
+            sample_libraries=self.sample_library_count,
         )
 
     def LibraryMasks(self) -> dict[str, set[Path]]:
@@ -232,6 +233,7 @@ class WorkflowTask:
             plan=plan,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
+            sample_library_count=raw_task.get("sample_libraries"),
         )
         # The key names the staged directory, so it is a fact about this bundle
         # rather than something to re-derive. `WorkflowPlan._update_hash` folds

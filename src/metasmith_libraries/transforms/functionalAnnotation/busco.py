@@ -1,3 +1,4 @@
+from pathlib import Path
 from metasmith.python_api import *
 
 lib      = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -14,19 +15,24 @@ def protocol(context: ExecutionContext):
     cpus     = context.params.get("cpus")
     cpus     = 8 if cpus is None else cpus
 
+    # The lineage is whichever one busco_source named, and BUSCO looks it up by name.
+    with open(ilineage.local/"dataset.cfg") as f:
+        lineage_name = dict(l.strip().split("=", 1) for l in f if "=" in l)["name"]
+
     context.ExecWithEnv(
         env=image,
-        binds=[(ilineage.external, "/busco_lineage/lineages/eukaryota_odb10")],
         cmd=f"""\
+            mkdir -p busco_lineage/lineages
+            ln -sfn "{ilineage.container}" busco_lineage/lineages/{lineage_name}
             busco \
                 -i {iorfs.container} \
                 -o busco_out \
                 -m proteins \
-                -l eukaryota_odb10 \
+                -l {lineage_name} \
                 -c {cpus} \
                 -f \
                 --offline \
-                --download_path /busco_lineage
+                --download_path busco_lineage
         """,
     )
 

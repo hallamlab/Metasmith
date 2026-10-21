@@ -29,9 +29,13 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/db")],
         cmd=f"""
             export HOME=/tmp
+            sed "s|\\"/db/|\\"{idb.container}/|g" {idb.container}/DRAM.config > DRAM.local.config
+            # DRAM only warns about a database it cannot open, and annotates without it.
+            grep -o '"{idb.container}/[^"]*"' DRAM.local.config | tr -d '"' | while read -r f; do
+                [ -e "$f" ] || {{ echo "DRAM.config names a missing file [$f]" >&2; exit 1; }}
+            done
 
             DRAM-v.py annotate \
                 -i {ivs2_seqs.container} \
@@ -39,12 +43,12 @@ def protocol(context: ExecutionContext):
                 -o {annot_dir} \
                 --threads {threads} \
                 --min_contig_size 1000 \
-                --config_loc /db/DRAM.config
+                --config_loc DRAM.local.config
 
             DRAM-v.py distill \
                 -i {annot_dir}/annotations.tsv \
                 -o {distill_dir} \
-                --config_loc /db/DRAM.config
+                --config_loc DRAM.local.config
         """,
     )
 

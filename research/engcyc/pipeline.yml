@@ -1,0 +1,409 @@
+# The Engcyc pipeline against its four sources, one row per stage. page/build.py renders it into the
+# artifact, and PIPELINE.md is generated from it, so edit the tables here.
+#
+# A cell is text. "=" means the same tool and version as Engcyc, "= ?" the same tool with no recorded
+# version, and "-" a stage the source did not run. `diff: true` marks a row where Engcyc departs from at
+# least one source that ran the stage. `open` names the gate question (U1-U6) a row depends on.
+
+columns:
+  engcyc: Engcyc
+  e5: E5
+  sl_metag: SL metag
+  sl_virome: SL virome
+  cyanoverse: Cyanoverse
+
+sources:
+  engcyc: metasmith 0.25.0 (RC 0.25.0+28ecc51) and its standard-library pins
+  e5: the bench-E5 run as it ran, on its bench library (0.22.1 agent)
+  sl_metag: the Spanish Lakes metasmith runs W1-W4 on metasmith-libraries v0.18.8; the river samples ran the same way
+  sl_virome: Antonio Castellano's 40-step viromics workflow, at the versions in his table
+  cyanoverse: the v2 catalogue; "AB48" marks where the AB48 single-sample run differs
+
+groups:
+  - name: Front end
+    note: per sample
+    rows:
+      - stage: Read stats
+        engcyc: seqkit 2.13.0
+        e5: "="
+        sl_metag: "="
+        sl_virome: FastQC 0.12.1
+        cyanoverse: "-"
+      - stage: Read QC
+        diff: true
+        engcyc: BBDuk (BBTools 39.49), JGI settings
+        e5: "="
+        sl_metag: "= ?"
+        sl_virome: Trimmomatic 0.39
+        cyanoverse: QC-filtered reads (tool not recorded)
+      - stage: Long-read filter
+        engcyc: Filtlong 0.3.1 (ONT, CLR)
+        e5: "="
+        sl_metag: "-"
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: Short-read assembly
+        diff: true
+        open: U2
+        engcyc: MEGAHIT 1.2.9
+        e5: "="
+        sl_metag: "= ?"
+        sl_virome: metaSPAdes 4.2.0 + MEGAHIT 1.1.3, pooled
+        cyanoverse: MEGAHIT (version not recorded)
+      - stage: Hybrid assembly
+        diff: true
+        engcyc: imported from E5 (OPERA-MS 0.9.0); no de novo hybrid lane in 0.25.0
+        e5: OPERA-MS 0.9.0, no polishing
+        sl_metag: "-"
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: HiFi assembly
+        diff: true
+        engcyc: hifiasm-meta hamtv0.3.5
+        e5: "-"
+        sl_metag: "-"
+        sl_virome: "-"
+        cyanoverse: "AB48: ="
+      - stage: Noisy long-read assembly
+        engcyc: Flye 2.9.6 --meta
+        e5: "="
+        sl_metag: "-"
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: Mapping, coverage
+        diff: true
+        engcyc: minimap2 2.31 + samtools 1.23.1 (one image) + bedtools 2.27.1
+        e5: same tools at the 0.22.1 pins
+        sl_metag: "= ?"
+        sl_virome: minimap2 + samtools 1.20 BAMs; CoverM 0.7.0 contig mode
+        cyanoverse: coverage table (tool not recorded)
+      - stage: ORFs
+        engcyc: pprodigal 1.0.1 (Prodigal 2.6.3, -p meta, -C 100)
+        e5: "="
+        sl_metag: "="
+        sl_virome: "-"
+        cyanoverse: Prodigal 2.6.3
+      - stage: Read taxonomy
+        diff: true
+        open: U5
+        engcyc: phyloFlash 3.4.2 (short reads)
+        e5: "-"
+        sl_metag: kraken2 + bracken, centrifuger, ganon2, MetaPhlAn, sylph (GTDB r232), phyloFlash
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: Contig taxonomy
+        engcyc: Metabuli 1.2.0, gtdb232
+        e5: "-"
+        sl_metag: "Metabuli = ?"
+        sl_virome: "-"
+        cyanoverse: "= (AB48: r232)"
+
+  - name: Binning and genomes
+    note: per sample
+    rows:
+      - stage: Binners
+        diff: true
+        engcyc: MetaBAT2 2.17, SemiBin2 2.1.0 (global), COMEBin 1.0.4 (CPU lane, 48 cpu)
+        e5: "= (COMEBin at 24 cpu)"
+        sl_metag: "= (COMEBin on the GPU image)"
+        sl_virome: MetaBAT2 2.18, MaxBin2 2.2.7, CONCOCT 1.1.0, BinSanity, ABAWACA
+        cyanoverse: "="
+      - stage: Bin selection
+        diff: true
+        open: U1
+        engcyc: CheckM2 filter (completeness >= 50, contamination <= 10) over all three binners, then skani 0.2.2 dedup
+        e5: DAS Tool 1.1.7
+        sl_metag: "= (skani across all samples)"
+        sl_virome: metaWRAP 1.3.2 refine, then dRep 3.4.0
+        cyanoverse: "AB48: ="
+      - stage: MAG quality
+        engcyc: CheckM2 1.1.0
+        e5: "= (DB release not recorded)"
+        sl_metag: "="
+        sl_virome: CheckM2 1.1.0
+        cyanoverse: "="
+      - stage: MAG taxonomy
+        diff: true
+        engcyc: GTDB-Tk 2.7.2 (digest pin), r232, ANI screen on, on every quality MAG
+        e5: "- (2.6.1 r232 defined, never ran)"
+        sl_metag: "= r232, per binner"
+        sl_virome: GTDB-Tk v2, r214
+        cyanoverse: "AB48: ="
+      - stage: MAG abundance
+        diff: true
+        engcyc: own-assembly coverage
+        e5: own-assembly coverage
+        sl_metag: own-assembly coverage
+        sl_virome: CoverM 0.7.0 genome mode
+        cyanoverse: "-"
+      - stage: GEMs
+        diff: true
+        engcyc: CarveMe 1.6.6 (override of the 1.6.1 pin), SCIP, M8 medium, on every quality MAG
+        e5: "= (on DAS Tool MAGs)"
+        sl_metag: "-"
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: GEM score
+        engcyc: MEMOTE 0.17.0
+        e5: "="
+        sl_metag: "-"
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: Strain profiles
+        diff: true
+        engcyc: "-"
+        e5: "-"
+        sl_metag: inStrain (W4)
+        sl_virome: MetaPop 0.0.48
+        cyanoverse: "-"
+
+  - name: Viral lane
+    note: callers per sample, catalogue tools once per dataset on the merged, frozen candidate set
+    rows:
+      - stage: Callers
+        diff: true
+        open: U3
+        engcyc: geNomad 1.11.0, VirSorter2 2.2.4, VIBRANT 1.2.1
+        e5: "= + DeepVirFinder 0.1"
+        sl_metag: geNomad, VirSorter2 (W4)
+        sl_virome: geNomad 1.5.1 only
+        cyanoverse: geNomad (version not recorded), partial VirSorter2
+      - stage: Pool and dereplicate
+        engcyc: merge_candidate_calls, per dataset
+        e5: viral_merge_calls, per study
+        sl_metag: "-"
+        sl_virome: SeqKit pool of both assemblies >= 1 kb, then MMseqs2 pre-cluster
+        cyanoverse: "-"
+      - stage: Quality, provirus trim
+        engcyc: CheckV 1.0.3, DB v1.5
+        e5: "= (DB release not recorded)"
+        sl_metag: "-"
+        sl_virome: CheckV 1.0.1, DB v1.5
+        cyanoverse: "-"
+      - stage: vOTU clustering
+        diff: true
+        engcyc: MMseqs2 17.b804f, 95 % id, 80 % cov, cov-mode 1
+        e5: "= but cov-mode 0"
+        sl_metag: "-"
+        sl_virome: "="
+        cyanoverse: "-"
+      - stage: Island filter >= 100 kb
+        diff: true
+        engcyc: a join over the geNomad and length tables, after the DAG
+        e5: votu_island_annotate (geNomad annotate + regex)
+        sl_metag: "-"
+        sl_virome: python regex
+        cyanoverse: "-"
+      - stage: Viral taxonomy
+        engcyc: geNomad ICTV + vConTACT3 3.1.4 (DB v230)
+        e5: geNomad only
+        sl_metag: geNomad
+        sl_virome: "="
+        cyanoverse: "-"
+      - stage: Host prediction
+        diff: true
+        engcyc: iPHoP 1.4.2, Jun25_rw (GTDB r226) + own MAGs via GTDB-Tk de_novo_wf
+        e5: "-"
+        sl_metag: "-"
+        sl_virome: iPHoP ("1.8.0" in his table), Jun_2025_pub_rw
+        cyanoverse: "-"
+      - stage: CRISPR spacers
+        engcyc: CCTyper 1.8.0 on quality MAGs + blastn-short 2.16.0
+        e5: "-"
+        sl_metag: "-"
+        sl_virome: CCTyper + blastn 2.13.0
+        cyanoverse: "-"
+      - stage: AMGs
+        engcyc: DRAM-v 1.5.0 (kofam, pfam, dbCAN)
+        e5: "-"
+        sl_metag: "-"
+        sl_virome: DRAM-v 1.5.0 (+ MEROPS, VOGDB, viral RefSeq)
+        cyanoverse: partial DRAM-v
+      - stage: Viral KOs
+        diff: true
+        engcyc: KOfamScan 1.3.0 on the whole-assembly ORFs, joined to vOTUs by provenance
+        e5: "-"
+        sl_metag: "-"
+        sl_virome: KEGG Mapper (web)
+        cyanoverse: "-"
+      - stage: vOTU abundance
+        diff: true
+        engcyc: own-assembly coverage, joined by provenance
+        e5: "-"
+        sl_metag: "-"
+        sl_virome: CoverM 0.7.0 contig mode
+        cyanoverse: "-"
+
+  - name: Annotation layer
+    note: on whole-assembly ORFs
+    rows:
+      - stage: 4-lane GPR
+        diff: true
+        open: U4
+        engcyc: KOfamScan 1.3.0, CLEAN 2026.06.14 (CPU or GPU, U10), DIAMOND 2.1.8 + UniRef50 2026_02 with 5 hits per ORF (the GPR keeps the best), ProteinBERT 2024.03.28, folded to MetaNetX 4.5
+        e5: "-"
+        sl_metag: KOfamScan and DIAMOND UniRef50 only
+        sl_virome: "-"
+        cyanoverse: "= but DIAMOND kept 1 hit per ORF, so its 99M ORFs are searched again"
+      - stage: Domains
+        engcyc: InterProScan 5.67-99.0
+        e5: "-"
+        sl_metag: "= ?"
+        sl_virome: "-"
+        cyanoverse: "="
+      - stage: ncRNA, tRNA, CRISPR
+        engcyc: Bakta 1.11.0 --skip-cds, db-light
+        e5: "-"
+        sl_metag: "= ?"
+        sl_virome: "-"
+        cyanoverse: "="
+      - stage: BGCs
+        engcyc: antiSMASH 7.1.0
+        e5: "-"
+        sl_metag: "= ?"
+        sl_virome: "-"
+        cyanoverse: "= (539 of 2,844 ingested)"
+      - stage: EC numbers, second caller
+        engcyc: "- (CLEAN in the GPR covers EC numbers)"
+        e5: "-"
+        sl_metag: DeepEC (version not recorded)
+        sl_virome: "-"
+        cyanoverse: DeepEC 0.4.1
+        diff: true
+      - stage: Marker completeness
+        engcyc: BUSCO 5.8.3, bacteria_odb10
+        e5: "-"
+        sl_metag: "= ?"
+        sl_virome: "-"
+        cyanoverse: "="
+      - stage: Transcription factors
+        engcyc: PredicTF 1.0
+        e5: "-"
+        sl_metag: "= ?"
+        sl_virome: "-"
+        cyanoverse: "="
+      - stage: Orthologs
+        diff: true
+        open: U4
+        engcyc: "-"
+        e5: "-"
+        sl_metag: EggNOG-mapper 2.1.12
+        sl_virome: "-"
+        cyanoverse: incomplete
+      - stage: TFs, deep model
+        diff: true
+        open: U4
+        engcyc: "-"
+        e5: "-"
+        sl_metag: DeepTFactor 1.0
+        sl_virome: "-"
+        cyanoverse: incomplete
+      - stage: Promoters
+        diff: true
+        open: U4
+        engcyc: "-"
+        e5: "-"
+        sl_metag: PromoTech 1.0
+        sl_virome: "-"
+        cyanoverse: partial
+      - stage: AMR, virulence, MGEs
+        diff: true
+        open: U5
+        engcyc: "-"
+        e5: "-"
+        sl_metag: "W4: RGI 6.0.8, AMRFinderPlus, BacMet, VFDB, MEGARes, PathoFact, IntegronFinder, MobileElementFinder, crAssphage"
+        sl_virome: "-"
+        cyanoverse: "-"
+      - stage: MAG annotation
+        diff: true
+        engcyc: via the ORF join (mag_orfs)
+        e5: CarveMe BiGG DIAMOND
+        sl_metag: "-"
+        sl_virome: DRAM 1.5.0
+        cyanoverse: "-"
+
+  - name: Output layout
+    open: U6
+    rows:
+      - stage: Unit
+        engcyc: one folder per dataset
+        e5: one metasmith run per batch
+        sl_metag: one publish dir per study
+        sl_virome: "- (never ran in metasmith)"
+        cyanoverse: one catalogue
+      - stage: Files
+        engcyc: <namespace-type>/<sample>.<ext>
+        e5: results/<namespace-type>/<instance>.<ext>, hashed names
+        sl_metag: assemblies/, orfs/, binning/fna_<binner>/, taxonomy_reads/<tool>_<product>/
+        sl_virome: "-"
+        cyanoverse: <namespace-type>/<SRA>.<ext>
+      - stage: Pooled tables
+        engcyc: tables/ with contig_stats, gpr, mags and votus parquet
+        e5: results/e5/*.tsv
+        sl_metag: per-tool TSVs
+        sl_virome: "-"
+        cyanoverse: contig_stats.parquet, DuckDB per annotator
+      - stage: Logs
+        engcyc: _logs/ tarball
+        e5: run dir
+        sl_metag: _logs/<run>/ + tarball
+        sl_virome: "-"
+        cyanoverse: "-"
+
+open:
+  U1: "Bin selection: the CheckM2 filter with skani dedup (Cyanoverse AB48, SL metag, 0.25.0), with E5's DAS Tool MAGs imported only as extras? Recommended. The other choice is DAS Tool everywhere, which matches E5's 24,087 MAGs but not the Cyanoverse layout."
+  U2: "Virome assembly: MEGAHIT only, as E5, SL metag and the viromics port do? Recommended for the pilot. Antonio pooled metaSPAdes 4.2.0 and MEGAHIT contigs."
+  U3: "Viral callers: geNomad, VirSorter2 and VIBRANT (the standard library)? Recommended. E5 also pooled DeepVirFinder, and Antonio called with geNomad alone."
+  U4: "Annotation layer: the 4-lane GPR plus InterProScan, Bakta (ncRNA), antiSMASH, BUSCO and PredicTF? DeepEC is dropped (Tony, 2026-10-20), since CLEAN already calls EC numbers. The other choices are GPR only, or adding EggNOG-mapper, DeepTFactor and PromoTech as SL metag did."
+  U5: "Spanish Lakes extras: leave the read classifiers (kraken2, centrifuger, ganon2, MetaPhlAn, sylph) and the W4 AMR sweep out of the initial pipeline? Recommended. Their results stay importable for the SL datasets."
+  U6: "Output layout: the catalogue form (<namespace-type>/<sample>.<ext> plus pooled tables, recommended) or the AB48 per-sample tree?"
+  U7: "The 101 Spanish Lakes samples: the manifest flags them as viral-fraction metagenomes, yet SL metag W3 binned them into 31,149 bins. Run them as the full short-read shape, importing W1-W3 (recommended), or as the virome shape with no MAG lane?"
+  U8: "Duplicate MAGs: skani only labels the 95% ANI clusters, so a genome all three binners recover reaches GTDB-Tk and CarveMe up to three times. Pass only the 95% centroids downstream (recommended, one small new transform), or keep every quality bin?"
+  U9: "Host prediction for datasets that are not binned: iPHoP needs our own MAGs in its database and CCTyper reads the MAGs, so these datasets get no host predictions or spacer links. Leave it that way (the plan as drawn), or add iPHoP on the stock Jun25_rw database and CCTyper on the whole assembly?"
+  U10: "CLEAN on CPU or GPU: on fir CPU, tuned bf16 CLEAN runs 0.6-0.75 proteins/s per core with no accuracy loss (DH10B F1 0.930, same as fp32), but costs 89-104 cores per GPU slice. Run it on CPU over ORF cluster centroids, with calls copied to members (recommended, about 30,000 core-hours for Engcyc), on CPU over every ORF (about 200,000 core-hours), or on GPU slices? A quantization sweep and the real ESM-1b GPU rate are still being measured."
+
+# One entry per read shape the driver solves. `datasets` names the manifest rows that take the shape.
+shapes:
+  short_pe:
+    title: Short reads, paired
+    front: seqkit, BBDuk, MEGAHIT
+    datasets: metaGEM PE studies, Pratama short, Anaerobic digester, Mycopots, Copper, Lung WGA, Saanich, Line P, Spanish lake and river
+  short_se:
+    title: Short reads, single-end
+    front: seqkit, BBDuk, MEGAHIT
+    datasets: korem2015
+  long_hifi:
+    title: PacBio HiFi
+    front: seqkit, hifiasm-meta
+    datasets: ab48_revio, revio_2024_metagenomes
+  long_noisy:
+    title: Nanopore or PacBio CLR
+    front: seqkit, Filtlong, Flye --meta
+    datasets: CAMI II marine and strain (PacBio CLR alone)
+  virome_pe:
+    title: Virome, paired
+    front: seqkit, BBDuk, MEGAHIT; viral lane only
+    datasets: spanish_lakes_viromics, if U7 goes that way
+  given_assembly:
+    title: Existing assembly
+    front: imported assembly and reads; no read QC or assembly
+    datasets: E5 hybrids (CAMI, Pratama), Spanish Lakes W1, Cyanoverse v2
+  given_unbinned:
+    title: Existing assembly, not binned
+    front: imported assembly; annotation and viral lanes only
+    datasets: scadc, and any other dataset that is not a metagenome. Binning runs only on metagenomes.
+
+# What solving the pipeline on 0.25.0 changed, for the gate.
+findings:
+  - title: GTDB-Tk and CarveMe now run on every quality MAG
+    body: In 0.25.0 nothing per-genome reads the aggregator's pool, so GTDB-Tk and the GEM lane could only take one binner's bins. Two new transforms, gtdbtk_quality and prodigal_from_quality_bin, read the pool directly. Retyping the pool as a genome instead makes the solve cycle, because CheckM2 on the pool then satisfies the aggregator's own inputs.
+  - title: iPHoP's tree is built from the MAGs it adds
+    body: gtdbtk_de_novo took any genome set and settled on DAS Tool's bins, while iphop_add_to_db added the quality MAGs. The trees then do not describe the genomes being added. gtdbtk_de_novo_quality builds the tree from the quality pool, and DAS Tool leaves the plan.
+  - title: Annotators read prodigal's whole-assembly ORFs
+    body: prodigal-gv's ORFs on the viral frozen set also descend from the assembly, and the solver fed them to the GPR lanes and four annotators. prodigal-gv is out. Viral KOs are the assembly KOfam calls joined to vOTUs, and the driver fails any plan whose ORFs do not come from prodigal.
+  - title: The de novo tree takes days
+    body: GTDB-Tk de_novo_wf infers a FastTree over about 190,000 taxa, once per dataset, near fir's 7-day limit. Only iPHoP's MAG-augmented host database needs it. Running iPHoP against the stock Jun25_rw database removes it.
+  - title: DIAMOND keeps 5 hits everywhere
+    body: Tony standardised every Engcyc collection on 5 UniRef50 hits per ORF, which the contig LCA* vote needs. The GPR still reads the best hit. Results searched with 1 hit, including Cyanoverse's 99M ORFs, are imported under a legacy type, so the plan searches them again.
+  - title: No de novo hybrid lane
+    body: OPERA-MS is only in E5's bench library. Every hybrid dataset already has an E5 assembly, so hybrids enter as the existing-assembly shape.

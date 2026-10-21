@@ -18,8 +18,10 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
+    # Metabuli overshoots --max-ram by about 5 GiB (the Cyanoverse AB48 run: --max-ram
+    # 110 peaked at 115.2 GiB), so leave it 10 short of the request.
     mem = context.params.get('memory')
-    mem = "" if mem is None else f"--max-ram {int(float(mem))-6}"
+    mem = "" if mem is None else f"--max-ram {max(1, int(float(mem))-10)}"
     job_name = "metabuli_out"
     _cmd = f"""\
             metabuli classify \
@@ -29,7 +31,6 @@ def protocol(context: ExecutionContext):
                 {job_name} \
                 {threads} {mem} \
                 --lineage 1 \
-                --taxonomy-path ./tmp/taxonomy \
                 --seq-mode 3
 
             mv ./*classifications.tsv {itax.container}

@@ -3,82 +3,65 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 image = model.AddRequirement(lib.GetType("env::dram.env"))
-db    = model.AddProduct(lib.GetType("annotation::dram_db"))
+out   = model.AddProduct(lib.GetType("annotation::dram_sources"))
+
+KOFAM  = "https://www.genome.jp/ftp/db/kofam"
+PFAM   = "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release"
+SHEETS = "https://raw.githubusercontent.com/WrightonLabCSU/DRAM/master/data"
+
+# What DRAM-setup.py 1.5.0 fetches for the databases buildDramDB selects, keyed by its
+# --select_db names, over HTTPS. Its own dbCAN address, bcb.unl.edu/dbCAN2/download/,
+# now redirects to an HTML page, which DRAM saved as the HMM file without complaint;
+# pro.unl.edu serves the same 100.9 MB V11 file.
+SOURCES = {
+    "kofam_hmm":             ("kofam_profiles.tar.gz", f"{KOFAM}/profiles.tar.gz"),
+    "kofam_ko_list":         ("ko_list.gz", f"{KOFAM}/ko_list.gz"),
+    "pfam":                  ("Pfam-A.full.gz", f"{PFAM}/Pfam-A.full.gz"),
+    "pfam_hmm":              ("Pfam-A.hmm.dat.gz", f"{PFAM}/Pfam-A.hmm.dat.gz"),
+    "dbcan":                 ("dbCAN-HMMdb-V11.txt",
+                              "https://pro.unl.edu/dbCAN2/download/Databases/V11/dbCAN-HMMdb-V11.txt"),
+    "genome_summary_form":   ("genome_summary_form.tsv", f"{SHEETS}/genome_summary_form.tsv"),
+    "module_step_form":      ("module_step_form.tsv", f"{SHEETS}/module_step_form.tsv"),
+    "etc_module_database":   ("etc_module_database.tsv", f"{SHEETS}/etc_module_database.tsv"),
+    "function_heatmap_form": ("function_heatmap_form.tsv", f"{SHEETS}/function_heatmap_form.tsv"),
+    "amg_database":          ("amg_database.tsv", f"{SHEETS}/amg_database.tsv"),
+}
 
 
 def protocol(context: ExecutionContext):
-    idb = context.Output(db)
-    threads = context.params.get("cpus", 8)
+    iout = context.Output(out)
+    # Run params, so a moved upstream file is fixed at launch rather than by a release.
+    sources = {key: (name, context.params.get(f"dram_{key}_url", url))
+               for key, (name, url) in SOURCES.items()}
 
-    context.ExecWithEnv(
-        env=image,
-        cmd=f"""
-            export HOME=/tmp
-            export PYTHONHTTPSVERIFY=0
-            export DRAM_CONFIG_LOCATION={idb.container}/DRAM.config
-            mkdir -p {idb.container}
-            # Seed a valid config BEFORE DRAM-setup.py runs. DRAM 1.5.0's
-            # DatabaseHandler.__init__ calls load_config(DRAM_CONFIG_LOCATION)
-            # UNCONDITIONALLY, including during prepare_databases' own first-time setup,
-            # so json.loads on a path nothing has created yet raises FileNotFoundError
-            # about seven seconds in, before a single byte is downloaded. `mkdir -p`
-            # makes the directory and nothing makes the file. The image ships a valid
-            # 705-byte default at mag_annotator/CONFIG; copy it and let
-            # prepare_databases write its own entries into our writable copy.
-            python -c "import mag_annotator, os, shutil; \
-                src=os.path.join(os.path.dirname(mag_annotator.__file__), 'CONFIG'); \
-                shutil.copyfile(src, '{idb.container}/DRAM.config')"
-            # CAUTION the five *_form / *_database entries are NOT optional extras.
-            # database_processing.prepare_databases narrows its whole settings dict to
-            # `select_db`, and DRAM's five distillation SHEETS are members of that same
-            # dict -- so naming only the search databases drops them. The image ships no
-            # mag_annotator/data/, and the seeded CONFIG has every sheet null, so
-            # summarize_vgfs.py then raises "Genome summary form location must be set in
-            # order to summarize genomes" and `DRAM-v.py distill` cannot run at all.
-            # `DRAM-v.py annotate` only WARNS about missing databases, so the failure
-            # surfaces one step later than its cause. The sheets are small GitHub fetches.
-            DRAM-setup.py prepare_databases \
-                --output_dir {idb.container} \
-                --select_db kofam_hmm \
-                --select_db kofam_ko_list \
-                --select_db pfam \
-                --select_db pfam_hmm \
-                --select_db dbcan \
-                --select_db genome_summary_form \
-                --select_db module_step_form \
-                --select_db etc_module_database \
-                --select_db function_heatmap_form \
-                --select_db amg_database \
-                --threads {threads}
-            sed -i 's|{idb.container}|/db|g' {idb.container}/DRAM.config
-        """,
-    )
+    gz = [name for name, _ in sources.values() if name.endswith(".gz")]
+    tsv = [name for name, _ in sources.values() if name.endswith(".tsv")]
+    dbcan = sources["dbcan"][0]
+    # A server that answers with a web page passes wget, so check what each file is.
+    checks = [f"gzip -t {name}" for name in gz] + [
+        f'[ "$(head -c 6 {dbcan})" = HMMER3 ] || {{ echo "{dbcan} is not an HMMER3 file" >&2; exit 1; }}',
+        *(f"awk -F'\\t' 'NR==1 {{exit !(NF>1)}}' {name} || {{ echo \"{name} is not a TSV\" >&2; exit 1; }}"
+          for name in tsv),
+    ]
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        *(FetchCommand(url, name, label=f"DRAM {key}") for key, (name, url) in sources.items()),
+        *checks,
+        f"mkdir -p {iout.local}",
+        f"mv {' '.join(name for name, _ in sources.values())} {iout.local}/",
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
 
-    # CAUTION do NOT test for DRAM.config. The protocol above CREATES it as its first
-    # action, before a byte is downloaded, so a predicate on its existence is vacuous --
-    # it would report success for a step that downloaded nothing. That is exactly what
-    # this predicate did until it was caught in review.
-    #
-    # Test the PROCESSED artefacts instead, and test the config's CONTENT rather than its
-    # presence: DRAM's downloaders log per-database failures and carry on, so a config
-    # whose entries are null is the signature of a step that ran and achieved nothing.
-    import json
+    # buildDramDB reads this to name each file to DRAM-setup.py, and it records where
+    # an unpinned current_release came from.
+    with open(iout.local/"sources.tsv", "w") as f:
+        for key, (name, url) in sources.items():
+            f.write(f"{key}\t{name}\t{url}\n")
 
-    config = idb.local / "DRAM.config"
-    processed = list((idb.local).rglob("*.hmm")) + list((idb.local).rglob("*.hmm.gz")) \
-        + list((idb.local).rglob("kofam*")) + list((idb.local).rglob("*dbcan*"))
-    sheets_set = False
-    if config.exists():
-        try:
-            loaded = json.loads(config.read_text())
-            sheets = loaded.get("dram_sheets") or {}
-            sheets_set = any(v for v in sheets.values())
-        except (ValueError, OSError):
-            sheets_set = False
-
+    whole = all((iout.local/name).stat().st_size > 0 for name, _ in sources.values())
     return ExecutionResult(
-        manifest=[{db: idb.local}],
-        success=config.exists() and bool(processed) and sheets_set,
+        manifest=[{out: iout.local}],
+        success=whole,
     )
 
 
@@ -88,8 +71,8 @@ TransformInstance(
     group_by=image,
     labels=["local"],
     resources=Resources(
-        cpus=8,
-        memory=Size.GB(64),
-        duration=Duration(hours=12),
+        cpus=1,
+        memory=Size.GB(2),
+        duration=Duration(hours=6),
     ),
 )

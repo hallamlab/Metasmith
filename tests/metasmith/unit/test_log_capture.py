@@ -14,16 +14,23 @@ def test_the_producing_tasks_logs_land_in_the_member_shard(tmp_path):
     shard = tmp_path / "task_cache" / "1e" / "20ab"
     shard.mkdir(parents=True)
 
-    _copy_task_logs(task_dir, shard)
+    placed: dict[Path, Path] = {}
+    _copy_task_logs(task_dir, shard, placed)
     names = sorted(p.name for p in (shard / "logs").iterdir())
     assert names == sorted(
         [".command.err", ".command.log", ".command.out", ".command.sh"]
     )
 
+    # Another member of the same grouped task links the first member's copies.
+    sibling = tmp_path / "task_cache" / "1e" / "20cd"
+    sibling.mkdir(parents=True)
+    _copy_task_logs(task_dir, sibling, placed)
+    assert (sibling / "logs" / ".command.out").stat().st_ino == (shard / "logs" / ".command.out").stat().st_ino
+
     # A shard that already has logs keeps them: the first producer's run is
     # the one the shard's products came from.
     (task_dir / ".command.out").write_text("<later run>")
-    _copy_task_logs(task_dir, shard)
+    _copy_task_logs(task_dir, shard, {})
     assert (shard / "logs" / ".command.out").read_text() == "<out>"
 
 

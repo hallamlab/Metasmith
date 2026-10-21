@@ -36,9 +36,11 @@ def protocol(context: ExecutionContext):
         """,
     )
 
+    found = []
     def _grab(pattern, dest, header):
         hits = sorted(glob.glob(pattern, recursive=True))
         if hits:
+            found.append(hits[0])
             context.LocalShell(f"cp {hits[0]} {dest.local}")
         else:
             Path(dest.local).write_text(header)
@@ -49,6 +51,10 @@ def protocol(context: ExecutionContext):
     _grab("pf_out/**/*MGE*.tsv", omge, "Contig\tORF\tMGE\tprediction\n")
 
     context.LocalShell("rm -rf pf_out 2>/dev/null || true")
+    # One table missing is a category with no predictions; all four missing is a run that wrote nothing.
+    if not found:
+        Log.Error("PathoFact wrote none of its prediction tables")
+        return ExecutionResult(manifest=[], success=False)
 
     return ExecutionResult(
         manifest=[{

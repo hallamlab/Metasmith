@@ -437,14 +437,22 @@ def admit(
     return written
 
 
-def _place(src: Path, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if src.is_dir():
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest, symlinks=True)
-        return
+def _link_or_copy(src, dest) -> None:
+    # A link across devices, or past a filesystem's per-file link limit, falls back to a copy.
     try:
         os.link(src, dest)
     except OSError:
         shutil.copy2(src, dest)
+
+
+def _place(src: Path, dest: Path) -> None:
+    # A shard's files share their inodes with the task's products, so a cached directory
+    # costs its bytes once rather than once per placement (a GTDB package is ~250 GB).
+    # CAUTION never edit a product in place: the edit reaches the cache and every run it serves.
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.is_dir():
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy)
+        return
+    _link_or_copy(src, dest)

@@ -37,10 +37,16 @@ class AgentShell:
                     f"agent home may be partially deployed — rerun Agent.Deploy()"
                 )
                 Log.Info(f"starting relay service")
-                shell.Exec(
-                    f'./relay/msm_relay start',
-                    idle_timeout=PROBE_TIMEOUT, what="relay start",
+                # Bounded remotely as well, so a start that hangs never outlives this connection.
+                res = shell.Exec(
+                    'T=$(command -v timeout >/dev/null && echo "timeout -k 5 45"); $T ./relay/msm_relay start',
+                    idle_timeout=PROBE_TIMEOUT, what="relay start", history=True,
                 )
+                if res.exit_code not in (0, None):
+                    raise RuntimeError(
+                        f"relay start failed (exit {res.exit_code}) in [{self.agent.home.GetPath()}]:\n"
+                        + "\n".join(res.out + res.err)
+                    )
             self.shell = shell
             return self.shell
         except BaseException:

@@ -33,7 +33,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(
         env=image,
         cmd=f"""
-            pfx=$(ls {idb.container}/*.1.cfr 2>/dev/null | head -1)
+            pfx=$(ls {idb.container}/*.1.cfr 2>/dev/null | sed -n 1p) || true
             pfx=${{pfx%.1.cfr}}
             test -n "$pfx" -a -f "$pfx.1.cfr" || {{ echo "centrifuger prefix not discovered in {idb.container}"; exit 1; }}
 

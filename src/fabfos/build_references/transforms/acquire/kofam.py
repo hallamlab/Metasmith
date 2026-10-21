@@ -38,7 +38,7 @@ def protocol(context: ExecutionContext):
             # out loud rather than silently naming a directory after 1970.
             LM=$(wget --spider --server-response {BASE_URL}/{STAMP_FILE} 2>&1 \\
                  | grep -i 'last-modified' | tail -1 | tr -d '\\r' \\
-                 | sed -e 's/^.*[Ll]ast-[Mm]odified:[[:space:]]*//')
+                 | sed -e 's/^.*[Ll]ast-[Mm]odified:[[:space:]]*//') || true
             VER=$(date -u -d "$LM" +%F)
             echo "[kofam] WARNING: no gzip timestamp; falling back to the server's" \\
                  "Last-Modified ($VER), which a re-sync can move without a rebuild" >&2

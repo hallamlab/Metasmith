@@ -38,10 +38,10 @@ the recorded number leads a group containing the tool the job started. Signallin
 alone stops the job's shell and orphans the tool. Every stop path — the client's, the watcher's,
 `kill-run` — signals the group, TERM then KILL.
 
-**The watcher stops on `msm_relay stop` and nothing else.** It `setsid`s out of the login
-shell's process group, so a dropped connection's SIGHUP does not reach it. A shutdown that
-cannot kill a job keeps that job's records rather than deleting them — they are the only trace
-of what is still running.
+**A watcher stops on `msm_relay stop`, or when `active` stops naming it.** It `setsid`s out of
+the login shell's process group and points its stdio at `/dev/null`, so a dropped connection
+neither signals it nor fails its next write. A shutdown that cannot kill a job keeps that job's
+records rather than deleting them — they are the only trace of what is still running.
 
 `msm_relay kill-run <token>` stops every job whose `.run` matches, and `status` names the run
 each job belongs to. The I/O directory is per host and shared by every run on it, so the token
@@ -49,6 +49,33 @@ is the only thing that scopes a stop to one run. The bounce inverts ownership �
 runs as a child of the watcher, so Nextflow's process tree holds only the client — and the token
 is what closes that gap. The watcher never infers a dead requester from a pid: a requester
 inside a container reports a pid from its own namespace, which on the host names nothing.
+
+## Who owns a workspace
+
+A workspace has at most one watcher, and two records decide which one.
+
+- **The start lock.** `start` holds an exclusive `flock` across its check, setup, fork and
+  publish. The lock file sits beside the node-local workspace target under `$TMPDIR`, never in
+  the agent home. `flock` on Lustre is not reliable, and the race the lock closes is between two
+  starts on one node. Each login node has its own `/tmp`, so a lock there cannot order starts
+  on different nodes, and does not need to: each node has its own workspace.
+- **The owner record.** `active` holds the owning watcher's pid and its pid namespace. A start
+  leaves a live owner alone, even a silent one. A watcher exits when `active` names another pid.
+  Its exit guard then leaves the successor's jobs and files alone.
+
+**CAUTION** A pid from another pid namespace names nothing on this host. A relay client inside a
+container reads the host watcher's pid and cannot probe it, so a record from another namespace
+counts as alive. Probing it marked every bounced job's watcher dead in the docker lane.
+
+**CAUTION** A `start` that cannot see its watcher come up exits non-zero after 30 s and prints
+the tail of `main.log`. Before that bound, a lost race left the start parent polling forever,
+and the client's 60 s silence timeout reported only that the relay produced no output.
+
+**The relay carries the engine version.** `--version` prints it and the watcher records it.
+`start` replaces an idle watcher of another version, and `Agent.Deploy` re-extracts a home relay
+whose version differs. The swap renames over the binary, so a running watcher cannot make the
+copy fail with `ETXTBSY`. Without this, an upgrade of metasmith never reached an existing agent
+home.
 
 ## Cross-compilation, and the stub-relay bug
 

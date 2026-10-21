@@ -38,13 +38,13 @@ def protocol(context: ExecutionContext):
 
         # Two failure modes share one non-zero exit and must not share a meaning.
         # A bin with no CRISPR array is a result, so the run itself is allowed to
-        # fail. A missing database is a misconfiguration, so it is checked first
+        # fail, except by an OOM kill. A missing database is a misconfiguration, so it is checked first
         # and kills the step -- without this, "no arrays anywhere in the survey"
         # and "the tool never ran" are the same empty table.
         _cmd = f"""
             test -d {CCTYPER_DB} || {{ echo "cctyper database absent at {CCTYPER_DB}" >&2; exit 3; }}
             cctyper {ibin.container} {work} --db {CCTYPER_DB} \
-                --prodigal meta -t {threads} --no_plot || true
+                --prodigal meta -t {threads} --no_plot || {{ c=$?; case $c in 125|137) exit $c ;; esac; }}
         """
         context.ExecWithEnv(env=image, cmd=_cmd)
 

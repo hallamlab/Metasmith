@@ -52,7 +52,7 @@ PY
         echo "[equilibrator] {PIN_PKG} $VER"
 
         for f in {" ".join(ARTIFACTS)}; do
-            src=$(find _eq_prime -name "$f" -type f | head -1)
+            src=$(find _eq_prime -name "$f" -type f | sed -n 1p)
             if [ -z "$src" ]; then
                 echo "[equilibrator] the package did not produce $f" >&2
                 exit 1

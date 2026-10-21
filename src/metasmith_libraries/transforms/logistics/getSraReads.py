@@ -1,5 +1,7 @@
-from metasmith.python_api import *
+import gzip
 import json
+import re
+from metasmith.python_api import *
 
 lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
@@ -48,7 +50,9 @@ def protocol(context: ExecutionContext):
     # prefetch leaves the cache in ./{acc}, which is where fastq-dump looks for
     # it, so the two halves need nothing between them. --split-spot writes both
     # mates of a paired spot consecutively, which is the interleaving
-    # `short_reads_pe` declares.
+    # `short_reads_pe` declares. The image's sh is busybox ash, which honours
+    # the pipefail ExecWithEnv sets.
+    dump_log = "fastq-dump.log"
     context.ExecWithEnv(
         env = image,
         cmd = f"""
@@ -57,11 +61,22 @@ def protocol(context: ExecutionContext):
         du -shL {acc}
         echo "dumping"
         fastq-dump --split-spot --offset 33 --defline-seq '@$si/$ri' --defline-qual '+' --stdout \
-            {acc} \
-        | pigz {threads_param} -c >{ireads.container}
+            {acc} 2>{dump_log} \
+        | pigz {threads_param} -c >{ireads.container} \
+        || {{ c=$?; cat {dump_log} >&2; exit $c; }}
+        cat {dump_log}
         """,
         shell="sh",
     )
+
+    # fastq-dump can exit 0 having written nothing, and a gzip of nothing is a
+    # valid 20-byte file, so the count it reports and the first record decide.
+    written = re.findall(r"^Written (\d+) spots", open(dump_log).read(), re.M)
+    spots = int(written[-1]) if written else 0
+    with gzip.open(ireads.local, "rt", errors="replace") as f:
+        first = [f.readline() for _ in range(4)]
+    is_fastq = first[0].startswith("@") and first[2].startswith("+") and len(first[1]) > 1
+    Log.Info(f"[{acc}] fastq-dump wrote {spots:,} spots, first record [{first[0].strip()}]")
 
     return ExecutionResult(
         manifest=[
@@ -69,7 +84,7 @@ def protocol(context: ExecutionContext):
                 reads: ireads.local,
             }
         ],
-        success=ireads.local.exists(),
+        success=spots > 0 and is_fastq,
     )
 
 TransformInstance(

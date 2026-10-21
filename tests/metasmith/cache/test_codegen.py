@@ -96,6 +96,7 @@ def test_the_twin_runs_locally_and_never_reuses_a_nextflow_cache(tmp_path):
     twin = twin[:twin.index("\n}\n")]
     assert "executor 'local'" in twin
     assert "array 0" in twin, "the local executor refuses a job array"
+    assert "scratch false" in twin, "a login node's scratch is a tmpfs"
     assert "cache false" in twin
     assert "tuple val(index), val(sources)" in twin
 
@@ -118,10 +119,10 @@ def _twin_bash(tmp_path, agent_home: Path, src: Path, dst: str) -> str:
     return unescape(home) + "\n" + unescape(place) + "\n"
 
 
-def _run_in(workdir: Path, script: str):
+def _run_in(workdir: Path, script: str, path: str = "/usr/bin:/bin"):
     import subprocess
 
-    return subprocess.run(["bash", "-ue", "-c", script], cwd=workdir, env={"PWD": str(workdir), "PATH": "/usr/bin:/bin"},
+    return subprocess.run(["bash", "-ue", "-c", script], cwd=workdir, env={"PWD": str(workdir), "PATH": path},
                           capture_output=True, text=True)
 
 
@@ -147,19 +148,43 @@ def test_the_twin_links_a_shard_through_its_own_spelling_of_the_home(tmp_path):
     assert (workdir / "1-x.fq.gz").stat().st_ino == shard.stat().st_ino
 
 
-def test_the_twin_says_so_when_it_copies(tmp_path):
+def _shard_dir(tmp_path: Path) -> "tuple[Path, Path]":
     home = tmp_path / "home"
     shard = home / "task_cache" / "ab" / "bins"
     shard.mkdir(parents=True)
     (shard / "bin.1.fa").write_text(">c\nA\n")
+    return home, shard
+
+
+def test_the_twin_links_a_directory_hit_file_by_file(tmp_path):
+    # A copied directory costs its bytes on every hit, which for a GTDB package is ~250 GB.
+    home, shard = _shard_dir(tmp_path)
     workdir = tmp_path / "elsewhere"
     workdir.mkdir()
 
     done = _run_in(workdir, _twin_bash(tmp_path, home, shard, "1-bins"))
 
     assert done.returncode == 0, done.stderr
+    assert done.stderr == ""
+    assert (workdir / "1-bins" / "bin.1.fa").stat().st_ino == (shard / "bin.1.fa").stat().st_ino
+
+
+def test_the_twin_says_so_when_it_copies(tmp_path):
+    home, shard = _shard_dir(tmp_path)
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    # A cross-device link, as from a scratch work dir: `cp -al` fails after creating the target.
+    (shims / "cp").write_text('#!/bin/bash\nif [ "$1" = -al ]; then mkdir -p "$3"; exit 1; fi\nexec /bin/cp "$@"\n')
+    (shims / "cp").chmod(0o755)
+
+    done = _run_in(workdir, _twin_bash(tmp_path, home, shard, "1-bins"), path=f"{shims}:/usr/bin:/bin")
+
+    assert done.returncode == 0, done.stderr
     assert "cache hit copied, not linked" in done.stderr
     assert (workdir / "1-bins" / "bin.1.fa").read_text() == ">c\nA\n"
+    assert not (workdir / "1-bins" / "bins").exists(), "the copy nested inside a partial tree"
 
 
 def test_the_twin_is_in_the_resources_file_the_ceiling_reads(tmp_path):

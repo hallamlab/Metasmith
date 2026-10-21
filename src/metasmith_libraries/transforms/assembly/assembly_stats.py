@@ -7,8 +7,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-img_mm2 = model.AddRequirement(lib.GetType("env::minimap2.env"))
-img_sam = model.AddRequirement(lib.GetType("env::samtools.env"))
+img_map = model.AddRequirement(lib.GetType("env::minimap2_samtools.env"))
 img_bed = model.AddRequirement(lib.GetType("env::bedtools.env"))
 img_sqk = model.AddRequirement(lib.GetType("env::seqkit.env"))
 meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"))
@@ -51,27 +50,20 @@ def protocol(context: ExecutionContext):
     else:
         preset = "-x sr"
 
-    Log.Info("start minimap align")
+    Log.Info("align, sort and index")
     cpus = context.params.get("cpus")
-    cpus_string = "" if cpus is None else f"-t {cpus}"
-    temp_sam_path = Path("./temp.sam")
-    _cmd = f"""
-            minimap2 {preset} -a -2 {cpus_string} \
-                {iasm.container} {ireads.container} > {temp_sam_path}
-        """
-    context.ExecWithEnv(env=img_mm2, cmd=_cmd)
-
-    Log.Info("convert to BAM, sort and index")
-    cpus_string = "" if cpus is None else f"-@ {cpus}"
+    mm2_threads = "" if cpus is None else f"-t {cpus}"
+    sam_threads = "" if cpus is None else f"-@ {cpus}"
     bam_file = "temp.bam"
     alignment_stats_file = "alignment_stats.tsv"
     _cmd = f"""
-            samtools view {cpus_string} -b {temp_sam_path} \
-                | samtools sort {cpus_string} -o {bam_file} -O bam
-            samtools index {cpus_string} -c {bam_file}
-            samtools flagstat {cpus_string} -O tsv {bam_file} >{alignment_stats_file}
+            mkdir -p sort_tmp
+            minimap2 {preset} -a -2 {mm2_threads} {iasm.container} {ireads.container} \
+                | samtools sort {sam_threads} -T sort_tmp/part -o {bam_file} -O bam
+            samtools index {sam_threads} -c {bam_file}
+            samtools flagstat {sam_threads} -O tsv {bam_file} >{alignment_stats_file}
         """
-    context.ExecWithEnv(env=img_sam, cmd=_cmd)
+    context.ExecWithEnv(env=img_map, cmd=_cmd)
 
     Log.Info("calculating per bp coverage")
     cov_tsv = "bp_cov.tsv"
@@ -186,9 +178,7 @@ def protocol(context: ExecutionContext):
         json.dump(assembly_stats, j)
 
     Log.Info("copying BAM to output")
-    context.LocalShell(f"cp {bam_file} {obam.local}")
-
-    if temp_sam_path.exists(): temp_sam_path.unlink()
+    context.LocalShell(f"mv {bam_file} {obam.local}")
 
     return ExecutionResult(
         manifest=[{

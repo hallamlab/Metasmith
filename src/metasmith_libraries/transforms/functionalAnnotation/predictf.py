@@ -18,16 +18,16 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[(idb.external, "/predictf_db")],
         cmd=f"""
             export THEANO_FLAGS="base_compiledir=/tmp/theano_compile"
-            mkdir -p /ws/predictf_out && \
+            ws="$PWD"
+            mkdir -p "$ws/predictf_out"
             (cd /predictf/deeparg-largerepo && \
             conda run -n predictf python deepARG.py \
                 --align --type prot --genes \
                 --input {iorfs.container} \
-                --output /ws/predictf_out/file.out \
-                --folder /predictf_db/)
+                --output "$ws/predictf_out/file.out" \
+                --folder {idb.container}/)
         """,
     )
 

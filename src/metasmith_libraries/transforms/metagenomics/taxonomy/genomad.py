@@ -56,7 +56,12 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
 
-    _cmd = f"/usr/local/bin/_entrypoint.sh genomad end-to-end {iasm.container} genomad_output {idb.container} {threads} --cleanup"
+    # The image keeps genomad in /opt/conda/bin, which only its entrypoint puts on PATH;
+    # the conda runtime has it on PATH already.
+    _cmd = (
+        'command -v genomad >/dev/null || export PATH="/opt/conda/bin:$PATH"\n'
+        f"genomad end-to-end {iasm.container} genomad_output {idb.container} {threads} --cleanup"
+    )
     context.ExecWithEnv(env=image, cmd=_cmd)
 
     prefix = Path(iasm.local).stem

@@ -1,4 +1,3 @@
-import os
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
@@ -27,20 +26,12 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        binds=[
-            (context.external_cwd/"weights", "/weights"),
-            (context.external_cwd/"structures", "/out"),
-        ],
-        args=[
-            "--nv",
-            "--env", f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','')}",
-            "--env", "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
-        ],
+        exports={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
         cmd=f"""
             python {iplm.container}/esmfold.py \
-                --weights /weights \
+                --weights "$PWD/weights" \
                 --fasta {iorfs.container} \
-                --out-dir /out \
+                --out-dir "$PWD/structures" \
                 --device {device} \
                 --max-len {MAX_LEN} \
                 --chunk-size {CHUNK_SIZE}
@@ -63,5 +54,7 @@ TransformInstance(
         cpus=4,
         memory=Size.GB(32),
         duration=Duration(hours=3),
+        gpus=Gpus.REQUIRED,
+        gpu_memory=Size.GB(32),
     ),
 )

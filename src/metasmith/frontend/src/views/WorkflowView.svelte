@@ -30,7 +30,7 @@
   import { around, children, parents } from '../lib/highlight.js'
   import { mintTargetId, refId, refKey, targetsFromWire, targetsToWire } from '../lib/lineage.js'
   import { runSuffix } from '../lib/runname.js'
-  import { paramRows, sameParams, toParams } from '../lib/params.js'
+  import { paramProblems, paramRows, sameParams, toParams } from '../lib/params.js'
   import { entries as rowEntries, normalize as normalizeRowList } from '../lib/rows.js'
 
   let { name } = $props()
@@ -117,6 +117,10 @@
   let presetLoaded = $state(null)
   let presetContent = $state('')
   let presetSource = $state('')
+  // The stock preset changed since this workflow took its copy.
+  let presetStale = $state(false)
+  let presetEdited = $state(false)
+  let presetChosen = $state(false)
   let presetSaved = $state(false)
   // Locked to hidden until a preset is chosen -- there is nothing of this
   // workflow's own to show before then.
@@ -131,6 +135,9 @@
     presetContent = body.content
     presetLoaded = body.content
     presetSource = body.preset_source ?? ''
+    presetStale = !!body.stale
+    presetEdited = !!body.edited
+    presetChosen = !!body.chosen
   }
 
   async function savePreset() {
@@ -138,6 +145,7 @@
       const body = await api.put(`/workflows/${name}/preset`, { content: presetContent })
       presetContent = body.content
       presetLoaded = body.content
+      presetEdited = true
       presetSaved = true
       setTimeout(() => (presetSaved = false), 1500)
       return true
@@ -149,13 +157,16 @@
   // looking at, not a step you can get wrong. `reset` (below) is the
   // destructive move: re-adopting the preset already selected, discarding
   // whatever this workflow has since edited into it.
-  async function adoptPreset(source) {
+  async function adoptPreset(source, chosen = true) {
     if (!source) return
     await attempt(async () => {
-      const body = await api.post(`/workflows/${name}/preset/adopt`, { source })
+      const body = await api.post(`/workflows/${name}/preset/adopt`, { source, chosen })
       presetContent = body.content
       presetLoaded = body.content
       presetSource = body.preset_source
+      presetStale = !!body.stale
+      presetEdited = !!body.edited
+      presetChosen = !!body.chosen
       return true
     })
   }
@@ -432,6 +443,9 @@
     presetLoaded = null
     presetContent = ''
     presetSource = ''
+    presetStale = false
+    presetEdited = false
+    presetChosen = false
     presetOpen = false
     attempt(async () => {
       await Promise.all([load(true), loadTypes(), loadTypeIndex(), loadPreset()])
@@ -476,6 +490,17 @@
     if (!chosenAgent) return
     const next = agentChoice
     untrack(() => seedFromAgent(next))
+  })
+
+  // A preset nobody picked or edited follows the agent's default.
+  $effect(() => {
+    const wanted = chosenAgent?.default_preset
+    const known = allPresets
+    if (!wanted || presetLoaded === null) return
+    untrack(() => {
+      if (presetChosen || presetEdited || wanted === presetSource || !known.includes(wanted)) return
+      adoptPreset(wanted, false)
+    })
   })
 
   // an empty list means every library, here and on the server -- so the filter
@@ -1275,15 +1300,18 @@
     if (job) jobId = job.id
   }
 
-  async function launch() {
+  // `setup` runs only the steps that read no sample -- the downloads -- after
+  // preparing every environment, so the real run finds them in the cache.
+  async function launch(kind = 'run') {
     launching = true
     const params = toParams(runParams)
     const out = await attempt(() =>
       api.post('/runs', {
         workflow: name,
         agent: agentChoice,
+        kind,
         params: Object.keys(params).length ? params : null,
-        resource_overrides: overridePayload(),
+        resource_overrides: kind === 'run' ? overridePayload() : null,
       }),
     )
     launching = false
@@ -1827,7 +1855,7 @@
                 ...(a.deployed === false ? ['has not been deployed yet'] : []),
               ]}
               <option value={a.name} disabled={said.length > 0}>
-                {a.name}{said.length ? ` — ${said.join(', ')}` : ''}
+                {a.name}{said.length ? ` — ${said.join(', ')}` : ''}{a.busy ? ` — busy: ${a.busy}` : ''}
               </option>
             {/each}
           </select>
@@ -1867,6 +1895,9 @@
                 : 'reset this preset to its stock content, discarding this workflow\'s own edits'}
             >{resetArmed ? 'confirm reset?' : 'reset'}</button>
             {#if presetSaved}<span class="tag ok">saved</span>{/if}
+            {#if presetStale}
+              <span class="tag warn" title="this workflow's copy predates the preset this version of metasmith ships; reset takes the new one">stock preset changed — reset to refresh</span>
+            {/if}
           </div>
           {#if presetOpen}
             <ConfigEditor
@@ -1882,13 +1913,33 @@
         <div class="row" style="gap:8px">
           <button
             class="primary"
-            onclick={launch}
+            onclick={() => launch('run')}
             data-tour="launch"
-            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || paramProblems(runParams).length > 0 || !!liveRun}
           >
             {launching ? 'launching…' : 'stage and run'}
           </button>
+          <button
+            onclick={() => launch('setup')}
+            title="pull every container and download every reference database this workflow needs, without running a sample"
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || paramProblems(runParams).length > 0 || !!liveRun}
+          >set up</button>
+          <button
+            class="small"
+            onclick={() => setupEnvironment()}
+            title="pull containers or build conda envs only"
+            disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
+          >{settingUp ? 'preparing…' : 'environments only'}</button>
         </div>
+        {#if envReport}
+          <p class="small muted">
+            environments:
+            {Object.entries(envReport)
+              .filter(([, v]) => typeof v === 'number' || Array.isArray(v))
+              .map(([k, v]) => `${k.replaceAll('_', ' ')} ${Array.isArray(v) ? v.length : v}`)
+              .join(', ')}
+          </p>
+        {/if}
         {#if liveRun}
           <!-- Every run of this workflow stages into the same task_key
                workspace on the agent -- one PID.lock, one process group. A
@@ -1928,6 +1979,7 @@
                     <button class="link" onclick={() => select('runs', `${wf.name}/${r.name}`)}>
                       {runSuffix(r.name, wf.name)}
                     </button>
+                    {#if r.kind === 'setup'}<span class="tag" title={(r.setup_steps ?? []).join(', ')}>setup</span>{/if}
                   </td>
                   <td class="muted">{r.agent}</td>
                   <td class="muted"><Ago iso={r.launched_at ?? r.created_at} /></td>

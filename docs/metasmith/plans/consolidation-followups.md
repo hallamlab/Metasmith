@@ -81,16 +81,8 @@ already capped every step to fit the host is still refused, and `METASMITH_SKIP_
 is the only way through. The overrides do win once the run starts, confirmed from the generated
 `workflow.config.nf` — this is ordering, not precedence.
 
-**The local executor silently ignores `-params-file` for its memory cap.** The `params{
-executor{ memory } }` block in `local.nf` wins over the params file, because the executor
-scope resolves params at config-build time, before the file merges. Anything declaring more
-than the preset's cap is refused before it runs. Override the cap through a literal `-config`
-block rather than through `params.*`, or auto-size the executor to the host. Related footgun:
-`errorStrategy='ignore'` makes a run that hit this report success with zero outputs — check
-the output count, not the run status.
-
-**The logistics e2e tests cannot pass under the `local` preset** for that reason: six
-`download*` transforms declare far more memory than the preset allows, and the visible symptom
+**The logistics e2e tests cannot pass under the `local` preset.** Several `download*`
+transforms declare more memory than the preset's 8 GB local executor, and the visible symptom
 is `No reads downloaded from SRA`. Host RAM is irrelevant. The class also carries `slow` and
 `network` marks that nothing deselects, and `network` is registered project-wide with a
 different meaning, so an opt-in-looking test is always on. Decide between the test naming an
@@ -181,13 +173,6 @@ targets that were never wrong. Confidently wrong attribution costs more than no 
 first move is to report the requirement that no transform produces, rather than the frontier the
 search happened to end on.
 
-**Publish is forced to copy when one directory is bind-mounted twice.** Metasmith reads a single
-Lustre directory bound at two paths as two mounts, so it cannot hardlink and copies instead.
-Measured: a cache hit on a cleaned-reads step took 45.6s rather than milliseconds, because a hit
-still copies the shard's outputs into the task work directory and those outputs are gigabytes.
-Reuse is near-free in compute and not free in I/O. The first move is to compare device and inode
-rather than path when deciding whether two binds are the same filesystem.
-
 **The dev overlay is a supported mechanism with nothing in the engine that populates it.**
 `agent.py` renders both the `msm` wrapper and `lib/msm_bootstrap` with a conditional bind of
 `$AGENT_HOME/dev/metasmith` over the image's installed package, and the bootstrap stages it
@@ -222,6 +207,24 @@ also what drops the pin. The first move is for the compile to load the existing 
 the guard fire, so a pinned library refuses the rebuild by name and the operator unpins on
 purpose. Reported by the campaign, which reasoned it out from where the pinned block lives
 before anyone measured it.
+
+**About thirty transforms pass `binds=` and assert under the MAMBA runtime.** Examples are
+`esm_c`, `diamond_uniref50`, `diamond_tcdb`, `pathofact` and `instrain`. A bind has no meaning
+outside a container, so each of them fails before its tool runs on a mamba agent. The first move
+is to resolve each bind to its host path when the runtime is not a container.
+
+**`blast_spacers` can drop a 31 bp spacer with one mismatch.** It filters at `-evalue 1e-5`. At
+about 3 Gbp of subject, a 31 bp alignment with one mismatch gets an e-value above that cutoff. The first
+move is a bit-score or identity-and-coverage filter in place of the e-value.
+
+**A `ganon2` retry starts the database build from zero.** The fetch and the build share one work
+directory, and Nextflow gives the retry a new one. The split described under the database
+transform entry under Accepted risks is the fix.
+
+**Some long post-download work still runs on the login node.** Metabuli's `gunzip` of the
+gtdb232 package takes about 9 h, and the DRAM and ganon2 downloads check their gzip and md5 there
+too. The login node is shared, and fir reaps long jobs on it. The first move is to give each a
+fetch step on the login node and a check-and-unpack step on a compute node, as UniRef50 has.
 
 **A driver that overrides identity after a pipeline has imported leaves pool entries nobody
 cites.** fabfos's pipelines now declare their givens through `Agent.PoolGivens`, which imports
@@ -282,13 +285,19 @@ so `dvc checkout --force` would delete them with nothing to restore. The rule th
 is under *When a build artifact may be DVC-pinned* in `docs/metasmith/architecture.md`.
 
 **A database transform fetches and indexes under one cache key, so an indexing failure discards
-the archive.** `FetchCommand` makes a *retry in the same work directory* free — the transfer lands
-on `<dest>.part` and is promoted only when it is whole — but nextflow gives a retry a fresh work
-directory by default, so that only helps a re-run that reuses the directory. The durable fix is to
-split each downloader into a fetch transform and an index transform, so the fetch is a cache entry
-of its own. That is a library-shape change: `downloadUniRef50DB`, `downloadKofamDB` and
-`downloadInterProScanDB` each grow an intermediate `ref::` type, and every plan that names them
-re-solves.
+the archive.** `FetchCommand` makes a *retry in the same work directory* free, because the
+transfer lands on `<dest>.part` and is promoted only when it is whole. Nextflow gives a retry a
+fresh work directory by default, so that only helps a re-run that reuses the directory. The
+durable fix splits each downloader into a fetch transform and an index transform, so the fetch is
+a cache entry of its own. UniRef50 has that shape: `downloadUniRef50DB` fetches on the login node
+and `buildUniRef50DB` indexes on a compute node. `downloadKofamDB` and `downloadInterProScanDB`
+still fetch and index in one step.
+
+**GTDB-Tk's peak memory sits at its request.** On fir, the r232 classification of 24 genomes at
+32 cpus and 128 GB completed with a Slurm MaxRSS of 127.99 GiB. Mapped pplacer scratch probably
+counts toward that number, so it is not proof of a real 128 GB working set. A larger batch has
+no headroom. The first move is a `time -v` peak from inside the task on a batch of a few hundred
+genomes.
 
 ## Deliberately rejected
 
@@ -310,6 +319,17 @@ now serves both routes, and `_ExecInEnv` was already the sole executor for both 
 change is small -- but "small" is what the arms claimed too, and an arm that has never been run
 answers wrongly. `dev/libraries.sh --create-envs` builds the conda environments to run one
 against.
+
+**Several reference downloads of 0.25.0 have never run end to end.** These are Eggnog,
+AntiSmash, VirSorter2, vConTACT3, ganon2's fetch and build, and the DRAM and phyloFlash builds
+at full size. The checks that the r232 package holds skani's `index.db` and `markers.bin` names,
+and that VirSorter2 writes `Done_all_setup`, were read from upstream sources, not run. GTDB-Tk
+itself ran against a staged r232, not against `downloadGtdbDB`'s output.
+
+**comebin and SemiBin2 sizing is measured on one small assembly only.** On fir, a 41 Mbp
+assembly took comebin 10 min and 18.8 GB at 48 cpus, and SemiBin2 59 s and 2.2 GB. Neither
+number tests the 72 h comebin wall or SemiBin2's bytes-per-pair constant, which come from the
+source and the CAMI runs.
 
 **The caching and reentrancy path has never been run live through the sockeye relay.** The
 cross-host proof was assembled from separate hosts showing cache-key identity, not from one
