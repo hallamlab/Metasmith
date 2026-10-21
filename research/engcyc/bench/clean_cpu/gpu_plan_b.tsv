@@ -1,0 +1,2 @@
+name	mode	toks	n	input	save
+mig1g_mg20k_bf16_t4096	bf16	4096	20000	mg	0

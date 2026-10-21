@@ -2,7 +2,7 @@
 
 ## Purpose & Contents
 
-This file records how fast CLEAN's ESM-1b embedding step runs on fir CPU nodes, and how accurate each CPU setup is. It also gives the setup to use and its cost compared with the GPU route. All runs took place on 2026-10-20 on fir `turin` nodes. Each node has 2× AMD EPYC 9655 (Zen 5), 192 cores, 8 NUMA domains of 24 cores, 24 L3 domains of 8 cores, and AVX-512 BF16 and VNNI.
+This file records how fast CLEAN's ESM-1b embedding step runs on fir CPU nodes and on fir's H100 MIG slices, and how accurate each precision and quantisation is. It also gives the CPU setup to use and its cost compared with the GPU route. All runs took place on 2026-10-20 on fir `turin` nodes. Each node has 2× AMD EPYC 9655 (Zen 5), 192 cores, 8 NUMA domains of 24 cores, 24 L3 domains of 8 cores, and AVX-512 BF16 and VNNI.
 
 Every number in this file is from a run on fir unless it carries the label **UNVERIFIED**. A projection or a length rescale is UNVERIFIED. `summary.tsv` holds every embed run, one row each, written by `summarize.py`. The scripts are in this directory, and the fir copy is at `/scratch/phyberos/engcyc_pipeline/bench/clean_cpu/`. Logs are in its `logs/`, named `<jobname>_<jobid>.log`, or `<arrayjob>_<index>.log` for the array rows.
 
@@ -16,7 +16,7 @@ Every number in this file is from a run on fir unless it carries the label **UNV
 - **maxsep:** run in memory with the GMM list loaded once (`calls.py`'s `fast` path). It gives the same rows as CLEAN's own code, 24,608 of 24,608 on 20,000 ORFs, and is 9-13x faster.
 - **Accuracy:** on the DH10B truth set, bf16 has the same precision, recall and F1 as fp32 at the lane's 0.02 score floor. fp32 on CPU gives the same calls as the GPU production run.
 
-The tuned task is about 9-11x faster than the transform's own code path on the same 48 cpus.
+The tuned task is about 9-11x faster than the transform's own code path on the same 48 cpus. It takes 1.24-1.57x the wall of one 3g.40gb slice running `clean.py`'s fp32 path, and 4.5-5.6x the wall of a slice running bf16.
 
 ## Accuracy
 
@@ -158,39 +158,114 @@ The overlay wheels sit in `wheels/`. `scale.sbatch` installs them per job onto `
 
 The shipped `esm1b_t33_650M_UR50S.pt` is 7.8 GB because it carries `optimizer_history` and `last_optimizer_state`. Every worker `torch.load`s all of it. `slim_ckpt.py` writes the 2.6 GB `args` + `model` copy that fair-esm needs, and it lowers the 6×8 peak from 74 GB to 47 GB at no cost in throughput (`e_slim_6x8_t1024` 0.690 against 0.688). Both values fit inside fir's 4 GB/core entitlement (192 GB at 48 cpus).
 
+## ESM-1b on the GPU
+
+`gpu.sbatch` and `gpu_plan.sbatch` run `embed.py --device cuda` with the image's own torch (2.0.0+cu118) on the same 20,000-ORF sample (mean 253.5 aa) and the same DH10B set. Account `def-shallam_gpu`.
+
+- **Native kernels:** the image's arch list includes `sm_90`. Inside the job, `torch.cuda.get_device_name` reported `NVIDIA H100 80GB HBM3 MIG 3g.40gb`, capability (9, 0). So no PTX JIT is involved, unlike COMEBin's image.
+- **The MIG handle:** the job forwards its `CUDA_VISIBLE_DEVICES=MIG-<uuid>` through `--cleanenv`. `nvidia-smi --query-compute-apps` showed the process resident on the slice (2,446 MiB, `logs/gpu_smi_mig3g_66162190.log`).
+- **Accuracy:** GPU fp32 embeddings are bit-identical to CPU fp32 (cosine 1.0, 2,400 of 2,400 calls identical), and the DH10B scores equal the production run's.
+
+| GPU, 20,000 ORFs | toks | embed wall (s) | ORF/s | peak GPU memory |
+|---|---|---|---|---|
+| 3g.40gb fp32 (as `clean.py` runs it) | 4096 | 451.3 | 44.3 | 3.5 GB |
+| 3g.40gb fp32 | 8192 | 435.5 | 45.9 | 4.3 GB |
+| 3g.40gb fp32 | 16384 | 406.4 | 49.2 | 6.0 GB |
+| 3g.40gb bf16 autocast | 1024 | 143.3 | 139.6 | 4.3 GB |
+| 3g.40gb bf16 autocast | 4096 | 125.4 | 159.5 | 5.0 GB |
+| 3g.40gb bf16 autocast | 16384 | 133.3 | 150.0 | 7.8 GB |
+| 1g.10gb fp32 | 4096 | 1607.0 | 12.4 | 3.5 GB |
+| 1g.10gb bf16 autocast | 4096 | 416.9 | 48.0 | |
+| 3g.40gb, `CLEAN_infer_fasta.py` end to end (model load, one `.pt` per ORF, stock maxsep) | 4096 | 627.5 total | 31.9 | |
+
+The jobs were 66162190 (3g), 66168869 (3g, `gpu_plan_a.tsv`), 66164799 (1g fp32, cancelled after its first row) and 66172961 (1g bf16, `gpu_plan_b.tsv`). A full-H100 job (66162191, `--gpus=h100:1`) sat in `ReqNodeNotAvail` from 15:37 to 17:44 and was cancelled unrun, so the full card is not measured. `sbatch --test-only` had offered it a 17:16 start, which did not happen.
+
+- **The ESM-C proxy was optimistic.** The real ESM-1b fp32 rate is 11.2k residues/s per 3g slice. The proxy measured 14.3k (48 ORF/s at 298 aa). Every GPU cost in round 1 was therefore 27% too low.
+- **bf16 is a free 3.6x on the GPU too.** On DH10B, GPU bf16 scores F1 0.9291 at the 0.02 floor (fp32: 0.9295), with AUC 0.9031. On the metagenome sample it keeps 99.25% of the lane-kept EC sets. `clean.py` runs fp32 today.
+- **A 1g.10gb slice with bf16 matches a 3g.40gb slice with fp32,** at 48 ORF/s for a seventh of a card. bf16 peaks at 5 GB of GPU memory on the 3g slice, so it fits a 1g.10gb slice.
+
+## Wall-time multiplier at equal ORFs
+
+The same 20,000 ORFs, embed wall only. A multiplier above 1 means the CPU shape is slower than one 3g.40gb slice.
+
+| CPU shape (bf16, pinned) | embed wall (s) | ORF/s | × vs slice fp32 (451 s) | × vs slice bf16 (125 s) | cores matching one slice, fp32 / bf16 |
+|---|---|---|---|---|---|
+| 48-cpu by-core task, 6×8 t1024 (3 runs) | 559-708 | 28.2-35.8 | 1.24-1.57 | 4.5-5.6 | 59-75 / 214-271 |
+| 48 cores of an idle node | 585.3 | 34.2 | 1.30 | 4.7 | 62 / 224 |
+| 96-cpu by-core task, 12×8 t1024 | 382.9 | 52.2 | 0.85 | 3.1 | 81 / 293 |
+| 96 cores of an idle node | 368.3 | 54.3 | 0.82 | 2.9 | 78 / 282 |
+| full 192-core node, 24×8 t512 | 189.3 | 105.6 | 0.42 | 1.51 | 80 / 290 |
+| full 192-core node, 64×3 t512 | 179.0 | 111.7 | 0.40 | 1.43 | 76 / 274 |
+
+So one 3g.40gb slice-hour equals 59-81 CPU core-hours against `clean.py` as it runs today (fp32), or 214-293 core-hours against a bf16 GPU lane. A full node outruns a slice running fp32 by 2.4-2.5x. It runs at two thirds of the speed of a slice running bf16.
+
+The jobs were 66148395, 66151629 and 66162199 (48-cpu), 66162198 (96-cpu) and 66166449 (`plan_f.tsv`, idle node; its first attempt, 66162197, died with NODE_FAIL).
+
 ## Cost against the GPU route
 
-The GPU reference is 48 ORF/s per 3g.40gb H100 MIG slice, on real Cyanoverse ORFs (mean 298 aa) with length-sorted batching (journal `eefa4f4e`).
+All figures are measured on the 253.5 aa sample, then rescaled linearly to Cyanoverse's mean of 298 aa. The rescale is **UNVERIFIED**.
 
-**CAUTION** That number was measured with ESM-C 600M as a proxy for ESM-1b. ESM-1b's own GPU rate on fir is not measured.
-
-Because the GPU sample (mean 298 aa) and this one (mean 253.5 aa) differ, the comparison below runs on residues.
-
-Two CPU planning rates come from the measurements:
-
-- **Conservative: 137 residues/s/core.** This is a fir node fully packed with our own workers (24×8 t512, 104 ORF/s per node). It is also below the slowest 20,000-ORF by-core run (149).
-- **Typical: 161 residues/s/core.** This is the median of the three 20,000-ORF by-core runs at 512-1,024 tokens (149, 161, 189).
-
-| | per million ORFs at 298 aa |
+| per million ORFs at 298 aa | |
 |---|---|
-| GPU, 3g.40gb slice at 48 ORF/s | 5.8 slice-hours |
-| CPU tuned, conservative | 604 core-hours **UNVERIFIED** (length rescale) |
-| CPU tuned, typical | 514 core-hours **UNVERIFIED** (length rescale) |
-| CPU tuned, at the measured 253.5 aa | 437-514 core-hours |
-| CPU, the transform's stock path | about 4,900 core-hours **UNVERIFIED** (length rescale) |
+| GPU 3g.40gb, fp32 (today's `clean.py`) | 7.4 slice-hours |
+| GPU 3g.40gb, bf16 | 2.0 slice-hours |
+| GPU 1g.10gb, bf16 | 6.8 1g-slice-hours (about 2.3 3g-slice-hour equivalents) |
+| CPU tuned, 137-161 residues/s/core | 514-604 core-hours |
+| CPU, the transform's stock path | about 4,900 core-hours |
 
-One 3g.40gb slice does the work of 89-104 cores, so a whole 192-core node equals about 1.8-2.2 slices. Counting the cpus a GPU task also holds, the GPU lane costs 23 core-hours per million ORFs at `clean.py`'s `cpus=4` against 514-604 for CPU, a factor of 22-26. COMEBin's ratio was 23x (864 against 37 core-hours a sample, journal `298eb577`), and Tony moved COMEBin to the CPU lane anyway (precedence `3c8efc8176dca078`).
+The CPU planning rates are a node fully packed with our own workers (137 residues/s/core) and the median of the 20,000-ORF by-core runs (161).
+
+Count the cpus a GPU task also holds (`clean.py` asks for 4). Then the fp32 GPU lane costs 30 core-hours per million ORFs against 514-604 for CPU, a factor of 17-20. The bf16 GPU lane costs 8 core-hours, a factor of 63-74. COMEBin's ratio was 23x (864 against 37 core-hours a sample, journal `298eb577`), and Tony moved COMEBin to the CPU lane anyway (precedence `3c8efc8176dca078`).
 
 ### Engcyc projection **UNVERIFIED**
 
 These figures assume 1,200 non-Cyanoverse metagenome samples at 300,000 ORFs each, which is 360 M ORFs, with Cyanoverse's mean ORF length of 298 aa. Centroid dedup assumes Cyanoverse's 6.5x ratio (99.4 M ORFs to 15.35 M centroids). Engcyc's own ratio is not measured.
 
-| load | ORFs | GPU 3g.40gb slice-hours | CPU tuned core-hours | CPU stock-path core-hours |
-|---|---|---|---|---|
-| all ORFs | 360 M | 2,080 | 185,000-217,000 | about 1.75 M |
-| centroids (6.5x) | 55.4 M | 320 | 28,500-33,500 | about 270,000 |
+| load | ORFs | GPU 3g slice-hours, fp32 | GPU 3g slice-hours, bf16 | CPU tuned core-hours | CPU stock-path core-hours |
+|---|---|---|---|---|---|
+| all ORFs | 360 M | 2,650 | 740 | 185,000-217,000 | about 1.75 M |
+| centroids (6.5x) | 55.4 M | 410 | 115 | 28,500-33,500 | about 270,000 |
 
 At 2,000 concurrently running cores, the CPU wall is 3.9-4.5 days for all ORFs and 14-17 hours for centroids. Throughput is set by the account's cpu share rather than by step width, so this wall is a planning figure, not a promise. The centroid route also needs the CPU propagation of calls to cluster members, which is not costed here.
+
+## Quantisation sweep
+
+Every row is 6×8 pinned at 1,024 tokens on 48 cores of an idle node. Speed comes from the 2,400-ORF metagenome sample (MG) and from DH10B (DH, 4,468 proteins, mean 305 aa).
+
+Agreement is measured against fp32 on the same inputs:
+- "top EC" is the share of ORFs whose top EC call matches fp32's.
+- "kept set" is the share whose EC set after the lane's 0.02 floor matches fp32's.
+
+F1 and AUC are against the 1,273-ORF DH10B truth set (fp32: F1 0.9295 at 0.02, AUC 0.901). The modes live in `quant.py` (torch) and `ort_export.py` (ONNX Runtime).
+
+| mode | MG ORF/s/core | vs bf16 | DH ORF/s/core | MG top EC | MG kept set | DH top EC | DH F1 @0.02 | DH AUC |
+|---|---|---|---|---|---|---|---|---|
+| fp32 | 0.229 | 0.33 | 0.182 | 100% | 100% | 100% | 0.9295 | 0.9010 |
+| **bf16 autocast (baseline)** | 0.703 | 1.00 | 0.576 | 98.1% | 99.3% | 98.6% | 0.9295 | 0.8998 |
+| bf16 weights, LayerNorm fp32, no autocast | 0.720 | 1.02 | 0.585 | 97.4% | 99.0% | 97.6% | 0.9287 | 0.9036 |
+| torch 2.5 bf16 autocast | 0.647 | 0.92 | — | 97.8% | 99.1% | — | — | — |
+| a. torch dynamic int8, per-channel, every Linear | 0.504 | 0.72 | stopped | 48.4% | 80.8% | — | — | — |
+| b. per-channel int8 on fc1 only, rest bf16 | 0.570 | 0.81 | stopped | 45.1% | 78.3% | — | — | — |
+| b. per-channel int8 on fc1+fc2, rest bf16 | 0.628 | 0.89 | stopped | 49.8% | 81.0% | — | — | — |
+| c. torchao int8 weight-only, bf16 activations | 0.444 | 0.63 | 0.351 | 95.2% | 98.3% | 95.9% | 0.9295 | 0.9038 |
+| c. torchao int4 weight-only (group 128) | 0.231 | 0.33 | stopped | 62.2% | 88.3% | — | — | — |
+| c. torchao int8 dynamic (per-token act.) | < 0.041 | — | stopped | — | — | — | — | — |
+| d. ORT fp32 | 0.413 | 0.59 | — | — | — | — | — | — |
+| d. ORT dynamic int8, per-channel | 0.737 | 1.05 | 0.590 | 83.3% | 94.8% | 89.0% | 0.9290 | 0.9040 |
+| d. ORT dynamic int8, per-tensor | 0.754 | 1.07 | 0.593 | 80.9% | 93.4% | 86.2% | 0.9290 | 0.9063 |
+| e. SmoothQuant + torch per-channel int8 (q/k/v/fc1) | 0.446 | 0.63 | 0.357 | 91.7% | 97.6% | 93.8% | 0.9287 | 0.9036 |
+| e. SmoothQuant + ORT int8, every MatMul | 0.749 | 1.07 | 0.595 | 87.9% | 95.9% | 90.9% | 0.9287 | 0.9054 |
+| e. SmoothQuant + ORT int8, out_proj and fc2 left fp32 | 0.573 | 0.82 | 0.447 | 95.2% | 98.4% | 96.5% | 0.9288 | 0.9040 |
+| round 1: torch dynamic int8, per-tensor, every Linear (t4096) | 0.333 | — | — | 46.9% | 80.7% | 56.5% | 0.8462 (4×12) | 0.8673 |
+
+The commands were `sbatch scale.sbatch plan_g.tsv` (66166448) for the MG rows and the fp32/bf16 DH rows, and `sbatch scale.sbatch plan_h.tsv` (66176249) for ORT fp32, the smoothed ORT models and the other DH rows. Each was scored with `python score.py <dir> out/scale/<name>.fast.calls.tsv` and `python compare2.py out/scale {g_fp32|gd_fp32} <names>`.
+
+- **Torch's dynamic int8 fails on accuracy, and per-channel weights do not fix it.** Branches a and b keep under half the top-EC calls, so they stopped before DH. The loss is in the activations. Torch quantises them per tensor at 7 bits (`reduce_range`), and ESM-1b's LayerNorm outputs carry outlier channels. SmoothQuant moves those outliers into the weights and lifts top-EC agreement from 48% to 92%. Every torch int8 variant is also slower than bf16, because fbgemm's dynamic path runs the rest of the model in fp32.
+- **torchao gains nothing here.** On torch 2.5 without `torch.compile`, weight-only int8 dequantises per call and runs at 0.63x bf16. int4 is slower still and inaccurate. int8 dynamic activation ran at about 1.3 cores per worker and had embedded nothing after 1,221 s. It was stopped by process group (`logs/clean_scale_66166448.log`, row `g_ao_int8dyn`).
+- **ONNX Runtime's int8 is the only thing faster than bf16, and only by 3-7%.** Its MatMulInteger uses AVX512-VNNI, and ORT fp32 is already 1.8x torch fp32. ORT's intra-op pool inherited the single cpu that `OMP_PROC_BIND` binds the main thread to when torch loads. The first ORT fp32 row (66166448, `g_ort_fp32`) therefore ran on one core per worker and was stopped. `embed.py` now restores the worker's cpu block before it creates the session.
+- **DH10B F1 is not a sufficient gate.** Every int8 variant scored on DH10B, except round 1's, stays within 0.001 F1 of fp32 on DH10B, including ones that change the top EC on 8-19% of metagenome ORFs. DH10B's adjudicable proteins are well characterised, and CLEAN calls them with high confidence. The metagenome ORFs, mostly dark, are where precision loss shows.
+
+**Recommendation: keep bf16.** By the letter of the criterion, ORT dynamic int8 (per-tensor, or SmoothQuant on every MatMul) beats bf16 on ORF/s per core by 3-7%, with DH10B F1 within 0.0008 of fp32. But it changes the lane-kept EC set on 4-7% of metagenome ORFs, against 0.7% for bf16. It also needs an ONNX export and a second runtime. Neither cost is worth 3-7%. No quantisation variant both beats bf16 and keeps bf16's agreement with fp32.
 
 ## Recommended `Resources(...)` for a CPU variant of clean.py
 
@@ -207,6 +282,13 @@ The wrapper must differ from `clean.py`'s in these ways. Each measurement above 
 3. Load a slim checkpoint written once per task to `$SLURM_TMPDIR`, as `slim_ckpt.py` does.
 4. Replace `CLEAN_infer_fasta.py` with the in-memory maxsep (`calls.py`, the `fast` block). That drops the per-ORF `.pt` files and the 20,000-ORF batch loop, and keeps the output format and the coverage check.
 
+### The GPU lane, if it stays
+
+Two changes to `clean.py` would cut its GPU cost by about 3.6x and 3x again. Both are measured above.
+
+1. Run ESM-1b under `torch.autocast("cuda", dtype=torch.bfloat16)`. DH10B F1 moves from 0.9295 to 0.9291.
+2. Ask for `gpu_memory=Size.GB(10)` instead of 16, so it resolves to a 1g.10gb slice. bf16 peaks at 5 GB, and a small slice backfills where a large one waits (`fir-mig-beats-full-h100-queue`).
+
 ## Lessons carried over from COMEBin
 
 - **Measure the curve on one sample.** COMEBin's 48-core choice rested on two points from different samples, which mixed sample size with core count (journal `5200c979`). Every scaling row here draws from one seeded, prefix-consistent sample and also reports residues/s.
@@ -214,14 +296,23 @@ The wrapper must differ from `clean.py`'s in these ways. Each measurement above 
 - **Cost the lane in core-hours.** COMEBin's decision weighed 864 against 37 core-hours a sample (journal `298eb577`) and took the CPU lane (precedence `3c8efc8176dca078`). The cost section here uses the same terms.
 - **Keep the task count down.** fir counts every array element against a queue of about 1,000 (`fir-queue-cap-counts-array-elements`). That favours 48-cpu tasks over 100,000-ORF shards (3,600 tasks for Engcyc) rather than 12-cpu tasks over 25,000-ORF shards (14,400), although 12-cpu tasks were as efficient per core.
 - **Throughput is the account's share.** A wall projection is a planning figure only (`throughput-is-account-share-not-step-width`).
+- **Check the GPU really runs native kernels.** COMEBin's image had no sm_90 cubin and silently JIT-compiled (`comebin-image-has-no-sm90-cubin`). The CLEAN image lists sm_90, and each GPU job prints the arch list and device name.
+- **Forward the MIG handle.** COMEBin reached its slice only when the MIG handle was exported. `gpu.sbatch` forwards a `MIG-` `CUDA_VISIBLE_DEVICES` through `--cleanenv`, and only a MIG handle.
+- **Size the slice to the model.** COMEBin's 8 GB fitted a 1g.10gb slice. ESM-1b peaks at 3.5-5 GB, so the 1g.10gb slice was measured too.
 - **Keep small files node-local.** The per-ORF `.pt` files went to `$SLURM_TMPDIR`, and so did the torch overlay. The fir tree holds about 200 files.
 
 ## Commands
 
-Every run used `/scratch/phyberos/cache/apptainer/docker..quay.io_hallamlab_external_clean..2026.06.14.sif` and account `rrg-shallam-ab`.
+Every run used `/scratch/phyberos/cache/apptainer/docker..quay.io_hallamlab_external_clean..2026.06.14.sif`. CPU runs used account `rrg-shallam-ab`, and GPU runs used `def-shallam_gpu`.
 
 - Round 1, by-core 48 cpus, `configs.tsv` rows 1-11: `sbatch bench.sbatch` (66141447), with rows 3, 6 and 11 rerun after the int8 fix (`sbatch --array=3,6,11 bench.sbatch`, 66143181). Rows 1-7 and 11 are on shared nodes at 600 ORFs and are noisier than the later rounds.
 - Rounds 2-5, whole node: `sbatch scale.sbatch plan_{a,b,c,d,e}.tsv`.
 - By-core production size: `sbatch --cpus-per-task=48 --mem=96G prod.sbatch <name> bf16 6 8 20000 1 1024 1`, with the other jobs varying the arguments as their names show.
 - The transform's own path: `sbatch stock.sbatch`.
+- GPU: `sbatch --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1 gpu.sbatch mig3g`, and `sbatch --gpus=<gres>:1 gpu_plan.sbatch gpu_plan_{a,b}.tsv`, both on account `def-shallam_gpu`.
+- Quantisation and equal-ORF CPU rounds: `sbatch scale.sbatch plan_{f,g,h}.tsv`. `smoke.sbatch` checks that each mode loads and embeds 64 ORFs before a whole-node round.
 - Tables: `python3 summarize.py . > summary.tsv`, then `python score.py`, `python compare.py` and `python compare2.py` inside the image, as above.
+
+## Files left on fir
+
+`wheels/` (293 MB, 11 files) holds the overlay wheels: torch 2.5.1 CPU, IPEX 2.5.0, torchao 0.7.0, onnx 1.17.0, onnxruntime 1.20.1 and their small dependencies. Every overlay and ONNX export went to node-local `$SLURM_TMPDIR`, so none survives a job. `out/scale/g_fp32.npy` and `out/scale/gd_fp32.npy` are the fp32 reference embeddings. Every other `.npy` file was deleted after scoring.
