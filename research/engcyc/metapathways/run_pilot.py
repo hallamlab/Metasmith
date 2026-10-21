@@ -89,8 +89,11 @@ def declare_sample(smith, sample, ensure):
     givens = smith.PoolGivens()
     tags = ["engcyc", "mp_pilot", sample]
     asm = c.add_file(givens, f"mp_pilot/{sample}/assembly", asm_path, "sequences::assembly", tags=tags)
+    # A MAG's pool name moves with its assembly's path too, or a moved assembly leaves the MAG
+    # cited under the old parent.
     for mag in mags:
-        c.add_file(givens, f"mp_pilot/{sample}/{mag.stem}", mag, "binning_local::quality_bin_fasta",
+        c.add_file(givens, c.given_name(f"mp_pilot/{sample}/{mag.stem}", asm_path), mag,
+                   "binning_local::quality_bin_fasta",
                    parents=[asm], tags=tags)
     return c.cite(givens, CACHE_DIR / sample / "inputs.xgdb", TYPE_LIBS, ensure)
 
