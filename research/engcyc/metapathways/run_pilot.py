@@ -36,8 +36,9 @@ REFS = PILOT / "refs"
 SL = Path("/project/rpp-shallam/phyberos/spanish_lakes/metagenomics")
 
 SAMPLES = {
-    # The MAG is a hardlink of the genome: one path cannot be both a given and its own child.
-    "smoke": (Path("/scratch/phyberos/engcyc/batches/pilot00003/ENG000030922.fa"),
+    # Both paths are hardlinks of OMD genome ENG000030922, whose batch directory is gone: one
+    # path cannot be both a given and its own child.
+    "smoke": (PILOT / "inputs" / "ENG000030922.fa",
               [PILOT / "inputs" / "ENG000030922.mag.fna"]),
     "sg8w14": (SL / "assembly" / "fna" / "SG8W14.fna",
                [SL / "binning" / "fna_comebin" / f"SG8W14.comebin.{b}.fa" for b in ("041", "072", "018")]),
