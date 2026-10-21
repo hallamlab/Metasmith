@@ -31,8 +31,10 @@ def protocol(context: ExecutionContext):
     itable   = context.Output(table)
     name     = imag.local.stem
 
-    context.LocalShell(f"mkdir -p {PT_HOME[0]}")
-    context.ExecWithEnv(env=python, cmd=f"""
+    # The bind source must exist before apptainer mounts it, and only a container that binds LOCAL
+    # expands it the way the Pathway Tools step will.
+    context.ExecWithEnv(env=python, binds=[LOCAL], cmd=f"""
+        mkdir -p {LOCAL[1]}/ptools_home
         PYTHONPATH=$(dirname {iev.container}) python3 {ilib.container}/build_pf.py --annotations {iann.container} --name {name} \
             --bin-fasta {imag.container} --out-dir ptin
     """)

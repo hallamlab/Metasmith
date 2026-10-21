@@ -186,6 +186,10 @@ def main():
         votes[contig_of(orf)]["orf"].append((lineage, a.orf_weight))
     unresolved = 0
     for contig, pairs in mb_matches.items():
+        # Metabuli 1.2.0 leaves the taxID:match_count column empty on contigs, so
+        # the contig's own call is then its one vote.
+        if not pairs and mb_calls[contig][1]:
+            votes[contig]["metabuli"].append((mb_calls[contig][1], a.metabuli_weight))
         for taxid, n in pairs:
             lineage = mb_taxonomy.get(taxid)
             if lineage is None:

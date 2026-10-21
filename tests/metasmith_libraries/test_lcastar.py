@@ -151,6 +151,7 @@ class TestContigTaxonomy:
         doubled = ";".join(f"{p[0]}_{p}" for p in ECOLI.split(";"))
         metabuli = tmp_path / "metabuli.tsv"
         metabuli.write_text(f"1\tc1\t5\t5000\t0.9\t1e-10\tspecies\t{doubled}\t5:10 6:2\n"
+                            f"1\tc2\t5\t4000\t0.9\t1e-10\tspecies\t{doubled}\t\n"
                             f"0\tc3\t0\t900\t0\t1\t-\t-\t\n")
         mb_ref = tmp_path / "mb_ref"
         mb_ref.mkdir()
@@ -171,6 +172,8 @@ class TestContigTaxonomy:
         # One Salmonella ORF in the assembly is below the support of 2, so it
         # votes for the family it shares with the E. coli ORFs.
         assert table.loc["c2", "lineage"].endswith("f__Enterobacteriaceae")
+        # An empty match column falls back to one vote for the contig's own call.
+        assert table.loc["c2", "metabuli_votes"] == 1
         assert "c3" not in table.index
 
 
