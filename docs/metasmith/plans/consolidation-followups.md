@@ -130,6 +130,13 @@ per input that no plan references. The entries are harmless. A `pool=False` on `
 not a drop-in fix, because a build outside the pool cannot reproduce the agent's resolve of a
 remote path, so a pinned benchmark id could move.
 
+**Two builds of one version share a home's relay.** `Agent.Deploy` re-extracts a home relay only
+when `msm_relay --version` differs from the engine's release version. `src/bash_relay/dev.sh`
+bakes `version.txt` into the relay, so every build of 0.25.0 prints `0.25.0`. On fir a home
+redeployed with 0.25.0+bb88d9e kept its 0.25.0+28ecc51 relay, which lacks the per-home
+workspace. Pass `assertive=True` to `Deploy` to force the extraction. The first move is to
+compare the relay's checksum with the image's copy instead of its version string.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
