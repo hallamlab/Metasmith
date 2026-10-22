@@ -67,11 +67,8 @@ def parse_requests(resources_text: str) -> dict[str, "tuple[int|None, float|None
 def apply_overrides(
     requests: dict[str, "tuple[int|None, float|None]"], overrides_text: str,
 ) -> dict[str, "tuple[int|None, float|None]"]:
-    """`requests` as the resource overrides appended after them leave them.
-
-    An override's `withName` is a regex over the process name, and the later of
-    two matching blocks binds, as it does in nextflow.
-    """
+    # `withName` is a regex over the process name, and the later of two matching
+    # blocks binds, as it does in nextflow.
     out = dict(requests)
     for pattern, body in _WITH_NAME.findall(overrides_text):
         cpus_m = _REQ_CPUS.search(body)
