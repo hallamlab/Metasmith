@@ -111,7 +111,6 @@ class _PoolAccess:
             ) from None
 
     def CheckPool(self, *, timeout: int = 600) -> dict:
-        """The imported givens whose bytes moved since their import, checked where they sit."""
         from ..ops import cache as op_cache
 
         if not self._is_ssh():

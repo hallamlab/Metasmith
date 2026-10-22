@@ -224,7 +224,6 @@ class Agent(_WorkflowOps, _RunControl, _PoolAccess):
 
     @exclusive("deploying")
     def DeployDevOverlay(self, src: Path|str = MODULE_PATH) -> dict:
-        """Put a source tree of the engine over the agent image's own, tree and tarball from one archive."""
         import tarfile
 
         src = Path(src).resolve()
