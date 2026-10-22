@@ -118,3 +118,68 @@ def test_a_log_with_no_match_is_not_read_as_a_shifted_line(rig):
         workspace / AgentPaths.INTERNALS / "logs.latest" / "agent.log"
     ).read_text()
     assert _wait(agent, key) == "errored"
+
+
+@pytest.fixture
+def fake_slurm(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "fake_slurm_bin"
+    bin_dir.mkdir()
+    state = bin_dir / "state"
+
+    def set_state(s: str):
+        state.write_text(s)
+
+    for tool in ("squeue", "sacct"):
+        script = bin_dir / tool
+        script.write_text(f"#!/bin/bash\ncat {state}\n")
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    return set_state
+
+
+def _relaunch_under_slurm(workspace: Path):
+    from metasmith.agents.run_host import SLURM_LAUNCH_CLEAR, SlurmLaunchClear
+    res = subprocess.run(
+        ["bash", "-c", SlurmLaunchClear(workspace)], capture_output=True, text=True,
+    )
+    assert SLURM_LAUNCH_CLEAR in res.stdout, res.stderr
+    (workspace / AgentPaths.RUN_SLURM_JOB_FILE).write_text("4242\n")
+
+
+def test_a_queued_slurm_driver_is_not_read_through_the_last_runs_log(rig, fake_slurm):
+    agent, key, workspace = rig
+    latest = workspace / AgentPaths.INTERNALS / "logs.latest"
+    (latest / "agent.log").write_text(f"done\n{SENTINEL} [then]\n")
+    (workspace / AgentPaths.RUN_PGID_FILE).write_text("2147483646\n")
+    _relaunch_under_slurm(workspace)
+    fake_slurm("PENDING")
+    assert _wait(agent, key) == "missing", (
+        "a queued driver was reported done from the previous run's sentinel"
+    )
+    new_run = workspace / AgentPaths.INTERNALS / "logs.20260102-000000"
+    new_run.mkdir()
+    (new_run / "agent.log").write_text(f"done\n{SENTINEL} [now]\n")
+    latest.symlink_to(new_run)
+    assert _wait(agent, key) == "completed"
+
+
+def test_a_slurm_driver_gone_before_its_log_is_an_error(rig, fake_slurm):
+    agent, key, workspace = rig
+    _relaunch_under_slurm(workspace)
+    fake_slurm("FAILED")
+    res = agent.WaitForWorkflow(key, timeout_s=1.0, poll_s=0.1, grace_s=0.0)
+    assert res["status"] == "errored"
+    assert "4242" in res["tail"][0]
+
+
+def test_a_live_run_keeps_its_log_link_when_a_slurm_launch_is_refused(
+    rig, live_process_group
+):
+    from metasmith.agents.run_host import SLURM_LAUNCH_CLEAR, SlurmLaunchClear
+    _agent, _key, workspace = rig
+    (workspace / AgentPaths.RUN_PGID_FILE).write_text(f"{live_process_group()}\n")
+    res = subprocess.run(
+        ["bash", "-c", SlurmLaunchClear(workspace)], capture_output=True, text=True,
+    )
+    assert SLURM_LAUNCH_CLEAR not in res.stdout
+    assert (workspace / AgentPaths.INTERNALS / "logs.latest").is_symlink()
