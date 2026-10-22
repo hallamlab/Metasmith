@@ -218,17 +218,22 @@ class _RunControl:
             # group; while anything is left in it the run is alive. Both are
             # asked on the run's own host, and END marks a probe that ran to
             # completion: anything short of it is no answer, not a dead run.
+            #
+            # Liveness is read before the log. The driver writes its sentinel
+            # and then exits, so a driver seen gone has already written it. Read
+            # the other way round, a run that finishes between the two reads
+            # shows no sentinel and a dead driver, and is reported errored.
             cmd = "\n".join([
                 f"cd {workspace} || exit 0",
                 RUN_HOST_FUNCTIONS,
+                f'echo "PID $(msm_group_state ./{AgentPaths.PID_LOCK_FILE})"',
+                f'echo "DRIVER $(msm_group_state ./{AgentPaths.RUN_PGID_FILE})"',
+                f'[ -s ./{AgentPaths.RUN_SLURM_JOB_FILE} ] && echo "SLURM $(msm_slurm_state) $(head -n1 ./{AgentPaths.RUN_SLURM_JOB_FILE})"',
                 f"if [ -e {agent_log} ]; then "
                 f"echo \"MTIME $(stat -c %Y {agent_log})\"; "
                 f"echo \"COUNT $(grep -c '{sentinel}' {agent_log} 2>/dev/null)\"; "
                 f"echo \"FAILED $(grep -c '{AgentPaths.RUN_FAILED_SENTINEL}' {agent_log} 2>/dev/null)\"; "
                 f"else echo 'MTIME MISSING'; echo 'COUNT 0'; echo 'FAILED 0'; fi",
-                f'echo "PID $(msm_group_state ./{AgentPaths.PID_LOCK_FILE})"',
-                f'echo "DRIVER $(msm_group_state ./{AgentPaths.RUN_PGID_FILE})"',
-                f'[ -s ./{AgentPaths.RUN_SLURM_JOB_FILE} ] && echo "SLURM $(msm_slurm_state) $(head -n1 ./{AgentPaths.RUN_SLURM_JOB_FILE})"',
                 "echo 'END probe'",
             ])
             res = self._remote_oneshot(cmd, timeout=60)
