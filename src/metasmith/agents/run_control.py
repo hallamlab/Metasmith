@@ -228,6 +228,7 @@ class _RunControl:
                 f"else echo 'MTIME MISSING'; echo 'COUNT 0'; echo 'FAILED 0'; fi",
                 f'echo "PID $(msm_group_state ./{AgentPaths.PID_LOCK_FILE})"',
                 f'echo "DRIVER $(msm_group_state ./{AgentPaths.RUN_PGID_FILE})"',
+                f'[ -s ./{AgentPaths.RUN_SLURM_JOB_FILE} ] && echo "SLURM $(msm_slurm_state) $(head -n1 ./{AgentPaths.RUN_SLURM_JOB_FILE})"',
                 "echo 'END probe'",
             ])
             res = self._remote_oneshot(cmd, timeout=60)
@@ -249,6 +250,7 @@ class _RunControl:
             count_line = fields.get("COUNT", "0")
             pid_state = fields.get("PID", "UNKNOWN")
             driver_state = fields.get("DRIVER", "UNKNOWN")
+            slurm_state, _, slurm_job = fields.get("SLURM", "NONE").partition(" ")
 
             log_exists = mtime_line != "MISSING"
             try:
@@ -274,6 +276,18 @@ class _RunControl:
                     "elapsed_s": elapsed,
                     "last_log_mtime": last_mtime,
                     "tail": tail.get("lines", []),
+                }
+            # A queued driver job writes its log only once it starts, so no log
+            # is a wait while the job is queued, and an error once it is gone.
+            if not log_exists and slurm_state == "GONE" and elapsed >= grace_s:
+                out = workspace / AgentPaths.INTERNALS / f"driver_slurm.{slurm_job}.out"
+                return {
+                    "task_key": task_key,
+                    "status": "errored",
+                    "run_dir": str(run_dir),
+                    "elapsed_s": elapsed,
+                    "last_log_mtime": last_mtime,
+                    "tail": [f"driver Slurm job [{slurm_job}] ended before it wrote a log; see [{out}]"],
                 }
             # A workspace with no RUN.pgid cannot answer, and answering "wait"
             # there would hang forever on a run that really did die. A host

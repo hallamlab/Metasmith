@@ -822,13 +822,13 @@ class _WorkflowOps:
             slurm_wrap = os.environ.get("METASMITH_DRIVER_SLURM")
             if slurm_wrap:
                 from .runner import RenderLauncher
-                from .run_host import LAUNCH_GUARD
+                from .run_host import SLURM_LAUNCH_CLEAR, SlurmLaunchClear
                 gres = sh_remote.Exec(
-                    f"(cd {workspace} && {{\n{LAUNCH_GUARD}\n}}) && echo __MSM_CLEAR__",
+                    SlurmLaunchClear(workspace),
                     history=True, quiet=True,
                     idle_timeout=PROBE_TIMEOUT, what="checking for a live run",
                 )
-                assert "__MSM_CLEAR__" in gres.out, "\n".join(gres.out + gres.err)
+                assert SLURM_LAUNCH_CLEAR in gres.out, "\n".join(gres.out + gres.err)
                 bres = sh_remote.Exec(
                     f"grep '^export BINDS=' {launcher} | head -1", history=True, quiet=True,
                     idle_timeout=PROBE_TIMEOUT, what="reading the launcher's bind spec",
