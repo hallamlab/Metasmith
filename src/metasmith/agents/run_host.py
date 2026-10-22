@@ -86,3 +86,15 @@ for _msm_f in ./{AgentPaths.PID_LOCK_FILE} ./{AgentPaths.RUN_PGID_FILE}; do
     esac
 done
 """
+
+SLURM_LAUNCH_CLEAR = "__MSM_CLEAR__"
+
+
+def SlurmLaunchClear(workspace) -> str:
+    # A queued driver job repoints logs.latest only when it starts. Until then the
+    # link names the previous run, and a wait reads that run's sentinel as this one's.
+    return (
+        f"(cd {workspace} && {{\n{LAUNCH_GUARD}\n}})"
+        f" && rm -f {workspace}/{AgentPaths.INTERNALS}/logs.latest"
+        f" && echo {SLURM_LAUNCH_CLEAR}"
+    )
