@@ -183,3 +183,26 @@ def test_a_live_run_keeps_its_log_link_when_a_slurm_launch_is_refused(
     )
     assert SLURM_LAUNCH_CLEAR not in res.stdout
     assert (workspace / AgentPaths.INTERNALS / "logs.latest").is_symlink()
+
+
+class _FinishesDuringTheProbe(_LocalAgent):
+    def __init__(self, home: Path, agent_log: Path):
+        super().__init__(home)
+        self.agent_log = agent_log
+
+    def _remote_oneshot(self, cmd, timeout=30):
+        # The liveness check is the moment the driver writes its sentinel and exits.
+        finish = (
+            f"kill() {{ echo '{SENTINEL} [now]' >> {self.agent_log}; return 1; }}\n"
+            "export -f kill\n"
+        )
+        return super()._remote_oneshot(finish + cmd, timeout=timeout)
+
+
+def test_a_run_that_finishes_during_the_probe_is_not_an_error(rig):
+    _agent, key, workspace = rig
+    (workspace / AgentPaths.RUN_PGID_FILE).write_text("2147483646\n")
+    agent = _FinishesDuringTheProbe(
+        _agent.home.GetPath(), workspace / AgentPaths.INTERNALS / "logs.latest" / "agent.log",
+    )
+    assert _wait(agent, key) == "completed"
