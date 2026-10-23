@@ -219,13 +219,9 @@ showed the ladder.
 
 ## Validation gaps
 
-**iPHoP's `add_to_db` and `predict` have not run through the planner on the full database.**
-Their exact steps ran by hand on fir against Jun25_rw with 42 CAMI marine MAGs. No host was
-dropped, and 240 of 794 viruses got a host among the added MAGs. The planner's run of the same
-steps failed on a relay workspace that another agent home shared. The per-home workspace in
-0.25.0 fixes that. The host database is GTDB r226 and the de novo trees are r232. The graft
-places each MAG beside its nearest base leaf in the r232 tree, and nothing checks that the two
-releases agree.
+**iPHoP's host database and its added MAGs come from two GTDB releases.** Jun25_rw is r226 and
+the de novo trees are r232. The graft places each MAG beside its nearest base leaf in the r232
+tree, and nothing checks that the two releases agree.
 
 **Most generated conda recipes have never built an env that ran its tool.**
 `gen_tool_envs.py` writes one recipe per tool from its biocontainer tag. Of six run under MAMBA
