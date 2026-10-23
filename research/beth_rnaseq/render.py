@@ -24,10 +24,11 @@ MLIB = SRC / "metasmith_libraries"
 MOCK = HERE / "mocklib"
 
 # TCAG run DAV36692 (NovaSeq X lane 5, 2026-08-19): library names as delivered. Each organism is
-# its own experiment, so its reads only ever meet its own genome.
+# its own experiment, and its genome assembly is a given under it, so its reads only ever meet
+# its own genome.
 ORGANISMS = {
-    "EPI300": ("GCF_052692645.1", "Escherichia coli EPI300", [f"epi300_cu{i}" for i in range(1, 7)]),
-    "CB2A": ("GCF_052446975.1", "Caulobacter vibrioides CB2A", [f"cb2a_cu{i}" for i in range(1, 4)]),
+    "EPI300": ("Escherichia coli EPI300", [f"epi300_cu{i}" for i in range(1, 7)]),
+    "CB2A": ("Caulobacter vibrioides CB2A", [f"cb2a_cu{i}" for i in range(1, 4)]),
 }
 
 # The transcriptomics root also holds the eukaryotic STAR -> StringTie route to a
@@ -44,14 +45,13 @@ TARGETS = [
 
 def inputs() -> DataInstanceLibrary:
     lib = DataInstanceLibrary(Path(tempfile.mkdtemp(prefix="beth-rnaseq-")))
-    for tl in ("sequences.yml", "ncbi.yml", "transcriptomics.yml", "annotation.yml", "alignment.yml"):
+    for tl in ("sequences.yml", "transcriptomics.yml", "annotation.yml", "alignment.yml"):
         lib.AddTypeLibrary(MLIB / "data_types" / tl)
     lib.AddTypeLibrary(MOCK / "data_types" / "isolate_rnaseq.yml")
 
-    for code, (acc, name, samples) in ORGANISMS.items():
+    for code, (name, samples) in ORGANISMS.items():
         exp = lib.AddValue(f"experiment_{code}.txt", f"{name} RNA-seq", "transcriptomics::experiment")
-        gname = lib.AddValue(f"genome_name_{code}.txt", name, "ncbi::genome_name", parents={exp})
-        lib.AddValue(f"accession_{code}.txt", acc, "ncbi::assembly_accession", parents={gname})
+        lib.AddItem(DEFERRED, "sequences::isolate_assembly", parents={exp})
         lib.AddItem(DEFERRED, "isolate_rnaseq::sample_sheet", parents={exp})
         for s in samples:
             meta = lib.AddValue(f"read_metadata_{s}.json",
@@ -71,7 +71,7 @@ def main(out: Path) -> None:
         input_library=inputs(),
         target_types=TARGETS,
         transform_libraries=[MLIB / "transforms" / n
-                             for n in ("logistics", "kbase", "transcriptomics", "functionalAnnotation")]
+                             for n in ("logistics", "kbase", "transcriptomics", "functionalAnnotation", "metagenomics")]
                             + [MOCK / "transforms" / "isolate_rnaseq"],
         resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
     )

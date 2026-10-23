@@ -2,7 +2,7 @@
 """rrna_fraction -- stands in for: proposed
 
 Bacterial RNA-seq has no poly-A selection, so depletion efficiency decides the usable
-depth. Counted on the reference's own rRNA and tRNA features.
+depth. Counted on Bakta's rRNA and tRNA features, since prodigal calls CDS only.
 
 Stub: the model is the proposal, the body only touches its outputs.
 """
@@ -13,7 +13,7 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 exp = model.AddRequirement(lib.GetType("transcriptomics::experiment"))
 bam = model.AddRequirement(lib.GetType("transcriptomics::bowtie2_bam"), parents={exp})
-gff = model.AddRequirement(lib.GetType("sequences::gff"), parents={exp})
+nc  = model.AddRequirement(lib.GetType("annotation::bakta_gff"), parents={exp})
 out = model.AddProduct(lib.GetType("isolate_rnaseq::rrna_fraction"))
 
 

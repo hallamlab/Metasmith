@@ -77,21 +77,21 @@ ol.qs li::marker { color: var(--accent); font-weight: 600; }
     <p>From <code>Received_raw_data/25_08_26_beth_WGS_RNA_TCAG_model_org_enrichments/TCAG_model_org_enrichments/DAV36692_RNA/</code> on the lab Globus share. Paired-end reads from a NovaSeq X run on 2026-08-19, lane 5. Each library comes as <code>.fastq.gz</code> and as Illumina <code>.ora</code>; the workflow reads the <code>.fastq.gz</code>, so no ORA decompression is needed.</p>
     <div class="tablebox">
       <table>
-        <thead><tr><th>Library</th><th>Organism</th><th>Reference genome</th><th class="num">R1 + R2 (GB, gz)</th></tr></thead>
+        <thead><tr><th>Library</th><th>Organism</th><th class="num">R1 + R2 (GB, gz)</th></tr></thead>
         <tbody>
-          <tr><td class="mono">epi300_cu1</td><td><i>E. coli</i> EPI300</td><td class="mono">GCF_052692645.1</td><td class="num">8.5</td></tr>
-          <tr><td class="mono">epi300_cu2</td><td><i>E. coli</i> EPI300</td><td class="mono">GCF_052692645.1</td><td class="num">6.3</td></tr>
-          <tr><td class="mono">epi300_cu3</td><td><i>E. coli</i> EPI300</td><td class="mono">GCF_052692645.1</td><td class="num">9.1</td></tr>
-          <tr><td class="mono">epi300_cu4</td><td><i>E. coli</i> EPI300</td><td class="mono">GCF_052692645.1</td><td class="num">6.7</td></tr>
-          <tr><td class="mono">epi300_cu5</td><td><i>E. coli</i> EPI300</td><td class="mono">GCF_052692645.1</td><td class="num">6.8</td></tr>
-          <tr><td class="mono">epi300_cu6</td><td><i>E. coli</i> EPI300</td><td class="mono">GCF_052692645.1</td><td class="num">7.2</td></tr>
-          <tr><td class="mono">cb2a_cu1</td><td><i>Caulobacter vibrioides</i> CB2A</td><td class="mono">GCF_052446975.1</td><td class="num">9.5</td></tr>
-          <tr><td class="mono">cb2a_cu2</td><td><i>Caulobacter vibrioides</i> CB2A</td><td class="mono">GCF_052446975.1</td><td class="num">10.6</td></tr>
-          <tr><td class="mono">cb2a_cu3</td><td><i>Caulobacter vibrioides</i> CB2A</td><td class="mono">GCF_052446975.1</td><td class="num">6.5</td></tr>
+          <tr><td class="mono">epi300_cu1</td><td><i>E. coli</i> EPI300</td><td class="num">8.5</td></tr>
+          <tr><td class="mono">epi300_cu2</td><td><i>E. coli</i> EPI300</td><td class="num">6.3</td></tr>
+          <tr><td class="mono">epi300_cu3</td><td><i>E. coli</i> EPI300</td><td class="num">9.1</td></tr>
+          <tr><td class="mono">epi300_cu4</td><td><i>E. coli</i> EPI300</td><td class="num">6.7</td></tr>
+          <tr><td class="mono">epi300_cu5</td><td><i>E. coli</i> EPI300</td><td class="num">6.8</td></tr>
+          <tr><td class="mono">epi300_cu6</td><td><i>E. coli</i> EPI300</td><td class="num">7.2</td></tr>
+          <tr><td class="mono">cb2a_cu1</td><td><i>Caulobacter vibrioides</i> CB2A</td><td class="num">9.5</td></tr>
+          <tr><td class="mono">cb2a_cu2</td><td><i>Caulobacter vibrioides</i> CB2A</td><td class="num">10.6</td></tr>
+          <tr><td class="mono">cb2a_cu3</td><td><i>Caulobacter vibrioides</i> CB2A</td><td class="num">6.5</td></tr>
         </tbody>
       </table>
     </div>
-    <p>Each organism is planned as its own experiment, so EPI300 reads only meet the EPI300 genome and CB2A reads only meet CB2A. Both follow the same 19 steps.</p>
+    <p>The workflow takes two kinds of input per organism: its genome assembly and its RNA reads. Each organism is planned as its own experiment, so EPI300 reads only meet the EPI300 assembly and CB2A reads only meet CB2A. Both follow the same 21 steps.</p>
   </section>
 
   <section>
@@ -103,334 +103,359 @@ ol.qs li::marker { color: var(--accent); font-weight: 600; }
     </div>
     <div class="split">
       <div class="sheet" aria-label="Metasmith DAG of the proposed workflow">
-<svg role="img" aria-label="Workflow DAG" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="414" height="1724" viewBox="0 0 414 1724">
-<rect width="414" height="1724" fill="#FFFFFF"/>
+<svg role="img" aria-label="Workflow DAG" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="414" height="1880" viewBox="0 0 414 1880">
+<rect width="414" height="1880" fill="#FFFFFF"/>
 <g fill="none" stroke="#666666" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="butt">
-<path d="M 92.4,40.4 L 92.4,42.2 L 92.4,73.5 L 92.4,104.7 L 92.4,135.8 L 92.4,167.1 L 92.4,198.2 L 92.4,229.4 L 92.4,603.9 L 92.4,666.2 L 92.4,728.6 L 92.4,947.0 L 92.4,1071.8 L 92.4,1134.2 L 92.4,1196.7 L 92.4,1556.8" stroke="#636EFA"/>
-<path d="M 92.4,1559.3 L 92.4,1556.8 A 8.5,8.5 0 0 0 84.0,1548.3 A 8.5,8.5 0 0 1 75.5,1539.8 L 75.5,1537.4" stroke="#8A8A8A"/>
-<path d="M 92.4,1568.5 L 92.4,1589.8" stroke="#8A8A8A"/>
-<path d="M 160.0,61.0 L 160.0,59.1 A 8.5,8.5 0 0 0 151.6,50.7 L 100.9,50.7 A 8.5,8.5 0 0 1 92.4,42.2" stroke="#636EFA"/>
-<path d="M 160.0,71.6 L 160.0,1088.8" stroke="#636EFA"/>
-<path d="M 160.0,1091.3 L 160.0,1088.8 A 8.5,8.5 0 0 0 151.6,1080.3 L 100.9,1080.3 L 67.1,1080.3 A 8.5,8.5 0 0 1 58.6,1071.8 L 58.6,1009.5 L 58.6,944.6" stroke="#EF553B"/>
-<path d="M 160.0,1100.5 L 160.0,1121.8" stroke="#636EFA"/>
-<path d="M 160.0,1132.4 L 160.0,1134.2 L 160.0,1650.3" stroke="#636EFA"/>
-<path d="M 160.0,1652.9 L 160.0,1650.3 A 8.5,8.5 0 0 0 151.6,1641.9 A 8.5,8.5 0 0 1 143.1,1633.5 L 143.1,1631.6" stroke="#8A8A8A"/>
-<path d="M 160.0,1662.1 L 160.0,1683.4" stroke="#8A8A8A"/>
-<path d="M 41.7,92.2 L 41.7,90.3 A 8.5,8.5 0 0 1 50.2,81.9 L 84.0,81.9 A 8.5,8.5 0 0 0 92.4,73.5" stroke="#636EFA"/>
-<path d="M 41.7,102.8 L 41.7,104.7 L 41.7,464.8 L 41.7,467.3" stroke="#636EFA"/>
-<path d="M 41.7,476.5 L 41.7,479.1 L 41.7,510.2 L 41.7,541.5 L 41.7,592.0" stroke="#EF553B"/>
-<path d="M 41.7,601.4 L 41.7,666.2 L 41.7,728.6 L 41.7,1026.3 L 41.7,1028.9" stroke="#EF553B"/>
-<path d="M 41.7,1038.1 L 41.7,1060.0" stroke="#636EFA"/>
-<path d="M 41.7,1069.4 L 41.7,1539.8 A 8.5,8.5 0 0 0 50.2,1548.3 L 84.0,1548.3" stroke="#636EFA"/>
-<path d="M 58.6,123.4 L 58.6,121.5 A 8.5,8.5 0 0 1 67.1,113.1 L 84.0,113.1 A 8.5,8.5 0 0 0 92.4,104.7" stroke="#636EFA"/>
-<path d="M 58.6,134.0 L 58.6,447.9 A 8.4,8.4 0 0 1 50.2,456.3 A 8.4,8.4 0 0 0 41.7,464.8" stroke="#636EFA"/>
-<path d="M 58.6,498.4 L 58.6,495.9 A 8.4,8.4 0 0 0 50.2,487.5 A 8.4,8.4 0 0 1 41.7,479.1" stroke="#EF553B"/>
-<path d="M 58.6,685.7 L 58.6,683.1 A 8.5,8.5 0 0 1 67.1,674.7 L 84.0,674.7 L 117.8,674.7 A 8.5,8.5 0 0 0 126.2,666.2" stroke="#EF553B"/>
-<path d="M 58.6,694.9 L 58.6,716.8" stroke="#00CC96"/>
-<path d="M 58.6,726.2 L 58.6,872.9" stroke="#636EFA"/>
-<path d="M 58.6,882.1 L 58.6,884.6 L 58.6,935.2" stroke="#EF553B"/>
-<path d="M 58.6,1309.7 L 58.6,1307.2 A 8.5,8.5 0 0 0 50.2,1298.7 L 33.3,1298.7 A 8.5,8.5 0 0 1 24.8,1290.2" stroke="#636EFA"/>
+<path d="M 143.1,39.7 L 143.1,61.6" stroke="#8A8A8A"/>
+<path d="M 143.1,71.0 L 143.1,371.1" stroke="#8A8A8A"/>
+<path d="M 143.1,373.7 L 143.1,371.1 A 8.4,8.4 0 0 0 134.7,362.7 A 8.4,8.4 0 0 1 126.2,354.2" stroke="#EF553B"/>
+<path d="M 143.1,382.9 L 143.1,385.4 L 143.1,416.6 L 143.1,447.9 L 143.1,479.1 L 143.1,529.6" stroke="#636EFA"/>
+<path d="M 143.1,539.0 L 143.1,745.5 L 143.1,748.1" stroke="#636EFA"/>
+<path d="M 143.1,757.3 L 143.1,779.2" stroke="#8A8A8A"/>
+<path d="M 143.1,788.6 L 143.1,1103.0 A 8.5,8.5 0 0 1 134.7,1111.5 L 100.9,1111.5 L 84.0,1111.5 A 8.5,8.5 0 0 0 75.5,1120.0" stroke="#8A8A8A"/>
+<path d="M 143.1,1465.7 L 143.1,1463.2 A 8.5,8.5 0 0 1 151.6,1454.7 A 8.5,8.5 0 0 0 160.0,1446.2" stroke="#636EFA"/>
+<path d="M 143.1,1474.9 L 143.1,1496.8" stroke="#636EFA"/>
+<path d="M 143.1,1506.2 L 143.1,1588.0" stroke="#636EFA"/>
+<path d="M 143.1,1590.5 L 143.1,1588.0 A 8.5,8.5 0 0 0 134.7,1579.5 L 100.9,1579.5 A 8.5,8.5 0 0 1 92.4,1571.0 L 92.4,1568.6" stroke="#8A8A8A"/>
+<path d="M 143.1,1599.7 L 143.1,1621.6" stroke="#8A8A8A"/>
+<path d="M 143.1,1631.0 L 143.1,1650.3 L 143.1,1652.9" stroke="#8A8A8A"/>
+<path d="M 143.1,1662.1 L 143.1,1684.0" stroke="#8A8A8A"/>
+<path d="M 143.1,1693.4 L 143.1,1695.8 A 8.4,8.4 0 0 1 134.7,1704.3 A 8.4,8.4 0 0 0 126.2,1712.8 L 126.2,1715.3" stroke="#8A8A8A"/>
+<path d="M 109.3,102.8 L 109.3,104.7 L 109.3,135.8 L 109.3,167.1 L 109.3,198.2 L 109.3,229.4 L 109.3,260.6 L 109.3,666.2 L 109.3,728.6 L 109.3,947.0 L 109.3,1103.0 L 109.3,1227.8 L 109.3,1290.2 L 109.3,1352.7 L 109.3,1695.8 A 8.4,8.4 0 0 0 117.8,1704.3" stroke="#636EFA"/>
+<path d="M 24.8,123.4 L 24.8,121.5 A 8.5,8.5 0 0 1 33.3,113.1 L 100.9,113.1 A 8.5,8.5 0 0 0 109.3,104.7" stroke="#636EFA"/>
+<path d="M 24.8,134.0 L 24.8,1244.8" stroke="#636EFA"/>
+<path d="M 24.8,1247.3 L 24.8,1244.8 A 8.5,8.5 0 0 1 33.3,1236.3 L 84.0,1236.3 A 8.5,8.5 0 0 0 92.4,1227.8 L 92.4,1165.5 L 92.4,1100.6" stroke="#EF553B"/>
+<path d="M 24.8,1256.5 L 24.8,1277.8" stroke="#636EFA"/>
+<path d="M 24.8,1288.4 L 24.8,1290.2 L 24.8,1789.5 A 8.5,8.5 0 0 0 33.3,1797.9 A 8.5,8.5 0 0 1 41.7,1806.3" stroke="#636EFA"/>
+<path d="M 126.2,154.6 L 126.2,152.8 A 8.4,8.4 0 0 0 117.8,144.3 A 8.4,8.4 0 0 1 109.3,135.8" stroke="#636EFA"/>
+<path d="M 126.2,165.2 L 126.2,354.2 L 126.2,666.2 L 126.2,872.9" stroke="#EF553B"/>
+<path d="M 126.2,882.1 L 126.2,884.6 L 126.2,935.2" stroke="#00CC96"/>
+<path d="M 126.2,944.6 L 126.2,947.0 L 126.2,1182.3" stroke="#00CC96"/>
+<path d="M 126.2,1184.9 L 126.2,1182.3 A 8.5,8.5 0 0 0 117.8,1173.9 L 100.9,1173.9 A 8.5,8.5 0 0 1 92.4,1165.5" stroke="#EF553B"/>
+<path d="M 126.2,1194.1 L 126.2,1216.0" stroke="#636EFA"/>
+<path d="M 126.2,1225.4 L 126.2,1712.8" stroke="#636EFA"/>
+<path d="M 126.2,1724.5 L 126.2,1745.8" stroke="#8A8A8A"/>
+<path d="M 41.7,185.8 L 41.7,183.9 A 8.5,8.5 0 0 1 50.2,175.5 L 100.9,175.5 A 8.5,8.5 0 0 0 109.3,167.1" stroke="#636EFA"/>
+<path d="M 41.7,196.4 L 41.7,198.2 L 41.7,229.4 L 41.7,260.6 L 41.7,541.5 A 8.5,8.5 0 0 0 50.2,549.9 L 84.0,549.9 A 8.5,8.5 0 0 1 92.4,558.4" stroke="#636EFA"/>
+<path d="M 41.7,623.2 L 41.7,620.8 A 8.5,8.5 0 0 1 50.2,612.3 L 84.0,612.3 A 8.5,8.5 0 0 0 92.4,603.9" stroke="#EF553B"/>
+<path d="M 41.7,632.6 L 41.7,1103.0 A 8.5,8.5 0 0 0 50.2,1111.5 L 67.1,1111.5" stroke="#EF553B"/>
+<path d="M 41.7,1787.6 L 41.7,1806.3 L 41.7,1808.9" stroke="#8A8A8A"/>
+<path d="M 41.7,1818.1 L 41.7,1839.4" stroke="#8A8A8A"/>
+<path d="M 75.5,217.0 L 75.5,215.2 A 8.5,8.5 0 0 1 84.0,206.7 L 100.9,206.7 A 8.5,8.5 0 0 0 109.3,198.2" stroke="#636EFA"/>
+<path d="M 75.5,227.6 L 75.5,229.4 L 75.5,260.6 L 75.5,291.9 A 8.5,8.5 0 0 0 84.0,300.3" stroke="#636EFA"/>
+<path d="M 75.5,592.0 L 75.5,589.5 A 8.5,8.5 0 0 1 84.0,581.1 A 8.5,8.5 0 0 0 92.4,572.6" stroke="#EF553B"/>
+<path d="M 75.5,1060.0 L 75.5,1057.5 A 8.5,8.5 0 0 1 84.0,1049.1 A 8.5,8.5 0 0 0 92.4,1040.7" stroke="#EF553B"/>
+<path d="M 75.5,1069.4 L 75.5,1120.0 L 75.5,1122.5" stroke="#EF553B"/>
+<path d="M 75.5,1131.7 L 75.5,1153.0" stroke="#8A8A8A"/>
+<path d="M 75.5,1402.6 L 75.5,1400.8 A 8.5,8.5 0 0 1 84.0,1392.3 A 8.5,8.5 0 0 0 92.4,1383.8" stroke="#EF553B"/>
+<path d="M 92.4,248.2 L 92.4,246.3 A 8.5,8.5 0 0 1 100.9,237.9 A 8.5,8.5 0 0 0 109.3,229.4" stroke="#636EFA"/>
+<path d="M 92.4,258.8 L 92.4,308.8 L 92.4,311.3" stroke="#636EFA"/>
+<path d="M 92.4,320.5 L 92.4,342.4" stroke="#636EFA"/>
+<path d="M 92.4,351.8 L 92.4,558.4 L 92.4,560.9" stroke="#636EFA"/>
+<path d="M 92.4,570.1 L 92.4,572.6 L 92.4,603.9 L 92.4,654.4" stroke="#EF553B"/>
+<path d="M 92.4,663.8 L 92.4,683.1 L 92.4,685.7" stroke="#EF553B"/>
+<path d="M 92.4,694.9 L 92.4,716.8" stroke="#00CC96"/>
+<path d="M 92.4,726.2 L 92.4,728.6 L 92.4,791.0 L 92.4,964.0" stroke="#636EFA"/>
+<path d="M 92.4,966.5 L 92.4,964.0 A 8.5,8.5 0 0 1 100.9,955.5 L 117.8,955.5 A 8.5,8.5 0 0 0 126.2,947.0" stroke="#00CC96"/>
+<path d="M 92.4,975.7 L 92.4,997.6" stroke="#EF553B"/>
+<path d="M 92.4,1007.0 L 92.4,1028.9" stroke="#636EFA"/>
+<path d="M 92.4,1038.1 L 92.4,1040.7 L 92.4,1091.2" stroke="#EF553B"/>
+<path d="M 92.4,1372.1 L 92.4,1369.5 A 8.5,8.5 0 0 1 100.9,1361.1 A 8.5,8.5 0 0 0 109.3,1352.7" stroke="#636EFA"/>
+<path d="M 92.4,1381.3 L 92.4,1383.8 L 92.4,1434.4" stroke="#EF553B"/>
+<path d="M 92.4,1537.3 L 92.4,1559.2" stroke="#8A8A8A"/>
+<path d="M 58.6,279.4 L 58.6,277.6 A 8.4,8.4 0 0 1 67.1,269.1 L 100.9,269.1 A 8.5,8.5 0 0 0 109.3,260.6" stroke="#636EFA"/>
+<path d="M 58.6,290.0 L 58.6,291.9 A 8.5,8.5 0 0 0 67.1,300.3 L 84.0,300.3 A 8.5,8.5 0 0 1 92.4,308.8" stroke="#636EFA"/>
+<path d="M 58.6,810.5 L 58.6,808.0 A 8.5,8.5 0 0 1 67.1,799.5 L 84.0,799.5 A 8.5,8.5 0 0 0 92.4,791.0" stroke="#636EFA"/>
+<path d="M 58.6,819.7 L 58.6,841.6" stroke="#636EFA"/>
+<path d="M 58.6,851.0 L 58.6,1103.0 A 8.4,8.4 0 0 0 67.1,1111.5 A 8.4,8.4 0 0 1 75.5,1120.0" stroke="#636EFA"/>
+<path d="M 58.6,1309.7 L 58.6,1307.2 A 8.5,8.5 0 0 1 67.1,1298.7 L 100.9,1298.7 A 8.5,8.5 0 0 0 109.3,1290.2" stroke="#636EFA"/>
 <path d="M 58.6,1318.9 L 58.6,1340.8" stroke="#636EFA"/>
-<path d="M 58.6,1350.2 L 58.6,1415.0 A 8.4,8.4 0 0 0 67.1,1423.5 A 8.4,8.4 0 0 1 75.5,1432.0" stroke="#636EFA"/>
-<path d="M 143.1,154.6 L 143.1,152.8 A 8.5,8.5 0 0 0 134.7,144.3 L 100.9,144.3 A 8.5,8.5 0 0 1 92.4,135.8" stroke="#636EFA"/>
-<path d="M 143.1,165.2 L 143.1,167.1 L 143.1,198.2 L 143.1,229.4 L 143.1,323.1 A 8.4,8.4 0 0 1 134.7,331.5 A 8.4,8.4 0 0 0 126.2,339.9" stroke="#636EFA"/>
-<path d="M 143.1,373.6 L 143.1,371.1 A 8.4,8.4 0 0 0 134.7,362.7 A 8.4,8.4 0 0 1 126.2,354.2" stroke="#EF553B"/>
-<path d="M 143.1,404.8 L 143.1,402.4 A 8.4,8.4 0 0 0 134.7,393.9 A 8.4,8.4 0 0 1 126.2,385.4" stroke="#EF553B"/>
-<path d="M 143.1,414.2 L 143.1,947.0 A 8.5,8.5 0 0 1 134.7,955.5 L 117.8,955.5 A 8.4,8.4 0 0 0 109.3,964.0" stroke="#EF553B"/>
-<path d="M 143.1,1153.7 L 143.1,1151.2 A 8.5,8.5 0 0 0 134.7,1142.7 L 100.9,1142.7 A 8.5,8.5 0 0 1 92.4,1134.2" stroke="#636EFA"/>
-<path d="M 143.1,1162.9 L 143.1,1184.8" stroke="#636EFA"/>
-<path d="M 143.1,1194.2 L 143.1,1196.7 L 143.1,1539.8 A 8.5,8.5 0 0 1 134.7,1548.3 L 100.9,1548.3 A 8.5,8.5 0 0 0 92.4,1556.8" stroke="#636EFA"/>
-<path d="M 109.3,185.8 L 109.3,183.9 A 8.5,8.5 0 0 0 100.9,175.5 A 8.5,8.5 0 0 1 92.4,167.1" stroke="#636EFA"/>
-<path d="M 109.3,196.4 L 109.3,198.2 L 109.3,229.4 L 109.3,260.6 A 8.4,8.4 0 0 0 117.8,269.1" stroke="#636EFA"/>
-<path d="M 109.3,529.6 L 109.3,527.1 A 8.5,8.5 0 0 0 100.9,518.7 L 50.2,518.7 A 8.5,8.5 0 0 1 41.7,510.2" stroke="#EF553B"/>
-<path d="M 109.3,539.0 L 109.3,603.9 A 8.4,8.4 0 0 0 117.8,612.3 A 8.4,8.4 0 0 1 126.2,620.8" stroke="#EF553B"/>
-<path d="M 109.3,748.1 L 109.3,745.5 A 8.5,8.5 0 0 0 100.9,737.1 L 50.2,737.1 A 8.5,8.5 0 0 1 41.7,728.6" stroke="#EF553B"/>
-<path d="M 109.3,757.3 L 109.3,779.2" stroke="#636EFA"/>
-<path d="M 109.3,788.6 L 109.3,964.0" stroke="#636EFA"/>
-<path d="M 109.3,966.5 L 109.3,964.0 A 8.5,8.5 0 0 0 100.9,955.5 L 84.0,955.5 A 8.5,8.5 0 0 1 75.5,947.0 L 75.5,913.4" stroke="#EF553B"/>
-<path d="M 109.3,975.7 L 109.3,997.0" stroke="#636EFA"/>
-<path d="M 109.3,1246.6 L 109.3,1244.8 A 8.4,8.4 0 0 1 117.8,1236.3 A 8.4,8.4 0 0 0 126.2,1227.8" stroke="#EF553B"/>
-<path d="M 75.5,217.0 L 75.5,215.2 A 8.5,8.5 0 0 1 84.0,206.7 L 100.9,206.7 L 134.7,206.7 A 8.5,8.5 0 0 0 143.1,198.2" stroke="#636EFA"/>
-<path d="M 75.5,227.6 L 75.5,260.6 A 8.5,8.5 0 0 0 84.0,269.1 L 117.8,269.1 A 8.5,8.5 0 0 1 126.2,277.6" stroke="#636EFA"/>
-<path d="M 75.5,904.0 L 75.5,901.5 A 8.4,8.4 0 0 0 67.1,893.1 A 8.4,8.4 0 0 1 58.6,884.6" stroke="#EF553B"/>
-<path d="M 75.5,1381.3 L 75.5,1403.2" stroke="#8A8A8A"/>
-<path d="M 75.5,1412.6 L 75.5,1432.0 L 75.5,1434.5" stroke="#8A8A8A"/>
-<path d="M 75.5,1443.7 L 75.5,1465.6" stroke="#8A8A8A"/>
-<path d="M 75.5,1475.0 L 75.5,1494.3 L 75.5,1496.9" stroke="#8A8A8A"/>
-<path d="M 75.5,1506.1 L 75.5,1528.0" stroke="#8A8A8A"/>
-<path d="M 126.2,248.2 L 126.2,246.3 A 8.4,8.4 0 0 0 117.8,237.9 L 100.9,237.9 A 8.5,8.5 0 0 1 92.4,229.4" stroke="#636EFA"/>
-<path d="M 126.2,258.8 L 126.2,277.6 L 126.2,280.1" stroke="#636EFA"/>
-<path d="M 126.2,289.3 L 126.2,311.2" stroke="#636EFA"/>
-<path d="M 126.2,320.6 L 126.2,339.9 L 126.2,342.5" stroke="#636EFA"/>
-<path d="M 126.2,351.7 L 126.2,354.2 L 126.2,385.4 L 126.2,436.0" stroke="#EF553B"/>
-<path d="M 126.2,445.4 L 126.2,620.8 L 126.2,623.3" stroke="#EF553B"/>
-<path d="M 126.2,632.5 L 126.2,654.4" stroke="#00CC96"/>
-<path d="M 126.2,663.8 L 126.2,666.2 L 126.2,728.6 L 126.2,810.5" stroke="#EF553B"/>
-<path d="M 126.2,819.7 L 126.2,841.6" stroke="#EF553B"/>
-<path d="M 126.2,851.0 L 126.2,947.0 A 8.4,8.4 0 0 1 117.8,955.5" stroke="#EF553B"/>
-<path d="M 126.2,1216.1 L 126.2,1213.5 A 8.5,8.5 0 0 0 117.8,1205.1 L 100.9,1205.1 A 8.5,8.5 0 0 1 92.4,1196.7" stroke="#636EFA"/>
-<path d="M 126.2,1225.3 L 126.2,1227.8 L 126.2,1278.4" stroke="#EF553B"/>
-<path d="M 117.8,612.3 L 100.9,612.3 A 8.5,8.5 0 0 1 92.4,603.9" stroke="#636EFA"/>
-<path d="M 24.8,560.8 L 24.8,558.4 A 8.5,8.5 0 0 1 33.3,549.9 A 8.5,8.5 0 0 0 41.7,541.5" stroke="#EF553B"/>
-<path d="M 24.8,570.2 L 24.8,1290.2 L 24.8,1477.5 A 8.5,8.5 0 0 0 33.3,1485.9 L 67.1,1485.9 A 8.5,8.5 0 0 1 75.5,1494.3" stroke="#636EFA"/>
-<path d="M 92.4,198.2 A 8.5,8.5 0 0 1 84.0,206.7" stroke="#636EFA"/>
-<path d="M 92.4,666.2 A 8.5,8.5 0 0 1 84.0,674.7" stroke="#636EFA"/>
-<path d="M 92.4,728.6 A 8.5,8.5 0 0 0 100.9,737.1" stroke="#636EFA"/>
-<path d="M 92.4,947.0 A 8.5,8.5 0 0 0 100.9,955.5" stroke="#636EFA"/>
-<path d="M 92.4,1071.8 A 8.5,8.5 0 0 0 100.9,1080.3" stroke="#636EFA"/>
-<path d="M 41.7,104.7 A 8.4,8.4 0 0 0 50.2,113.1 A 8.4,8.4 0 0 1 58.6,121.5" stroke="#636EFA"/>
-<path d="M 143.1,167.1 A 8.5,8.5 0 0 1 134.7,175.5 L 117.8,175.5 A 8.5,8.5 0 0 0 109.3,183.9" stroke="#636EFA"/>
-<path d="M 143.1,229.4 A 8.4,8.4 0 0 1 134.7,237.9 A 8.4,8.4 0 0 0 126.2,246.3" stroke="#636EFA"/>
-<path d="M 109.3,198.2 A 8.5,8.5 0 0 1 100.9,206.7" stroke="#636EFA"/>
-<path d="M 109.3,229.4 A 8.4,8.4 0 0 0 117.8,237.9" stroke="#636EFA"/>
-<path d="M 41.7,666.2 A 8.4,8.4 0 0 0 50.2,674.7 A 8.4,8.4 0 0 1 58.6,683.1" stroke="#EF553B"/>
-<path d="M 126.2,728.6 A 8.4,8.4 0 0 1 117.8,737.1 A 8.4,8.4 0 0 0 109.3,745.5" stroke="#EF553B"/>
-<path d="M 58.6,1009.5 A 8.4,8.4 0 0 1 50.2,1017.9 A 8.4,8.4 0 0 0 41.7,1026.3" stroke="#EF553B"/>
-<path d="M 160.0,1134.2 A 8.5,8.5 0 0 1 151.6,1142.7 A 8.5,8.5 0 0 0 143.1,1151.2" stroke="#636EFA"/>
-<path d="M 143.1,1196.7 A 8.4,8.4 0 0 1 134.7,1205.1 A 8.4,8.4 0 0 0 126.2,1213.5" stroke="#636EFA"/>
+<path d="M 58.6,1350.2 L 58.6,1352.7 L 58.6,1695.8 A 8.5,8.5 0 0 0 67.1,1704.3 L 117.8,1704.3 A 8.5,8.5 0 0 1 126.2,1712.8" stroke="#636EFA"/>
+<path d="M 84.0,1236.3 L 100.9,1236.3 A 8.5,8.5 0 0 0 109.3,1227.8" stroke="#636EFA"/>
+<path d="M 160.0,404.8 L 160.0,402.4 A 8.5,8.5 0 0 0 151.6,393.9 A 8.5,8.5 0 0 1 143.1,385.4" stroke="#636EFA"/>
+<path d="M 160.0,436.0 L 160.0,433.6 A 8.5,8.5 0 0 0 151.6,425.1 A 8.5,8.5 0 0 1 143.1,416.6" stroke="#636EFA"/>
+<path d="M 160.0,467.2 L 160.0,464.8 A 8.5,8.5 0 0 0 151.6,456.3 A 8.5,8.5 0 0 1 143.1,447.9" stroke="#636EFA"/>
+<path d="M 160.0,498.4 L 160.0,495.9 A 8.5,8.5 0 0 0 151.6,487.5 A 8.5,8.5 0 0 1 143.1,479.1" stroke="#636EFA"/>
+<path d="M 160.0,904.0 L 160.0,901.5 A 8.5,8.5 0 0 0 151.6,893.1 L 134.7,893.1 A 8.5,8.5 0 0 1 126.2,884.6" stroke="#00CC96"/>
+<path d="M 160.0,913.4 L 160.0,1446.2 L 160.0,1633.5 A 8.5,8.5 0 0 1 151.6,1641.9 A 8.5,8.5 0 0 0 143.1,1650.3" stroke="#636EFA"/>
+<path d="M 109.3,666.2 A 8.5,8.5 0 0 1 100.9,674.7" stroke="#636EFA"/>
+<path d="M 92.4,683.1 A 8.5,8.5 0 0 1 100.9,674.7 L 117.8,674.7 A 8.5,8.5 0 0 0 126.2,666.2" stroke="#EF553B"/>
+<path d="M 109.3,728.6 A 8.5,8.5 0 0 0 117.8,737.1" stroke="#636EFA"/>
+<path d="M 143.1,745.5 A 8.5,8.5 0 0 0 134.7,737.1 L 117.8,737.1 L 100.9,737.1 A 8.5,8.5 0 0 1 92.4,728.6" stroke="#636EFA"/>
+<path d="M 109.3,947.0 A 8.5,8.5 0 0 1 100.9,955.5" stroke="#636EFA"/>
+<path d="M 109.3,1103.0 A 8.5,8.5 0 0 1 100.9,1111.5" stroke="#636EFA"/>
+<path d="M 41.7,198.2 A 8.5,8.5 0 0 0 50.2,206.7 L 67.1,206.7 A 8.5,8.5 0 0 1 75.5,215.2" stroke="#636EFA"/>
+<path d="M 41.7,229.4 A 8.5,8.5 0 0 0 50.2,237.9 L 84.0,237.9 A 8.5,8.5 0 0 1 92.4,246.3" stroke="#636EFA"/>
+<path d="M 41.7,260.6 A 8.4,8.4 0 0 0 50.2,269.1 A 8.4,8.4 0 0 1 58.6,277.6" stroke="#636EFA"/>
+<path d="M 75.5,229.4 A 8.5,8.5 0 0 0 84.0,237.9" stroke="#636EFA"/>
+<path d="M 75.5,260.6 A 8.4,8.4 0 0 1 67.1,269.1" stroke="#636EFA"/>
+<path d="M 24.8,1290.2 A 8.5,8.5 0 0 0 33.3,1298.7 L 50.2,1298.7 A 8.5,8.5 0 0 1 58.6,1307.2" stroke="#636EFA"/>
+<path d="M 58.6,1352.7 A 8.5,8.5 0 0 0 67.1,1361.1 L 84.0,1361.1 A 8.5,8.5 0 0 1 92.4,1369.5" stroke="#636EFA"/>
 </g>
+<g><title>logistics::downloadBaktaDB</title>
+<polygon points="137.8,30.5 148.5,30.5 143.1,39.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="21.1" x2="394.0" y2="21.1" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="29.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
+<text x="172.5" y="39.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">downloadBaktaDB</text></g>
+<g><title>annotation::bakta_db</title>
+<circle cx="143.1" cy="66.3" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
+<text x="182.9" y="60.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="71.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bakta_db</text></g>
 <g><title>transcriptomics::experiment</title>
-<circle cx="92.4" cy="35.1" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="29.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="39.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">experiment</text></g>
+<circle cx="109.3" cy="97.5" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="92.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="102.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">experiment</text></g>
 <g><title>isolate_rnaseq::sample_sheet</title>
-<circle cx="160.0" cy="66.3" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="60.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="71.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">sample_sheet</text></g>
-<g><title>ncbi::genome_name</title>
-<circle cx="41.7" cy="97.5" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="92.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">ncbi</text>
-<text x="182.9" y="102.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">genome_name</text></g>
-<g><title>ncbi::assembly_accession</title>
-<circle cx="58.6" cy="128.7" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="123.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">ncbi</text>
-<text x="182.9" y="133.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">assembly_accession</text></g>
-<g><title>sequences::read_metadata</title>
-<circle cx="143.1" cy="159.9" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<circle cx="24.8" cy="128.7" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="123.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
+<text x="182.9" y="133.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">sample_sheet</text></g>
+<g><title>sequences::isolate_assembly</title>
+<circle cx="126.2" cy="159.9" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="182.9" y="154.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="164.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_metadata</text></g>
-<g><title>sequences::read_pair</title>
-<circle cx="109.3" cy="191.1" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="164.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">isolate_assembly</text></g>
+<g><title>sequences::read_metadata</title>
+<circle cx="41.7" cy="191.1" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="182.9" y="185.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="195.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_pair</text></g>
-<g><title>sequences::zipped_forward_short_reads</title>
+<text x="182.9" y="195.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_metadata</text></g>
+<g><title>sequences::read_pair</title>
 <circle cx="75.5" cy="222.3" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="182.9" y="216.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="227.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">zipped_forward_short_reads</text></g>
-<g><title>sequences::zipped_reverse_short_reads</title>
-<circle cx="126.2" cy="253.5" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="227.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">read_pair</text></g>
+<g><title>sequences::zipped_forward_short_reads</title>
+<circle cx="92.4" cy="253.5" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="182.9" y="248.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="258.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">zipped_reverse_short_reads</text></g>
+<text x="182.9" y="258.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">zipped_forward_short_reads</text></g>
+<g><title>sequences::zipped_reverse_short_reads</title>
+<circle cx="58.6" cy="284.7" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="279.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="289.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">zipped_reverse_short_reads</text></g>
 <g><title>logistics::interleave_zipped_short_reads</title>
-<polygon points="120.9,280.1 131.6,280.1 126.2,289.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="270.7" x2="394.0" y2="270.7" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="279.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
-<text x="172.5" y="289.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">interleave_zipped_short_reads</text></g>
+<polygon points="87.1,311.3 97.8,311.3 92.4,320.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="301.9" x2="394.0" y2="301.9" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="310.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
+<text x="172.5" y="320.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">interleave_zipped_short_reads</text></g>
 <g><title>sequences::short_reads</title>
-<circle cx="126.2" cy="315.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
-<text x="182.9" y="310.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="320.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">short_reads</text></g>
-<g><title>kbase::fastp</title>
-<polygon points="120.9,342.5 131.6,342.5 126.2,351.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="333.1" x2="394.0" y2="333.1" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="341.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
-<text x="172.5" y="351.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">fastp</text></g>
-<g><title>sequences::fastp_html_report</title>
-<circle cx="143.1" cy="378.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="372.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="383.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">fastp_html_report</text></g>
-<g><title>sequences::fastp_json_report</title>
-<circle cx="143.1" cy="409.5" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="404.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="414.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">fastp_json_report</text></g>
-<g><title>sequences::clean_short_reads</title>
-<circle cx="126.2" cy="440.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="435.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="445.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">clean_short_reads</text></g>
-<g><title>logistics::getNcbiAssembly</title>
-<polygon points="36.4,467.3 47.1,467.3 41.7,476.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="457.9" x2="394.0" y2="457.9" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="466.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
-<text x="172.5" y="476.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">getNcbiAssembly</text></g>
+<circle cx="92.4" cy="347.1" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="341.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="351.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">short_reads</text></g>
+<g><title>functionalAnnotation::bakta_noncoding</title>
+<polygon points="137.8,373.7 148.5,373.7 143.1,382.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="364.3" x2="394.0" y2="364.3" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="372.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">functionalAnnotation</text>
+<text x="172.5" y="383.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bakta_noncoding</text></g>
 <g><title>sequences::gbk</title>
-<circle cx="58.6" cy="503.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="497.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="507.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gbk</text></g>
-<g><title>sequences::isolate_assembly</title>
-<circle cx="109.3" cy="534.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="528.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="539.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">isolate_assembly</text></g>
-<g><title>sequences::orfs</title>
-<circle cx="24.8" cy="565.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
-<text x="182.9" y="560.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="570.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">orfs</text></g>
-<g><title>sequences::gff</title>
-<circle cx="41.7" cy="596.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<circle cx="160.0" cy="409.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="404.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="414.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gbk</text></g>
+<g><title>annotation::bakta_tsv</title>
+<circle cx="160.0" cy="440.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="435.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="445.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bakta_tsv</text></g>
+<g><title>annotation::bakta_summary</title>
+<circle cx="160.0" cy="471.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="466.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="476.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bakta_summary</text></g>
+<g><title>annotation::bakta_feature_nt</title>
+<circle cx="160.0" cy="503.1" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="497.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="507.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bakta_feature_nt</text></g>
+<g><title>annotation::bakta_gff</title>
+<circle cx="143.1" cy="534.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="528.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="539.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bakta_gff</text></g>
+<g><title>kbase::fastp</title>
+<polygon points="87.1,560.9 97.8,560.9 92.4,570.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="551.5" x2="394.0" y2="551.5" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="560.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
+<text x="172.5" y="570.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">fastp</text></g>
+<g><title>sequences::fastp_html_report</title>
+<circle cx="75.5" cy="596.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="182.9" y="591.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="601.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gff</text></g>
+<text x="182.9" y="601.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">fastp_html_report</text></g>
+<g><title>sequences::fastp_json_report</title>
+<circle cx="41.7" cy="627.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="182.9" y="622.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="632.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">fastp_json_report</text></g>
+<g><title>sequences::clean_short_reads</title>
+<circle cx="92.4" cy="659.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="182.9" y="653.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="663.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">clean_short_reads</text></g>
 <g><title>kbase::bowtie2_align</title>
-<polygon points="120.9,623.3 131.6,623.3 126.2,632.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="613.9" x2="394.0" y2="613.9" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="622.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
-<text x="172.5" y="632.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bowtie2_align</text></g>
-<g><title>transcriptomics::bowtie2_bam</title>
-<circle cx="126.2" cy="659.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="653.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="663.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bowtie2_bam</text></g>
-<g><title>MOCK::featurecounts_strand_sweep</title>
-<polygon points="53.3,685.7 64.0,685.7 58.6,694.9" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="87.1,685.7 97.8,685.7 92.4,694.9" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="676.3" x2="394.0" y2="676.3" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="684.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
-<text x="172.5" y="695.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">featurecounts_strand_sweep</text></g>
-<g><title>isolate_rnaseq::featurecounts_sweep</title>
-<circle cx="58.6" cy="721.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
-<text x="182.9" y="716.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="726.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">featurecounts_sweep</text></g>
+<text x="172.5" y="684.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
+<text x="172.5" y="695.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bowtie2_align</text></g>
+<g><title>transcriptomics::bowtie2_bam</title>
+<circle cx="92.4" cy="721.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="716.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="726.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bowtie2_bam</text></g>
 <g><title>MOCK::rrna_fraction</title>
-<polygon points="104.0,748.1 114.7,748.1 109.3,757.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="137.8,748.1 148.5,748.1 143.1,757.3" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="738.7" x2="394.0" y2="738.7" stroke="#111111" stroke-width="1"/>
 <text x="172.5" y="747.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
 <text x="172.5" y="757.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">rrna_fraction</text></g>
 <g><title>isolate_rnaseq::rrna_fraction</title>
-<circle cx="109.3" cy="783.9" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<circle cx="143.1" cy="783.9" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
 <text x="182.9" y="778.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
 <text x="182.9" y="788.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">rrna_fraction</text></g>
 <g><title>kbase::samtools_stats</title>
-<polygon points="120.9,810.5 131.6,810.5 126.2,819.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="53.3,810.5 64.0,810.5 58.6,819.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="801.1" x2="394.0" y2="801.1" stroke="#111111" stroke-width="1"/>
 <text x="172.5" y="809.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
 <text x="172.5" y="819.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">samtools_stats</text></g>
 <g><title>alignment::alignment_stats</title>
-<circle cx="126.2" cy="846.3" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<circle cx="58.6" cy="846.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
 <text x="182.9" y="840.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">alignment</text>
 <text x="182.9" y="851.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">alignment_stats</text></g>
-<g><title>MOCK::pick_strandedness</title>
-<polygon points="53.3,872.9 64.0,872.9 58.6,882.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<g><title>metagenomics::prodigal</title>
+<polygon points="120.9,872.9 131.6,872.9 126.2,882.1" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="863.5" x2="394.0" y2="863.5" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="872.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
-<text x="172.5" y="882.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">pick_strandedness</text></g>
-<g><title>isolate_rnaseq::strandedness_report</title>
-<circle cx="75.5" cy="908.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="903.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="913.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">strandedness_report</text></g>
-<g><title>isolate_rnaseq::raw_count_table</title>
-<circle cx="58.6" cy="939.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
-<text x="182.9" y="934.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="944.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">raw_count_table</text></g>
-<g><title>MOCK::rnaseq_qc_report</title>
-<polygon points="104.0,966.5 114.7,966.5 109.3,975.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="172.5" y="872.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">metagenomics</text>
+<text x="172.5" y="882.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">prodigal</text></g>
+<g><title>sequences::orfs</title>
+<circle cx="160.0" cy="908.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="903.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="913.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">orfs</text></g>
+<g><title>sequences::gff</title>
+<circle cx="126.2" cy="939.9" r="4.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.3"/>
+<text x="182.9" y="934.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="944.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gff</text></g>
+<g><title>MOCK::featurecounts_strand_sweep</title>
+<polygon points="87.1,966.5 97.8,966.5 92.4,975.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="957.1" x2="394.0" y2="957.1" stroke="#111111" stroke-width="1"/>
 <text x="172.5" y="965.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
-<text x="172.5" y="975.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">rnaseq_qc_report</text></g>
-<g><title>isolate_rnaseq::qc_report</title>
-<circle cx="109.3" cy="1002.3" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="172.5" y="975.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">featurecounts_strand_sweep</text></g>
+<g><title>isolate_rnaseq::featurecounts_sweep</title>
+<circle cx="92.4" cy="1002.3" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
 <text x="182.9" y="996.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="1007.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">qc_report</text></g>
-<g><title>MOCK::tpm_within_genome</title>
-<polygon points="36.4,1028.9 47.1,1028.9 41.7,1038.1" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="182.9" y="1007.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">featurecounts_sweep</text></g>
+<g><title>MOCK::pick_strandedness</title>
+<polygon points="87.1,1028.9 97.8,1028.9 92.4,1038.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="1019.5" x2="394.0" y2="1019.5" stroke="#111111" stroke-width="1"/>
 <text x="172.5" y="1028.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
-<text x="172.5" y="1038.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">tpm_within_genome</text></g>
-<g><title>isolate_rnaseq::tpm_table</title>
-<circle cx="41.7" cy="1064.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="172.5" y="1038.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">pick_strandedness</text></g>
+<g><title>isolate_rnaseq::strandedness_report</title>
+<circle cx="75.5" cy="1064.7" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
 <text x="182.9" y="1059.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="1069.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">tpm_table</text></g>
+<text x="182.9" y="1069.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">strandedness_report</text></g>
+<g><title>isolate_rnaseq::raw_count_table</title>
+<circle cx="92.4" cy="1095.9" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="182.9" y="1090.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
+<text x="182.9" y="1100.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">raw_count_table</text></g>
+<g><title>MOCK::rnaseq_qc_report</title>
+<polygon points="70.2,1122.5 80.9,1122.5 75.5,1131.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1113.1" x2="394.0" y2="1113.1" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1121.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
+<text x="172.5" y="1131.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">rnaseq_qc_report</text></g>
+<g><title>isolate_rnaseq::qc_report</title>
+<circle cx="75.5" cy="1158.3" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="1152.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
+<text x="182.9" y="1163.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">qc_report</text></g>
+<g><title>MOCK::tpm_within_genome</title>
+<polygon points="120.9,1184.9 131.6,1184.9 126.2,1194.1" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1175.5" x2="394.0" y2="1175.5" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1184.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
+<text x="172.5" y="1194.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">tpm_within_genome</text></g>
+<g><title>isolate_rnaseq::tpm_table</title>
+<circle cx="126.2" cy="1220.7" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="1215.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
+<text x="182.9" y="1225.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">tpm_table</text></g>
 <g><title>MOCK::apply_sample_sheet</title>
-<polygon points="154.7,1091.3 165.4,1091.3 160.0,1100.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="1081.9" x2="394.0" y2="1081.9" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1090.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
-<text x="172.5" y="1100.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">apply_sample_sheet</text></g>
+<polygon points="19.5,1247.3 30.2,1247.3 24.8,1256.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1237.9" x2="394.0" y2="1237.9" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1246.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
+<text x="172.5" y="1256.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">apply_sample_sheet</text></g>
 <g><title>transcriptomics::gene_count_table</title>
-<circle cx="160.0" cy="1127.1" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="1121.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="1131.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gene_count_table</text></g>
-<g><title>transcriptomics::deseq2</title>
-<polygon points="137.8,1153.7 148.5,1153.7 143.1,1162.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="1144.3" x2="394.0" y2="1144.3" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1152.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">transcriptomics</text>
-<text x="172.5" y="1163.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">deseq2</text></g>
-<g><title>transcriptomics::deseq2_results</title>
-<circle cx="143.1" cy="1189.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
-<text x="182.9" y="1184.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="1194.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">deseq2_results</text></g>
-<g><title>transcriptomics::volcano_plot</title>
-<polygon points="120.9,1216.1 131.6,1216.1 126.2,1225.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="1206.7" x2="394.0" y2="1206.7" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1215.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">transcriptomics</text>
-<text x="172.5" y="1225.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">volcano_plot</text></g>
-<g><title>transcriptomics::volcano_plot</title>
-<circle cx="109.3" cy="1251.9" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="1246.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="1256.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">volcano_plot</text></g>
-<g><title>transcriptomics::volcano_plot_png</title>
-<circle cx="126.2" cy="1283.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<circle cx="24.8" cy="1283.1" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="1.3"/>
 <text x="182.9" y="1277.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="1287.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">volcano_plot_png</text></g>
-<g><title>logistics::splitOrfsForAmr</title>
+<text x="182.9" y="1287.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">gene_count_table</text></g>
+<g><title>transcriptomics::deseq2</title>
 <polygon points="53.3,1309.7 64.0,1309.7 58.6,1318.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="1300.3" x2="394.0" y2="1300.3" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1308.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
-<text x="172.5" y="1319.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">splitOrfsForAmr</text></g>
-<g><title>sequences::orf_batch</title>
+<text x="172.5" y="1308.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">transcriptomics</text>
+<text x="172.5" y="1319.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">deseq2</text></g>
+<g><title>transcriptomics::deseq2_results</title>
 <circle cx="58.6" cy="1345.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
-<text x="182.9" y="1340.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
-<text x="182.9" y="1350.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">orf_batch</text></g>
-<g><title>logistics::downloadBacmetDB</title>
-<polygon points="70.2,1372.1 80.9,1372.1 75.5,1381.3" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="182.9" y="1340.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="1350.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">deseq2_results</text></g>
+<g><title>transcriptomics::volcano_plot</title>
+<polygon points="87.1,1372.1 97.8,1372.1 92.4,1381.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="1362.7" x2="394.0" y2="1362.7" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1371.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
-<text x="172.5" y="1381.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">downloadBacmetDB</text></g>
+<text x="172.5" y="1371.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">transcriptomics</text>
+<text x="172.5" y="1381.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">volcano_plot</text></g>
+<g><title>transcriptomics::volcano_plot</title>
+<circle cx="75.5" cy="1407.9" r="5.3" fill="#EF553B" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="1402.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="1412.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">volcano_plot</text></g>
+<g><title>transcriptomics::volcano_plot_png</title>
+<circle cx="92.4" cy="1439.1" r="4.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.3"/>
+<text x="182.9" y="1433.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="1443.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">volcano_plot_png</text></g>
+<g><title>logistics::splitOrfsForAmr</title>
+<polygon points="137.8,1465.7 148.5,1465.7 143.1,1474.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1456.3" x2="394.0" y2="1456.3" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1464.8" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
+<text x="172.5" y="1475.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">splitOrfsForAmr</text></g>
+<g><title>sequences::orf_batch</title>
+<circle cx="143.1" cy="1501.5" r="4.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.3"/>
+<text x="182.9" y="1496.0" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">sequences</text>
+<text x="182.9" y="1506.2" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">orf_batch</text></g>
+<g><title>logistics::downloadBacmetDB</title>
+<polygon points="87.1,1528.1 97.8,1528.1 92.4,1537.3" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1518.7" x2="394.0" y2="1518.7" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1527.2" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">logistics</text>
+<text x="172.5" y="1537.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">downloadBacmetDB</text></g>
 <g><title>annotation::bacmet_diamond_db</title>
-<circle cx="75.5" cy="1407.9" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
-<text x="182.9" y="1402.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
-<text x="182.9" y="1412.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bacmet_diamond_db</text></g>
+<circle cx="92.4" cy="1563.9" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
+<text x="182.9" y="1558.4" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="1568.6" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bacmet_diamond_db</text></g>
 <g><title>functionalAnnotation::bacmet</title>
-<polygon points="70.2,1434.5 80.9,1434.5 75.5,1443.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="1425.1" x2="394.0" y2="1425.1" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1433.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">functionalAnnotation</text>
-<text x="172.5" y="1443.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bacmet</text></g>
+<polygon points="137.8,1590.5 148.5,1590.5 143.1,1599.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1581.1" x2="394.0" y2="1581.1" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1589.6" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">functionalAnnotation</text>
+<text x="172.5" y="1599.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bacmet</text></g>
 <g><title>annotation::bacmet_diamond_results_chunk</title>
-<circle cx="75.5" cy="1470.3" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
-<text x="182.9" y="1464.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
-<text x="182.9" y="1475.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bacmet_diamond_results_chunk</text></g>
+<circle cx="143.1" cy="1626.3" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
+<text x="182.9" y="1620.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="1631.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bacmet_diamond_results_chunk</text></g>
 <g><title>functionalAnnotation::merge_bacmet</title>
-<polygon points="70.2,1496.9 80.9,1496.9 75.5,1506.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="1487.5" x2="394.0" y2="1487.5" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1496.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">functionalAnnotation</text>
-<text x="172.5" y="1506.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_bacmet</text></g>
-<g><title>annotation::bacmet_diamond_results</title>
-<circle cx="75.5" cy="1532.7" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
-<text x="182.9" y="1527.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
-<text x="182.9" y="1537.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bacmet_diamond_results</text></g>
-<g><title>MOCK::metal_gene_panel</title>
-<polygon points="87.1,1559.3 97.8,1559.3 92.4,1568.5" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
-<line x1="172.5" y1="1549.9" x2="394.0" y2="1549.9" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1558.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
-<text x="172.5" y="1568.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metal_gene_panel</text></g>
-<g><title>isolate_rnaseq::metal_gene_panel</title>
-<circle cx="92.4" cy="1595.1" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="1589.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
-<text x="182.9" y="1599.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metal_gene_panel</text></g>
-<g><title>transcriptomics::clustering_params</title>
-<circle cx="143.1" cy="1626.3" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="1620.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="1631.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">clustering_params</text></g>
-<g><title>kbase::expression_clusters</title>
-<polygon points="154.7,1652.9 165.4,1652.9 160.0,1662.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<polygon points="137.8,1652.9 148.5,1652.9 143.1,1662.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
 <line x1="172.5" y1="1643.5" x2="394.0" y2="1643.5" stroke="#111111" stroke-width="1"/>
-<text x="172.5" y="1652.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
-<text x="172.5" y="1662.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">expression_clusters</text></g>
+<text x="172.5" y="1652.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">functionalAnnotation</text>
+<text x="172.5" y="1662.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_bacmet</text></g>
+<g><title>annotation::bacmet_diamond_results</title>
+<circle cx="143.1" cy="1688.7" r="4.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="1.3"/>
+<text x="182.9" y="1683.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">annotation</text>
+<text x="182.9" y="1693.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">bacmet_diamond_results</text></g>
+<g><title>MOCK::metal_gene_panel</title>
+<polygon points="120.9,1715.3 131.6,1715.3 126.2,1724.5" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1705.9" x2="394.0" y2="1705.9" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1714.4" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">MOCK</text>
+<text x="172.5" y="1724.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metal_gene_panel</text></g>
+<g><title>isolate_rnaseq::metal_gene_panel</title>
+<circle cx="126.2" cy="1751.1" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="1745.6" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">isolate_rnaseq</text>
+<text x="182.9" y="1755.8" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">metal_gene_panel</text></g>
+<g><title>transcriptomics::clustering_params</title>
+<circle cx="41.7" cy="1782.3" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="1776.8" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="1787.0" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">clustering_params</text></g>
+<g><title>kbase::expression_clusters</title>
+<polygon points="36.4,1808.9 47.1,1808.9 41.7,1818.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<line x1="172.5" y1="1799.5" x2="394.0" y2="1799.5" stroke="#111111" stroke-width="1"/>
+<text x="172.5" y="1808.0" font-family="Arial" font-size="6.5" fill="#111111" text-anchor="start">kbase</text>
+<text x="172.5" y="1818.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">expression_clusters</text></g>
 <g><title>transcriptomics::expression_clusters</title>
-<circle cx="160.0" cy="1688.7" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
-<text x="182.9" y="1683.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
-<text x="182.9" y="1693.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">expression_clusters</text></g>
+<circle cx="41.7" cy="1844.7" r="5.3" fill="#8A8A8A" stroke="#2B2B2B" stroke-width="1.3"/>
+<text x="182.9" y="1839.2" font-family="Arial" font-size="6.5" fill="#7A7A7A" text-anchor="start">transcriptomics</text>
+<text x="182.9" y="1849.4" font-family="Arial" font-size="13" fill="#7A7A7A" font-weight="normal" text-anchor="start">expression_clusters</text></g>
 </svg>
 
       </div>
       <div class="steps">
         <div class="phase">
           <span class="eyebrow">Inputs</span>
-          <div class="step"><span class="chip real">IN</span><h3>Reads, genome accession, sample sheet</h3><p>The R1 and R2 files per library, grouped under one experiment per organism, plus the NCBI accession for that organism's genome. The <code>sample_sheet</code> is the one input you would write: which library is which condition.</p></div>
+          <div class="step"><span class="chip real">IN</span><h3>Genome assembly, RNA reads, sample sheet</h3><p>One genome assembly (FASTA) per organism, and the R1 and R2 files of each RNA library, grouped under one experiment per organism. The <code>sample_sheet</code> is the one input you would write: which library is which condition.</p></div>
         </div>
         <div class="phase">
           <span class="eyebrow">Prepare the reads</span>
@@ -438,12 +463,13 @@ ol.qs li::marker { color: var(--accent); font-weight: 600; }
           <div class="step"><span class="chip real">LIB</span><h3><code>fastp</code></h3><p>Trims adapters and low-quality ends and drops short reads. Writes a per-library HTML and JSON report.</p></div>
         </div>
         <div class="phase">
-          <span class="eyebrow">Get the reference</span>
-          <div class="step"><span class="chip real">LIB</span><h3><code>getNcbiAssembly</code></h3><p>Downloads the genome sequence, gene annotation (GFF), proteins and GenBank record from NCBI for each organism.</p></div>
+          <span class="eyebrow">Annotate the assembly</span>
+          <div class="step"><span class="chip real">LIB</span><h3><code>prodigal</code></h3><p>Finds the protein-coding genes in each assembly and writes them as a gene table (GFF) and protein sequences. These are the genes reads are counted on.</p></div>
+          <div class="step"><span class="chip real">LIB</span><h3><code>downloadBaktaDB</code>, <code>bakta_noncoding</code></h3><p>Finds the rRNA, tRNA and other non-coding RNA genes, which prodigal does not call. Used to measure how much of each library is rRNA.</p></div>
         </div>
         <div class="phase">
           <span class="eyebrow">Map and check</span>
-          <div class="step"><span class="chip real">LIB</span><h3><code>bowtie2_align</code></h3><p>Aligns each library's cleaned reads to its own genome. Bacterial genes have no introns, so a plain DNA aligner fits.</p></div>
+          <div class="step"><span class="chip real">LIB</span><h3><code>bowtie2_align</code></h3><p>Aligns each library's cleaned reads to its own organism's assembly. Bacterial genes have no introns, so a plain DNA aligner fits.</p></div>
           <div class="step"><span class="chip real">LIB</span><h3><code>samtools_stats</code></h3><p>Per-library mapping rate, insert size and error rate.</p></div>
           <div class="step"><span class="chip mock">MOCK</span><h3><code>rrna_fraction</code></h3><p>The share of reads that land on rRNA and tRNA genes. Bacterial RNA-seq has no poly-A selection, so this says how well rRNA depletion worked and how much depth is left for mRNA.</p></div>
         </div>
@@ -478,8 +504,8 @@ ol.qs li::marker { color: var(--accent); font-weight: 600; }
     <ol class="qs">
       <li>What does <code>cu1</code>…<code>cu6</code> mean? Are these copper exposures (and at which concentrations), time points, independent cultures, or different clones?</li>
       <li>Which libraries are the controls, and which are replicates of one another? For example, is EPI300 three control and three treated? A short sheet with library, condition and replicate is all the workflow needs.</li>
-      <li>Do the EPI300 cultures carry fosmids or plasmids? If so, the reference should include those sequences, or reads from them will not be counted.</li>
-      <li>Is CB2A the strain in RefSeq assembly GCF_052446975.1, or a derivative we should sequence or annotate separately?</li>
+      <li>Do the EPI300 cultures carry fosmids or plasmids? If so, the assembly should include those sequences, or reads from them will not be counted.</li>
+      <li>Which assembly should each organism use: one you assembled yourself, or the public RefSeq genomes (EPI300 GCF_052692645.1, CB2A GCF_052446975.1)? If you have your own, where are the FASTA files?</li>
       <li>Which comparisons matter most to you? The default compares every pair of conditions.</li>
     </ol>
   </section>
@@ -491,7 +517,7 @@ ol.qs li::marker { color: var(--accent); font-weight: 600; }
     </div>
   </section>
 
-  <p class="foot">Planned 2026-10-23 with metasmith 0.25.0 and its standard library. 19 steps, all targets reached. Generator: <code>research/beth_rnaseq/</code> on branch <code>feat/lab/beth-davenport</code> of the metasmith repository.</p>
+  <p class="foot">Planned 2026-10-23 with metasmith 0.25.0 and its standard library. 21 steps, all targets reached. Generator: <code>research/beth_rnaseq/</code> on branch <code>feat/lab/beth-davenport</code> of the metasmith repository.</p>
 </div>
 
 <script>

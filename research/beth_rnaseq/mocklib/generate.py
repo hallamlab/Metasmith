@@ -58,13 +58,14 @@ GFF = r("gff", "sequences::gff", "exp")
 
 TABLE: list[T] = [
     T("rrna_fraction", "proposed",
-      [EXP, BAMS, GFF], [("out", "isolate_rnaseq::rrna_fraction")], group_by="exp",
+      [EXP, BAMS, r("nc", "annotation::bakta_gff", "exp")],
+      [("out", "isolate_rnaseq::rrna_fraction")], group_by="exp",
       note="""Bacterial RNA-seq has no poly-A selection, so depletion efficiency decides the
-      usable depth. Counted on the reference's own rRNA and tRNA features."""),
+      usable depth. Counted on Bakta's rRNA and tRNA features, since prodigal calls CDS only."""),
     T("featurecounts_strand_sweep", "nosco-phycocyanin transcriptomics/fir/count.sbatch",
       [EXP, BAMS, GFF], [("out", "isolate_rnaseq::featurecounts_sweep")], group_by="exp",
       cpus=8, memory_gb=16,
-      note="featureCounts -p --countReadPairs -B -C -Q 10 -t gene,pseudogene -g locus_tag, at -s 0, 1 and 2."),
+      note="featureCounts -p --countReadPairs -B -C -Q 10 -t CDS -g ID on the prodigal GFF, at -s 0, 1 and 2."),
     T("pick_strandedness", "proposed",
       [r("sweep", "isolate_rnaseq::featurecounts_sweep")],
       [("counts", "isolate_rnaseq::raw_count_table"), ("report", "isolate_rnaseq::strandedness_report")],
