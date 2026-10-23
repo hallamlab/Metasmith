@@ -82,9 +82,9 @@ Collapsing two nodes is a table edit and a regenerate — which stops being safe
 become real protocols. `ASPIRE_PORT.md` beside this file is the live correspondence map to
 `research/aspire/upstream/`, and is what anyone extending those transforms needs.
 
-## Consensus taxonomy and EC run LCA* over the library's own tree
+## Contig taxonomy runs LCA* over the GTDB tree
 
-`lib::lcastar` takes votes from several sources and returns the deepest lineage a weighted majority supports. Contig taxonomy feeds it UniRef50 ORF LCAs, Metabuli matches and SSU rRNA. EC consensus feeds it the four GPR lanes' ECs.
+`lib::lcastar` takes votes from several sources and returns the deepest lineage a weighted majority supports. Contig taxonomy feeds it UniRef50 ORF LCAs, Metabuli matches and SSU rRNA.
 
 **Each vote is mapped to GTDB before LCA* runs, never after.** A UniRef50 hit carries an NCBI taxid, and `ref::ncbi_to_gtdb_map` turns it into a GTDB lineage first. LCA* therefore walks the GTDB tree. Running LCA* on the NCBI tree and mapping its answer afterwards would drop the votes that disagree between the two trees.
 

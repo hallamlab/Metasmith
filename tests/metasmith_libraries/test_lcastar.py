@@ -9,7 +9,6 @@ from conftest import MLIB
 sys.path.insert(0, str(MLIB / "resources" / "lib"))
 sys.path.insert(0, str(MLIB / "resources" / "lib" / "lcastar"))
 import contig_taxonomy  # noqa: E402
-import ec_consensus  # noqa: E402
 import lcastar as ls  # noqa: E402
 import ncbi_to_gtdb  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -28,11 +27,6 @@ class TestParsers:
     def test_empty_ranks_and_unknown_prefixes_are_dropped(self):
         assert ls.parse_gtdb("d__Bacteria;p__;-_root;x__junk") == ("d__Bacteria",)
         assert ls.gtdb_rank(ls.parse_gtdb("d__Bacteria;p__Bacillota")) == "phylum"
-
-    def test_ec_path_stops_at_a_dash(self):
-        assert ls.parse_ec("EC:1.2.3.4") == ("1", "1.2", "1.2.3", "1.2.3.4")
-        assert ls.parse_ec("2.7.-.-") == ("2", "2.7")
-        assert ls.ec_rank(ls.parse_ec("2.7.-.-")) == "subclass"
 
     def test_lca_is_the_common_prefix(self):
         e, s = ls.parse_gtdb(ECOLI), ls.parse_gtdb(SALMO)
@@ -65,19 +59,14 @@ class TestLcaStar:
         assert whole.fraction == pytest.approx(scaled.fraction)
 
     def test_no_branch_over_alpha_is_the_root_at_p_one(self):
-        r = ls.lcastar([(ls.parse_ec("1.1.1.1"), 5.0), (ls.parse_ec("2.7.1.1"), 3.0),
-                        (ls.parse_ec("3.1.1.1"), 2.0)])
+        r = ls.lcastar([(ls.parse_gtdb(ECOLI), 5.0), (("d__Archaea", "p__Thermoproteota"), 3.0),
+                        (("d__Eukaryota",), 2.0)])
         assert r.lineage == ()
         assert r.p_value == 1.0
 
     def test_no_votes_is_no_result(self):
         assert ls.lcastar([]) is None
         assert ls.lcastar([(ls.parse_gtdb(ECOLI), 0.0)]) is None
-
-    def test_the_ec_hierarchy_votes_the_same_way(self):
-        r = ls.lcastar([(ls.parse_ec("1.1.1.1"), 1.0), (ls.parse_ec("1.1.1.2"), 1.0),
-                        (ls.parse_ec("2.7.1.1"), 1.0)], alpha=0.51)
-        assert r.lineage == ("1", "1.1", "1.1.1")
 
 
 class TestPValue:
@@ -175,19 +164,3 @@ class TestContigTaxonomy:
         # An empty match column falls back to one vote for the contig's own call.
         assert table.loc["c2", "metabuli_votes"] == 1
         assert "c3" not in table.index
-
-
-class TestEcConsensus:
-    def test_lanes_vote_once_each(self):
-        gpr = pd.DataFrame({
-            "orf": ["o1"] * 4,
-            "channel": ["clean", "kofam", "uniref50", "pbert"],
-            "mnxr": ["M1", "M1", "M2", "M3"],
-            "intermediate_id": ["1.1.1.1", "K00001", "P00001", "M3"],
-        })
-        bridge = pd.DataFrame({"id": ["1.1.1.1", "1.1.1.2", "K00001"],
-                               "id_source": ["ec", "ec", "ko"], "mnxr": ["M1", "M2", "M1"]})
-        rows = ec_consensus.consensus(ec_consensus.lane_ecs(gpr, ec_consensus.mnxr_to_ecs(bridge)), 0.51)
-        orf, ec, rank, _, fraction, votes, lanes, agreeing = rows[0]
-        assert (orf, ec, rank, lanes, agreeing) == ("o1", "1.1.1.1", "enzyme", 3, "clean,kofam")
-        assert fraction == pytest.approx(2 / 3)

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Iterable
 
 GTDB_RANKS = ("domain", "phylum", "class", "order", "family", "genus", "species")
-EC_RANKS = ("class", "subclass", "sub_subclass", "enzyme")
 _PREFIX_RANK = {r[0]: r for r in GTDB_RANKS}
 
 # A lineage is a root-first tuple of node labels. A GTDB label keeps its rank
@@ -33,22 +32,6 @@ def parse_gtdb(text: str) -> Lineage:
 
 def gtdb_rank(lineage: Lineage) -> str:
     return _PREFIX_RANK[lineage[-1][0]] if lineage else "root"
-
-
-def parse_ec(text: str) -> Lineage:
-    text = (text or "").strip()
-    if text.upper().startswith("EC:"):
-        text = text[3:]
-    out, parts = [], text.split(".")
-    for i, part in enumerate(parts[:len(EC_RANKS)]):
-        if part in ("", "-"):
-            break
-        out.append(".".join(parts[:i + 1]))
-    return tuple(out)
-
-
-def ec_rank(lineage: Lineage) -> str:
-    return EC_RANKS[len(lineage) - 1] if lineage else "root"
 
 
 def to_text(lineage: Lineage) -> str:

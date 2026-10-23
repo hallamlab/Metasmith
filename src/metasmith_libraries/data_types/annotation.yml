@@ -754,11 +754,6 @@ types:
       _: tRNA genes (ID, product tRNA-<aa>, anticodon) from one tRNA scanner
       Format: GFF3
       ext: gff
-  ec_consensus:
-    properties:
-      _: LCA* consensus EC per ORF over the GPR lanes (orf, ec, rank, p_value, fraction, votes, lanes)
-      Format: TSV
-      ext: tsv
   pathway_table:
     properties:
       _: PathoLogic pathways of one PGDB with their ORFs (pathway, name, orf, reaction, ec)

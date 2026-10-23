@@ -125,8 +125,8 @@ def build_transforms():
 def build_targets(with_gem):
     t = TargetBuilder()
     orfs = t.Add("sequences::orfs")
-    for dtype in ("annotation::diamond_uniref50_results", "annotation::ec_consensus",
-                  "annotation::pgdb_archive", "annotation::pathway_table"):
+    for dtype in ("annotation::diamond_uniref50_results", "annotation::pgdb_archive",
+                  "annotation::pathway_table"):
         t.Add(dtype, parents=[orfs])
     for dtype in ("annotation::rrna_gff", "taxonomy::rrna_gtdb", "annotation::trna_gff",
                   "taxonomy::contig_lcastar", "annotation::bin_pgdb_archive", "annotation::bin_pathway_table"):
