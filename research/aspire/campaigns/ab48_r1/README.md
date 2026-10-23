@@ -23,9 +23,11 @@ for and how to re-run it. `JOURNAL.md` records each run and what it found.
 | `check_results.py` | the acceptance checks over a retrieved `ab48_e5`, `ab48`, `lab` or `lab2` run |
 | `merge_reactor_logs.py` | rebuilds `pbr_logs_merged.csv` from the reactor's exported ReactorLogs folder |
 | `report_data.py` | fills `report_template.html` from the `lab_v4_r1` and `lab_r1` pins to make the timeline page |
+| `plot_table.py` | cuts `lab_v4_r1` to the samples Kalen's `ASV_Metadata.csv` marks Plot = Y, pinned at `data/aspire/spirulina_v4_plot` |
 
 The sample sheets, the bioreactor logs and the read manifests come from capella and are
-pinned at `data/aspire/hallam_16s_inputs.dvc`. The reads are the asv_task project's staging
+pinned at `data/aspire/hallam_16s_inputs.dvc`. `ASV_Metadata.csv` is Kalen's sample sheet. It sets the
+Purify page's samples, dates and sources, and overrides the crosswalk dates of the AB48 samples it names. The reads are the asv_task project's staging
 on sockeye. The MAGs are the 95% ANI centroid bins of cyanoverse/ab48's revio assembly,
 staged under the campaign root on sockeye with that assembly and its cluster table.
 

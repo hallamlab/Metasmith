@@ -128,7 +128,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 
 <section id="purify">
   <h2>Purify Spirulina: the community against the reactor log</h2>
-  <p>Every Purify Spirulina sample in the V4 table, placed at its sampling date. A strip above the bars marks the source: seeds and flasks grown at UBC, or samples from Purify's photobioreactor. The bars split by source, so the lab cultures and the reactor each read as their own series. A washed PBR sample sits beside its unwashed twin. Libraries whose source or sampling date is not recorded sit in a band at the right. The reactor log starts on 1 May 2025 and runs on to October 2026.</p>
+  <p>The Purify Spirulina samples that Kalen's sample sheet marks for plotting, placed at the sampling dates in that sheet. A strip above the bars marks the source: seeds and flasks grown at UBC, or samples from Purify's photobioreactor. The bars split by source, so the lab cultures and the reactor each read as their own series. A washed PBR sample sits beside its unwashed twin. The reactor log starts on 1 May 2025 and runs on to October 2026.</p>
   <div class="figure" id="fig-purify">
     <div class="legend" id="leg-purify"></div>
     <div class="figscroll"><svg id="svg-purify" role="img" aria-labelledby="cap-purify"></svg></div>
@@ -243,7 +243,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     if (sources) items.push(`<span style="flex-basis:100%;height:0"></span>`,
       `<span><i style="background:var(--src-lab)"></i>Source: UBC lab culture</span>`,
       `<span><i style="background:var(--src-pbr)"></i>Purify PBR</span>`,
-      `<span><i style="border:1px dashed var(--muted)"></i>Not recorded</span>`);
+      ...(sec.samples.some(x => x.source === "unconfirmed") ? [`<span><i style="border:1px dashed var(--muted)"></i>Not recorded</span>`] : []));
     host.innerHTML = items.join("");
   }
 
@@ -489,7 +489,9 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     legend("leg-purify", sec, true);
     const n = k => samples.filter(s => s.source === k).length;
     document.getElementById("cap-purify").innerHTML =
-      `<b>Figure 1.</b> ${samples.length} Purify Spirulina samples that pass the 5000-read floor in the V4 table, pooled to taxa: ${n("lab")} UBC lab cultures, ${n("pbr")} PBR samples${n("unconfirmed") ? ` and ${n("unconfirmed")} libraries whose source is not recorded` : ""}. They hold ${sec.asvs} of the table's curated ASVs. ` +
+      `<b>Figure 1.</b> ${samples.length} Purify Spirulina samples from the V4 table, the ones Kalen's sheet marks Plot = Y, pooled to taxa: ${n("lab")} UBC lab cultures, ${n("pbr")} PBR samples${n("unconfirmed") ? ` and ${n("unconfirmed")} libraries whose source is not recorded` : ""}. They hold ${sec.asvs} of the table's curated ASVs. ` +
+      `${sec.unsequenced.length ? `${sec.unsequenced.map(esc).join(", ")} ${sec.unsequenced.length > 1 ? "are" : "is"} marked but not in our sequencing runs. ` : ""}` +
+      `${sec.repeats.map(([a, b]) => `${esc(a)} is the same library as ${esc(b)}, delivered again with a later run, so it is drawn once. `).join("")}` +
       `Top: dot area is a taxon's share of a sample's curated reads, for the ${sec.rows.length} taxa that reach the largest shares. ` +
       `Middle: the source strip, then the same shares stacked, one panel per source, with the ${sec.bars.length} leading taxa coloured and the rest grey. ${undated.length ? `The ${undated.length} libraries right of the dashed rule have no recorded sampling date. ` : ""}` +
       `Bottom: every logged sensor, ${logs.rows.toLocaleString()} rows binned to 3 hours. Grey hairlines mark sampling dates, and the shaded margins have no log. ` +
@@ -527,7 +529,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     const W = 1040, L = 150, R = 24, PW = W - L - R, barH = 150;
     const groupOrder = { lab: 0, pbr: 1, unconfirmed: 2 };
     const tables = [
-      ["v4", "V4 table", "every Purify sample, reads cut to V4"],
+      ["v4", "V4 table", "every plotted Purify sample, reads cut to V4"],
       ["v4v5", "V4–V5 table", "the same without the 2026 runs"],
     ];
     let y = 8;
@@ -590,11 +592,12 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     });
     svg.setAttribute("viewBox", `0 0 ${W} ${y - 20}`);
     wireTips(svg);
-    document.getElementById("leg-shared").innerHTML = CATS.map(([k, name]) => `<span><i style="background:var(--${k === "shared" ? "shared" : k === "neither" ? "other" : "src-" + k})"></i>${name}</span>`).join("");
+    const unconfirmed = DATA.shared.v4.samples.some(r => r.source === "unconfirmed");
+    document.getElementById("leg-shared").innerHTML = CATS.filter(([k]) => k !== "neither" || unconfirmed).map(([k, name]) => `<span><i style="background:var(--${k === "shared" ? "shared" : k === "neither" ? "other" : "src-" + k})"></i>${name}</span>`).join("");
     const v4 = DATA.shared.v4;
     document.getElementById("cap-shared").innerHTML =
       `<b>Figure 2.</b> Each bar splits one sample's curated reads by whether its ASVs also occur in the other source. An ASV occurs in a sample from ${pct(v4.present_at)} of its reads; the number over each bar counts those ASVs. ` +
-      `A UBC lab sample's reads are shared when any PBR sample holds the ASV, and the reverse; a library whose source is not recorded is judged against both. ` +
+      `A UBC lab sample's reads are shared when any PBR sample holds the ASV, and the reverse${unconfirmed ? "; a library whose source is not recorded is judged against both" : ""}. ` +
       `The two strips under each panel pool the whole table: ASVs by count, then by reads. Hover a bar for its numbers.`;
   }
 

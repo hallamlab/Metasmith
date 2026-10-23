@@ -4,7 +4,8 @@
     python research/aspire/campaigns/ab48_r1/report_data.py [--out PAGE] [--study lab_r1] [--v4-study lab_v4_r1]
 
 Reads the study's pinned results under data/aspire and the sheets and reactor log in
-data/aspire/hallam_16s_inputs, and fills report_template.html with the result.
+data/aspire/hallam_16s_inputs, and fills report_template.html with the result. The Purify
+figures take their samples, dates and sources from Kalen's ASV_Metadata.csv (Plot = Y).
 """
 
 import argparse
@@ -13,6 +14,8 @@ import math
 from pathlib import Path
 
 import pandas as pd
+
+from plot_table import reconcile
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[3]
@@ -90,24 +93,17 @@ def crosswalk() -> pd.DataFrame:
 
 
 SOURCES = {"UBC": "lab", "Purify": "pbr"}
+SHEET = reconcile()[0]
 
 
 def purify_samples(counts: pd.DataFrame) -> list[dict]:
-    cw = crosswalk().drop_duplicates("asv_table_id").set_index("asv_table_id")
-    meta = pd.read_csv(SHEETS / "Purify_Metadata.csv", dtype=str, encoding="utf-8-sig").set_index("ID")
+    sheet = SHEET[(SHEET.Plot == "Y") & SHEET.asv_table_id.isin(counts.columns)]
     samples = []
-    for sid in counts.columns:
-        if sid not in cw.index or cw.loc[sid, "group"] != "purify":
-            continue
-        row = cw.loc[sid]
-        label = row.display_label
-        m = meta.loc[label] if label in meta.index else None
-        date = m["Date"] if m is not None else row.date
+    for _, row in sheet.drop_duplicates("asv_table_id").iterrows():
         samples.append({
-            "id": sid, "label": label.replace("_", " "), "date": date if isinstance(date, str) else "",
-            "condition": row.condition if isinstance(row.condition, str) else "",
-            "source": SOURCES.get(row.source, "unconfirmed"), "washed": "Washed" in label,
-            "reads": int(counts[sid].sum()), "cohort": row.cohort,
+            "id": row.asv_table_id, "label": row.ID.replace("_", " "), "date": row.Date,
+            "condition": row.Type, "source": SOURCES.get(row.Source, "unconfirmed"), "washed": "Washed" in row.ID,
+            "reads": int(counts[row.asv_table_id].sum()), "cohort": row.cohort,
         })
     samples.sort(key=lambda x: (x["date"] or "9999", x["washed"], x["label"]))
     return samples
@@ -161,7 +157,10 @@ def gtdb_names() -> dict[str, str]:
 def ab48_section(study: str, counts, asv_taxon, by_taxon):
     cw = crosswalk().drop_duplicates("asv_table_id").set_index("asv_table_id")
     present = [s for s in counts.columns if s in cw.index and cw.loc[s, "cohort"].startswith(("lab_", "ab48_"))]
-    keys = cw.loc[present, ["cohort", "date"]].apply(tuple, axis=1)
+    dated = cw.loc[present, ["cohort", "date"]].copy()
+    sheet_dates = SHEET[SHEET.asv_table_id != ""].drop_duplicates("asv_table_id").set_index("asv_table_id").Date
+    dated["date"] = sheet_dates.reindex(dated.index).fillna(dated.date)
+    keys = dated.apply(tuple, axis=1)
     groups = []
     columns = {}
     for (cohort, date), ids in keys.groupby(keys).groups.items():
@@ -253,6 +252,11 @@ def main():
     v4_counts, _, _, v4_by_taxon, v4_phyla = study_tables(args.v4_study)
     phyla = {**v4_phyla, **phyla}
     p_samples, p_frame, p_asvs = purify_section(v4_counts, v4_by_taxon)
+    marked = SHEET[SHEET.Plot == "Y"]
+    unsequenced = marked[~marked.asv_table_id.isin(v4_counts.columns)].ID.tolist()
+    kept = marked[marked.asv_table_id.isin(v4_counts.columns)]
+    owner = kept.drop_duplicates("asv_table_id").set_index("asv_table_id").ID
+    repeats = [[r.ID, owner[r.asv_table_id]] for r in kept[kept.asv_table_id.duplicated()].itertuples()]
     shared = {"v4": shared_section(v4_counts, p_samples),
               "v4v5": shared_section(counts, purify_samples(counts))}
     a_groups, a_frame, mags, a_stats = ab48_section(args.study, counts, asv_taxon, by_taxon)
@@ -266,7 +270,7 @@ def main():
                   "nostoc": int((~counts.columns.isin(crosswalk()["asv_table_id"])).sum()),
                   "patrik": int(v4_counts.columns.isin(crosswalk().query("group == 'lab' and cohort.str.startswith('patrik')", engine="python")["asv_table_id"]).sum())},
         "phyla": {t: phyla.get(t, "") for t in set(p_rows + a_rows)},
-        "purify": {"samples": p_samples, "slots": p_slots, "bars": p_bars, "rows": p_rows, "asvs": p_asvs,
+        "purify": {"samples": p_samples, "unsequenced": unsequenced, "repeats": repeats, "slots": p_slots, "bars": p_bars, "rows": p_rows, "asvs": p_asvs,
                    "rel": frame_json(p_frame, sorted(set(p_rows + p_bars)))},
         "ab48": {"groups": a_groups, "slots": a_slots, "bars": a_bars, "rows": a_rows, "stats": a_stats,
                  "mags": {t: mags.get(t, []) for t in a_rows},
