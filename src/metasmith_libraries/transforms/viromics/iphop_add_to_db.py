@@ -8,6 +8,7 @@
 # `user_genome` column names the bin file, which is the join every consumer of
 # these two files already uses.
 import json
+import textwrap
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -125,13 +126,15 @@ def protocol(context: ExecutionContext):
     # being this task's own work dir, gone once the product is promoted. Each is
     # hardlinked in from the base and the alias is made relative, so the product reads
     # nothing outside itself. That needs one filesystem with the cache, hence `noscratch`,
-    # and the host's paths, because two container binds of it refuse a link.
-    base_dir = ibase.local.resolve()
-    if context.LocalShell(f"""
+    # and the host's shell, because the protocol's container reaches the work dir and the
+    # base through two binds of that filesystem, and link() refuses to cross them (EXDEV).
+    relocate = Path("relocate_db.sh")
+    relocate.write_text(textwrap.dedent(f"""
         set -euo pipefail
-        A=./iphop_augmented
+        B=$(readlink -f {ibase.external})
+        A={context.external_cwd}/iphop_augmented
         for sub in db db_infos; do
-            for src in {base_dir}/$sub/*; do
+            for src in $B/$sub/*; do
                 dst="$A/$sub/$(basename "$src")"
                 [ -e "$dst" ] || [ -L "$dst" ] || cp -al "$src" "$dst"
             done
@@ -142,9 +145,12 @@ def protocol(context: ExecutionContext):
             cp -al "$target" "$link"
         done
         mkdir $A/db/Host_Genomes/base
-        cp -al {base_dir}/db/Host_Genomes/. $A/db/Host_Genomes/base/
+        cp -al $B/db/Host_Genomes/. $A/db/Host_Genomes/base/
         sed -i 's|^DBLIST .*|DBLIST "base/Host_Genomes" "New_host_genomes"|' $A/db/Host_Genomes/Host_Genomes.nal
-    """) != 0:
+    """))
+    res = context.external_shell.Exec(f"bash {context.external_cwd/relocate}", timeout=None, history=True)
+    if res.exit_code != 0:
+        Log.Error(f"relocating the augmented database exited [{res.exit_code}]")
         return ExecutionResult(manifest=[], success=False)
 
     staged = Path("iphop_augmented")
