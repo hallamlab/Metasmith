@@ -80,7 +80,7 @@ def main(out: Path) -> None:
     for step in task.plan.steps:
         uses = sorted({u.dtype_name for u in step.uses if not u.dtype_name.startswith(("env::", "lib::"))})
         print(f"  {step.transform.name:<32} <- {', '.join(uses)}")
-    dag = task.plan.BuildDAG()
+    dag = task.plan.BuildDAG(given_root=False, target_sink=False)
     # Tag each transform with the library it came from, so real and mock steps read apart.
     # BuildDAG names a transform node "<order> <name>"; DagRenderer has no public relabel.
     for step in task.plan.steps:
