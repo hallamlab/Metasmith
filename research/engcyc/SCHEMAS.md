@@ -7,6 +7,7 @@ This file defines the tables that list the candidate datasets for Engcyc. It hol
 1. The dataset manifest, `data/engcyc/manifest.tsv`.
 2. The rule for the per-dataset metadata tables in `data/engcyc/metadata/`.
 3. The amplicon datasets and their overlap with metagenome datasets.
+4. The reads tables in `data/engcyc/reads/`, which say where each read file of a non-available dataset lives.
 
 The manifest and the metadata tables carry internal paths and collaborator data. Keep them in DVC under `data/engcyc/`. Keep this file free of paths and sample details, because the git remotes are public.
 
@@ -74,3 +75,14 @@ Datasets with both amplicon and metagenome data:
 - **AB48**: the 16S samples and the metagenome come from the same consortium, but not from the same sample.
 - **Line P**: metagenomes, JGI iTags and 2023 16S/18S runs. The overlap in stations and years is not checked.
 - **Mine enrichments**: metagenomes and 16S runs from the same enrichment program. Shared samples are not checked.
+
+## 4. Reads tables
+
+A reads table lists every known copy of a dataset's reads, so that a transfer can pick its route per sample. Run `research/engcyc/scripts/build_reads.py` to rebuild them from the listings pinned in `data/engcyc/sources/reads/`. Run `dvc add` on both directories afterwards.
+
+- **Saanich and Line P metagenomes** get one row per sample. A row joins the SRA runs, the JGI Data Portal projects, the sharknado copies and the chinook QC copies of one sample.
+- **Every other dataset** gets one row per file, with its `role`: `raw`, `qc_filtered`, `qc_lab`, `derived`, `alignment`, `assembly` or `reads` when the name does not say.
+
+**CAUTION** Join JGI data on the sequencing unit (`<run>.<lane>.<flowcell>.<barcode>`) or the four- or five-letter library code, never on a sample title. The SRA titles of about 20 Saanich runs name a different cruise and depth than JGI, IMG and the lab folders do.
+
+**CAUTION** The sharknado listing comes from the January 2025 filesystem index. It holds names only, with no sizes. A file that the index lists can be absent from the backup volume.
