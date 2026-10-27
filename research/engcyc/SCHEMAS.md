@@ -8,6 +8,7 @@ This file defines the tables that list the candidate datasets for Engcyc. It hol
 2. The rule for the per-dataset metadata tables in `data/engcyc/metadata/`.
 3. The amplicon datasets and their overlap with metagenome datasets.
 4. The reads tables in `data/engcyc/reads/`, which say where each read file of a non-available dataset lives.
+5. The inventory in `data/engcyc/inventory/`, which counts each dataset's samples, files, reads and metagenome equivalents.
 
 The manifest and the metadata tables carry internal paths and collaborator data. Keep them in DVC under `data/engcyc/`. Keep this file free of paths and sample details, because the git remotes are public.
 
@@ -86,3 +87,10 @@ A reads table lists every known copy of a dataset's reads, so that a transfer ca
 **CAUTION** Join JGI data on the sequencing unit (`<run>.<lane>.<flowcell>.<barcode>`) or the four- or five-letter library code, never on a sample title. The SRA titles of about 20 Saanich runs name a different cruise and depth than JGI, IMG and the lab folders do.
 
 **CAUTION** The sharknado listing comes from the January 2025 filesystem index. It holds names only, with no sizes. A file that the index lists can be absent from the backup volume.
+
+## 5. Inventory
+
+`data/engcyc/inventory/datasets.tsv` has one row per dataset. Its `count_source` column says whether each count is exact public metadata, a live listing or a manifest value. Run `research/engcyc/scripts/build_inventory.py <out_dir>` to rebuild it and write `inventory.xlsx`. The listings it reads are pinned in `data/engcyc/sources/inventory/`.
+
+- `expected_samples` is a measured count where one exists. Saanich and Line P count the union of every source that names a sample, listed per sample in `saanich_samples.tsv` and `linep_samples.tsv`.
+- Metagenome equivalents are `metagenomes + genomes / G + fosmid_clones / (F x G)`. F is fosmids per genome and G is genomes per metagenome. Both default to 100 and are cells on the workbook's params sheet.
