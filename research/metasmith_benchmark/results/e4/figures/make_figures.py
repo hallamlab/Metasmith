@@ -66,8 +66,8 @@ def fig1():
     return fig
 
 
-SOURCES = ["metagem", "R0", "R1", "B", "U", "V", "G", "D", "S", "M"]
-SOURCE_LABELS = ["meta<br>GEM"] + SOURCES[1:]
+SOURCES = ["metagem", "R0", "R1", "B", "U", "V", "G", "D", "S", "M", "kofam", "both", "diluted_top1"]
+LABELS = {"metagem": "meta<br>GEM", "kofam": "KO<br>fam", "both": "KO+<br>DMND", "diluted_top1": "top-1"}
 OLD_CODE = {"R0", "R1", "B", "U"}
 PANELS = [
     ("total_score", "Total"),
@@ -90,8 +90,17 @@ def memote_stats(df):
     return df.groupby("source")[[c for c, _ in PANELS]].quantile([0.25, 0.5, 0.75]).unstack()
 
 
+# M is the DIAMOND evidence lane, so the evidence table's own diamond rows (the smoke bins) are left out.
+def evidence_memote():
+    path = E4 / "evidence_memote.tsv"
+    if not path.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(path, sep="\t")
+    return df[df.source != "diamond"]
+
+
 def fig2():
-    return ladder(pd.read_csv(E4 / "ablation_memote.tsv", sep="\t"))
+    return ladder(pd.concat([pd.read_csv(E4 / "ablation_memote.tsv", sep="\t"), evidence_memote()]))
 
 
 def fig2b():
@@ -103,27 +112,29 @@ def fig2b():
 
 def ladder(df, ghost=None):
     stats = memote_stats(df)
+    sources = [s for s in SOURCES if s in set(df.source)]
+    labels = [LABELS.get(s, s) for s in sources]
     ghost_med = memote_stats(ghost) if ghost is not None else None
     fig = make_subplots(rows=2, cols=3, subplot_titles=[t for _, t in PANELS],
                         shared_xaxes=True, vertical_spacing=0.14, horizontal_spacing=0.06)
-    colors = [source_color(s) for s in SOURCES]
+    colors = [source_color(s) for s in sources]
     for k, (col, _) in enumerate(PANELS):
         row, column = k // 3 + 1, k % 3 + 1
-        q1, med, q3 = (stats[(col, q)].reindex(SOURCES) for q in (0.25, 0.5, 0.75))
+        q1, med, q3 = (stats[(col, q)].reindex(sources) for q in (0.25, 0.5, 0.75))
         fig.add_trace(go.Bar(
-            x=SOURCE_LABELS, y=med, marker=dict(color=colors, line=dict(width=0)), width=0.72,
+            x=labels, y=med, marker=dict(color=colors, line=dict(width=0)), width=0.72,
             error_y=dict(type="data", symmetric=False, array=q3 - med, arrayminus=med - q1,
                          color=MUTED, thickness=1, width=3),
             showlegend=False, hovertemplate="%{x}: %{y:.3f}<extra></extra>",
         ), row=row, col=column)
         fig.add_trace(go.Scatter(
-            x=SOURCE_LABELS, y=med, mode="markers", showlegend=False, hoverinfo="skip",
+            x=labels, y=med, mode="markers", showlegend=False, hoverinfo="skip",
             marker=dict(symbol="line-ew", size=14, line=dict(color=colors, width=2.5)),
         ), row=row, col=column)
         if ghost_med is not None:
-            g = ghost_med[(col, 0.5)].reindex(SOURCES)
+            g = ghost_med[(col, 0.5)].reindex(sources)
             fig.add_trace(go.Scatter(
-                x=SOURCE_LABELS, y=g, mode="markers", showlegend=k == 0, name="as built",
+                x=labels, y=g, mode="markers", showlegend=k == 0, name="as built",
                 hovertemplate="%{x} as built: %{y:.3f}<extra></extra>",
                 marker=dict(symbol="line-ew-open", size=14, color=INK, line=dict(color=INK, width=1.5)),
             ), row=row, col=column)

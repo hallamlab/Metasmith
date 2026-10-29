@@ -139,6 +139,7 @@ def read_gprs(path):
 
 # A reaction counts for a source when that source's table holds a hit on any BiGG gene of its rule.
 # One with neither came from the gap fill, or is spontaneous or a transport CarveMe adds without a rule.
+# Rung M is the DIAMOND lane, so its models stand in for the lane's own, which exist only for the smoke bins.
 def cmd_sources(args):
     import e4_parity
 
@@ -161,8 +162,7 @@ def cmd_sources(args):
                 d, k = bool(genes & diamond), bool(genes & kofam)
                 tally["both_sources" if d and k else "diamond_only" if d else "kofam_only" if k else "neither"] += 1
             lanes = {}
-            for lane in ("diamond", "kofam"):
-                path = args.models / lane / f"{b}.xml.gz"
+            for lane, path in (("diamond", args.rung_m / f"{b}.xml.gz"), ("kofam", args.models / "kofam" / f"{b}.xml.gz")):
                 lanes[lane] = set(e4_parity.parse_model(e4_parity.read_sbml(path))["reactions"]) if path.exists() else set()
             out.writerow([study, b, len(reactions), tally["diamond_only"], tally["kofam_only"], tally["both_sources"],
                           tally["neither"], len(reactions & lanes["diamond"]), len(reactions & lanes["kofam"]),
@@ -308,6 +308,7 @@ def main():
     p.add_argument("--models", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--gprs", type=Path, default=GPRS)
+    p.add_argument("--rung-m", type=Path, default=ROOT / "evidence" / "rung_models" / "M")
     p = sub.add_parser("reference")
     p.add_argument("--models", type=Path, required=True)
     p.add_argument("--proteins", type=Path, default=ROOT / "refs" / "carveme166_bigg_proteins.faa")
