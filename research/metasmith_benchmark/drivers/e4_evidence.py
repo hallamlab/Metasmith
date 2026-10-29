@@ -12,6 +12,9 @@ reference  the KO coverage of CarveMe 1.6.6's BiGG genes, and how far each ORF's
 stage      pack the lanes' GEMs into e4_ablation_memote.sbatch's blocks, beside its blocks.tsv.
 collect    one row per bin and lane of the MEMOTE scores e4_ablation_memote.sbatch wrote.
 summary    medians and interquartile ranges of compare's, sources' and collect's tables.
+fig2c      one row per lane, study and metric for Figure 2C: reactions per model, MEMOTE 0.17 total and
+           reaction Jaccard against metaGEM. E4's rungs R0 (reproduction) and M (modern) come from its
+           ablation tables, so every lane covers the same 1,408 bins.
 """
 
 import argparse
@@ -255,6 +258,40 @@ def cmd_summary(args):
         summarise(rows, ("source",), ["total_score", *SECTIONS, *(["grows"] if "grows" in header else [])])
 
 
+def cmd_fig2c(args):
+    values = defaultdict(list)
+
+    def add(lane, study, metric, value):
+        if value != "":
+            for scope in (study, "pooled"):
+                values[(lane, scope, metric)].append(float(value))
+
+    with open(args.tables / "ablation_parity.tsv") as fh:
+        for r in csv.DictReader(fh, delimiter="\t"):
+            if r["rung"] in ("R0", "M") and r["against"] == "metagem":
+                add(r["rung"], r["study"], "reactions", r["reactions"])
+                add(r["rung"], r["study"], "reactions_jaccard_metagem", r["reactions_jaccard"])
+    with open(args.tables / "ablation_memote.tsv") as fh:
+        for r in csv.DictReader(fh, delimiter="\t"):
+            if r["source"] in ("R0", "M"):
+                add(r["source"], r["study"], "memote_total", r["total_score"])
+    with open(args.parity) as fh:
+        for r in csv.DictReader(fh, delimiter="\t"):
+            if r["against"] == "metagem":
+                add(r["lane"], r["study"], "reactions", r["reactions"])
+                add(r["lane"], r["study"], "reactions_jaccard_metagem", r["reactions_jaccard"])
+    with open(args.memote) as fh:
+        for r in csv.DictReader(fh, delimiter="\t"):
+            add(r["source"], r["study"], "memote_total", r["total_score"])
+    order = {lane: i for i, lane in enumerate(("R0", "M", *LANES))}
+    with open(args.out, "w", newline="") as fh:
+        w = csv.writer(fh, delimiter="\t", lineterminator="\n")
+        w.writerow(["lane", "study", "metric", "median", "q1", "q3", "n"])
+        for (lane, study, metric), v in sorted(values.items(), key=lambda kv: (order[kv[0][0]], kv[0][1] == "pooled", kv[0][1], kv[0][2])):
+            q1, med, q3 = quartiles(v)
+            w.writerow([lane, study, metric, round(med, 4), round(q1, 4), round(q3, 4), len(v)])
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -279,16 +316,21 @@ def main():
     p = sub.add_parser("collect")
     p.add_argument("--work", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("fig2c")
+    p.add_argument("--tables", type=Path, default=HERE.parent / "results" / "e4")
+    p.add_argument("--parity", type=Path, required=True, help="compare's table")
+    p.add_argument("--memote", type=Path, required=True, help="collect's table")
+    p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("summary")
     p.add_argument("table", type=Path)
     for name, s in sub.choices.items():
-        if name not in ("extract", "summary", "reference"):
+        if name not in ("extract", "summary", "reference", "fig2c"):
             s.add_argument("--bins-file", type=Path, default=BINS)
     args = ap.parse_args()
     if getattr(args, "out", None) and args.cmd == "extract":
         args.out.mkdir(parents=True, exist_ok=True)
     {"extract": cmd_extract, "compare": cmd_compare, "sources": cmd_sources, "reference": cmd_reference,
-     "stage": cmd_stage, "collect": cmd_collect, "summary": cmd_summary}[args.cmd](args)
+     "stage": cmd_stage, "collect": cmd_collect, "summary": cmd_summary, "fig2c": cmd_fig2c}[args.cmd](args)
 
 
 if __name__ == "__main__":
