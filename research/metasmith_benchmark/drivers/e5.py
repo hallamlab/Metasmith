@@ -98,6 +98,13 @@ ASSEMBLIES = HERE.parent / "results" / "e5" / "assemblies.tsv"
 # array in flight and runs the four callers' arrays in series (findings/E5_RUN.md).
 CATALOGUE_QUEUE = 800
 
+# Each assembly and DAS Tool MAG with the task-cache shard that holds it on chinook fir_bench_e5/e5_home.
+# restore_e5_taxonomy.sh copies them to TAXONOMY_HOME/<shard>/out/<name>, where the taxonomy plans read them.
+TAXONOMY_INPUTS = HERE.parent / "results" / "e5" / "taxonomy_inputs.tsv"
+TAXONOMY_HOME = Path("/scratch/phyberos/e5_tax/inputs")
+# GTDB r214.1, the one Metabuli DB on fir. GTDB-Tk reads r232.
+METABULI_DB = c.DB_ROOT / "metabuli" / "gtdb"
+
 # CAMI's long-read set for each hybrid study.
 CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_associated_long_nano",
              "marine": "marine_long", "strain": "strain_long"}
@@ -435,6 +442,85 @@ def cmd_catalogue(args):
     return 0
 
 
+def taxonomy_inputs(name):
+    """[(study, sample, assembly path, [MAG paths])] for one catalogue, at their restored paths on fir."""
+    assembly, mags = {}, {}
+    with open(TAXONOMY_INPUTS) as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            if r["study"] in CATALOGUES[name]:
+                path = TAXONOMY_HOME / r["shard"] / "out" / r["name"]
+                if r["kind"] == "assembly":
+                    assembly[r["study"], r["sample"]] = path
+                else:
+                    mags.setdefault(r["sample"], []).append(path)
+    for study, sid, _ in catalogue_assemblies(name):
+        assert (study, sid) in assembly, f"{TAXONOMY_INPUTS.name} has no assembly for {sid}"
+    return [(study, sid, path, sorted(mags.get(sid, []))) for (study, sid), path in sorted(assembly.items())]
+
+
+def declare_taxonomy_givens(smith, name, inputs, cache_dir, ensure):
+    givens = smith.PoolGivens()
+    study = c.add_value(givens, f"e5tax/{name}", {"study": name}, "sequences::study", tags=["e5tax", name])
+    for study_name, sid, assembly, bins in inputs:
+        tags = ["e5tax", name, study_name, sid]
+        ns = f"e5tax/{name}/{sid}"
+        meta = c.add_value(givens, f"{ns}/read_metadata", {"sample": sid, "parity": "paired", "length_class": "short"},
+                           "sequences::read_metadata", parents=[study], tags=tags)
+        c.add_file(givens, f"{ns}/assembly", assembly, "sequences::assembly", parents=[meta], tags=tags)
+        for b in bins:
+            c.add_file(givens, f"{ns}/bin", b, "sequences::das_tool_bin_fasta", parents=[meta], tags=tags)
+    return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
+
+
+def declare_taxonomy_refs(smith, metabuli_db, cache_dir, ensure):
+    givens = smith.PoolGivens()
+    c.declare_refs(givens, {"ref::gtdb": c.STAGED_REFS["ref::gtdb"], **c.GTDB_GENOMES_IMAGE,
+                            "ref::metabuli_ref": metabuli_db})
+    types = [c.MLIB / "data_types" / "ref.yml", c.LIBRARY / "data_types" / "bench.yml"]
+    return c.cite(givens, cache_dir / "refs.xgdb", types, ensure)
+
+
+def cmd_taxonomy(args):
+    name = args.name
+    inputs = taxonomy_inputs(name)
+    n, m = len(inputs), sum(len(b) for *_, b in inputs)
+    print(f"=== taxonomy {name}: {n} assemblies, {m} DAS Tool MAGs, Metabuli DB {args.metabuli_db}", flush=True)
+    cache_dir = CACHE_DIR / "taxonomy" / name
+    launching = args.stage_only or args.launch or args.materialise
+    remote = launching or args.import_givens
+    smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
+    ensure = args.import_givens or not remote
+    given = declare_taxonomy_givens(smith, name, inputs, cache_dir, ensure)
+    refs = declare_taxonomy_refs(smith, args.metabuli_db, cache_dir, ensure)
+    if remote and not launching:
+        print(f"the pool at {smith.home.GetPath()} holds the givens of {n} assemblies and {m} MAGs")
+        return 0
+    t = TargetBuilder()
+    t.Add("taxonomy::metabuli")
+    if m:
+        t.Add("taxonomy::gtdbtk")
+    task = smith.GenerateWorkflow(
+        samples=list(given.AsSamples("sequences::read_metadata")),
+        resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"), refs],
+        transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics").AsView(
+                        {Path("taxonomy/metabuli.py")}),
+                    TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench").AsView({Path("gtdbtk_image.py")})],
+        targets=t,
+    )
+    c.check_plan(task, {"sequences::study": 1, "sequences::read_metadata": n, "sequences::assembly": n,
+                        "sequences::das_tool_bin_fasta": m})
+    c.print_plan(task, width=34)
+    if args.dag:
+        c.write_dag(task, f"e5_taxonomy_{name}", cache_dir)
+    if launching:
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_tax_{name}", stage_only=args.stage_only,
+                        params=dict(executor=dict(queueSize=args.queue_size or CATALOGUE_QUEUE), process=dict(tries=3)),
+                        materialise=args.materialise, on_exist="clear" if args.clear else "update")
+    else:
+        print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
+    return 0
+
+
 def cmd_list(args):
     for batch in ([args.batch] if args.batch is not None else sorted(BATCHES)):
         total = 0
@@ -510,6 +596,20 @@ def main():
     p.add_argument("--import", dest="import_givens", action="store_true",
                    help="import what the pool lacks before planning")
     p.set_defaults(fn=cmd_catalogue)
+    p = sub.add_parser("taxonomy", help="Metabuli on each assembly and GTDB-Tk r232 on each DAS Tool MAG of one catalogue")
+    p.add_argument("name", choices=list(CATALOGUES))
+    p.add_argument("--metabuli-db", type=Path, default=METABULI_DB, help=f"default {METABULI_DB}")
+    p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e5_taxonomy_<name>.dag.svg")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--stage-only", action="store_true")
+    mode.add_argument("--launch", action="store_true")
+    mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
+    p.add_argument("--tag")
+    p.add_argument("--queue-size", type=int, help=f"tasks this run may queue; default {CATALOGUE_QUEUE}")
+    p.add_argument("--clear", action="store_true", help="restage from scratch; deletes the run's logs")
+    p.add_argument("--import", dest="import_givens", action="store_true",
+                   help="import what the pool lacks before planning")
+    p.set_defaults(fn=cmd_taxonomy)
     args = ap.parse_args()
     return args.fn(args)
 
