@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Score `e4_gems.py --lane evidence`: three GEMs per bin, carved from DIAMOND's, KOfam's and both tables' hits.
+"""Score `e4_gems.py --lane evidence`: up to four GEMs per bin, carved from DIAMOND's, KOfam's and both tables'
+hits, and from each ORF's best-supported reaction across the two (diluted_top1).
 
 extract    write each lane's GEM and each bin's DIAMOND and KOfam hits out of a run's results, as
            <out>/<lane>/<bin>.xml.gz and <out>/hits_<source>/<bin>.tsv.gz, and the BiGG gene KO table.
@@ -31,7 +32,7 @@ sys.path.insert(0, str(HERE))
 
 from e4_ablation import BINS, KINDS, metrics, quartiles, read_bins  # noqa: E402
 
-LANES = ("diamond", "kofam", "both")
+LANES = ("diamond", "kofam", "both", "diluted_top1")
 ROOT = Path("/scratch/phyberos/e4_ablation")
 GPRS = ROOT / "refs" / "carveme166_bigg_gprs.csv.gz"
 

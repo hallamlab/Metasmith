@@ -164,6 +164,16 @@ types:
       _: CarveMe 1.6.6 GEM on SCIP with the two-step gap fill, carved from bench::bigg_hits_both
       bench: gem_both
       ext: xml
+  bigg_hits_diluted_top1:
+    properties:
+      _: carve's hits table for one bin, each ORF's single best-supported reaction across DIAMOND and KofamScan, as the winning lane's BiGG genes that carry it
+      bench: bigg_hits_diluted_top1
+      ext: tsv
+  gem_diluted_top1:
+    properties:
+      _: CarveMe 1.6.6 GEM on SCIP with the two-step gap fill, carved from bench::bigg_hits_diluted_top1
+      bench: gem_diluted_top1
+      ext: xml
   metagem_media_db:
     properties:
       _: metaGEM's media_db.tsv (medium, description, compound, name), the table its carve rule passes as --mediadb

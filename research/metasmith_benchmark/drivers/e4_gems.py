@@ -66,12 +66,14 @@ RUNGS = {
     "diamond": ("e4abl::model_diamond", ["carve_diamond.py"]),
     "scip": ("e4abl::model_scip", ["carve_scip.py"]),
 }
-EVIDENCE = ("diamond", "kofam", "both")
+EVIDENCE = ("diamond", "kofam", "both", "diluted_top1")
 # Each evidence lane's steps beyond the ones the lanes share, which no lane needs alone.
 EVIDENCE_STEPS = {"diamond": {"carveme_annotate_bigg", "hits_from_diamond", "carve_gem_diamond"},
                   "kofam": {"bin_orf_chunk", "kofam_bigg_reference", "kofamscan", "hits_from_kofam", "carve_gem_kofam"},
                   "both": {"carveme_annotate_bigg", "hits_from_diamond", "bin_orf_chunk", "kofam_bigg_reference",
-                           "kofamscan", "hits_from_kofam", "hits_from_both", "carve_gem_both"}}
+                           "kofamscan", "hits_from_kofam", "hits_from_both", "carve_gem_both"},
+                  "diluted_top1": {"carveme_annotate_bigg", "hits_from_diamond", "bin_orf_chunk", "kofam_bigg_reference",
+                                   "kofamscan", "hits_diluted_top1", "carve_gem_diluted_top1"}}
 STEPS = {"repro": 4, "modern": 2, **{lane: len(files) for lane, (_, files) in RUNGS.items()}}
 
 
@@ -134,7 +136,8 @@ def declare_evidence_globals(smith, root, ensure):
     c.add_value(givens, "ref/modelling::media", e4_metagem.MEDIUM_TSV.read_text(), "modelling::media",
                 tags=["reference"])
     c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
-    c.declare_refs(givens, {"e4abl::carveme166_bigg_proteins": root / "refs" / CARVEME166_REFS["e4abl::carveme166_bigg_proteins"],
+    c.declare_refs(givens, {**{t: root / "refs" / CARVEME166_REFS[t]
+                               for t in ("e4abl::carveme166_bigg_proteins", "e4abl::carveme166_bigg_gprs")},
                             **{t: c.DB_PATHS[t] for t in ("ref::kofamscan_profiles", "ref::kofamscan_ko_list")}})
     types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")]
     types += [c.LIBRARY / "data_types" / t for t in ("bench.yml", "e4abl.yml")]
@@ -266,9 +269,11 @@ def cmd_run(args):
             targets=build_targets("evidence", args.evidence),
         )
         expected = {"sequences::bin_orfs": len(bins), "modelling::media": 1, "modelling::medium_name": 1}
-        if set(args.evidence) & {"kofam", "both"}:
+        if set(args.evidence) & {"kofam", "both", "diluted_top1"}:
             expected.update({"e4abl::carveme166_bigg_proteins": 1, "ref::kofamscan_profiles": 1,
                              "ref::kofamscan_ko_list": 1})
+        if "diluted_top1" in args.evidence:
+            expected["e4abl::carveme166_bigg_gprs"] = 1
         STEPS["evidence"] = len(set().union(*(EVIDENCE_STEPS[e] for e in args.evidence)))
     elif args.lane == "modern":
         task = smith.GenerateWorkflow(
