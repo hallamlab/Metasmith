@@ -67,7 +67,7 @@ def fig1():
 
 
 SOURCES = ["metagem", "R0", "R1", "B", "U", "V", "G", "D", "S", "M", "kofam", "both", "diluted_top1"]
-LABELS = {"metagem": "meta<br>GEM", "kofam": "KO<br>fam", "both": "KO+<br>DMND", "diluted_top1": "top-1"}
+LABELS = {"metagem": "meta<br>GEM", "kofam": "KO<br>fam", "both": "both", "diluted_top1": "top-1"}
 OLD_CODE = {"R0", "R1", "B", "U"}
 PANELS = [
     ("total_score", "Total"),
@@ -112,7 +112,7 @@ def fig2b():
 
 def ladder(df, ghost=None):
     stats = memote_stats(df)
-    sources = [s for s in SOURCES if s in set(df.source)]
+    sources = [s for s in SOURCES if s in set(df.dropna(subset=["total_score"]).source)]
     labels = [LABELS.get(s, s) for s in sources]
     ghost_med = memote_stats(ghost) if ghost is not None else None
     fig = make_subplots(rows=2, cols=3, subplot_titles=[t for _, t in PANELS],
@@ -142,7 +142,7 @@ def ladder(df, ghost=None):
                         ("CarveMe 1.6.6 code", LANES[1][2])]:
         fig.add_trace(go.Bar(x=[None], y=[None], name=name, marker_color=color))
     fig.update_layout(
-        width=1000, height=600, font=FONT, plot_bgcolor="white", paper_bgcolor="white", bargap=0.2,
+        width=1150, height=600, font=FONT, plot_bgcolor="white", paper_bgcolor="white", bargap=0.2,
         margin=dict(l=60, r=20, t=40, b=70),
         legend=dict(orientation="h", x=0, y=-0.1, xanchor="left", font=dict(size=12)),
     )
