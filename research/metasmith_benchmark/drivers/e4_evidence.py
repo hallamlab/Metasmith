@@ -33,19 +33,37 @@ ROOT = Path("/scratch/phyberos/e4_ablation")
 GPRS = ROOT / "refs" / "carveme166_bigg_gprs.csv.gz"
 
 
+# Only a run's targets are published under results/. Every other product's index path names its task's
+# shard by the last 16 hex of the task hash, and the home's cache index maps that to the shard.
+def cache_shards(home):
+    import sqlite3
+
+    db = sqlite3.connect(home / "task_cache" / "cache.sqlite")
+    return {k[-16:]: home / "task_cache" / root
+            for k, root in db.execute("select lower(hex(key)), output_root from entries where tombstoned_at is null")}
+
+
+def product_file(results, path, shards):
+    published = results / path
+    if published.exists():
+        return published
+    return shards[Path(path).name.split(".")[1].split("-")[0]] / path
+
+
 def cmd_extract(args):
     import yaml
     from e4_tally import bins_of
 
     index = yaml.load(open(args.results / "_metadata" / "index.yml"), Loader=yaml.CSafeLoader)["manifest"]
     owner = bins_of(index)
+    shards = cache_shards(args.results.parents[2])
     wanted = {f"bench::gem_{lane}": lane for lane in LANES}
     wanted.update({"bench::bigg_hits_diamond": "hits_diamond", "bench::bigg_hits_kofam": "hits_kofam"})
     counts, seen = Counter(), set()
     for path, entry in index.items():
         kind = wanted.get(entry.get("type"))
         if entry.get("type") == "bench::bigg_gene_kos":
-            shutil.copyfile(args.results / path, args.out / "bigg_gene_kos.tsv")
+            shutil.copyfile(product_file(args.results, path, shards), args.out / "bigg_gene_kos.tsv")
         if kind is None:
             continue
         b = owner[path]
@@ -57,7 +75,7 @@ def cmd_extract(args):
         seen.add((kind, b))
         dest = args.out / kind / (f"{b}.xml.gz" if kind in LANES else f"{b}.tsv.gz")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(gzip.compress((args.results / path).read_bytes(), compresslevel=1))
+        dest.write_bytes(gzip.compress(product_file(args.results, path, shards).read_bytes(), compresslevel=1))
         counts[kind] += 1
     print("\t".join(f"{k} {n}" for k, n in sorted(counts.items())), file=sys.stderr)
 
