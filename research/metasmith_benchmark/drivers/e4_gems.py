@@ -14,7 +14,8 @@ diamond   gapfill with CarveMe's own DIAMOND 2.1.13 search
 scip      diamond on SCIP: the modern lane's transform on a Python 3.12 build of its image
 
 evidence  three GEMs per bin on the modern lane's split CarveMe transforms, carved from DIAMOND's BiGG hits,
-          from KofamScan's KOs translated to the BiGG genes that carry them, and from both tables together
+          from KofamScan's KOs translated to the BiGG genes that carry them, and from both tables together.
+          --evidence names a subset: E4's rung M stands in for the DIAMOND lane at full scale.
 
 `run` solves against a local dry-run home and renders the DAG. `import`, `--materialise`,
 `--stage-only` and `--launch` act on the fir agent home, from a Slurm job there, after
@@ -66,7 +67,12 @@ RUNGS = {
     "scip": ("e4abl::model_scip", ["carve_scip.py"]),
 }
 EVIDENCE = ("diamond", "kofam", "both")
-STEPS = {"repro": 4, "modern": 2, "evidence": 10, **{lane: len(files) for lane, (_, files) in RUNGS.items()}}
+# Each evidence lane's steps beyond the ones the lanes share, which no lane needs alone.
+EVIDENCE_STEPS = {"diamond": {"carveme_annotate_bigg", "hits_from_diamond", "carve_gem_diamond"},
+                  "kofam": {"bin_orf_chunk", "kofam_bigg_reference", "kofamscan", "hits_from_kofam", "carve_gem_kofam"},
+                  "both": {"carveme_annotate_bigg", "hits_from_diamond", "bin_orf_chunk", "kofam_bigg_reference",
+                           "kofamscan", "hits_from_kofam", "hits_from_both", "carve_gem_both"}}
+STEPS = {"repro": 4, "modern": 2, **{lane: len(files) for lane, (_, files) in RUNGS.items()}}
 
 
 def enumerate_bins():
@@ -174,7 +180,7 @@ def declare_givens(smith, bins, ensure, name):
     return c.cite(givens, CACHE_DIR / f"e4_gems_inputs_{name}.xgdb", [c.MLIB / "data_types" / "sequences.yml"], ensure)
 
 
-def build_targets(lane):
+def build_targets(lane, evidence=EVIDENCE):
     t = TargetBuilder()
     if lane in RUNGS:
         model_type, files = RUNGS[lane]
@@ -184,8 +190,8 @@ def build_targets(lane):
             t.Add(model_type)
         return t
     if lane == "evidence":
-        for evidence in EVIDENCE:
-            t.Add(f"bench::gem_{evidence}")
+        for source in evidence:
+            t.Add(f"bench::gem_{source}")
         return t
     if lane == "modern":
         gem = t.Add("modelling::carveme_model")
@@ -257,10 +263,13 @@ def cmd_run(args):
                        DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
                        DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"), evidence_globals],
             transforms=evidence_transforms(),
-            targets=build_targets("evidence"),
+            targets=build_targets("evidence", args.evidence),
         )
-        expected = {"sequences::bin_orfs": len(bins), "modelling::media": 1, "modelling::medium_name": 1,
-                    "e4abl::carveme166_bigg_proteins": 1, "ref::kofamscan_profiles": 1, "ref::kofamscan_ko_list": 1}
+        expected = {"sequences::bin_orfs": len(bins), "modelling::media": 1, "modelling::medium_name": 1}
+        if set(args.evidence) & {"kofam", "both"}:
+            expected.update({"e4abl::carveme166_bigg_proteins": 1, "ref::kofamscan_profiles": 1,
+                             "ref::kofamscan_ko_list": 1})
+        STEPS["evidence"] = len(set().union(*(EVIDENCE_STEPS[e] for e in args.evidence)))
     elif args.lane == "modern":
         task = smith.GenerateWorkflow(
             samples=list(inputs.AsSamples("sequences::bin_orfs")),
@@ -309,10 +318,12 @@ def main():
         p.add_argument("--chunk-size", type=int, default=2000)
         p.add_argument("--bins-file", type=Path, help="a TSV with a bin column, e.g. e4_ablation_bins.tsv")
         p.add_argument("--home", choices=sorted(ROOTS), default="metagem")
-        p.set_defaults(fn=fn, lane="repro", dag=False, stage_only=False, launch=False, materialise=False, tag=None,
+        p.set_defaults(fn=fn, lane="repro", evidence=list(EVIDENCE), dag=False, stage_only=False, launch=False, materialise=False, tag=None,
                        import_givens=False, bins_file=None)
         if name == "run":
             p.add_argument("--lane", choices=["repro", "modern", *RUNGS, "evidence"], default="repro")
+            p.add_argument("--evidence", nargs="+", choices=EVIDENCE, default=list(EVIDENCE),
+                           help="--lane evidence: the GEMs to build")
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_gems_<lane>.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
