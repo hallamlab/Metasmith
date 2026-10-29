@@ -13,6 +13,9 @@ gapfill   version gap filled in a second step without gene scores, as the modern
 diamond   gapfill with CarveMe's own DIAMOND 2.1.13 search
 scip      diamond on SCIP: the modern lane's transform on a Python 3.12 build of its image
 
+evidence  three GEMs per bin on the modern lane's split CarveMe transforms, carved from DIAMOND's BiGG hits,
+          from KofamScan's KOs translated to the BiGG genes that carry them, and from both tables together
+
 `run` solves against a local dry-run home and renders the DAG. `import`, `--materialise`,
 `--stage-only` and `--launch` act on the fir agent home, from a Slurm job there, after
 e4_extract_proteins.sh has unpacked the bins.
@@ -62,7 +65,8 @@ RUNGS = {
     "diamond": ("e4abl::model_diamond", ["carve_diamond.py"]),
     "scip": ("e4abl::model_scip", ["carve_scip.py"]),
 }
-STEPS = {"repro": 4, "modern": 2, **{lane: len(files) for lane, (_, files) in RUNGS.items()}}
+EVIDENCE = ("diamond", "kofam", "both")
+STEPS = {"repro": 4, "modern": 2, "evidence": 10, **{lane: len(files) for lane, (_, files) in RUNGS.items()}}
 
 
 def enumerate_bins():
@@ -119,6 +123,24 @@ def declare_ablation_globals(smith, root, ensure):
     return c.cite(givens, CACHE_DIR / "e4_gems_ablation_globals.xgdb", types, ensure)
 
 
+def declare_evidence_globals(smith, root, ensure):
+    givens = smith.PoolGivens()
+    c.add_value(givens, "ref/modelling::media", e4_metagem.MEDIUM_TSV.read_text(), "modelling::media",
+                tags=["reference"])
+    c.add_value(givens, "ref/modelling::medium_name", MEDIUM_NAME, "modelling::medium_name", tags=["reference"])
+    c.declare_refs(givens, {"e4abl::carveme166_bigg_proteins": root / "refs" / CARVEME166_REFS["e4abl::carveme166_bigg_proteins"],
+                            **{t: c.DB_PATHS[t] for t in ("ref::kofamscan_profiles", "ref::kofamscan_ko_list")}})
+    types = [c.MLIB / "data_types" / t for t in ("modelling.yml", "ref.yml")]
+    types += [c.LIBRARY / "data_types" / t for t in ("bench.yml", "e4abl.yml")]
+    return c.cite(givens, CACHE_DIR / "e4_gems_evidence_globals.xgdb", types, ensure)
+
+
+def evidence_transforms():
+    return [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_gem").AsView({Path("carveme_annotate_bigg.py")}),
+            TransformInstanceLibrary.Load(c.MLIB / "transforms" / "functionalAnnotation").AsView({Path("kofamscan.py")}),
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "gem_evidence")]
+
+
 def ablation_expected(lane, n_bins):
     expected = {"sequences::bin_orfs": n_bins, "modelling::medium_name": 1}
     if lane != "scip":
@@ -160,6 +182,10 @@ def build_targets(lane):
             t.Add(model_type, parents=[t.Add("e4abl::bigg166_diamond_hits")])
         else:
             t.Add(model_type)
+        return t
+    if lane == "evidence":
+        for evidence in EVIDENCE:
+            t.Add(f"bench::gem_{evidence}")
         return t
     if lane == "modern":
         gem = t.Add("modelling::carveme_model")
@@ -203,6 +229,7 @@ def cmd_run(args):
     repro_globals = declare_globals(smith, ensure)
     modern_globals = e4_metagem.declare_globals(smith, "open", CACHE_DIR / "e4_gems_modern_globals.xgdb", ensure)
     ablation_globals = declare_ablation_globals(smith, ROOTS[args.home], ensure) if args.home == "e4abl" else None
+    evidence_globals = declare_evidence_globals(smith, ROOTS[args.home], ensure) if args.home == "e4abl" else None
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds the givens of {len(bins)} bins")
         return 0
@@ -221,6 +248,19 @@ def cmd_run(args):
             targets=build_targets(args.lane),
         )
         expected = ablation_expected(args.lane, len(bins))
+    elif args.lane == "evidence":
+        if evidence_globals is None:
+            sys.exit("--lane evidence runs only in --home e4abl")
+        task = smith.GenerateWorkflow(
+            samples=list(inputs.AsSamples("sequences::bin_orfs")),
+            resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
+                       DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                       DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"), evidence_globals],
+            transforms=evidence_transforms(),
+            targets=build_targets("evidence"),
+        )
+        expected = {"sequences::bin_orfs": len(bins), "modelling::media": 1, "modelling::medium_name": 1,
+                    "e4abl::carveme166_bigg_proteins": 1, "ref::kofamscan_profiles": 1, "ref::kofamscan_ko_list": 1}
     elif args.lane == "modern":
         task = smith.GenerateWorkflow(
             samples=list(inputs.AsSamples("sequences::bin_orfs")),
@@ -272,7 +312,7 @@ def main():
         p.set_defaults(fn=fn, lane="repro", dag=False, stage_only=False, launch=False, materialise=False, tag=None,
                        import_givens=False, bins_file=None)
         if name == "run":
-            p.add_argument("--lane", choices=["repro", "modern", *RUNGS], default="repro")
+            p.add_argument("--lane", choices=["repro", "modern", *RUNGS, "evidence"], default="repro")
             p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e4_gems_<lane>.dag.svg")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")

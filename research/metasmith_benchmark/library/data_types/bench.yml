@@ -123,6 +123,47 @@ types:
       _: DIAMOND blastp of one bin's proteins against CarveMe's BiGG proteins with CarveMe's own arguments, the table `carve --diamond` reads
       bench: bigg_diamond_hits
       ext: tsv
+
+  # The GEM evidence ablation: three translators write the table `carve --diamond` reads, one per
+  # source of gene evidence, and carve runs unchanged on each. Every table and every GEM is its own
+  # type. A product's properties are fixed where its transform is declared, so carve cannot pass its
+  # input's evidence on to its model. A lineage pin cannot separate the lanes either: the union's
+  # model descends from the DIAMOND and KOfam tables, and a cache hit drops a model's lineage.
+  bigg_gene_kos:
+    properties:
+      _: KofamScan of CarveMe 1.6.6's BiGG proteins, one row per BiGG gene and KO scoring above the KO's threshold
+      bench: bigg_gene_kos
+      ext: tsv
+  bigg_hits_diamond:
+    properties:
+      _: carve's hits table for one bin from bench::bigg_diamond_hits, unchanged
+      bench: bigg_hits_diamond
+      ext: tsv
+  bigg_hits_kofam:
+    properties:
+      _: carve's hits table for one bin from KofamScan, one row per ORF and BiGG gene sharing a KO above its threshold, with the KofamScan score as the bitscore
+      bench: bigg_hits_kofam
+      ext: tsv
+  bigg_hits_both:
+    properties:
+      _: carve's hits table for one bin as the rows of bench::bigg_hits_diamond and bench::bigg_hits_kofam together
+      bench: bigg_hits_both
+      ext: tsv
+  gem_diamond:
+    properties:
+      _: CarveMe 1.6.6 GEM on SCIP with the two-step gap fill, carved from bench::bigg_hits_diamond
+      bench: gem_diamond
+      ext: xml
+  gem_kofam:
+    properties:
+      _: CarveMe 1.6.6 GEM on SCIP with the two-step gap fill, carved from bench::bigg_hits_kofam
+      bench: gem_kofam
+      ext: xml
+  gem_both:
+    properties:
+      _: CarveMe 1.6.6 GEM on SCIP with the two-step gap fill, carved from bench::bigg_hits_both
+      bench: gem_both
+      ext: xml
   metagem_media_db:
     properties:
       _: metaGEM's media_db.tsv (medium, description, compound, name), the table its carve rule passes as --mediadb
