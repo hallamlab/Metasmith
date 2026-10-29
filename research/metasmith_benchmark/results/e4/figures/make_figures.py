@@ -142,7 +142,7 @@ def ladder(df, ghost=None):
                         ("CarveMe 1.6.6 code", LANES[1][2])]:
         fig.add_trace(go.Bar(x=[None], y=[None], name=name, marker_color=color))
     fig.update_layout(
-        width=1150, height=600, font=FONT, plot_bgcolor="white", paper_bgcolor="white", bargap=0.2,
+        width=1250, height=600, font=FONT, plot_bgcolor="white", paper_bgcolor="white", bargap=0.2,
         margin=dict(l=60, r=20, t=40, b=70),
         legend=dict(orientation="h", x=0, y=-0.1, xanchor="left", font=dict(size=12)),
     )

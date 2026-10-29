@@ -19,13 +19,12 @@ These tables are E4's full-run results: which bins got a model in each lane, how
 | `ablation_memote.tsv` | 14,080 rows | MEMOTE 0.17 total and section scores for metaGEM's GEM and every rung, one row per bin and source. `note` is `no model` where a rung built none. |
 | `ablation_memote_rewritten.tsv` | 7,040 rows | as `ablation_memote.tsv`, for metaGEM's GEM and rungs R0 to U after each model is rewritten through CarveMe 1.6.6's SBML writer |
 | `ablation_rewrite_fidelity.tsv` | 7,040 rows | what each rewrite changed: per check, the count of elements that differ, and the formulas, charges, SBO terms and annotation namespaces before and after |
-| `evidence_parity.tsv` | 5,662 rows | each evidence lane's model against metaGEM, rung M and the smoke bins' own DIAMOND model, one row per bin, lane and reference |
+| `evidence_parity.tsv` | 8,488 rows | each evidence lane's model against metaGEM, rung M and the smoke bins' own DIAMOND model, one row per bin, lane and reference |
 | `evidence_memote.tsv` | 5,632 rows | MEMOTE 0.17 total and section scores per bin and evidence lane. `note` is `no score` where the lane built no model. |
 | `evidence_sources.tsv` | 1,403 bins | the `both` lane's reactions split by which hit table supports their gene rule, and by whether rung M or the `kofam` lane also carries them |
-| `evidence_growth.tsv` | 2,821 rows | biomass flux on M8 per bin and evidence lane |
-| `evidence_fig2c.tsv` | 90 rows | medians and quartiles per lane, study and metric for Figure 2C, beside rungs R0 and M |
+| `evidence_growth.tsv` | 4,229 rows | biomass flux on M8 per bin and evidence lane |
+| `evidence_fig2c.tsv` | 108 rows | medians and quartiles per lane, study and metric for Figure 2C, beside rungs R0 and M |
 | `evidence_reference.txt` | 5 lines | how many BiGG genes carry a KO, and how far one KO spreads over BiGG genes |
-| `evidence_top1_smoke_memote.tsv` | 40 rows | as `evidence_memote.tsv`, for the 10 smoke bins with the `diluted_top1` lane scored |
 
 A per-test column holds MEMOTE's metric, and `<test>_n` holds the count or value it came from.
 
@@ -51,6 +50,6 @@ A parity row with only `no published GEM` is one of the 18 bins metaGEM built no
 
 `drivers/e4_ablation_memote.sbatch` scored metaGEM's GEMs and rungs R0 to S (jobs 62448450 and 62448866, 2026-10-01, checkout b5e5cee0) over models from a fresh `extract` of the rung archives. `e4_ablation_memote.py collect` wrote `ablation_memote.tsv`, taking M's rows from `quality_modern.tsv`. `figures/make_figures.py` draws E4's figures from these tables.
 
-`drivers/e4_gems.py --lane evidence` built the `kofam` and `both` lanes on the 1,408 ablation bins (run `xsIzzdfv`, home `e4abl`, 2026-10-29, checkout 88342c0d). Rung M is the DIAMOND lane, so `diamond` holds only the 10 smoke bins (run `LSVPtFfb`). `diluted_top1` holds only the smoke bins (run `WjLbbe5i`, checkout eb120721). Five `both` bins have no model because CarveMe's M8 gap fill fails on SCIP. `drivers/e4_evidence.py` extracted the models and wrote every `evidence_*` table (checkout 41382ec2).
+`drivers/e4_gems.py --lane evidence` built the `kofam` and `both` lanes on the 1,408 ablation bins (run `xsIzzdfv`, home `e4abl`, 2026-10-29, checkout 88342c0d). Rung M is the DIAMOND lane, so `diamond` holds only the 10 smoke bins (run `LSVPtFfb`). `diluted_top1` covers the 1,408 bins (run `mxQRJ8Dc`, checkout 41382ec2). Five `both` bins have no model because CarveMe's M8 gap fill fails on SCIP. `drivers/e4_evidence.py` extracted the models and wrote every `evidence_*` table (checkout 41382ec2).
 
 The same sbatch with `REWRITE_IMAGE` set to the stock CarveMe 1.6.6 image (reframed 1.6.0) wrote the two rewrite tables (jobs 62505042 and 62505653, 2026-10-01, checkout c8b0c61a). `drivers/sbml_rewrite.py` holds the rewrite and its checks.
