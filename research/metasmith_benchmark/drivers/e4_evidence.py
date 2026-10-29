@@ -198,6 +198,7 @@ def cmd_stage(args):
     from e4_ablation_memote import blocks, pack
 
     bins = read_bins(args.bins_file)
+    (args.work / "models").mkdir(parents=True, exist_ok=True)
     with open(args.work / "blocks.tsv", "w") as fh:
         fh.write("block\tstudy\tbin\n")
         for i, block in enumerate(blocks(bins), 1):
@@ -208,7 +209,6 @@ def cmd_stage(args):
                     model = args.models / lane / f"{b}.xml.gz"
                     if model.exists():
                         entries.append((f"{lane}/{b}.xml.gz", model.read_bytes()))
-            (args.work / "models").mkdir(parents=True, exist_ok=True)
             pack(args.work / "models" / f"block_{i:02d}.tar", entries)
     print(f"{i} blocks", file=sys.stderr)
 
