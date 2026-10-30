@@ -1,6 +1,6 @@
 """Test whether gene families sit disproportionately in some dose-response clusters.
 
-    family_enrichment.py <clusters.csv> <annotation_dir> <out_dir> [--tag T] [--stable-only]
+    family_enrichment.py <clusters.csv> <annotation_dir> <out_dir> [--tag T] [--stable-only] [--operons]
 
 `<clusters.csv>` is cluster_k.py output: gene_id, gene_name, cluster, membership_confidence,
 stable. `<annotation_dir>` holds EcoCyc's GO annotation of E. coli K-12 (ecocyc.gaf.gz),
@@ -15,6 +15,12 @@ for where it sits among the clusters, not for being variable at all. Per family,
 permutation test of the cluster labels (G statistic) asks whether its members are spread
 non-randomly; per family and cluster, a one-sided Fisher's exact test says where it
 concentrates. Both are Benjamini-Hochberg corrected within each source.
+
+Genes of one operon share a transcript, so counting them separately overstates the evidence.
+`--operons` counts each operon once per cluster: the unit tested is an (operon, cluster) pair,
+so an operon split across clusters still counts in each. Operons are RegulonDB's transcription
+units (TUSet.gff3, with gene coordinates from GeneProductSet.gff3, both on K-12 MG1655) merged
+wherever two units share a gene; a gene in no unit, or without a K-12 name, stands alone.
 """
 import argparse
 import gzip
@@ -130,6 +136,52 @@ def name_families(genes: dict[str, str]) -> tuple[dict, dict]:
     return families, {f: f"{f}* genes" for f in families}
 
 
+def operon_of(ann: Path) -> dict[str, str]:
+    def records(name):
+        for line in (ann / name).read_text().splitlines():
+            f = line.split("\t")
+            if len(f) < 9 or line.startswith("#") or not (f[3] and f[4]):
+                continue
+            attrs = dict(kv.strip().partition("=")[::2] for kv in f[8].split(";") if "=" in kv)
+            yield int(f[3]), int(f[4]), f[6], attrs.get("name", "")
+
+    genes = [r for r in records("GeneProductSet.gff3") if r[3]]
+    parent = {g[3]: g[3] for g in genes}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for t_start, t_end, t_strand, _ in records("TUSet.gff3"):
+        inside = [name for start, end, strand, name in genes if strand == t_strand
+                  and min(end, t_end) - max(start, t_start) + 1 >= 0.5 * (end - start + 1)]
+        for name in inside[1:]:
+            parent[find(name)] = find(inside[0])
+    members = defaultdict(list)
+    for _, _, _, name in genes:
+        members[find(name)].append(name)
+    return {name.lower(): "-".join(members[find(name)]) for name in parent}
+
+
+def collapse_to_operons(labels: pd.Series, genes: dict[str, str], operons: dict[str, str]) -> tuple[pd.Series, dict, list]:
+    operon = {g: operons.get(genes.get(g, "").lower(), g) for g in labels.index}
+    unit_of = {g: f"{operon[g]}|{labels[g]}" for g in labels.index}
+    units = pd.Series({u: labels[g] for g, u in unit_of.items()}).sort_index()
+    shown = defaultdict(list)
+    for g, u in unit_of.items():
+        shown[u].append(GENE_NAME[g])
+    multi = pd.Series(operon).value_counts()
+    multi = multi[multi > 1].index
+    split = pd.Series({g: labels[g] for g in labels.index}).groupby(pd.Series(operon)).nunique()
+    lines = [f"operons: {sum(g.lower() in operons for g in genes.values())} of {len(genes)} named genes found in "
+             f"K-12 MG1655; {len(labels)} genes collapse to {len(units)} operon x cluster units; "
+             f"{len(multi)} operons have >= 2 clustered genes, {int((split > 1).sum())} of them split across clusters"]
+    GENE_NAME.update({u: "/".join(sorted(n)) for u, n in shown.items()})
+    return units, unit_of, lines
+
+
 def g_statistic(observed: np.ndarray, expected: np.ndarray) -> np.ndarray:
     with np.errstate(divide="ignore", invalid="ignore"):
         terms = np.where(observed > 0, observed * np.log(observed / expected), 0.0)
@@ -178,7 +230,7 @@ def test_source(source: str, families: dict, names: dict, labels: pd.Series, per
 GENE_NAME: dict[str, str] = {}
 
 
-def plot(table: pd.DataFrame, title: str, out: Path) -> None:
+def plot(table: pd.DataFrame, title: str, out: Path, unit: str = "genes") -> None:
     hits = table[(table.fisher_q < FDR) & (table.fold > 1)]
     if hits.empty:
         return
@@ -210,7 +262,7 @@ def plot(table: pd.DataFrame, title: str, out: Path) -> None:
     ax.set_xticks(range(len(clusters)), [f"cluster {c}" for c in clusters], rotation=30, ha="right")
     ax.set_yticks(range(len(keys)), labels, fontsize=7)
     fig.colorbar(im, ax=ax, fraction=0.03, label="-log10 FDR (over-representation)")
-    ax.set_title(title + "\nnumbers: family genes in the cluster; bold: FDR < 0.05", fontsize=10)
+    ax.set_title(title + f"\nnumbers: family {unit} in the cluster; bold: FDR < 0.05", fontsize=10)
     fig.tight_layout()
     fig.savefig(out, dpi=200)
     plt.close(fig)
@@ -223,11 +275,12 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--tag", default="")
     ap.add_argument("--stable-only", action="store_true")
+    ap.add_argument("--operons", action="store_true")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     ann = Path(args.annotation)
-    tag = args.tag + ("_stable_only" if args.stable_only else "")
+    tag = args.tag + ("_stable_only" if args.stable_only else "") + ("_operons" if args.operons else "")
 
     clusters = pd.read_csv(args.clusters, index_col=0)
     if args.stable_only:
@@ -236,20 +289,26 @@ def main() -> None:
     GENE_NAME.update({g: (n or g) for g, n in names.items()})
     genes = {g: n for g, n in names.items() if n and not n.startswith("ACP6EX_")}
     labels = clusters.cluster
+    sources = {"GO": go_families(ann, genes), "KEGG": kegg_families(ann, genes), "name": name_families(genes)}
+    lines = [f"{len(labels)} clustered genes in {labels.nunique()} clusters; "
+             f"{len(genes)} carry a gene name; {PERMUTATIONS} permutations; seed {SEED}"]
+    if args.operons:
+        labels, unit_of, collapsed = collapse_to_operons(labels, genes, operon_of(ann))
+        lines += collapsed
+        sources = {s: ({f: {unit_of[g] for g in m} for f, m in fams.items()}, names)
+                   for s, (fams, names) in sources.items()}
 
     rng = np.random.default_rng(SEED)
     coded = labels.map({c: i for i, c in enumerate(np.sort(labels.unique()))}).to_numpy()
     perms = np.stack([rng.permutation(coded) for _ in range(PERMUTATIONS)])
 
-    sources = {"GO": go_families(ann, genes), "KEGG": kegg_families(ann, genes), "name": name_families(genes)}
-    tables, lines = [], [f"{len(labels)} clustered genes in {labels.nunique()} clusters; "
-                         f"{len(genes)} carry a gene name; {PERMUTATIONS} permutations; seed {SEED}"]
+    tables = []
     for source, (families, fam_names) in sources.items():
         mapped = len(set().union(*families.values())) if families else 0
         t = test_source(source, families, fam_names, labels, perms)
         tables.append(t)
         tested = t.family.nunique() if not t.empty else 0
-        lines.append(f"{source}: {mapped} genes annotated, {tested} families with >= {MIN_GENES} genes tested")
+        lines.append(f"{source}: {mapped} {'units' if args.operons else 'genes'} annotated, {tested} families with >= {MIN_GENES} genes tested")
         if t.empty:
             continue
         spread = t.drop_duplicates("family")
@@ -260,8 +319,11 @@ def main() -> None:
             lines.append(f"    cluster {h.cluster}: {h['name'][:60]} ({h.family}) {h.in_cluster}/{h.genes_clustered} "
                          f"(expected {h.expected}), q={h.fisher_q:.2g}: {h.genes[:120]}")
     table = pd.concat(tables, ignore_index=True)
-    table.sort_values(["fisher_q", "permutation_q"]).to_csv(out / f"family_enrichment{tag}.csv", index=False)
-    plot(table, f"Gene families over-represented per cluster{tag.replace('_', ' ')}", out / f"family_enrichment{tag}.png")
+    written = table.rename(columns={"genes_clustered": "operons_clustered", "cluster_size": "cluster_operons",
+                                    "in_cluster": "operons_in_cluster"}) if args.operons else table
+    written.sort_values(["fisher_q", "permutation_q"]).to_csv(out / f"family_enrichment{tag}.csv", index=False)
+    plot(table, f"Gene families over-represented per cluster{tag.replace('_', ' ')}", out / f"family_enrichment{tag}.png",
+         "operons" if args.operons else "genes")
     (out / f"family_enrichment_summary{tag}.txt").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
 
