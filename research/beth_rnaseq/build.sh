@@ -12,4 +12,4 @@ PYTHONPATH=$MSM_SRC mamba run -n msm python "$HERE/mocklib/generate.py"
 msm build all --types "$MSM_SRC/metasmith_libraries/data_types" --types "$HERE/mocklib/data_types" \
   --transforms "$HERE/mocklib/transforms/isolate_rnaseq" > "$HERE/results/build_mock.log"
 
-PYTHONPATH=$MSM_SRC mamba run -n msm python "$HERE/render.py" "$HERE/results/beth_rnaseq_dag.svg"
+PYTHONPATH=$MSM_SRC mamba run -n msm python "$HERE/render.py" "$HERE/results"

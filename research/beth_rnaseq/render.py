@@ -23,60 +23,73 @@ from metasmith.python_api import DEFERRED, DataInstanceLibrary, Spec, record_lib
 MLIB = SRC / "metasmith_libraries"
 MOCK = HERE / "mocklib"
 
-# TCAG run DAV36692 (NovaSeq X lane 5, 2026-08-19): library names as delivered. Each organism is
-# its own experiment, and its genome assembly is a given under it, so its reads only ever meet
-# its own genome.
-ORGANISMS = {
-    "EPI300": ("Escherichia coli EPI300", [f"epi300_cu{i}" for i in range(1, 7)]),
-    "CB2A": ("Caulobacter vibrioides CB2A", [f"cb2a_cu{i}" for i in range(1, 4)]),
-}
+# TCAG run DAV36692 (NovaSeq X lane 5, 2026-08-19): library names as delivered. cu1..cu6 are
+# copper doses (0, 1, 10, 50, 100, 300 ppm) with one library each. cb2a_cu1 and cu2 turned out
+# to be Bacillus and are dropped, which leaves CB2A one library and nothing to compare, so it
+# gets its own plan.
 
 # The transcriptomics root also holds the eukaryotic STAR -> StringTie route to a
 # gene_count_table. Pinning the count-derived targets under the sample-sheet table (index 0)
 # keeps the planner from answering any of them through that route instead.
-TARGETS = [
-    "transcriptomics::gene_count_table",
-    "isolate_rnaseq::qc_report",
-    {"type": "transcriptomics::volcano_plot", "parents": [0]},
-    {"type": "transcriptomics::expression_clusters", "parents": [0]},
-    "isolate_rnaseq::metal_gene_panel",
-]
+PLANS = {
+    "epi300": dict(
+        organism="Escherichia coli EPI300",
+        samples=[f"epi300_cu{i}" for i in range(1, 7)],
+        sample_sheet=True,
+        targets=[
+            "transcriptomics::gene_count_table",
+            "isolate_rnaseq::qc_report",
+            {"type": "isolate_rnaseq::dose_trend_results", "parents": [0]},
+            {"type": "transcriptomics::expression_clusters", "parents": [0]},
+            "isolate_rnaseq::metal_gene_panel",
+        ],
+    ),
+    "cb2a": dict(
+        organism="Caulobacter vibrioides CB2A JS4038",
+        samples=["cb2a_cu3"],
+        sample_sheet=False,
+        targets=[
+            "isolate_rnaseq::qc_report",
+            "isolate_rnaseq::tpm_table",
+            "annotation::bacmet_diamond_results",
+        ],
+    ),
+}
 
 
-def inputs() -> DataInstanceLibrary:
+def inputs(plan: dict) -> DataInstanceLibrary:
     lib = DataInstanceLibrary(Path(tempfile.mkdtemp(prefix="beth-rnaseq-")))
     for tl in ("sequences.yml", "transcriptomics.yml", "annotation.yml", "alignment.yml"):
         lib.AddTypeLibrary(MLIB / "data_types" / tl)
     lib.AddTypeLibrary(MOCK / "data_types" / "isolate_rnaseq.yml")
 
-    for code, (name, samples) in ORGANISMS.items():
-        exp = lib.AddValue(f"experiment_{code}.txt", f"{name} RNA-seq", "transcriptomics::experiment")
-        lib.AddItem(DEFERRED, "sequences::isolate_assembly", parents={exp})
+    exp = lib.AddValue("experiment.txt", f"{plan['organism']} RNA-seq", "transcriptomics::experiment")
+    lib.AddItem(DEFERRED, "sequences::isolate_assembly", parents={exp})
+    if plan["sample_sheet"]:
         lib.AddItem(DEFERRED, "isolate_rnaseq::sample_sheet", parents={exp})
-        for s in samples:
-            meta = lib.AddValue(f"read_metadata_{s}.json",
-                                {"sample": s, "parity": "paired", "length_class": "short"},
-                                "sequences::read_metadata", parents={exp})
-            pair = lib.AddValue(f"read_pair_{s}.txt", s, "sequences::read_pair", parents={meta})
-            lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
-            lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
-
-    lib.AddValue("clustering_params.json", {"method": "hierarchical", "k": None},
-                 "transcriptomics::clustering_params")
+        lib.AddValue("clustering_params.json", {"method": "hierarchical", "k": None},
+                     "transcriptomics::clustering_params")
+    for s in plan["samples"]:
+        meta = lib.AddValue(f"read_metadata_{s}.json",
+                            {"sample": s, "parity": "paired", "length_class": "short"},
+                            "sequences::read_metadata", parents={exp})
+        pair = lib.AddValue(f"read_pair_{s}.txt", s, "sequences::read_pair", parents={meta})
+        lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
+        lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
     return record_library(lib)
 
 
-def main(out: Path) -> None:
+def solve_and_render(plan: dict, out: Path) -> None:
     spec = Spec(
-        input_library=inputs(),
-        target_types=TARGETS,
+        input_library=inputs(plan),
+        target_types=plan["targets"],
         transform_libraries=[MLIB / "transforms" / n
                              for n in ("logistics", "kbase", "transcriptomics", "functionalAnnotation", "metagenomics")]
                             + [MOCK / "transforms" / "isolate_rnaseq"],
         resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
     )
     task = spec.Solve()
-    print(f"{len(task.plan.steps)} steps, ok={task.ok}, dropped={sorted(task.plan.dropped_targets)}")
+    print(f"{out.stem}: {len(task.plan.steps)} steps, ok={task.ok}, dropped={sorted(task.plan.dropped_targets)}")
     for step in task.plan.steps:
         uses = sorted({u.dtype_name for u in step.uses if not u.dtype_name.startswith(("env::", "lib::"))})
         print(f"  {step.transform.name:<32} <- {', '.join(uses)}")
@@ -90,8 +103,13 @@ def main(out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     # render() reads a dotted basename's suffix as the format, so pass the stem.
     for fmt in ("svg", "png"):
-        print(dag.render(out.with_suffix(""), fmt))
+        print(dag.render(out, fmt))
+
+
+def main(results: Path) -> None:
+    for code, plan in PLANS.items():
+        solve_and_render(plan, results / f"beth_rnaseq_dag_{code}")
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "results" / "beth_rnaseq_dag.svg")
+    main(Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "results")

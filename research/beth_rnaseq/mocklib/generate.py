@@ -24,13 +24,15 @@ FILE, DIR = "file", "dir"
 # `_` is a matched property, so a distinct description keeps any two of these from standing in
 # for one another.
 TYPES: dict[str, tuple[str, dict]] = {
-    "sample_sheet": (FILE, {"_": "one row per RNA library: sample, condition, replicate, batch", "ext": "tsv"}),
+    "sample_sheet": (FILE, {"_": "one row per RNA library: library and copper dose in ppm", "ext": "tsv"}),
     "rrna_fraction": (FILE, {"_": "per-sample fraction of read pairs on rRNA and tRNA features", "ext": "tsv"}),
     "featurecounts_sweep": (DIR, {"_": "featureCounts run at each strandedness setting (-s 0, 1, 2)"}),
     "strandedness_report": (FILE, {"_": "assignment rate per strandedness setting and the setting chosen", "ext": "tsv"}),
     "raw_count_table": (FILE, {"_": "gene by library read-pair counts, columns named by library", "ext": "csv"}),
     "tpm_table": (FILE, {"_": "gene by library TPM, normalised on gene length", "ext": "tsv"}),
-    "metal_gene_panel": (FILE, {"_": "fold change and TPM of the genes BacMet assigns to metal resistance", "ext": "svg"}),
+    "dose_trend_results": (FILE, {"_": "per gene: log2 fold change per 10x copper with its adjusted p-value, and each dose against 0 ppm", "ext": "csv"}),
+    "dose_trend_plot": (FILE, {"_": "volcano of the copper dose trend", "ext": "svg"}),
+    "metal_gene_panel": (FILE, {"_": "TPM and dose trend of the genes BacMet assigns to metal resistance, across the copper series", "ext": "svg"}),
     "qc_report": (FILE, {"_": "one RNA-seq QC report: trimming, mapping, rRNA, strandedness", "ext": "html"}),
 }
 
@@ -75,19 +77,29 @@ TABLE: list[T] = [
       [EXP, r("raw", "isolate_rnaseq::raw_count_table", "exp"),
        r("sheet", "isolate_rnaseq::sample_sheet", "exp")],
       [("counts", "transcriptomics::gene_count_table")], group_by="exp",
-      note="""deseq2 reads the condition from the column name, splitting off a trailing
-      `-<replicate>`. TCAG names the libraries `epi300_cu1`, which carries no condition, so
-      the columns are renamed `<condition>-<replicate>` from the sample sheet."""),
+      note="""TCAG names the libraries `epi300_cu1`..`cu6`; the columns are renamed to their
+      copper dose (`0ppm`, `1ppm`, ...) from the sample sheet, so every table downstream reads
+      in dose order."""),
     T("tpm_within_genome", "nosco-phycocyanin transcriptomics tpm_within_organism.tsv",
       [r("raw", "isolate_rnaseq::raw_count_table"), r("gff", "sequences::gff")],
       [("tpm", "isolate_rnaseq::tpm_table")], group_by="raw"),
+    T("deseq2_dose_trend", "proposed",
+      [EXP, r("counts", "transcriptomics::gene_count_table", "exp"),
+       r("sheet", "isolate_rnaseq::sample_sheet", "exp")],
+      [("trend", "isolate_rnaseq::dose_trend_results"), ("plot", "isolate_rnaseq::dose_trend_plot")],
+      group_by="exp", cpus=4, memory_gb=16,
+      note="""One library per dose leaves pairwise contrasts with no residual to estimate
+      dispersion from. pydeseq2 with design ~ log10(ppm + 1) as a continuous factor fits one
+      slope per gene across all six doses, leaving four residual degrees of freedom. Each dose
+      against 0 ppm is reported beside it as a descriptive log2 ratio of normalised counts,
+      without a p-value."""),
     T("metal_gene_panel", "proposed",
-      [EXP, r("de", "transcriptomics::deseq2_results", "exp"),
+      [EXP, r("trend", "isolate_rnaseq::dose_trend_results", "exp"),
        r("tpm", "isolate_rnaseq::tpm_table", "exp"),
        r("bacmet", "annotation::bacmet_diamond_results", "exp")],
       [("out", "isolate_rnaseq::metal_gene_panel")], group_by="exp",
-      note="""The libraries are named `cu`; if that marks copper exposure, the first genes to
-      read are the metal-resistance ones (cus, cop, cue in E. coli)."""),
+      note="""The libraries are a copper series (0, 1, 10, 50, 100, 300 ppm), so the first
+      genes to read are the metal-resistance ones (cus, cop, cue in E. coli)."""),
     T("rnaseq_qc_report", "proposed",
       [EXP, r("trim", "sequences::fastp_json_report", "exp"),
        r("stats", "alignment::alignment_stats", "exp"),
