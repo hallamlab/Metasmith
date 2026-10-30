@@ -59,6 +59,7 @@ PLANS = {
             "transcriptomics::gene_count_table",
             {"type": "isolate_rnaseq::dose_trend_results", "parents": [0]},
             {"type": "isolate_rnaseq::dose_trend_figures", "parents": [0]},
+            "isolate_rnaseq::dose_clusters",
             "isolate_rnaseq::metal_gene_panel",
             "isolate_rnaseq::tpm_table",
             "isolate_rnaseq::qc_report",

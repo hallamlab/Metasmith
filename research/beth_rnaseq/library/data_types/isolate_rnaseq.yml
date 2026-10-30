@@ -24,7 +24,10 @@ types:
       ext: csv
   dose_trend_figures:
     properties:
-      _: volcano, dose-response clusters and library PCA of the copper dose trend
+      _: volcano and library PCA of the copper dose trend
+  dose_clusters:
+    properties:
+      _: dose-response clusters with their number chosen by gap statistic and consensus stability, and a membership confidence per gene
   metal_gene_panel:
     properties:
       _: expression and dose trend of the copper homeostasis genes and the genes BacMet assigns to metal resistance

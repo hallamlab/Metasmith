@@ -18,13 +18,11 @@ import numpy as np
 import pandas as pd
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
-from scipy.cluster.hierarchy import fcluster, linkage
 
 from sheet import read_sheet
 
 ALPHA = 0.05
-N_CLUSTER_GENES = 500
-N_CLUSTERS = 6
+N_PCA_GENES = 500
 
 
 def fit_trend(counts: pd.DataFrame, design: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -80,13 +78,6 @@ def main(counts_path, raw_path, sheet_path, qc_path, out_csv, figures) -> None:
     for label in labels:
         table[f"normalised_count_{label}"] = normed[label]
 
-    logn = np.log2(normed + 1)
-    expressed = logn[normed.mean(axis=1) >= 20]
-    top = expressed.loc[expressed.var(axis=1).sort_values(ascending=False).index[:N_CLUSTER_GENES]]
-    z = top.sub(top.mean(axis=1), axis=0).div(top.std(axis=1), axis=0)
-    clusters = fcluster(linkage(z.values, method="average", metric="correlation"), N_CLUSTERS, criterion="maxclust")
-    table["dose_cluster"] = pd.Series(clusters, index=z.index).reindex(table.index)
-
     table = table.sort_values("padj")
     table.index.name = "gene_id"
     table.to_csv(out_csv)
@@ -110,28 +101,13 @@ def main(counts_path, raw_path, sheet_path, qc_path, out_csv, figures) -> None:
     fig.savefig(figures / "dose_trend_volcano.svg")
     plt.close(fig)
 
+    logn = np.log2(normed + 1)
     xpos = np.arange(len(labels))
-    fig, axes = plt.subplots(2, 3, figsize=(11, 6), sharex=True, sharey=True)
-    for k, ax in zip(range(1, N_CLUSTERS + 1), axes.flat):
-        members = z[clusters == k]
-        ax.plot(xpos, members.T.values, c="#9aa3b4", lw=0.4, alpha=0.5)
-        ax.plot(xpos, members.mean().values, c="#c0392b", lw=2)
-        ax.set_title(f"cluster {k}: {len(members)} genes", fontsize=10)
-        ax.set_xticks(xpos, [f"{v:g}" for v in design.ppm])
-    for ax in axes[-1]:
-        ax.set_xlabel("CuSO4 (ppm)")
-    for ax in axes[:, 0]:
-        ax.set_ylabel("z-score")
-    fig.suptitle(f"Dose-response shapes of the {N_CLUSTER_GENES} most variable genes")
-    fig.tight_layout()
-    fig.savefig(figures / "dose_clusters.png", dpi=200)
-    plt.close(fig)
-
     qc = pd.read_csv(qc_path, sep="\t", index_col="library").loc[list(sheet.index)]
     qc.index = labels
     qc["protein_coding_tested"] = counts.sum()
     qc["size_factor"] = counts.sum() / np.exp(np.log(counts.sum()).mean())
-    pcs = logn.loc[logn.var(axis=1).sort_values(ascending=False).index[:N_CLUSTER_GENES]]
+    pcs = logn.loc[logn.var(axis=1).sort_values(ascending=False).index[:N_PCA_GENES]]
     centred = pcs.sub(pcs.mean(axis=1), axis=0).T.values
     u, sv, _ = np.linalg.svd(centred, full_matrices=False)
     explained = sv ** 2 / (sv ** 2).sum()
@@ -150,7 +126,7 @@ def main(counts_path, raw_path, sheet_path, qc_path, out_csv, figures) -> None:
         a2.annotate(label, (px, py), xytext=(5, 4), textcoords="offset points", fontsize=8)
     a2.set_xlabel(f"PC1 ({explained[0]:.0%})")
     a2.set_ylabel(f"PC2 ({explained[1]:.0%})")
-    a2.set_title(f"Libraries on the top-{N_CLUSTER_GENES} variable genes")
+    a2.set_title(f"Libraries on the top-{N_PCA_GENES} variable genes")
     fig.tight_layout()
     fig.savefig(figures / "library_qc.png", dpi=200)
     plt.close(fig)
