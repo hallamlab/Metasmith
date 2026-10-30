@@ -1,0 +1,6 @@
+outs:
+- md5: 7d7e9a460dd61073c9d1b8e32f7db8b8.dir
+  size: 4924745
+  nfiles: 3
+  hash: md5
+  path: beth_rnaseq_b2
