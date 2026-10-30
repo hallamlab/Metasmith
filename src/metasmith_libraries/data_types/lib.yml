@@ -15,6 +15,10 @@ types:
     properties:
       src: transcriptomics
       usage: command line
+  isolate_rnaseq:
+    properties:
+      src: isolate_rnaseq
+      usage: command line
   metabolomics:
     properties:
       src: metabolomics

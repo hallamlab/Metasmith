@@ -1,0 +1,34 @@
+types:
+  sample_sheet:
+    properties:
+      _: 'one row per RNA library: library and copper dose in ppm'
+      ext: tsv
+  featurecounts_sweep:
+    properties:
+      _: featureCounts on the RefSeq gene features at each strandedness setting (-s 0, 1, 2) and at MAPQ 0 and 10
+  count_qc:
+    properties:
+      _: 'per library: strandedness chosen, fragments assigned, lost to low MAPQ, and on rRNA and tRNA'
+      ext: tsv
+  raw_count_table:
+    properties:
+      _: gene by library read-pair counts at MAPQ 0 on the chosen strand, identical gene copies summed, with the RefSeq annotation beside them
+      ext: tsv
+  tpm_table:
+    properties:
+      _: gene by library TPM, normalised on gene length, with the RefSeq annotation beside them
+      ext: tsv
+  dose_trend_results:
+    properties:
+      _: 'per gene: log2 fold change per 10x copper with its adjusted p-value, and each dose against 0 ppm'
+      ext: csv
+  dose_trend_figures:
+    properties:
+      _: volcano, dose-response clusters and library PCA of the copper dose trend
+  metal_gene_panel:
+    properties:
+      _: expression and dose trend of the copper homeostasis genes and the genes BacMet assigns to metal resistance
+  qc_report:
+    properties:
+      _: 'one RNA-seq QC report: trimming, mapping, rRNA, strandedness'
+      ext: html
