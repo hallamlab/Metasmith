@@ -100,13 +100,17 @@ def build_inputs(code: str) -> DataInstanceLibrary:
         lib.AddTypeLibrary(MLIB / "data_types" / t)
     lib.AddTypeLibrary(LIBRARY / "data_types" / "isolate_rnaseq.yml")
 
-    exp = lib.AddValue("experiment.txt", f"{plan['organism']} RNA-seq", "transcriptomics::experiment")
+    # pin_external_leaf_ids derives an id from the file name alone and both plans share one
+    # agent home, so every value file carries the organism code: under a shared name the CB2A
+    # plan was served the EPI300 assembly from the cache.
+    exp = lib.AddValue(f"{code}.experiment.txt", f"{plan['organism']} RNA-seq",
+                       "transcriptomics::experiment")
     # The genome name sits under the experiment, so each organism's reads meet only its own
     # genome, and the planner fetches the RefSeq assembly instead of building one from reads.
-    name = lib.AddValue("genome_name.txt", plan["organism"], "ncbi::genome_name", parents={exp})
-    lib.AddValue("accession.txt", plan["accession"], "ncbi::assembly_accession", parents={name})
+    name = lib.AddValue(f"{code}.genome_name.txt", plan["organism"], "ncbi::genome_name", parents={exp})
+    lib.AddValue(f"{code}.accession.txt", plan["accession"], "ncbi::assembly_accession", parents={name})
     sheet = "library\tcopper_ppm\n" + "".join(f"{s}\t{p}\n" for s, p in plan["doses"].items())
-    lib.AddValue("sample_sheet.tsv", sheet, "isolate_rnaseq::sample_sheet", parents={exp})
+    lib.AddValue(f"{code}.sample_sheet.tsv", sheet, "isolate_rnaseq::sample_sheet", parents={exp})
     for s in plan["doses"]:
         meta = lib.AddValue(f"{s}.read_metadata.json",
                             {"sample": s, "parity": "paired", "length_class": "short"},
