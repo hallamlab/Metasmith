@@ -25,6 +25,7 @@ from ..models.workflow import (
 from ..serialization import StdTime
 from .agent import Agent
 from .collect import CollectResults
+from .headroom import NO_ROOM_ADVICE
 from .run_host import LAUNCH_GUARD
 
 def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
@@ -43,6 +44,37 @@ def _rewrite_staged_plan(task_path: Path, task: WorkflowTask):
 # has to outlast a JVM draining a full submission queue, not merely outlast
 # process exit.
 NXF_SHUTDOWN_GRACE_S = 60
+
+# Every file a run needs before its driver starts is created here, checked, so a
+# filesystem that cannot take one more file refuses the launch with the path and
+# the reason. Unchecked, start.sh printed a run token for a run that never began.
+# A file written after the driver starts was created empty beforehand, so that
+# write costs no inode.
+LAUNCH_WRITE_EXIT = 4
+LAUNCH_WRITE_FUNCTIONS = rf"""
+msm_refuse_write() {{
+    case "$2" in
+        *"quota exceeded"*) _msm_why="$2 (EDQUOT)" ;;
+        *"No space left"*) _msm_why="$2 (ENOSPC)" ;;
+        *"Permission denied"*) _msm_why="$2 (EACCES)" ;;
+        *"Read-only file system"*) _msm_why="$2 (EROFS)" ;;
+        *) _msm_why="$2" ;;
+    esac
+    echo "launch failed: cannot create [$1]: $_msm_why" >&2
+    case "$2" in
+        *"quota exceeded"*|*"No space left"*)
+            echo "{NO_ROOM_ADVICE}" >&2 ;;
+    esac
+    exit {LAUNCH_WRITE_EXIT}
+}}
+msm_must() {{
+    _msm_p="$1"; shift
+    _msm_e=$("$@" 2>&1) || msm_refuse_write "$PWD/${{_msm_p#./}}" "${{_msm_e##*: }}"
+}}
+msm_write() {{
+    _msm_e=$( {{ printf '%s\n' "$2" > "$1"; }} 2>&1 ) || msm_refuse_write "$PWD/${{1#./}}" "${{_msm_e##*: }}"
+}}"""
+
 
 def RenderLauncher(
     task_key: str, setup_commands: list[str], binds: str, background: bool = True,
@@ -71,7 +103,8 @@ def RenderLauncher(
     # run's whole duration, which is exactly the file the recovery path reads.
     if background:
         tail = [
-            f'hostname > ./{AgentPaths.RUN_HOST_FILE}',
+            f'msm_write ./{AgentPaths.RUN_HOST_FILE} "$(hostname)"',
+            f'msm_write ./{AgentPaths.RUN_PGID_FILE} ""',
             f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} </dev/null >$LOG_DIR/agent.log 2>&1 &',
             f'RUN_PGID=$!',
             f'set +m',
@@ -91,10 +124,10 @@ def RenderLauncher(
             'else echo "relay start failed on [$(hostname)]; no tool job can be submitted from this node" >&2; fi',
         ] if start_relay else []
         tail = relay + [
-            f'hostname > ./{AgentPaths.RUN_HOST_FILE}',
+            f'msm_write ./{AgentPaths.RUN_HOST_FILE} "$(hostname)"',
             f'RUN_PGID=$$',
             f'set +m',
-            f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}',
+            f'msm_write ./{AgentPaths.RUN_PGID_FILE} "$RUN_PGID"',
             f'echo "run token is [${AgentPaths.RUN_TOKEN_ENV}], run pgid is [$RUN_PGID]"',
             f'../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} >$LOG_DIR/agent.log 2>&1',
         ]
@@ -121,13 +154,15 @@ def RenderLauncher(
     ]+list(setup_commands)+[
         "# <<<",
     ]+guard+[
+        LAUNCH_WRITE_FUNCTIONS,
         f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
         f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
         f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
-        f'mkdir -p $LOG_DIR',
-        f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
-        f"[ -e {AgentPaths.NXF_PARAMS} ] || echo '{{}}' > {AgentPaths.NXF_PARAMS}",
-        f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
+        f'msm_must "$LOG_DIR" mkdir -p "$LOG_DIR"',
+        f'msm_write "$LOG_DIR/agent.log" ""',
+        f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; msm_must "$LOG_LATEST" ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
+        f"[ -e {AgentPaths.NXF_PARAMS} ] || msm_write {AgentPaths.NXF_PARAMS} '{{}}'",
+        f'[ -e {AgentPaths.NXF_CONFIG} ] || msm_write {AgentPaths.NXF_CONFIG} ""',
         f'echo "start time was [$TIMESTAMP]"',
         f'export BINDS="{binds}"',
         f'export OPENBLAS_NUM_THREADS=1',
@@ -139,7 +174,7 @@ def RenderLauncher(
         # The timestamp is the one already naming logs.$TIMESTAMP, so a leak
         # traces back to a single run directory.
         f'export {AgentPaths.RUN_TOKEN_ENV}="{task_key}.$TIMESTAMP"',
-        f'echo "${AgentPaths.RUN_TOKEN_ENV}" > ./{AgentPaths.RUN_TOKEN_FILE}',
+        f'msm_write ./{AgentPaths.RUN_TOKEN_FILE} "${AgentPaths.RUN_TOKEN_ENV}"',
         f'set -m',
     ]+tail)
 

@@ -52,7 +52,7 @@ class TestLauncherRootsTheRun:
         assert export < next(i for i, l in enumerate(lines) if "api run_workflow" in l)
 
     def test_the_group_and_token_are_written_down(self, launcher):
-        assert f"> ./{AgentPaths.RUN_TOKEN_FILE}" in launcher
+        assert f'msm_write ./{AgentPaths.RUN_TOKEN_FILE} "${AgentPaths.RUN_TOKEN_ENV}"' in launcher
         assert f'echo "$RUN_PGID" > ./{AgentPaths.RUN_PGID_FILE}' in launcher
 
     def test_the_driver_does_not_inherit_a_terminal(self, launcher):
