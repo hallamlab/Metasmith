@@ -42,13 +42,14 @@ empty staging dir and the old one keeps everything it fetched. On fir a DRAM fix
 its intermediates there after it succeeds. The first move is a `cache` verb that lists the
 staging dirs no current key names, with their sizes, for an operator to remove.
 
-**Nothing checks inode headroom before a setup run, and a quota failure is not named.** A
-database costs more inodes than its bytes suggest: InterProScan's unpack is about 42,000 files.
-On fir a study's setup and run reached the project's hard limit of one million inodes. The Slurm
-task that hit it reported `terminated for an unknown reason`, its retry could not create a work
-dir, and the driver aborted. `lfs quota` lagged the limit, so a poller reading 996,928 never saw
-the stop. The first move is a preflight that reads the inode quota and refuses a setup run whose
-databases would not fit, with each database's file count recorded beside its size.
+**A quota reached mid-run is not named.** A launch refuses an agent home that cannot create a
+file, and warns when its Lustre file quota is low, but its estimate counts plan steps and
+knows nothing of a database's size. A database costs more files than its bytes suggest:
+InterProScan's unpack is about 42,000 files. A run that reaches the limit after launch fails
+as whatever step hit it: a Slurm task reported `terminated for an unknown reason`, and
+`CollectResults` raised a bare `OSError: [Errno 122]` after 19 hours of work. `lfs quota` lags
+the limit, so a reading of 996,928 does not show the stop. The first move is to record each
+database's file count beside its size, so the launch preflight can sum what a setup run fetches.
 
 **A cache hit costs inodes, and nothing yet says which part of it.** Measured on fir: a resumed
 run's 23 hits added about 31,000 inodes in 15 minutes. A twin hardlinks the files of a product,

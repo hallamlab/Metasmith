@@ -189,6 +189,18 @@ local mirror to skip the internet download:
 
 .. _Container Runtime:
 
+File quotas
+------------------------------------------------------------
+
+A cluster limits how many files each user or project may hold, and a run
+creates many: each step's work directories and each cache hit's link tree
+count. Before a launch, metasmith creates a file and a directory in the run's
+workspace. When it cannot, it refuses the launch and names the path and the
+reason, such as ``Disk quota exceeded (EDQUOT)``. On Lustre it also reads the
+agent home's file and space quotas, and warns when the files left look too few
+for the run. To clear either message, free files under the agent home, or ask
+the cluster admins for a higher file limit.
+
 Container Runtime
 ------------------------------------------------------------
 

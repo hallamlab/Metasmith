@@ -25,6 +25,7 @@ from .conda import (
     NO_RECIPE, _conda_frontend, _create_conda_envs, _find_recipes, _manifest_envs, _recipe_roots,
 )
 from .ceiling import ResourceCeilingError, check_launch
+from .headroom import check_headroom, render_probe
 from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
 from .images import _check_image_store, _manifest_images, _materialise_images
 from .portability import _check_env_portability, _read_env_manifest, _read_env_manifest_doc
@@ -639,6 +640,14 @@ class _WorkflowOps:
                 idle_timeout=PROBE_TIMEOUT, what="checking the staged workspace",
             )
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+            env_doc = _read_env_manifest_doc(sh_remote, workspace)
+            check_headroom(
+                sh_remote.Exec(
+                    render_probe(workspace), history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="checking the agent home can create files",
+                ).out,
+                len(env_doc.get("steps", {})), task_key,
+            )
             if _given:
                 _warn_unread_params(sh_remote, workspace, _given, Path(config_file).read_text())
 
@@ -657,7 +666,6 @@ class _WorkflowOps:
                 image=self.container, runtime=self.runtime, native=self.native,
                 rootfs=self.rootfs,
             )
-            env_doc = _read_env_manifest_doc(sh_remote, workspace)
             _check_env_portability(env_doc.get("steps", {}), agent_env)
 
             # Image-store report, same placement, and reporting rather than
@@ -841,12 +849,17 @@ class _WorkflowOps:
                 )
                 slurm_launcher = workspace / "start.slurm.sh"
                 tag = "MSM_SLURM_LAUNCHER"
-                sh_remote.Exec(
+                wres = sh_remote.Exec(
                     f"cat > {slurm_launcher} <<'{tag}'\n{fg_script}\n{tag}\n"
                     f"chmod +x {slurm_launcher}",
                     history=True, quiet=True,
                     idle_timeout=PROBE_TIMEOUT, what="writing the Slurm driver launcher",
                 )
+                if wres.exit_code not in (0, None):
+                    raise RuntimeError(
+                        f"launch of [{task_key}] failed: cannot write [{slurm_launcher}]:\n"
+                        + "\n".join(wres.out[-5:] + wres.err[-5:])
+                    )
                 mem = os.environ.get("METASMITH_DRIVER_SLURM_MEM", "8G")
                 cpus = os.environ.get("METASMITH_DRIVER_SLURM_CPUS", "2")
                 wall = os.environ.get("METASMITH_DRIVER_SLURM_TIME", "7-00:00:00")
@@ -864,10 +877,17 @@ class _WorkflowOps:
                 )
                 job_id = next((ln.strip() for ln in sres.out if ln.strip().isdigit()), None)
                 assert job_id, f"sbatch did not return a job id; output was {sres.out!r}"
-                sh_remote.Exec(
+                rres = sh_remote.Exec(
                     f"echo {job_id} > {workspace}/{AgentPaths.RUN_SLURM_JOB_FILE}", history=True, quiet=True,
                     idle_timeout=PROBE_TIMEOUT, what="recording the driver's Slurm job id",
                 )
+                if rres.exit_code not in (0, None):
+                    Log.Warn(
+                        f"driver job [{job_id}] is queued, but its id could not be recorded in"
+                        f" [{workspace}/{AgentPaths.RUN_SLURM_JOB_FILE}]; cancel it with"
+                        f" `scancel {job_id}` if the run must stop:\n"
+                        + "\n".join(rres.out[-5:] + rres.err[-5:])
+                    )
                 Log.Info(
                     f"driver for [{task_key}] submitted as Slurm job [{job_id}]; it runs on"
                     f" an allocated compute node rather than this login-node session -- use"
@@ -881,7 +901,7 @@ class _WorkflowOps:
                 )
                 if lres.exit_code not in (0, None):
                     raise RuntimeError(
-                        f"the launcher for [{task_key}] refused or failed (exit {lres.exit_code}):\n"
+                        f"launch of [{task_key}] failed; the launcher refused or failed (exit {lres.exit_code}):\n"
                         + "\n".join(lres.out[-10:] + lres.err[-10:])
                     )
 
