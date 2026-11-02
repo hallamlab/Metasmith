@@ -20,8 +20,8 @@ def _agents_source() -> str:
 
 def test_launcher_template_writes_valid_yaml_not_touch():
     src = _agents_source()
-    assert "echo '{}' > {AgentPaths.NXF_PARAMS}".replace("{}", "{{}}") in src, (
-        "launcher source no longer contains the `echo '{}' > NXF_PARAMS` fallback"
+    assert "msm_write {AgentPaths.NXF_PARAMS} '{}'".replace("{}", "{{}}") in src, (
+        "launcher source no longer writes `{}` as the NXF_PARAMS fallback"
     )
     assert "touch {AgentPaths.NXF_PARAMS}" not in src, (
         "launcher source still has the broken `touch NXF_PARAMS` fallback "
