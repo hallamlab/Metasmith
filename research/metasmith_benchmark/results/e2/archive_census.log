@@ -1,0 +1,35 @@
+START 2026-09-22T13:36:01-07:00 fc30554
+shards read: 40063; file ids: 82253
+AMBER 4UdrtQp8 shards: 249
+samples: 249  Counter({'short': 208, 'long': 41})
+
+arm    binner    bins   checkm2
+long   COMEBin     2106    2106
+long   DASTool      567     567
+long   MetaBAT2    1791    1791
+long   SemiBin2    1318    1318
+short  COMEBin     7583    7583
+short  DASTool     2614    2614
+short  MetaBAT2    4300    4300
+short  SemiBin2    6649    6649
+samples missing reads: 0 []
+samples missing assembly: 0 []
+samples missing alignment: 0 []
+samples missing gold_standard: 0 []
+samples missing amber: 0 []
+
+kind              files        GB
+alignment            249     824.5
+reads                249     791.1
+bin                26928      62.1
+assembly             249      29.7
+gold_standard        249       0.7
+contig_to_bin        996       0.3
+qc                   416       0.1
+checkm2            26928       0.0
+amber                498       0.0
+das_tool_summary     249       0.0
+total              57011    1708.5
+
+problems: 0
+EXIT 0 2026-09-22T13:44:23-07:00

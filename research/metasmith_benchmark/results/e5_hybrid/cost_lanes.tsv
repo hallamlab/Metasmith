@@ -1,0 +1,77 @@
+sample	dataset	assembly	wall_h	cpu_h	max_rss_gb	steps_at_cap
+SRR32696698	Pratama Nanopore	megahit	2.26	35.1	31.1	bbduk_pratama
+SRR32696698	Pratama Nanopore	opera_ms	4.50	70.9	64.0	bbduk_pratama,opera_ms
+SRR32696698	Pratama Nanopore	flye	1.58	25.4	39.8	
+SRR32696698	Pratama Nanopore	flye_polca	2.31	35.8	48.0	bbduk_pratama,polca
+SRR32696707	Pratama Nanopore	megahit	4.14	64.7	61.2	bbduk_pratama
+SRR32696707	Pratama Nanopore	opera_ms	6.61	104.2	64.0	bbduk_pratama,opera_ms
+SRR32696707	Pratama Nanopore	flye	2.49	39.8	45.5	
+SRR32696707	Pratama Nanopore	flye_polca	3.42	53.1	48.0	bbduk_pratama,polca
+marine_long_sample_3	marine PacBio	megahit	1.37	20.5	13.6	
+marine_long_sample_3	marine PacBio	opera_ms	2.29	35.3	36.0	
+marine_long_sample_3	marine PacBio	flye	3.74	59.8	51.3	
+marine_long_sample_3	marine PacBio	flye_polca	4.15	65.0	51.3	
+plant_associated_long_nano_sample_10	plant Nanopore	megahit	0.70	9.4	12.8	
+plant_associated_long_nano_sample_10	plant Nanopore	opera_ms	1.21	17.7	28.1	
+plant_associated_long_nano_sample_10	plant Nanopore	flye	0.65	10.4	33.9	
+plant_associated_long_nano_sample_10	plant Nanopore	flye_polca	1.14	16.6	33.9	
+plant_associated_long_nano_sample_11	plant Nanopore	megahit	0.63	8.7	12.8	
+plant_associated_long_nano_sample_11	plant Nanopore	opera_ms	0.99	14.4	27.5	
+plant_associated_long_nano_sample_11	plant Nanopore	flye	0.61	9.8	33.0	
+plant_associated_long_nano_sample_11	plant Nanopore	flye_polca	1.14	16.8	33.0	
+plant_associated_long_pacbio_sample_14	plant PacBio	megahit	0.83	11.7	12.8	
+plant_associated_long_pacbio_sample_14	plant PacBio	opera_ms	1.20	17.7	27.2	
+plant_associated_long_pacbio_sample_14	plant PacBio	flye	2.88	46.0	59.6	
+plant_associated_long_pacbio_sample_14	plant PacBio	flye_polca	3.33	51.8	59.6	
+plant_associated_long_pacbio_sample_18	plant PacBio	megahit	0.69	9.5	13.2	
+plant_associated_long_pacbio_sample_18	plant PacBio	opera_ms	1.06	15.5	28.8	
+plant_associated_long_pacbio_sample_18	plant PacBio	flye	4.16	66.6	50.9	
+plant_associated_long_pacbio_sample_18	plant PacBio	flye_polca	4.65	72.8	50.9	
+strain_long_sample_15	strain PacBio	megahit	0.37	5.2	9.3	
+strain_long_sample_15	strain PacBio	opera_ms	0.58	8.5	13.3	
+strain_long_sample_15	strain PacBio	flye	1.76	28.2	22.2	
+strain_long_sample_15	strain PacBio	flye_polca	1.99	31.0	22.2	
+strain_long_sample_17	strain PacBio	megahit	0.29	3.9	9.5	
+strain_long_sample_17	strain PacBio	opera_ms	0.50	7.3	13.5	
+strain_long_sample_17	strain PacBio	flye	1.53	24.5	24.5	
+strain_long_sample_17	strain PacBio	flye_polca	1.74	27.2	24.5	
+strain_long_sample_19	strain PacBio	megahit	0.34	4.7	9.3	
+strain_long_sample_19	strain PacBio	opera_ms	0.47	6.7	12.6	
+strain_long_sample_19	strain PacBio	flye	1.45	23.3	25.2	
+strain_long_sample_19	strain PacBio	flye_polca	1.65	25.6	25.2	
+strain_long_sample_24	strain PacBio	megahit	0.28	3.7	9.4	
+strain_long_sample_24	strain PacBio	opera_ms	0.43	6.1	13.2	
+strain_long_sample_24	strain PacBio	flye	1.92	30.7	23.3	
+strain_long_sample_24	strain PacBio	flye_polca	2.12	33.1	23.3	
+strain_long_sample_4	strain PacBio	megahit	0.41	5.8	9.3	
+strain_long_sample_4	strain PacBio	opera_ms	0.61	9.1	13.4	
+strain_long_sample_4	strain PacBio	flye	1.91	30.5	21.6	
+strain_long_sample_4	strain PacBio	flye_polca	2.11	33.1	21.6	
+strain_long_sample_76	strain PacBio	megahit	0.28	3.8	9.5	
+strain_long_sample_76	strain PacBio	opera_ms	0.49	7.2	13.0	
+strain_long_sample_76	strain PacBio	flye	1.98	31.7	21.6	
+strain_long_sample_76	strain PacBio	flye_polca	2.16	34.0	21.6	
+strain_long_sample_86	strain PacBio	megahit	0.29	4.0	10.0	
+strain_long_sample_86	strain PacBio	opera_ms	0.45	6.4	13.6	
+strain_long_sample_86	strain PacBio	flye	1.21	19.4	27.8	
+strain_long_sample_86	strain PacBio	flye_polca	1.44	22.3	27.8	
+strain_long_sample_9	strain PacBio	megahit	0.31	4.3	9.3	
+strain_long_sample_9	strain PacBio	opera_ms	0.48	7.0	13.2	
+strain_long_sample_9	strain PacBio	flye	1.71	27.4	23.0	
+strain_long_sample_9	strain PacBio	flye_polca	1.90	29.8	23.0	
+strain_long_sample_93	strain PacBio	megahit	0.30	4.0	10.0	
+strain_long_sample_93	strain PacBio	opera_ms	0.42	6.0	12.6	
+strain_long_sample_93	strain PacBio	flye	1.58	25.3	24.1	
+strain_long_sample_93	strain PacBio	flye_polca	1.78	27.7	24.1	
+strain_long_sample_97	strain PacBio	megahit	0.41	5.8	9.4	
+strain_long_sample_97	strain PacBio	opera_ms	0.61	9.0	12.9	
+strain_long_sample_97	strain PacBio	flye	1.78	28.5	24.3	
+strain_long_sample_97	strain PacBio	flye_polca	1.97	30.9	24.3	
+toy_humangut_long_sample_14	toy humangut Nanopore	megahit	0.70	9.3	13.2	
+toy_humangut_long_sample_14	toy humangut Nanopore	opera_ms	1.19	17.2	29.4	
+toy_humangut_long_sample_14	toy humangut Nanopore	flye	0.78	12.4	33.5	
+toy_humangut_long_sample_14	toy humangut Nanopore	flye_polca	1.18	17.1	33.5	
+toy_humangut_long_sample_5	toy humangut Nanopore	megahit	0.41	4.9	12.7	
+toy_humangut_long_sample_5	toy humangut Nanopore	opera_ms	0.87	12.2	29.0	
+toy_humangut_long_sample_5	toy humangut Nanopore	flye	0.52	8.2	34.4	
+toy_humangut_long_sample_5	toy humangut Nanopore	flye_polca	0.89	12.6	34.4	

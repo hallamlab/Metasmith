@@ -1,0 +1,26 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  atom_pairs:
+    properties:
+      _:
+      - Compiled atom-atom mapping, one row per single atom correspondence (element,
+        rxn, tail_node, head_node packed as met_code<<rank_bits|atom_rank, pair_w);
+        orientation stored as written
+      ext: parquet
+  direction_ratios:
+    properties:
+      _:
+      - Per-reaction directionality (rxn, ratio = g_rev/g_fwd = exp(dG'/RT), dir_tier);
+        ratio > 1 FLIPS the edge, it does not amplify it
+      ext: parquet
+  metabolism_vocab:
+    properties:
+      _:
+      - Int-code vocabulary for the compiled metabolism tables (kind, code, symbol;
+        met and rxn densely coded within kind)
+      ext: parquet

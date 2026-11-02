@@ -1,0 +1,44 @@
+package:
+  name: <NAME>
+  version: <VERSION>
+
+source:
+  url: <TAR>
+  
+build:
+  noarch: python
+  number: 0
+  # `engine/` ships four cross-built msm_solver binaries. They are opaque
+  # payloads -- three are for other platforms entirely -- but conda-build sees
+  # an ELF and treats it as a library of this one: it rewrites the header via
+  # patchelf and pads any embedded build prefix. Either silently turns the
+  # static musl binary into a segfault, and nothing fails at build or install
+  # time. It surfaces only as the planner quietly falling back to the 15x
+  # slower python search.
+  binary_relocation: false
+  detect_binary_files_with_prefix: false
+  script: {{ PYTHON }} -m pip install . -v
+  entry_points:
+<ENTRY>
+
+test:
+  imports:
+    - <NAME>
+  commands:
+    - <NAME> --help
+  requires:
+    - pip
+
+requirements:
+  host:
+    - pip
+<PYTHON>
+
+  run:
+<REQUIREMENTS>
+
+about:
+  home: https://github.com/<USER>/<NAME>
+  summary: <SHORT_SUMMARY>
+  license: 'gpl-v3'
+  license_file: ../../LICENSE

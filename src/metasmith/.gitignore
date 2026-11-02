@@ -1,1 +1,5 @@
-/engine
+
+/scratch/*
+
+/lib/*
+!/lib/local

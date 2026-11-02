@@ -1,0 +1,37 @@
+unit	source_record	target	measurement_type	n_arms	n_pairs	kendall_tau
+e_coli_k12__trivial__C__dir	Record1419619800.99	rr-2_3-BDO	fold	2	0	
+e_coli_k12__fba_a0.0__C__dir	Record1420563570.49	lycopene	fold	4	0	
+e_coli_k12__fba_a0.1__C__dir	Record1420563570.49	lycopene	fold	4	0	
+e_coli_k12__fba_a0.3__C__dir	Record1420563570.49	lycopene	fold	4	0	
+e_coli_k12__fba_a0.5__C__dir	Record1420563570.49	lycopene	fold	4	0	
+e_coli_k12__fba_a0.9__C__dir	Record1420563570.49	lycopene	fold	4	0	
+e_coli_k12__trivial__C__dir	Record1420563570.49	lycopene	fold	4	0	
+e_coli_k12__denovo_ev__C__dir	Record1420666912.41	succinate	fold	9	28	0.35714285714285715
+e_coli_k12__denovo_ev__C__und	Record1420666912.41	succinate	fold	9	28	0.35714285714285715
+e_coli_k12__denovo_uni__C__dir	Record1420666912.41	succinate	fold	9	28	0.35714285714285715
+e_coli_k12__fba_a0.0__C__dir	Record1420666912.41	succinate	fold	9	34	-0.17647058823529413
+e_coli_k12__fba_a0.1__C__dir	Record1420666912.41	succinate	fold	9	34	-0.17647058823529413
+e_coli_k12__fba_a0.3__C__dir	Record1420666912.41	succinate	fold	9	34	0.058823529411764705
+e_coli_k12__fba_a0.5__C__dir	Record1420666912.41	succinate	fold	9	31	0.03225806451612903
+e_coli_k12__fba_a0.9__C__dir	Record1420666912.41	succinate	fold	9	8	1.0
+e_coli_k12__gem__C__dir	Record1420666912.41	succinate	fold	9	28	0.5
+e_coli_k12__gem__C__und	Record1420666912.41	succinate	fold	9	28	0.5
+e_coli_k12__trivial__C__dir	Record1420666912.41	succinate	fold	9	0	
+e_coli_k12__denovo_ev__C__dir	Record1420735510.26	D-lactate	yield	5	9	0.3333333333333333
+e_coli_k12__denovo_ev__C__und	Record1420735510.26	D-lactate	yield	5	9	0.5555555555555556
+e_coli_k12__denovo_uni__C__dir	Record1420735510.26	D-lactate	yield	5	9	0.3333333333333333
+e_coli_k12__fba_a0.0__C__dir	Record1420735510.26	D-lactate	yield	5	10	-0.2
+e_coli_k12__fba_a0.1__C__dir	Record1420735510.26	D-lactate	yield	5	10	0.4
+e_coli_k12__fba_a0.3__C__dir	Record1420735510.26	D-lactate	yield	5	10	0.4
+e_coli_k12__fba_a0.5__C__dir	Record1420735510.26	D-lactate	yield	5	10	0.6
+e_coli_k12__fba_a0.9__C__dir	Record1420735510.26	D-lactate	yield	5	10	0.6
+e_coli_k12__gem__C__dir	Record1420735510.26	D-lactate	yield	5	9	-0.5555555555555556
+e_coli_k12__gem__C__und	Record1420735510.26	D-lactate	yield	5	9	-0.5555555555555556
+e_coli_k12__trivial__C__dir	Record1420735510.26	D-lactate	yield	5	0	
+e_coli_k12__trivial__C__dir	Record1449036887.89	4-hydroxycoumarin	fold	5	0	
+e_coli_k12__fba_a0.0__C__dir	Record1449727708.82	lycopene	fold	3	0	
+e_coli_k12__fba_a0.1__C__dir	Record1449727708.82	lycopene	fold	3	0	
+e_coli_k12__fba_a0.3__C__dir	Record1449727708.82	lycopene	fold	3	0	
+e_coli_k12__fba_a0.5__C__dir	Record1449727708.82	lycopene	fold	3	0	
+e_coli_k12__fba_a0.9__C__dir	Record1449727708.82	lycopene	fold	3	0	
+e_coli_k12__trivial__C__dir	Record1449727708.82	lycopene	fold	3	0	

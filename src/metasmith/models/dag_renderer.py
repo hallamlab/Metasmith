@@ -1,24 +1,15 @@
-"""DAG rendering — the abstract node/edge API shared by every metasmith caller
-that needs to draw a transform/data graph (currently `WorkflowPlan` and solver
-`Solution`).
-
-Consumers declare TRANSFORM and DATA nodes plus directed edges. Placement is
-metasmith's own (`dag_layout`); the backends in `dag_draw` turn that placement
-into text, SVG, or — for raster formats only — pre-placed DOT that graphviz
-rasterizes without laying anything out. `to_dot()` stays a plain description of
-the graph with no positions, for consumers that want to run their own graphviz.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from .dag_colour import SCHEMES, Colouring, colour_layout
 from .dag_draw import (
     DEFAULT_LABEL_CHARS, Geometry, Label, LabelMode, Plate, Style,
-    default_label, dot_escape, raster_dot, render_raster, render_svg, render_text,
+    default_label, dot_escape, raster_dot, render_legend, render_raster,
+    render_svg, render_text,
 )
 from .dag_draw import geometry as _geometry
 from .dag_layout import Layout, layout
@@ -27,90 +18,112 @@ from .dag_layout import Layout, layout
 class NodeKind(Enum):
     TRANSFORM = auto()
     DATA      = auto()
-    TARGET    = auto()  # a data node that is a requested output
+    TARGET    = auto()
+    GIVEN     = auto()
 
 
-# Kind is only ever a visual distinction — layout treats every node the same.
-# A downward triangle is a step; a circle is a thing it made. A requested output
-# is the *same* circle drawn solid rather than a shape of its own: a target is a
-# piece of data, and giving it a third outline said it was a third kind of
-# thing. Fill is what marks it, so the one kind a reader is looking for is the
-# one that is solid, and it is also where a colour scheme's hue lands (`solid`
-# on the style, not the shape, is what tells `tint` that). A step's label is
-# greyed for the same reason — the file names are the content.
-#
-# `marker_scale` is one number for all of them, because it means a *width* and
-# the shapes have to read as one family. They were 1.25/0.90/0.82 of three
-# different quantities, which drew a 17px triangle beside a 10px circle.
+class DagMode(Enum):
+    """Which picture of the same graph to draw.
+
+    The graph a renderer holds is bipartite -- data nodes and transform nodes
+    alternate -- and all four modes read off that one structure, so a caller
+    builds the DAG once and switches mode at render time.
+    """
+
+    PLAIN     = "plain"      # every node, as built
+    COLLAPSED = "collapsed"  # intermediate data absorbed into its producer
+    STEPS     = "steps"      # collapsed further: no data survives at all
+    LEGEND    = "legend"     # one detached block per transform, in a grid
+
+
+# The synthetic transform nodes `plan.BuildDAG` adds to root and cap the graph.
+# They stand for no tool, so the legend has no block for them.
+SYNTHETIC = ("given", "target")
+
+
+def step_blocks(
+    nodes: Mapping[str, NodeKind], edges: Iterable[tuple[str, str]]
+) -> list[list[str]]:
+    """Each step with the data only it produces, for the rows under it. Data
+    with two producers cannot sit under both, so it stands alone."""
+    producers: dict[str, set[str]] = {}
+    for src, dst in edges:
+        producers.setdefault(dst, set()).add(src)
+    blocks = {n: [n] for n, kind in nodes.items() if kind is NodeKind.TRANSFORM}
+    for name, kind in nodes.items():
+        made_by = producers.get(name, ())
+        if kind is not NodeKind.TRANSFORM and len(made_by) == 1:
+            (step,) = made_by
+            if step in blocks:
+                blocks[step].append(name)
+    return list(blocks.values())
+
+
+# The transform carries the emphasis and the data recedes: a plan is a sequence
+# of things done, and the types are what they are done to. Everything here is
+# one half of that -- the darker ink, the weight, the heavier stroke on one
+# side; the greyer ink and the lighter stroke on the other. Text takes exactly
+# two inks, the step's and the data's: a namespace is inked like its name, and
+# a target's label is data. Only the marker of a target, or of an input drawn
+# without a `given` step, says it is an end of the plan.
 STYLES: dict[NodeKind, Style] = {
     NodeKind.TRANSFORM: Style(
         marker="▽", ascii_marker="v",
         fill="#FFFFFF", stroke="#2B2B2B", rx=0,
-        text="#7A7A7A", muted="#A8A8A8",
+        text="#111111", muted="#111111", weight="600",
         shape="triangle", gv_attrs="orientation=180",
         gv_style="filled", ansi="\033[1;36m",
-        svg_shape="triangle_down", marker_scale=1.0, stroke_width=1.5,
+        svg_shape="triangle_down", marker_scale=1.0, stroke_width=2.0,
+        heading=True,
     ),
-    # same weight as the triangle: an intermediate is not louder than the step
-    # that made it. Only the solid target keeps the heavier outline.
     NodeKind.DATA: Style(
         marker="○", ascii_marker="o",
-        fill="#FFFFFF", stroke="#2B2B2B", rx=0,
+        fill="#FFFFFF", stroke="#6E6E6E", rx=0,
+        text="#7A7A7A", muted="#7A7A7A",
         shape="circle", gv_style="filled", ansi="\033[0;37m",
-        svg_shape="circle", marker_scale=1.0, stroke_width=1.5,
+        svg_shape="circle", marker_scale=0.88, stroke_width=1.3,
+        indent=0.8,
     ),
-    # marking the requested outputs on the nodes themselves is what lets the
-    # drawing skip the synthetic sink that collects them, and that sink is the
-    # single most expensive thing in the layout: every target holds a lane from
-    # wherever it is produced down to the last row
     NodeKind.TARGET: Style(
         marker="●", ascii_marker="*",
         fill="#212121", stroke="#2B2B2B",
-        shape="circle", gv_style="filled", ansi="\033[1;37m",
-        svg_shape="circle", marker_scale=1.0, stroke_width=3.0,
-        solid=True,
+        text="#7A7A7A", muted="#7A7A7A",
+        shape="circle", gv_style="filled", ansi="\033[0;97m",
+        svg_shape="circle", marker_scale=1.0, stroke_width=1.3,
+        solid=True, indent=0.8,
     ),
 }
 
+STYLES[NodeKind.GIVEN] = STYLES[NodeKind.TARGET]
+
+
 @dataclass(frozen=True)
 class Theme:
-    """A plate and the three node styles that sit on it.
-
-    Keyed by `NodeKind`, which is why a theme is here and not beside `Style`:
-    `dag_draw` is deliberately ignorant of what a kind means, and that is the
-    same reason `STYLES` is here.
-    """
     plate: Plate
     styles: dict[NodeKind, Style]
 
 
-# the light theme *is* `STYLES`, not a copy of it: a drawing already on disk
-# and one drawn today have to be the same file, and the module-level name is
-# what the tests and any outside reader mean by "how a node is drawn"
 LIGHT = Theme(plate=Plate(), styles=STYLES)
 
-# only the colours are restated; every other field is taken from the light
-# style, so a marker shape, a scale or a stroke weight cannot drift between the
-# two — the drawings have to be one drawing in two inks. A hollow marker's fill
-# is the plate's own background rather than a colour of its own, since hollow
-# reads hollow only where the fill and the ground agree.
 DARK = Theme(
-    plate=Plate(background="#1B1E24", edge="#8D97A8"),
+    plate=Plate(background="#1B1E24", edge="#8D97A8", rule="#2F343D"),
     styles={
         NodeKind.TRANSFORM: replace(
             STYLES[NodeKind.TRANSFORM],
-            fill="#1B1E24", stroke="#DFE3EA", text="#8D97A8", muted="#5F6877",
+            fill="#1B1E24", stroke="#DFE3EA", text="#DFE3EA", muted="#DFE3EA",
         ),
         NodeKind.DATA: replace(
             STYLES[NodeKind.DATA],
-            fill="#1B1E24", stroke="#DFE3EA", text="#DFE3EA", muted="#6B7484",
+            fill="#1B1E24", stroke="#8D97A8", text="#8D97A8", muted="#8D97A8",
         ),
         NodeKind.TARGET: replace(
             STYLES[NodeKind.TARGET],
-            fill="#DFE3EA", stroke="#DFE3EA", text="#DFE3EA", muted="#6B7484",
+            fill="#DFE3EA", stroke="#DFE3EA", text="#8D97A8", muted="#8D97A8",
         ),
     },
 )
+
+DARK.styles[NodeKind.GIVEN] = DARK.styles[NodeKind.TARGET]
 
 THEMES: dict[str, Theme] = {"light": LIGHT, "dark": DARK}
 
@@ -118,13 +131,6 @@ TEXT_FORMATS = {"text", "txt"}
 
 
 class DagRenderer:
-    """Build a directed graph of transform/data nodes and draw it.
-
-    Nodes are keyed by an id the caller owns; what gets drawn beside a node is
-    a separate `Label`, so a caller can shorten what the reader sees without
-    merging two things the graph must keep apart.
-    """
-
     def __init__(
         self,
         *,
@@ -134,6 +140,12 @@ class DagRenderer:
         colour: str = "none",
         theme: str = "light",
         background: bool = True,
+        mode: DagMode = DagMode.PLAIN,
+        blacklist: Iterable[Any] = (),
+        legend_columns: int = 0,
+        monochrome: bool = False,
+        colour_palette: Sequence[str] | None = None,
+        colour_overrides: Mapping[str, str] | None = None,
     ):
         if colour not in SCHEMES:
             raise ValueError(
@@ -148,47 +160,48 @@ class DagRenderer:
         self._font    = font
         self._rankdir = rankdir
         self._label_mode = label_mode
-        # monochrome by default: colour is a thing a caller asks for, and which
-        # of the schemes is worth defaulting to is a question for a reader
-        # looking at them, not for this constructor
         self._colour = colour
-        # light by default for the same reason: every artifact already on disk
-        # is one, and asking for the other is the caller's move
         theme_obj = THEMES[theme]
-        # a plate is shared across every renderer of one theme (`LIGHT`/`DARK`
-        # are module-level), so an off toggle replaces this instance's copy
-        # rather than mutating the frozen original out from under every other
-        # caller
         if not background:
             theme_obj = replace(theme_obj, plate=replace(theme_obj.plate, paint_background=False))
+        if mode is DagMode.STEPS:
+            # the rule heads a step's block of data; with no data there is no block
+            theme_obj = replace(theme_obj, styles={
+                k: replace(s, heading=False) for k, s in theme_obj.styles.items()
+            })
         self._theme = theme_obj
+        self._mode = mode
+        self._blacklist = tuple(blacklist)
+        self._legend_columns = legend_columns
+        self._monochrome = monochrome
+        self._colour_palette = colour_palette
+        self._colour_overrides = colour_overrides
         self._nodes: dict[str, NodeKind] = {}
         self._labels: dict[str, Label] = {}
+        self._dtypes: dict[str, Any] = {}
         self._edges: list[tuple[str, str]] = []
         self._seen_edges: set[tuple[str, str]] = set()
+        self._declared: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {}
+        self._givens: set[str] = set()
 
-    def add_node(self, kind: NodeKind, name: str, label: Label | None = None) -> None:
-        """`name` identifies the node; `label` is only what gets drawn.
-
-        Two steps running the same transform are distinguished only by the step
-        number in their id. Passing a label that drops the number keeps them two
-        nodes; putting the shortened form in `name` would silently fold them
-        into one and the layout's cycle-breaker would cut edges to compensate.
-        """
+    def add_node(
+        self, kind: NodeKind, name: str, label: Label | None = None, dtype: Any = None,
+    ) -> None:
         self._nodes.setdefault(name, kind)
         if label is not None:
             self._labels.setdefault(name, label)
+        if dtype is not None:
+            self._dtypes.setdefault(name, dtype)
 
     def mark(self, kind: NodeKind, name: str) -> None:
-        """Retype a node that already exists.
-
-        `add_node` is first-wins so that an `add_edge` cannot downgrade a
-        declared transform; marking is the deliberate exception, for a property
-        only known after the node has been drawn into the graph — a data node
-        turning out to be one of the requested outputs.
-        """
         if name in self._nodes:
             self._nodes[name] = kind
+
+    def mark_given(self, name: str) -> None:
+        """Draw `name` as an input with no synthetic `given` step above it."""
+        self._givens.add(name)
+        if self._nodes.get(name) is NodeKind.DATA:
+            self._nodes[name] = NodeKind.GIVEN
 
     def add_edge(self, src: str, dst: str) -> None:
         key = (src, dst)
@@ -199,17 +212,238 @@ class DagRenderer:
         self._nodes.setdefault(src, NodeKind.DATA)
         self._nodes.setdefault(dst, NodeKind.DATA)
 
+    def out_degree(self, name: str) -> int:
+        return sum(1 for src, _ in self._edges if src == name)
+
+    def remove_node(self, name: str) -> None:
+        self._nodes.pop(name, None)
+        self._labels.pop(name, None)
+        self._dtypes.pop(name, None)
+        self._edges = [e for e in self._edges if name not in e]
+        self._seen_edges = {e for e in self._seen_edges if name not in e}
+
+    def declare(
+        self, name: str, requires: Sequence[str], produces: Sequence[str],
+        dtypes: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Record what a transform asks for and makes *as declared*, not as bound.
+
+        The legend wants the tool's own signature. A step binds a requirement to
+        one concrete type, so four `checkm2` steps reading four bin types are one
+        transform requiring `e2::bin` -- which only the declaration says.
+        """
+        for n, t in (dtypes or {}).items():
+            self._dtypes.setdefault(n, t)
+        self._declared[name] = (
+            tuple(n for n in requires if not self._blacklisted(n)),
+            tuple(n for n in produces if not self._blacklisted(n)),
+        )
+
     def layout(self, order: Sequence[str] | None = None) -> Layout:
-        """`order` fixes the rows; see `dag_layout.layout`."""
-        return layout(self._nodes, self._edges, order)
+        nodes, edges = self._graph()
+        return layout(nodes, edges, order, step_blocks(nodes, edges) + self._given_blocks(nodes, edges))
+
+    def _given_blocks(
+        self, nodes: Mapping[str, NodeKind], edges: Iterable[tuple[str, str]],
+    ) -> list[list[str]]:
+        """Each lineage tree of inputs as one block, parents first, so an input
+        and the inputs registered under it enter the drawing together."""
+        givens = [n for n in nodes if n in self._givens]
+        inside = set(givens)
+        kids: dict[str, list[str]] = {n: [] for n in givens}
+        has_parent: set[str] = set()
+        for src, dst in edges:
+            if src in inside and dst in inside:
+                kids[src].append(dst)
+                has_parent.add(dst)
+        blocks, placed = [], set()
+        for root in givens:
+            if root in has_parent or root in placed:
+                continue
+            block, todo = [], [root]
+            while todo:
+                n = todo.pop(0)
+                if n in placed:
+                    continue
+                placed.add(n)
+                block.append(n)
+                todo.extend(kids[n])
+            blocks.append(block)
+        return blocks
+
+    def _graph(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
+        nodes, edges = self._cut()
+        if self._mode in (DagMode.COLLAPSED, DagMode.STEPS):
+            return self._collapse(nodes, edges)
+        return nodes, edges
+
+    def _blacklisted(self, name: str) -> bool:
+        dtype = self._dtypes.get(name)
+        return dtype is not None and any(dtype.IsA(t) for t in self._blacklist)
+
+    def _cut(self) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
+        """Delete every node whose type is a blacklisted type, with its edges.
+
+        Nothing is wired around a cut node. A synthetic root left with no
+        edges goes as well, since it stands for nothing on its own.
+        """
+        nodes = {n: k for n, k in self._nodes.items() if not self._blacklisted(n)}
+        edges = [(a, b) for a, b in self._edges if a in nodes and b in nodes]
+        touched = {n for e in edges for n in e}
+        for n in SYNTHETIC:
+            if n in nodes and n not in touched and len(nodes) > 1:
+                del nodes[n]
+        return nodes, edges
+
+    @staticmethod
+    def _neighbours(
+        nodes: Mapping[str, NodeKind], edges: Sequence[tuple[str, str]],
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        preds: dict[str, list[str]] = {n: [] for n in nodes}
+        succs: dict[str, list[str]] = {n: [] for n in nodes}
+        for src, dst in edges:
+            succs[src].append(dst)
+            preds[dst].append(src)
+        return preds, succs
+
+    def _is_data(self, name: str) -> bool:
+        return self._nodes.get(name) in (NodeKind.DATA, NodeKind.TARGET, NodeKind.GIVEN)
+
+    def _collapse(
+        self, nodes: dict[str, NodeKind], edges: list[tuple[str, str]],
+    ) -> tuple[dict[str, NodeKind], list[tuple[str, str]]]:
+        """Absorb intermediate data into the step that produced it.
+
+        In COLLAPSED mode what survives is the steps, plus the two ends: the
+        givens the run starts from and the targets it was asked for. STEPS
+        mode drops the data nodes wholesale, ends included, so only the steps
+        remain. A dropped node's producers are wired straight to its
+        consumers, so the shape of the pipeline is unchanged; only the rungs
+        between steps go.
+        """
+        hide_data = self._mode is DagMode.STEPS
+        preds, succs = self._neighbours(nodes, edges)
+        drop: set[str] = set()
+        for name, kind in nodes.items():
+            if not self._is_data(name):
+                # with the data gone, the synthetic roots connect nothing to
+                # nothing: `given` would fan out to every step that reads an
+                # environment, which is every step
+                if hide_data and name in SYNTHETIC:
+                    drop.add(name)
+                continue
+            if hide_data:
+                drop.add(name)
+            elif kind is NodeKind.TARGET:
+                continue
+            elif "given" not in preds[name] and name not in self._givens:
+                drop.add(name)                      # an intermediate product
+
+        kept = {n: k for n, k in nodes.items() if n not in drop}
+        bypassed: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+
+        # Hiding all data drops whole chains at once (given -> data -> step), so
+        # bypassing has to walk through runs of dropped nodes rather than step
+        # over one at a time.
+        def survivors(start: str) -> list[str]:
+            out: list[str] = []
+            walked: set[str] = set()
+
+            def walk(n: str) -> None:
+                for s in succs[n]:
+                    if s in walked:
+                        continue
+                    walked.add(s)
+                    if s in drop:
+                        walk(s)
+                    else:
+                        out.append(s)
+
+            walk(start)
+            return out
+
+        for src in nodes:
+            if src in drop:
+                continue
+            for dst in survivors(src):
+                if src == dst or (src, dst) in seen:
+                    continue
+                seen.add((src, dst))
+                bypassed.append((src, dst))
+        return kept, bypassed
+
+    def _legend_blocks(
+        self,
+    ) -> tuple[list[tuple[Layout, dict[str, Label], dict[str, NodeKind]]], Colouring]:
+        nodes, edges = self._cut()
+        preds, succs = self._neighbours(nodes, edges)
+        labels = self.labels
+        order: list[str] = []
+        sig: dict[str, tuple[set[str], set[str]]] = {}
+        hue_of: dict[str, str] = {}
+        whole = layout(nodes, edges, blocks=step_blocks(nodes, edges))
+        base = self.colouring(whole)
+
+        for name, kind in nodes.items():
+            if kind is not NodeKind.TRANSFORM or name in SYNTHETIC:
+                continue
+            key = labels[name].name
+            declared = self._declared.get(name)
+            if declared is not None:
+                ins, outs = set(declared[0]), set(declared[1])
+            else:
+                ins = {n for n in preds[name] if self._is_data(n)}
+                outs = {n for n in succs[name] if self._is_data(n)}
+            if key in sig:
+                sig[key][0].update(ins)
+                sig[key][1].update(outs)
+                continue
+            sig[key] = (ins, outs)
+            hue_of.setdefault(key, base.nodes.get(name, ""))
+            order.append(key)
+
+        blocks: list[tuple[Layout, dict[str, Label], dict[str, NodeKind]]] = []
+        nodes_hue: dict[str, str] = dict(base.nodes)
+        for key in order:
+            ins, outs = sig[key]
+            tid = f"\0{key}"          # cannot collide with a type name
+            block: dict[str, NodeKind] = {}
+            edges: list[tuple[str, str]] = []
+            lab: dict[str, Label] = {tid: Label(name=key)}
+            for name in sorted(ins):
+                block[name] = NodeKind.DATA
+                lab[name] = labels.get(name) or default_label(name)
+                edges.append((name, tid))
+            block[tid] = NodeKind.TRANSFORM
+            for name in sorted(outs):
+                # A block is a signature, not a run. An output that happens to
+                # be a target of this particular plan is still just an output
+                # of the transform, so it draws like every other one.
+                block[name] = NodeKind.DATA
+                lab[name] = labels.get(name) or default_label(name)
+                edges.append((tid, name))
+            if hue_of.get(key):
+                nodes_hue[tid] = hue_of[key]
+            blocks.append((layout(block, edges, blocks=step_blocks(block, edges)), lab, block))
+
+        tinted = Colouring(
+            nodes=nodes_hue,
+            edges={
+                (a, b): nodes_hue[a]
+                for lay, _, _ in blocks
+                for a, b in lay.edges
+                if a in nodes_hue
+            },
+        )
+        return blocks, tinted
 
     @property
     def labels(self) -> dict[str, Label]:
-        """Every node's drawn label, defaulted from its id where unset."""
         return {n: self._labels.get(n) or default_label(n) for n in self._nodes}
 
     def to_dot(self) -> str:
-        """Plain DOT: the graph, no positions. Nothing here invokes graphviz."""
+        nodes, edges = self._graph()
         lines = ["digraph G {"]
         lines += [
             f'graph [fontname="{self._font}", rankdir="{self._rankdir}"];',
@@ -217,24 +451,26 @@ class DagRenderer:
             f'edge  [fontname="{self._font}"];',
         ]
         labels = self.labels
-        for name, kind in self._nodes.items():
+        for name, kind in nodes.items():
             lines.append(self._render_node(kind, name, labels[name]))
-        for src, dst in self._edges:
+        for src, dst in edges:
             lines.append(f'    "{src}" -> "{dst}";')
         lines.append("}")
         return "\n".join(lines)
 
     def colouring(self, lay: Layout | None = None) -> Colouring:
-        """The scheme applied to this graph; empty unless one was asked for."""
-        return colour_layout(lay or self.layout(), self._colour)
+        if self._monochrome:
+            return Colouring()
+        return colour_layout(
+            lay or self.layout(), self._colour,
+            palette=self._colour_palette, overrides=self._colour_overrides,
+        )
 
     def to_text(self, *, unicode: bool = True, color: bool = False) -> str:
+        self._reject_legend("text")
         lay = self.layout()
-        # no plate: the only colour this backend emits is `Style.ansi`, chosen
-        # against whatever the reader's palette is, and a terminal owns its own
-        # background — so a theme has nothing here it could change.
         return render_text(
-            lay, self._theme.styles, labels=self.labels,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
             unicode=unicode, color=color,
             colour=self.colouring(lay),
         )
@@ -248,32 +484,41 @@ class DagRenderer:
         min_lanes: int = 0,
         rows_y: Sequence[float] = (),
     ) -> Geometry:
-        """The placement `to_svg`/`to_raster_dot` draw from, in pixels — so a
-        caller that wants positions without ink (the panel, a step's row) reads
-        off the same construction rather than reassembling style/label inputs
-        itself.
-
-        `min_lanes` and `rows_y` are for a caller whose rows are its own page's;
-        see `dag_draw._grid`."""
         lay = lay or self.layout()
         return _geometry(
-            lay, self._theme.styles, labels=self.labels, label_mode=self._label_mode,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
+            label_mode=self._label_mode,
             font_size=font_size, max_label_chars=max_label_chars,
             min_lanes=min_lanes, rows_y=rows_y,
         )
 
     def to_svg(self) -> str:
+        if self._mode is DagMode.LEGEND:
+            blocks, colour = self._legend_blocks()
+            return render_legend(
+                blocks, self._theme.styles, label_mode=self._label_mode,
+                font=self._font, colour=colour, plate=self._theme.plate,
+                columns=self._legend_columns,
+            )
         lay = self.layout()
         return render_svg(
-            lay, self._theme.styles, labels=self.labels,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
             label_mode=self._label_mode, font=self._font,
             colour=self.colouring(lay), plate=self._theme.plate,
         )
 
+    def _reject_legend(self, what: str) -> None:
+        if self._mode is DagMode.LEGEND:
+            raise ValueError(
+                f"the legend mode composes many small drawings and has no {what}"
+                " form; render it as svg"
+            )
+
     def to_raster_dot(self) -> str:
+        self._reject_legend("raster")
         lay = self.layout()
         return raster_dot(
-            lay, self._theme.styles, labels=self.labels,
+            lay, self._theme.styles, kinds=self._nodes, labels=self.labels,
             label_mode=self._label_mode, font=self._font,
             colour=self.colouring(lay), plate=self._theme.plate,
         )
@@ -299,9 +544,6 @@ class DagRenderer:
 
     @staticmethod
     def _render_node(kind: NodeKind, name: str, label: Label | None = None) -> str:
-        # the id is the DOT node name, so an id that already reads as its own
-        # label needs no attribute — that keeps this output stable for the
-        # consumers that run their own graphviz over it
         if kind is NodeKind.TRANSFORM:
             attrs = ['shape="oval"', 'style="filled"', 'fillcolor="#CCCCCC"']
         else:

@@ -1,0 +1,3 @@
+   84416 inodes     1859820457623 bytes  /scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/nxf_work
+    5332 inodes      554545133599 bytes  /scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/results
+      26 inodes           1800365 bytes  /scratch/phyberos/pratama2026/metasmith/relay

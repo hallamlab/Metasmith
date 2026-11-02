@@ -1,0 +1,6 @@
+outs:
+- md5: afabf9638a5c7d83ccc9725aefa7c0ba.dir
+  size: 9273278
+  nfiles: 2
+  hash: md5
+  path: plasmidsaurus

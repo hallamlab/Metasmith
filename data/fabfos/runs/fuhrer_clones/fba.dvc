@@ -1,0 +1,6 @@
+outs:
+- md5: b85b747c0ae1b8390ba82f905610e656.dir
+  size: 3219932
+  nfiles: 8
+  hash: md5
+  path: fba

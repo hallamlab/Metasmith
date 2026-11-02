@@ -1,0 +1,6 @@
+name: sina
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - sina=1.7.2

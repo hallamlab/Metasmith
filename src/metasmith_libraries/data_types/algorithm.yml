@@ -1,0 +1,25 @@
+# algorithm:: -- the methods FabFos IS, as importable/runnable modules.
+#
+# Mirrors `src/fabfos/algorithm/_metadata/types/algorithm.yml`, which is the same
+# namespace declared over the DataInstanceLibrary that actually holds the files.
+# Both copies are needed and neither is redundant: a transform resolves the type
+# through its own library's compiled index (this file), while the instance is
+# supplied by the package directory (that one). The two must agree; `lib::` has
+# the identical arrangement.
+#
+# These resolve against the INSTALLED PACKAGE rather than a library resource dir,
+# which is what keeps `python -m fabfos.algorithm.<mod>` working with no planner,
+# no staging and no container -- because that is how a cut or a threshold gets
+# inspected before it is trusted. The namespace IS the directory name; renaming
+# either breaks resolution.
+types:
+  fabfos_recovery.py:
+    properties:
+      _: >-
+        insert recovery -- `map` states where the pCC1fos backbone lands and
+        interprets nothing, `rectify` cuts at those footprints with the assembly
+        graph beside it (circularity is the assembler's own claim; closure is a
+        count in {0,1,2}), `dedup` collapses the pieces across assemblers and
+        pools into the representative insert set
+      src: fabfos_recovery
+      usage: command line

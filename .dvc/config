@@ -1,2 +1,2 @@
 [cache]
-    dir = ../../dvc-cache
+    type = "hardlink,symlink"

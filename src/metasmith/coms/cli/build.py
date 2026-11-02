@@ -1,8 +1,3 @@
-"""`metasmith build ...` — decomposed library compilation.
-
-Bare `metasmith build -t ... -r ...` is an alias for `metasmith build all` for
-backwards compatibility with `dev.sh` and existing user habits.
-"""
 from __future__ import annotations
 
 import argparse
@@ -11,8 +6,6 @@ from ...ops import build as _ops
 
 
 def _add_flags(parser: argparse.ArgumentParser, suppress_defaults: bool = False) -> None:
-    """Attach -t/-r/-u to a parser. Sub-step parsers use SUPPRESS so they don't
-    clobber values the top-level parser already collected."""
     default = argparse.SUPPRESS if suppress_defaults else []
     parser.add_argument("-t", "--types", action="append", default=default, dest="type_dirs",
                         help="data type definition directory (repeatable)")
@@ -53,6 +46,26 @@ def register(subs):
                         parents=[sub_parent])
     _tr.set_defaults(func=_cmd_transforms)
 
+    _vl = sp.add_parser(
+        "vendor-library",
+        help="copy a metasmith library's shippable pieces into a vendored destination",
+        description="Copy each --src NAME=PATH into --dst/NAME, replacing --dst "
+                    "wholesale, and stamp a content hash for later drift checks. "
+                    "--check verifies an existing bundle against live source "
+                    "without copying, e.g. --src data_types=src/metasmith_libraries/"
+                    "data_types --src resources=... --src envs=envs/metasmith_libraries.",
+    )
+    _vl.add_argument("--src", action="append", required=True, dest="vendor_srcs",
+                     help="NAME=PATH to vendor into --dst/NAME (repeatable)")
+    _vl.add_argument("--dst", required=True, dest="vendor_dst",
+                     help="destination directory (replaced wholesale)")
+    _vl.add_argument("--check", action="store_true",
+                     help="verify the existing bundle matches live source; do not copy")
+    _vl.add_argument("--no-metadata", action="store_true", dest="vendor_no_metadata",
+                     help="ship content only: skip _metadata/ and do not require it. "
+                          "For a consumer that compiles its own copy.")
+    _vl.set_defaults(func=_cmd_vendor_library)
+
     p.set_defaults(func=_cmd_all)
 
 
@@ -74,3 +87,10 @@ def _cmd_uniques(args):
 
 def _cmd_transforms(args):
     return _ops.compile_transforms(_arg(args, "transform_dirs"), _arg(args, "type_dirs"))
+
+
+def _cmd_vendor_library(args):
+    expect_metadata = not getattr(args, "vendor_no_metadata", False)
+    if args.check:
+        return _ops.check_vendor_library(args.vendor_srcs, args.vendor_dst, expect_metadata)
+    return _ops.vendor_library(args.vendor_srcs, args.vendor_dst, expect_metadata)

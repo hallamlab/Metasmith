@@ -1,0 +1,12 @@
+  25/200  41s
+  50/200  69s
+  75/200  97s
+  100/200  130s
+  125/200  158s
+  150/200  187s
+  175/200  217s
+  200/200  245s
+
+200 reactions x 2 orientations in 245s
+  tokens 261,012 in + 17,861 out = 1394/reaction
+  -> runs/dir_r0.dev.jsonl

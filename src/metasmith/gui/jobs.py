@@ -1,17 +1,6 @@
-"""Background jobs and their log streams.
-
-Deploy, generate, stage, and collect all take longer than a request should, and
-all of them produce log output a user wants to watch rather than wait for. They
-run on a worker thread here; the route returns a job id immediately and the page
-subscribes to the job's log over server-sent events.
-
-Job logs are in memory and per-server-process: they are a view of work in
-progress, not a record. What survives a restart is the run record on disk, which
-is what lets the server re-attach to a workflow that is still running on an agent
-long after the browser and the server that launched it are gone.
-"""
 from __future__ import annotations
 
+import contextvars
 import logging
 import queue
 import threading
@@ -28,6 +17,9 @@ FAILED = "failed"
 TERMINAL = {DONE, FAILED}
 
 _MAX_LINES = 5000
+_MAX_FINISHED = 200
+
+_server_log = logging.getLogger("metasmith.gui.jobs")
 
 
 @dataclass
@@ -49,14 +41,12 @@ class Job:
         self._subscribers: set[queue.Queue] = set()
         self._done = threading.Event()
 
-    # -- log -------------------------------------------------------------
 
     def emit(self, line: str):
         for part in str(line).rstrip("\n").split("\n"):
             with self._lock:
                 self._lines.append(part)
                 if len(self._lines) > _MAX_LINES:
-                    # keep the tail: the end of a long log is the interesting part
                     del self._lines[: len(self._lines) - _MAX_LINES]
                 subscribers = list(self._subscribers)
             for q in subscribers:
@@ -67,13 +57,6 @@ class Job:
             return list(self._lines)
 
     def finish(self):
-        """Mark the job done and wake everyone following it.
-
-        The wake matters as much as the flag: a subscriber blocked in `get`
-        would otherwise sit out the rest of its timeout before noticing, which
-        is half a second of a page looking like it is still working on a solve
-        that finished. `None` is the sentinel -- a log line is always a string.
-        """
         with self._lock:
             subscribers = list(self._subscribers)
         self._done.set()
@@ -81,7 +64,6 @@ class Job:
             q.put(None)
 
     def subscribe(self) -> Iterator[str]:
-        """Replay what has happened, then follow. Ends when the job ends."""
         q: queue.Queue = queue.Queue()
         with self._lock:
             backlog = list(self._lines)
@@ -96,7 +78,7 @@ class Job:
                     line = q.get(timeout=0.5)
                 except queue.Empty:
                     continue
-                if line is None:  # the job ended; drain what is left and stop
+                if line is None:
                     continue
                 yield line
         finally:
@@ -122,8 +104,6 @@ class Job:
 
 
 class JobRunner:
-    """A small thread-per-job runner. Single user, localhost -- no pool needed."""
-
     def __init__(self):
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
@@ -144,6 +124,7 @@ class JobRunner:
         job = Job(id=self._next_id(kind), kind=kind, label=label, subject=subject or {})
         with self._lock:
             self._jobs[job.id] = job
+            self._prune()
 
         def _run():
             job.status = RUNNING
@@ -155,14 +136,21 @@ class JobRunner:
                 job.status = FAILED
                 job.error = str(exc) or exc.__class__.__name__
                 job.emit(f"ERROR: {job.error}")
-                for line in traceback.format_exc().splitlines():
-                    job.emit(line)
+                _server_log.error("job [%s] failed\n%s", job.id, traceback.format_exc())
             finally:
                 job.finished_at = utcnow()
                 job.finish()
 
         threading.Thread(target=_run, name=f"msm-gui-{job.id}", daemon=True).start()
         return job
+
+    def _prune(self):
+        finished = sorted(
+            (j for j in self._jobs.values() if j.status in TERMINAL),
+            key=lambda j: j.finished_at or "",
+        )
+        for j in finished[: max(0, len(finished) - _MAX_FINISHED)]:
+            del self._jobs[j.id]
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
@@ -181,20 +169,12 @@ class JobRunner:
             return [j for j in self._jobs.values() if j.status not in TERMINAL]
 
 
-# -- log capture -------------------------------------------------------------
-#
-# The ops layer reports progress by logging, not by returning it, so without this
-# a deploy shows nothing until it finishes. metasmith logs through a standard
-# `logging.Logger`, so a handler is enough -- no monkeypatching, and correct when
-# several jobs run at once, because the active job is thread-local and each job
-# owns its thread.
-
-_active_job = threading.local()
+_active_job: contextvars.ContextVar[Job | None] = contextvars.ContextVar("msm_gui_job", default=None)
 
 
 class _JobLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
-        job = getattr(_active_job, "job", None)
+        job = _active_job.get()
         if job is None:
             return
         try:
@@ -208,7 +188,6 @@ _handler_lock = threading.Lock()
 
 
 def install_log_capture():
-    """Attach the job handler to metasmith's logger. Idempotent."""
     global _handler_installed
     with _handler_lock:
         if _handler_installed:
@@ -222,18 +201,15 @@ def install_log_capture():
 
 
 class LogCapture:
-    """Route metasmith log output into `job` for the duration of a block."""
-
     def __init__(self, job: Job):
         self.job = job
-        self._previous = None
+        self._token = None
 
     def __enter__(self):
         install_log_capture()
-        self._previous = getattr(_active_job, "job", None)
-        _active_job.job = self.job
+        self._token = _active_job.set(self.job)
         return self
 
     def __exit__(self, *exc):
-        _active_job.job = self._previous
+        _active_job.reset(self._token)
         return False

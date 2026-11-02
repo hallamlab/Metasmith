@@ -1,0 +1,6 @@
+name: cctyper
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - cctyper=1.8.0

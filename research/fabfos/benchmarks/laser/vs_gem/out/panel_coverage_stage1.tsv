@@ -1,0 +1,6 @@
+gate	n_obs	n_targets	example_lost
+raw	382	184	
+mutation filter (147 lost)	235	116	(2S)-pinocembrin; (4S)-limonene
+non-probe (medium or carbon named)	225	107	curated:* mechanism probes
+names a specific product	181	82	Biomass; Carboxylic acids; Carotenoids
+target in the C atom universe	172	74	3-hydroxy-gamma-butyrolactone; Glucaric Acid; L-erythro-5,6,7,8-tetrahydrobiopterin

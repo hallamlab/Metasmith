@@ -1,0 +1,6 @@
+outs:
+- md5: 6fe6547b3305c8d07291b8faf8755b21.dir
+  size: 1143
+  nfiles: 1
+  hash: md5
+  path: pools

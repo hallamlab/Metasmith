@@ -1,0 +1,6 @@
+name: asv_general_stats_env
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - seqkit

@@ -1,0 +1,12 @@
+kind	key	n
+residual	eq:uninformative	4097
+agreement	eq:exact	79698
+agreement	eq:silence	79698
+agreement	eq:rows	83795
+agreement	eq:unnamed_reasons	0
+confusion	eq:expected_ok->uninformative	4097
+agreement	dgbyg:exact	83694
+agreement	dgbyg:silence	83694
+agreement	dgbyg:rows	83795
+agreement	dgbyg:unnamed_reasons	0
+confusion	dgbyg:expected_ok->unbalanced	101

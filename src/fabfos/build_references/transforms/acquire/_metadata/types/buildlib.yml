@@ -1,0 +1,14 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  ecmdb_scrape.py:
+    properties:
+      _:
+      - walks ECMDB's paginated /concentrations browse into one JSON table, values
+        normalised to mM, refusing a short snapshot rather than pinning one
+      src: ecmdb_scrape
+      usage: library

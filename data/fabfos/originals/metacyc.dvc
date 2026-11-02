@@ -1,0 +1,6 @@
+outs:
+- md5: 3d28aa9ea1301e6685995e90408c33e3.dir
+  size: 1578424584
+  nfiles: 23557
+  hash: md5
+  path: metacyc

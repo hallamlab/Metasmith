@@ -1,0 +1,77 @@
+sample	dataset	assembly	contigs	total_length	N50	NA50	largest_alignment	genomes_with_NGA50	median_NGA50
+SRR32696698	Pratama Nanopore	megahit	427762	564907129	1615				
+SRR32696698	Pratama Nanopore	opera_ms	361018	575030313	2648				
+SRR32696698	Pratama Nanopore	flye	39518	254630602	8876				
+SRR32696698	Pratama Nanopore	flye_polca	39518	254463514	8867				
+SRR32696707	Pratama Nanopore	megahit	651935	777940523	1322				
+SRR32696707	Pratama Nanopore	opera_ms	476763	890594269	6039				
+SRR32696707	Pratama Nanopore	flye	29520	476487184	44644				
+SRR32696707	Pratama Nanopore	flye_polca	29520	475948316	44611				
+marine_long_sample_3	marine PacBio	megahit	258814	342077631	1589	1554	751768	144	1882
+marine_long_sample_3	marine PacBio	opera_ms	158418	362419071	7527	7197	1667460	151	6703
+marine_long_sample_3	marine PacBio	flye	39483	186756003	5037	4258	44706	57	4493
+marine_long_sample_3	marine PacBio	flye_polca	39483	185917769	5015	4241	44701	57	4460
+plant_associated_long_nano_sample_10	plant Nanopore	megahit	75132	139332197	3380	3309	607225	27	3022
+plant_associated_long_nano_sample_10	plant Nanopore	opera_ms	45915	149085436	24135	20393	607225	31	18475
+plant_associated_long_nano_sample_10	plant Nanopore	flye	2513	93921972	97345	79427	7010489	23	59424
+plant_associated_long_nano_sample_10	plant Nanopore	flye_polca	2513	93643187	97403	79117	7010495	23	57891
+plant_associated_long_nano_sample_11	plant Nanopore	megahit	70027	135011523	3417	3349	491723	25	4360
+plant_associated_long_nano_sample_11	plant Nanopore	opera_ms	46419	140803231	23735	20010	591559	28	20688
+plant_associated_long_nano_sample_11	plant Nanopore	flye	1916	84334841	125119	104158	7010500	22	96312
+plant_associated_long_nano_sample_11	plant Nanopore	flye_polca	1916	84102886	125035	104445	7010500	22	100254
+plant_associated_long_pacbio_sample_14	plant PacBio	megahit	63053	118637550	3246	3188	443890	24	3008
+plant_associated_long_pacbio_sample_14	plant PacBio	opera_ms	33491	123008450	16988	16352	643158	24	18276
+plant_associated_long_pacbio_sample_14	plant PacBio	flye	20791	88108193	4880	4246	32421	12	3222
+plant_associated_long_pacbio_sample_14	plant PacBio	flye_polca	20791	87791183	4863	4230	32403	12	3196
+plant_associated_long_pacbio_sample_18	plant PacBio	megahit	83458	155045099	3726	3653	607788	29	3470
+plant_associated_long_pacbio_sample_18	plant PacBio	opera_ms	48071	162196343	16424	15287	1011427	32	13080
+plant_associated_long_pacbio_sample_18	plant PacBio	flye	44676	219234517	5260	4333	118689	21	5560
+plant_associated_long_pacbio_sample_18	plant PacBio	flye_polca	44675	218888633	5252	4325	118681	21	5533
+strain_long_sample_15	strain PacBio	megahit	22539	45031019	5098	4964	148064	365	2099
+strain_long_sample_15	strain PacBio	opera_ms	15843	46236447	12915	11153	220676	384	8781
+strain_long_sample_15	strain PacBio	flye	19534	97463970	5417	4418	41773	385	8198
+strain_long_sample_15	strain PacBio	flye_polca	19534	97348006	5409	4413	41766	385	8249
+strain_long_sample_17	strain PacBio	megahit	24796	39123527	2598	2532	233091	304	1732
+strain_long_sample_17	strain PacBio	opera_ms	19100	40020776	9457	7499	249605	338	9212
+strain_long_sample_17	strain PacBio	flye	14994	77139302	5706	4538	74517	341	7843
+strain_long_sample_17	strain PacBio	flye_polca	14993	77077360	5700	4533	74504	341	8007
+strain_long_sample_19	strain PacBio	megahit	17171	35904606	4232	4167	223037	251	2073
+strain_long_sample_19	strain PacBio	opera_ms	11796	36567167	13428	11692	223037	336	5291
+strain_long_sample_19	strain PacBio	flye	12732	60500221	5359	4427	50237	361	7692
+strain_long_sample_19	strain PacBio	flye_polca	12732	60410136	5350	4422	50245	361	7732
+strain_long_sample_24	strain PacBio	megahit	16810	32502295	5445	5283	212584	296	1614
+strain_long_sample_24	strain PacBio	opera_ms	11839	33472197	16271	12997	338727	381	10721
+strain_long_sample_24	strain PacBio	flye	17285	89005595	5648	4554	59724	384	9142
+strain_long_sample_24	strain PacBio	flye_polca	17285	88915289	5644	4548	59695	384	9202
+strain_long_sample_4	strain PacBio	megahit	25956	49850834	4015	3896	107989	348	2042
+strain_long_sample_4	strain PacBio	opera_ms	20587	50490678	8828	7406	227734	380	9371
+strain_long_sample_4	strain PacBio	flye	20142	105389212	5662	4483	71951	385	7768
+strain_long_sample_4	strain PacBio	flye_polca	20142	105305887	5658	4479	71942	385	7791
+strain_long_sample_76	strain PacBio	megahit	17997	40590128	7852	7577	214356	335	2286
+strain_long_sample_76	strain PacBio	opera_ms	12798	41741415	14989	12828	223806	368	8784
+strain_long_sample_76	strain PacBio	flye	22117	115550961	5644	4468	44771	382	8470
+strain_long_sample_76	strain PacBio	flye_polca	22117	115453438	5641	4464	44765	382	8454
+strain_long_sample_86	strain PacBio	megahit	24260	46560826	4741	4612	130439	335	2585
+strain_long_sample_86	strain PacBio	opera_ms	19103	47603017	8400	7761	188011	376	9483
+strain_long_sample_86	strain PacBio	flye	10689	50508362	5284	4387	20783	338	5115
+strain_long_sample_86	strain PacBio	flye_polca	10689	50404638	5273	4382	20756	341	5568
+strain_long_sample_9	strain PacBio	megahit	25234	42711475	3706	3564	244933	325	2295
+strain_long_sample_9	strain PacBio	opera_ms	19204	43875526	10023	7997	289696	384	14706
+strain_long_sample_9	strain PacBio	flye	17591	90325195	5678	4538	31710	384	7545
+strain_long_sample_9	strain PacBio	flye_polca	17591	90237283	5674	4534	31710	384	7552
+strain_long_sample_93	strain PacBio	megahit	25874	49745941	4862	4757	403896	338	2666
+strain_long_sample_93	strain PacBio	opera_ms	21799	50271651	8805	8124	403896	372	8594
+strain_long_sample_93	strain PacBio	flye	15757	79296112	5515	4557	64002	367	6862
+strain_long_sample_93	strain PacBio	flye_polca	15757	79198430	5506	4553	64002	367	6862
+strain_long_sample_97	strain PacBio	megahit	22700	40085268	3743	3608	224372	336	2337
+strain_long_sample_97	strain PacBio	opera_ms	16961	41348108	10410	8691	358877	375	12036
+strain_long_sample_97	strain PacBio	flye	15456	81807467	5802	4618	109077	363	8883
+strain_long_sample_97	strain PacBio	flye_polca	15455	81724078	5795	4614	109026	363	8904
+toy_humangut_long_sample_14	toy humangut Nanopore	megahit	91498	195837318	3595	3570	688582	110	7067
+toy_humangut_long_sample_14	toy humangut Nanopore	opera_ms	48704	210493072	19860	19472	950991	116	21276
+toy_humangut_long_sample_14	toy humangut Nanopore	flye	5187	152076679	48136	45535	1429969	86	46653
+toy_humangut_long_sample_14	toy humangut Nanopore	flye_polca	5187	151889509	48092	45535	1430007	86	46665
+toy_humangut_long_sample_5	toy humangut Nanopore	megahit	35415	198470285	26645	26177	1096440	121	6528
+toy_humangut_long_sample_5	toy humangut Nanopore	opera_ms	16197	202638882	118774	112527	4478303	126	27524
+toy_humangut_long_sample_5	toy humangut Nanopore	flye	3775	186338743	99924	92890	2109749	113	35995
+toy_humangut_long_sample_5	toy humangut Nanopore	flye_polca	3775	186189118	99873	92541	2109749	113	37740

@@ -1,0 +1,27 @@
+types:
+  # metaGEM's own tool versions, for the E4 GEM lane only. They live here, not in bench or
+  # modelling, because rebuilding either of those re-mints transform ids other experiments cache on.
+
+  carveme_122.env:
+    properties:
+      e4: env
+      provides: [carveme]
+  memote_0913.env:
+    properties:
+      e4: env
+      provides: [memote]
+  diamond_0930.env:
+    properties:
+      e4: env
+      provides: [diamond]
+
+  carveme_bigg_proteins:
+    properties:
+      _: the BiGG protein FASTA CarveMe 1.2.2 bundles (84,674 sequences, sha256 88c7c9320611d0d1...), the file carveme_init fetched from CarveMe master in 2019-03 to 2020-09
+      e4: carveme_bigg_proteins
+      ext: faa
+  bigg_diamond_db_0930:
+    properties:
+      _: DIAMOND 0.9.30 database built from e4::carveme_bigg_proteins, as carveme_init builds it
+      e4: bigg_diamond_db_0930
+      ext: dmnd

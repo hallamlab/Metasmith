@@ -1,0 +1,18 @@
+# The ASPIRE analysis runtime: R with indicspecies, and the python plotting stack.
+#
+# No public image carries r-indicspecies, which is on conda-forge and so has no
+# biocontainer, and python_for_data_science has no seaborn.
+FROM condaforge/miniforge3:25.3.0-3 AS build-env
+ARG VERIFY
+
+COPY env.yml /opt/env.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    mamba env create -n aspire -f /opt/env.yml
+ENV PATH=/opt/conda/envs/aspire/bin:$PATH
+
+FROM build-env AS final
+RUN bash -c "${VERIFY}"
+
+ADD ./load/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "-s", "-g", "--"]

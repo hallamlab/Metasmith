@@ -1,0 +1,35 @@
+[package]
+name = "msm_solver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+# `float_roundtrip` is not optional here, despite being an opt-in feature.
+# serde_json's default float parsing is documented as *best effort*: it is about
+# twice as fast and it does not always land on the double the writer meant. On
+# adversarial-but-ordinary inputs it put `0.9999999999999999` at exactly 1.0, and
+# a score that arrives as a different number is a different plan. `wire::tests`
+# pins this so dropping the feature fails `cargo test` rather than the corpus.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+# The stream contract. `from_seed` on this crate is byte-identical to
+# `metasmith.models.solver_rng` (checked, not assumed -- see rng.rs). Its value
+# stability is a documented guarantee of the crate, which is precisely why it is
+# here and `rand::StdRng` is not.
+rand_chacha = "0.10"
+# The plan witness. A path dependency with no dependencies of its own, kept a
+# separate crate so Charon can lower it alone: this binary is edition 2024 and
+# pulls four registry crates, none of which the extraction toolchain will read.
+solver_witness = { path = "../solver_witness" }
+# The reporting half, kept a separate crate so `charon cargo` run in
+# `solver_witness` cannot reach it. Everything Charon cannot lower -- `String`,
+# `&'static str`, the loops that locate a violation -- lives there, which makes
+# "never extracted" a property of the dependency graph rather than a flag.
+solver_witness_audit = { path = "../solver_witness_audit" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

@@ -1,25 +1,3 @@
-"""Transforms as the library sees them: one Python file per tool, loaded.
-
-`TransformInstance.Load` is the reason planning is not reentrant. It imports a
-definition by bare module name, mutates `sys.path`, calls `importlib.reload`,
-and returns through a *class* attribute -- all process-global. So the lock
-lives here, at the mutation, rather than resting on every caller to remember
-one: `Load` takes a class-level lock and inserts/removes its own `sys.path`
-entry by value instead of snapshotting the list. Callers still serialise around
-whole operations (the GUI's `_plan_lock` covers a plan, a type index and a task
-load), but the correctness of a single import no longer depends on it. The loud
-failure this prevents is `spec not found for the module`; the quiet one is a
-snapshot-and-restore putting a concurrent load's entry back permanently, which
-nothing reports and which costs an order of magnitude per solve thereafter.
-
-Two digests come off a definition and they are not interchangeable.
-`_key`/`_hash` stay equal to the model's topology, because the Nextflow process
-name derives from them and a script edit should still reuse the work dir.
-`_protocol_source_hash` digests the file's bytes, and it is what the *lineage*
-cache folds in so that editing a protocol's body busts cross-run reuse even
-when the I/O types are unchanged.
-"""
-
 from __future__ import annotations
 
 import os
@@ -43,66 +21,50 @@ from .resources import Resources
 from .types import DataTypeLibrary
 
 
-# this should function like a view provided by the parent library
+def _collect_dep_names(module, model: Transform) -> tuple[dict[str, Dependency], set[str]]:
+    # A dependency is identified by its properties and its lineage, so two
+    # requirements declared from the same type with the same parents are one
+    # object to the model. Nothing downstream can tell two names for it apart,
+    # so they are recorded and marked rather than silently collapsing onto one
+    # slot. This runs for every transform the solver loads, so an ambiguous
+    # pair is reported where it is used, not raised here.
+    names: dict[str, Dependency] = {
+        k: v for k, v in vars(module).items()
+        if not k.startswith("_") and isinstance(v, Dependency)
+    }
+    by_dep: dict[Dependency, list[str]] = {}
+    for k, v in names.items():
+        if v in model.requires:
+            by_dep.setdefault(v, []).append(k)
+    ambiguous = {k for ks in by_dep.values() if len(ks) > 1 for k in ks}
+    return names, ambiguous
+
+
 @dataclass
 class TransformInstance:
-    """One runnable transform: a protocol plus the two axes that turn a plan
-    step into tasks.
-
-    `group_by` and `batch_size` are separate axes and must not be confused —
-    conflating them is what shattered a collecting transform's input into
-    singletons (see `Orchestrator.groovy::group`):
-
-    - `group_by` names the requirement whose instances PARTITION the step's
-      inputs. Each of its instances is one key, and one key yields one task
-      member holding EVERY item matched to it. A fan-out followed by
-      `group_by` on the fan-out's parent is how you collect back to a fan-in.
-    - `batch_size` folds N whole KEYS into a single task. It never shards
-      within a key. A step therefore runs
-      `ceil(len(group_by_instances) / batch_size)` tasks — the count
-      `plan_oracle`, `cache_decisions` and `virtual_runtime` all predict.
-
-    Both reach the protocol through `context.AsBatch()`, which yields one
-    item per batch member. `item.Input(dep)` is that member's single instance
-    for `dep`; `item.InputGroup(dep)` is the whole group matched to that
-    member's key. `checkm` is the canonical shape: `group_by=asm`,
-    `batch_size=25`, iterating `AsBatch()` 25 times and reading one assembly
-    per iteration.
-    """
-
     protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
     model: Transform
     group_by: Dependency
     name: str|None = None
     resources: Resources|None = None
-    # Number of whole `group_by` keys per task; never a within-key count.
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
     cacheable: bool = True
-    # backward-compat shim: `output_signature` was removed from the model but ~23
-    # legacy std transforms still pass it. Accept-and-ignore so the full std
-    # library imports cleanly (outputs derive from context.Output regardless).
     output_signature: dict = field(default_factory=dict)
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
-    # Which worlds this transform declared it can run in, read statically off
-    # its own source at load. Set by `Load`; None when the source could not be
-    # scanned, which is distinct from "declared nothing" and must not be read
-    # as a portability answer.
     _env_scan: "EnvScan|None" = None
-    # The Dependency each arm named as its `env=`, resolved through the module
-    # globals. Lets stage time find the env *resource* behind an arm and read
-    # which of `container:` / `conda:` it actually carries.
     _env_deps: list[Dependency] = field(default_factory=list)
-    # R5 (F1 fix): stable digest of the transform's definition-file bytes.
-    # Folded into the lineage cache signature so that editing a transform's
-    # protocol (its command/logic) busts the cross-run cache even when the
-    # I/O type topology is unchanged. Kept SEPARATE from _key/_hash (which
-    # stay = model.key/model.hash for Nextflow process naming), decoupling
-    # cache correctness from nxf process identity. Empty string when the
-    # definition file was unreadable at Load time (degrades to topology-only).
+    _dep_names: dict[str, Dependency] = field(default_factory=dict)
+    _ambiguous_dep_names: set[str] = field(default_factory=set)
     _protocol_source_hash: str = ""
+
+    def BindableNames(self) -> list[str]:
+        return sorted(
+            k for k, d in self._dep_names.items()
+            if d in self.model.requires and k not in self._ambiguous_dep_names
+        )
 
     def __post_init__(self):
         assert self.batch_size>0, self.model
@@ -113,35 +75,14 @@ class TransformInstance:
         ]:
             v = getattr(self, k)
             assert isinstance(v, vt), f"[{k}] must be of type [{vt}] but got [{type(v)}]"
-        # assert len(self.output_signature) == len(self.model.produces), f"output signature length must match model produces length [{len(self.output_signature)} != {len(self.model.produces)}]"
-        # for sig_group, m_group in zip(self.output_signature, self.model.produces):
-        #     for d, p in sig_group.items():
-        #         assert isinstance(d, Dependency), f"output signature key must be of type [Dependency] but got [{type(d)}]"
-        #         assert d in m_group, f"output signature value must be added to model"
-        #     for dep in m_group:
-        #         assert dep in sig_group, f"model output missing in signature [{dep}]"
         TransformInstance._last_loaded_transform = self
 
     def GetKey(self):
-        return self._key # from definition file upon load
+        return self._key
 
     def __hash__(self) -> int:
-        return self._hash # from definition file upon load
+        return self._hash
 
-    # Importing a transform is process-global three times over: it mutates
-    # `sys.path`, it `reload()`s by bare module name, and it hands the result
-    # back through a class attribute. Callers are told to serialise (the GUI's
-    # `_plan_lock`), but "every caller remembers" is not an invariant -- and the
-    # cost of one that forgets is not a visible crash. Two threads in here at
-    # once leave `sys.path` *permanently* longer: each snapshotted a list that
-    # already held the other's entry and restored it on the way out. Nothing
-    # fails; every later import just scans more directories, so a process that
-    # raced once plans an order of magnitude slower for the rest of its life
-    # (measured: 0.4s -> 9s per solve on a day-old GUI server).
-    #
-    # So the lock lives here, where the mutation is, rather than only at the
-    # call sites -- and the entry is inserted and removed by value, so even an
-    # unlocked path can only ever take out its own.
     _load_lock = threading.RLock()
 
     @classmethod
@@ -162,10 +103,6 @@ class TransformInstance:
             tr = cls._last_loaded_transform
             tr.name = definition.stem
             tr._path = definition
-            # Read the ExecWithEnv declarations off the source now, while the
-            # file and the module namespace are both in hand. `env=` is written
-            # as a bare name bound to a Dependency at module scope, so the
-            # identifier the scan returns resolves straight through the module.
             try:
                 tr._env_scan = ScanFile(parent_lib/definition)
             except (OSError, SyntaxError) as e:
@@ -173,26 +110,14 @@ class TransformInstance:
                 tr._env_scan = None
             if tr._env_scan is not None:
                 seen: list[Dependency] = []
-                for chain in tr._env_scan.chains:
-                    for name in chain.envs:
-                        if name is None: continue
-                        d = getattr(m, name, None)
-                        if isinstance(d, Dependency) and d not in seen:
-                            seen.append(d)
+                for run in tr._env_scan.runs:
+                    if run.env is None: continue
+                    d = getattr(m, run.env, None)
+                    if isinstance(d, Dependency) and d not in seen:
+                        seen.append(d)
                 tr._env_deps = seen
-            # with open(definition) as f:
-            #     raw = "".join(f.readlines())
-            #     h, k = KeyGenerator.FromStr(raw, l=5)
-            #     tr._hash, tr._key = h, k
-            # _key/_hash stay = model topology so that updates to a script
-            # still reuse the existing *Nextflow* work-dir cache (the process
-            # name is derived from these). Do NOT fold protocol identity here.
+            tr._dep_names, tr._ambiguous_dep_names = _collect_dep_names(m, tr.model)
             tr._hash, tr._key = tr.model.hash, tr.model.key
-            # R5 (F1 fix): separately digest the definition-file bytes so the
-            # *lineage* cache signature (workflow.py) can distinguish two
-            # transforms that share an I/O type topology but differ in body.
-            # Content only (not path) so byte-identical definitions at
-            # different library roots still collide -> cross-run reuse holds.
             try:
                 src_text = (parent_lib / definition).read_text(
                     encoding="utf-8", errors="replace"
@@ -219,14 +144,17 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             self.AddTypeLibrary(namespace="transforms", lib=transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
 
-    def PruneTypes(self, save: bool=True):
-        indirect_whitelist: list[Dependency] = []
-        for path, tr in self.IterateTransforms():
-            indirect_whitelist += tr.model.requires
-            indirect_whitelist += [i for g in tr.model.produces for i in g]
-        def _in(x: Dependency):
-            return any(x.properties == d.properties for g in self.types.values() for d in g.types.values())
-        super().PruneTypes(save=save, whitelist={x for x in indirect_whitelist if _in(x)})
+    def PruneTypes(self, save: bool=True, whitelist: set|None=None):
+        # Every manifest entry of a transform library is `transforms::transform`,
+        # so what the library actually needs is only visible by importing each
+        # transform and reading the types it declares. A caller that already
+        # holds those transforms passes the whitelist instead.
+        if whitelist is None:
+            whitelist = set()
+            for _path, tr in self.IterateTransforms():
+                whitelist |= set(tr.model.requires)
+                whitelist |= {d for group in tr.model.produces for d in group}
+        super().PruneTypes(save=save, whitelist=whitelist)
 
     def AddStub(self, path: Path|str, exist_ok: bool=True):
         path = Path(path)
@@ -241,28 +169,14 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         else:
             shutil.copy(example, path, follow_symlinks=True)
         self.AddItem(path.relative_to(self.location), "transforms::transform")
-        # results = self.AddBulk([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
-        # assert len(results) == 1, f"failed to add transform at [{path}]"
         self.Save()
         inst = TransformInstance.Load(self.location, path)
         return inst
 
-    # Every transform file opens with `ResolveParentLibrary(__file__)`, so this
-    # runs once per transform *import* -- 115 times for the standard library --
-    # and each miss re-reads the whole manifest off disk. That is where a solve's
-    # wall time went: ~8.5s of yaml for one library's worth of imports, against
-    # ~1s of actual planning. Cached per resolved root, behind a signature so an
-    # edited library is never served stale.
     _parent_library_cache: dict[Path, tuple[tuple, "TransformInstanceLibrary"]] = {}
 
     @classmethod
     def _library_signature(cls, root: Path) -> tuple:
-        """Cheap evidence that a library is the one already loaded.
-
-        One `scandir` and the manifest's own stamp: adding, removing or editing
-        a transform moves this, which is what the notebook needs -- a file
-        edited between two plans in one process must not come back cached.
-        """
         meta = root/DataInstanceLibrary._path_to_meta
         try:
             st = meta.stat()
@@ -292,7 +206,11 @@ class TransformInstanceLibrary(DataInstanceLibrary):
                 lib = cls.Load(p)
                 cls._parent_library_cache[root] = (sig, lib)
                 return lib
-        assert False
+        raise ValueError(
+            f"[{path}] is not inside a transform library: no parent directory holds "
+            f"a compiled [{DataInstanceLibrary._path_to_meta}]. "
+            "Run `metasmith build` against the library first."
+        )
 
     def __getitem__(self, transform: Path|str):
         return self.GetTransform(transform)
@@ -314,28 +232,21 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             yield k, tr
 
     def AsView(self, mask: set[Path], invert: bool=False):
-        """if invert=True, then items in mask are excluded"""
         return TransformInstanceLibraryView(self, mask, invert)
 
     @classmethod
-    def Load(cls, path: Path|str):
-        return cls(DataInstanceLibrary.Load(path))
+    def Load(cls, path: Path|str, **kwargs):
+        return cls(DataInstanceLibrary.Load(path, **kwargs))
 
     @classmethod
     def LoadFrom(cls, src: Source, dest: Path, label: str|None=None):
         return cls(DataInstanceLibrary.LoadFrom(src, dest, label=label))
 
 
-
 class TransformInstanceLibraryView(DataInstanceLibraryView):
-    """Masked view of a TransformInstanceLibrary. Mirrors DataInstanceLibrary.AsView:
-    mask is a set of relative .py paths; invert=True flips include/exclude."""
     _original: "TransformInstanceLibrary"
 
     def IterateTransforms(self):
-        # sorted for the same reason as `DataInstanceLibraryView.Iterate`: set
-        # order over `Path` is process-random, and this is the walk that decides
-        # which of several interchangeable transforms the solver sees first.
         for p in sorted(self._mask):
             tr = self._original.GetTransform(p)
             assert tr is not None, p
@@ -347,6 +258,15 @@ class TransformInstanceLibraryView(DataInstanceLibraryView):
             p = p.with_suffix(".py")
         assert p in self._mask, f"transform [{p}] is hidden by view mask"
         return self._original.GetTransform(p, reload=reload)
+
+    def _prune_whitelist(self) -> set:
+        # Read off the masked transforms, which the source library already
+        # imported while planning -- the image's own copies are never loaded.
+        wl: set[Dependency] = set()
+        for _path, tr in self.IterateTransforms():
+            wl |= set(tr.model.requires)
+            wl |= {d for group in tr.model.produces for d in group}
+        return wl
 
     @property
     def types(self):

@@ -1,0 +1,8 @@
+  138655  /scratch/phyberos/pratama2026/metasmith/task_cache
+   93735  /scratch/phyberos/pratama2026/metasmith/runs
+     396  /scratch/phyberos/pratama2026/metasmith/dev
+     214  /scratch/phyberos/pratama2026/metasmith/imports
+      26  /scratch/phyberos/pratama2026/metasmith/relay
+       3  /scratch/phyberos/pratama2026/metasmith/lib
+       1  /scratch/phyberos/pratama2026/metasmith/msm
+       1  /scratch/phyberos/pratama2026/metasmith/data

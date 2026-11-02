@@ -1,0 +1,340 @@
+{
+ "MNXR137507": {
+  "kind": "hard",
+  "family": "protein_residue",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM10675": "alpha-meroacyl-3-ACP-2-cyclopropane-rings",
+   "MNXM10676": "alpha-meroacyl-3-AMP",
+   "MNXM740696": "ACP"
+  }
+ },
+ "MNXR103861": {
+  "kind": "hard",
+  "family": "lipid_enum",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM162299": "Phosphatidate(2-)",
+   "MNXM730338": "1-phosphatidyl-1D-myo-inositol(1-)"
+  }
+ },
+ "MNXR169809": {
+  "kind": "hard",
+  "family": "generic_acceptor",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1090612": "a 5'-end 5'-phospho-2'-deoxyribonucleoside-DNA",
+   "MNXM1090613": "a 5'-end adenosine-5'-diphospho-5'-2'-deoxyribonucleoside-DNA"
+  }
+ },
+ "MNXR184825": {
+  "kind": "hard",
+  "family": "protein_residue",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM740696": "ACP"
+  }
+ },
+ "MNXR143324": {
+  "kind": "hard",
+  "family": "lipid_enum",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM92561": "Phosphatidylethanolamine (Saureus)",
+   "MNXM92574": "Phosphatidylserine (Saureus)"
+  }
+ },
+ "MNXR185309": {
+  "kind": "hard",
+  "family": "protein_residue",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM740696": "ACP"
+  }
+ },
+ "MNXR132436": {
+  "kind": "hard",
+  "family": "redox_protein",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM168992": "Reduced ferredoxin I"
+  }
+ },
+ "MNXR137623": {
+  "kind": "hard",
+  "family": "protein_residue",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM740696": "ACP",
+   "MNXM8750": "iso-C15:0 ACP",
+   "MNXM731940": "Malonyl-acyl-carrierprotein-",
+   "MNXM7450": "Iso-C7:0 ACP"
+  }
+ },
+ "MNXR148779": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 33,
+  "tier": 0,
+  "blockers": {}
+ },
+ "MNXR198269": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 38,
+  "tier": 2,
+  "blockers": {}
+ },
+ "MNXR135018": {
+  "kind": "hard",
+  "family": "polymer",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM6281": "glycogen(n-1)"
+  }
+ },
+ "MNXR160588": {
+  "kind": "hard",
+  "family": "polymer",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1092041": "C141 Medium chain length Polyhydroxyalkanoate",
+   "MNXM1092425": "Pre existent Polyhydroxyalkanoate granule",
+   "MNXM1092437": "3 hydroxy cis myristol 7 en"
+  }
+ },
+ "MNXR123873": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 8,
+  "tier": 2,
+  "blockers": {}
+ },
+ "MNXR132013": {
+  "kind": "hard",
+  "family": "opaque",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM162929": "Apaf-1",
+   "MNXM164668": "Caspase-9 cleaved-XIAP complex",
+   "MNXM163750": "Apaf-1-Caspase-9 cleaved-XIAP complex"
+  }
+ },
+ "MNXR164390": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 18,
+  "tier": 3,
+  "blockers": {}
+ },
+ "MNXR159219": {
+  "kind": "hard",
+  "family": "generic_acceptor",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1093295": "Lipid A Disaccharide dode and decanoyl",
+   "MNXM1093298": "2 3 3 hydroxydode decanoyl beta D glucosaminyl 1 phosphate",
+   "MNXM1094333": "UDP 2 3 3 hydroxydode decanoyl glucosamine"
+  }
+ },
+ "MNXR186658": {
+  "kind": "hard",
+  "family": "generic_acceptor",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1100980": "N-terminal-domain-of-procollagen",
+   "MNXM11129": "a procollagen without the N-terminal domain",
+   "MNXM21205": "a procollagen"
+  }
+ },
+ "MNXR122590": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 29,
+  "tier": 2,
+  "blockers": {}
+ },
+ "MNXR112435": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 28,
+  "tier": 2,
+  "blockers": {}
+ },
+ "MNXR102610": {
+  "kind": "hard",
+  "family": "polymer",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM12224": "Medium-chain length Polyhydroxyalkanoate (Total)",
+   "MNXM6198": "C10:0-Medium-chain length Polyhydroxyalkanoate.",
+   "MNXM6199": "C12:0-Medium-chain length Polyhydroxyalkanoate.",
+   "MNXM6200": "C6:0-Medium-chain length Polyhydroxyalkanoate",
+   "MNXM6201": "C8:0-Medium-chain length Polyhydroxyalkanoate."
+  }
+ },
+ "MNXR132603": {
+  "kind": "hard",
+  "family": "redox_protein",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM162296": "Enzyme-ligand complex",
+   "MNXM162836": "Ferredoxin-NADP(H) reductase"
+  }
+ },
+ "MNXR132898": {
+  "kind": "hard",
+  "family": "opaque",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1099658": "Diphosphomevalonate decarboxylase",
+   "MNXM169301": "Trinitrophenyl-ATP",
+   "MNXM1099659": "Trinitrophenyl-ATP-Diphosphomevalonate decarboxylase complex"
+  }
+ },
+ "MNXR186778": {
+  "kind": "hard",
+  "family": "opaque",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM163766": "C15812"
+  }
+ },
+ "MNXR181629": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 47,
+  "tier": 2,
+  "blockers": {}
+ },
+ "MNXR123133": {
+  "kind": "hard",
+  "family": "generic_acceptor",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 3,
+  "blockers": {
+   "MNXM8975": "Acceptor"
+  }
+ },
+ "MNXR203209": {
+  "kind": "hard",
+  "family": "redox_protein",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1090367": "Fe(II)-[cytochrome]",
+   "MNXM1090881": "Fe(III)-[cytochrome c]"
+  }
+ },
+ "MNXR170490": {
+  "kind": "hard",
+  "family": "opaque",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1090464": "an adenosine in mRNA",
+   "MNXM1090465": "an N(1)-methyladenosine in mRNA"
+  }
+ },
+ "MNXR111803": {
+  "kind": "control",
+  "family": "concrete",
+  "outcome": "banked",
+  "n_pairs": 54,
+  "tier": 2,
+  "blockers": {}
+ },
+ "MNXR110098": {
+  "kind": "hard",
+  "family": "lipid_enum",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM728547": "Dolichyl D-glucosyl phosphate",
+   "MNXM9258": "G10599"
+  }
+ },
+ "MNXR97771": {
+  "kind": "hard",
+  "family": "polymer",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1841": "Medium-chain length Polyhydroxyalkanoate growing.",
+   "MNXM6018": "(R)-3-hydroxy-cis-myristol-7-eoyl-CoA",
+   "MNXM8357": "C14:1-Medium-chain length Polyhydroxyalkanoate."
+  }
+ },
+ "MNXR163616": {
+  "kind": "hard",
+  "family": "lipid_enum",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1096711": "Triacylated phosphatidyl-myo-inositol monomannoside",
+   "MNXM731352": "GDP-D-mannose",
+   "MNXM1096712": "Triacylated phosphatidyl-myo-inositol dimannoside",
+   "MNXM1103287": "GDP"
+  }
+ },
+ "MNXR158949": {
+  "kind": "hard",
+  "family": "redox_protein",
+  "outcome": "rescue_declined",
+  "n_pairs": 0,
+  "tier": 0,
+  "blockers": {
+   "MNXM1092968": "Ferredoxin oxided form 2Fe 2S",
+   "MNXM148286": "IscU with bound [4Fe-4S] cluster",
+   "MNXM1092969": "Ferredoxin oxided form 2Fe 2S",
+   "MNXM148287": "IscU with two bound [2Fe-2S] clusters"
+  }
+ }
+}

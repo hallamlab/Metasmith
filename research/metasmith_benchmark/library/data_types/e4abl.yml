@@ -1,0 +1,68 @@
+types:
+  # E4's ablation ladder between metaGEM's GEMs and the modern lane: one rung per change.
+  # A namespace of its own, so the reproduction lane's e4 library and its transform ids stay as they
+  # were. Every type here carries a distinct e4abl value, so no rung's requirement can be answered by
+  # another rung's image, hits or model.
+
+  carveme_166.env:
+    properties:
+      e4abl: env_carveme_166
+      provides: [carveme]
+
+  carveme166_bigg_proteins:
+    properties:
+      _: the BiGG protein FASTA CarveMe 1.6.6 bundles (data/generated/bigg_proteins.faa, 26,727 sequences from 31 models)
+      e4abl: carveme166_bigg_proteins
+      ext: faa
+  carveme166_bigg_gprs:
+    properties:
+      _: the gene-reaction table CarveMe 1.6.6 bundles (data/generated/bigg_gprs.csv.gz, 108,091 rows), the pair of carveme166_bigg_proteins
+      e4abl: carveme166_bigg_gprs
+      ext: csv.gz
+  carveme166_universe:
+    properties:
+      _: the bacterial universe CarveMe 1.6.6 bundles (data/generated/universe_bacteria.xml.gz)
+      e4abl: carveme166_universe
+      ext: xml.gz
+  bigg166_diamond_db_0930:
+    properties:
+      _: DIAMOND 0.9.30 database built from e4abl::carveme166_bigg_proteins, as carveme_init builds it
+      e4abl: bigg166_diamond_db_0930
+      ext: dmnd
+  bigg166_diamond_hits:
+    properties:
+      _: DIAMOND 0.9.30 blastp of one bin's proteins against CarveMe 1.6.6's BiGG proteins with CarveMe's own arguments
+      e4abl: bigg166_diamond_hits
+      ext: tsv
+
+  # One model per rung, named for the change that rung adds.
+  model_bigg:
+    properties:
+      _: CarveMe 1.2.2 on CPLEX, one-step gap fill, with CarveMe 1.6.6's BiGG gene reference
+      e4abl: model_bigg
+      ext: xml
+  model_universe:
+    properties:
+      _: as model_bigg, carved from CarveMe 1.6.6's universe
+      e4abl: model_universe
+      ext: xml
+  model_version:
+    properties:
+      _: CarveMe 1.6.6's code on CPLEX, one-step gap fill, from DIAMOND 0.9.30 hits
+      e4abl: model_version
+      ext: xml
+  model_gapfill:
+    properties:
+      _: as model_version, gap filled in a second step without gene scores
+      e4abl: model_gapfill
+      ext: xml
+  model_diamond:
+    properties:
+      _: as model_gapfill, with CarveMe's own DIAMOND 2.1.13 search
+      e4abl: model_diamond
+      ext: xml
+  model_scip:
+    properties:
+      _: as model_diamond, solved by SCIP 9.2.4
+      e4abl: model_scip
+      ext: xml

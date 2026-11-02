@@ -1,0 +1,5 @@
+lane	calls_parsed	calls_with_ec	calls_adjudicable	orfs_adjudicable	errors	precision	score_min	score_p05	score_p95	score_max
+kofam	3583	1445	1260	1215	52	0.9587	1.0001	1.0717	6.7818	39.1748
+clean	1866	1866	1309	1235	85	0.9351	0.0251	0.4694	0.9989	0.9989
+uniref50	4425	1178	1086	1086	3	0.9972	0.5872	0.9341	1.0034	1.0119
+pbert	6788	4950	1657	1144	142	0.9143	0.0327	0.1534	1.0	1.0

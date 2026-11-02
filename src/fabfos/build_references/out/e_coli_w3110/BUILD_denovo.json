@@ -1,0 +1,22 @@
+{
+  "host": "e_coli_w3110",
+  "source": "/home/tony/.claude/jobs/31139d4c/tmp/mig_applied/reparse/e_coli_w3110/gpr_denovo_mapper.parquet",
+  "proteome": "CP165600.1.faa",
+  "lane_set": "chosen_4",
+  "lanes": [
+    "clean",
+    "kofam",
+    "pbert",
+    "uniref50"
+  ],
+  "n_lanes": 4,
+  "extensions": [
+    "attribution",
+    "feature",
+    "universe"
+  ],
+  "rows": 31657,
+  "orfs": 2870,
+  "mnxr": 11255,
+  "route": "clone_gpr_on_hpc.py per ORF set; see this module's docstring"
+}

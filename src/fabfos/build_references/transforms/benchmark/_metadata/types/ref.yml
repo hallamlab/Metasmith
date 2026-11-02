@@ -1,0 +1,47 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  atom_pairs:
+    properties:
+      _:
+      - Compiled atom-atom mapping, one row per single atom correspondence (element,
+        rxn, tail_node, head_node packed as met_code<<rank_bits|atom_rank, pair_w);
+        orientation stored as written
+      ext: parquet
+  direction_ratios:
+    properties:
+      _:
+      - Per-reaction directionality (rxn, ratio = g_rev/g_fwd = exp(dG'/RT), dir_tier);
+        ratio > 1 FLIPS the edge, it does not amplify it
+      ext: parquet
+  gpr_table_denovo:
+    properties:
+      Format: DIRECTORY
+      _:
+      - Per-host GPR tables inferred from each host's own annotation lanes, hosts/<host>/gpr_denovo.parquet
+        (long-format, one row per ORF x channel x MNXR)
+  gpr_table_gem:
+    properties:
+      Format: DIRECTORY
+      _:
+      - Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet
+        (long-format, one row per gene x MNXR; every row carries the declared assertion
+        `llr`, because a curated model asserts a reaction is PRESENT and says nothing
+        about how strongly)
+  metabolism_vocab:
+    properties:
+      _:
+      - Int-code vocabulary for the compiled metabolism tables (kind, code, symbol;
+        met and rxn densely coded within kind)
+      ext: parquet
+  mnxr_lookup:
+    properties:
+      _:
+      - Consolidated intermediate-id -> MNXR bridge (id, id_source in {ko,ec,uniprot},
+        mnxr, evidence_quality); the three id spaces are disjoint, so id alone is
+        unambiguous and id_source is a label
+      ext: parquet

@@ -1,0 +1,42 @@
+from metasmith.python_api import *
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+image = model.AddRequirement(lib.GetType("env::pprodigal.env"))
+asm = model.AddRequirement(lib.GetType("sequences::assembly"))
+orfs = model.AddProduct(lib.GetType("sequences::orfs"))
+gff = model.AddProduct(lib.GetType("sequences::gff"))
+
+
+def protocol(context: ExecutionContext):
+    iasm = context.Input(asm)
+    iorfs = context.Output(orfs)
+    igff = context.Output(gff)
+
+    cpus = context.params.get("cpus", 8)
+
+    context.ExecWithEnv(
+        env=image,
+        cmd=f"""
+            pprodigal \
+                -T {cpus} \
+                -p meta \
+                -i {iasm.container} \
+                -a {iorfs.container} \
+                -f gff \
+                -o {igff.container}
+        """,
+    )
+
+    return ExecutionResult(
+        manifest=[{orfs: iorfs.local, gff: igff.local}],
+        success=iorfs.local.exists() and igff.local.exists(),
+    )
+
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=asm,
+    resources=Resources(cpus=8, memory=Size.GB(8), duration=Duration(hours=1)),
+)

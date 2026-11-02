@@ -1,0 +1,121 @@
+types:
+# -----------------------------------------
+# end-sequence / scaffolding lane (side lanes; types kept for the full domain)
+  end_sequences_forward:
+    properties:
+      _: fosmid forward end-sequences (fasta records keyed by insert_id)
+      Format: FASTA
+      Data: fosmid end sequence
+      direction: forward
+      ext: fna
+  end_sequences_reverse:
+    properties:
+      _: fosmid reverse end-sequences (fasta records keyed by insert_id)
+      Format: FASTA
+      Data: fosmid end sequence
+      direction: reverse
+      ext: fna
+  end_sequences_table:
+    properties:
+      _: fosmid ends manifest (insert_ids + ends_facing flag)
+      Format: JSON
+      fields:
+      - insert_ids
+      - ends_facing
+      ext: json
+  vector_backbone:
+    properties:
+      _: fosmid vector backbone reference fasta
+      Format: FASTA
+      Data: vector backbone reference
+      ext: fna
+  scaffolds:
+    properties:
+      _: end-aware scaffolded fosmid inserts
+      Format: FASTA
+      Data: fosmid scaffold
+      ext: fna
+  scaffold_report:
+    properties:
+      _: fosmid scaffold mapping report
+      Format: CSV
+      fields:
+      - id
+      - mapping_quality
+      - paired
+      - resolved_length
+      - assemblers
+      - contig_id
+      - original_id
+      ext: csv
+  pool_size_estimate:
+    properties:
+      _: fosmid pool size estimate
+      Format: JSON
+      fields:
+      - size
+      - size_with_singletons
+      ext: json
+# -----------------------------------------
+# putative-insert recovery: ONE step, `resolve_inserts`, producing two products.
+# The intermediates it used to hand between steps -- the junction map, the split
+# pieces, the closure report -- are no longer types, because they were never
+# staging boundaries: the cut is a pure function of the map plus the contigs the
+# map was called against, so a boundary there only re-stages both to re-derive an
+# in-memory interval list, and gives the second half no guarantee it cut the
+# contigs the junctions were called on.
+  experiment:
+    properties:
+      logistics: to group the pooled assemblies + reads of one fosmid-recovery run (single grouping node; all inputs and intermediates descend from it)
+  insert_metadata:
+    properties:
+      _: >-
+        Everything about the recovered insert set that is not the sequence, as a
+        directory of three files -- `inserts.csv` (centroid, length, ends,
+        absorbed), `membership.csv` (contig, centroid, mi) and `junctions.tsv`
+        (the pCC1fos backbone blast, verbatim and unfiltered). One product rather
+        than three types because `resolve_inserts` is one job and these three
+        tables only mean anything about the SAME run of it: a membership table
+        read against another run's inserts joins on ids that happen to look alike.
+        Ids in all three are fully qualified -- `pool:assembler:contig[:start-end]`
+        -- since a bare `k141_9` names a different contig in each of 35 pools.
+      Format: DIRECTORY
+      content: insert set metadata
+      files:
+      - inserts.csv
+      - membership.csv
+      - junctions.tsv
+  putative_inserts:
+    properties:
+      _: final putative fosmid inserts -- the cross-assembler dedup of the junction-split contigs; same header-baked provenance convention, length-banded to the lambda window
+      Format: FASTA
+      Data: nucleic acid sequence
+      content: putative fosmid inserts
+      # `origin: assembler` marks this a superset of sequences::assembly so the
+      # existing prodigal (and any assembly-generic transform) will call ORFs on
+      # the final inserts unchanged -- metasmith matches on property superset,
+      # cross-namespace `extends` is not available.
+      origin: assembler
+      ext: fna
+  reference_inserts:
+    properties:
+      _: the canonical fosmid reference set -- putative inserts filtered to length >= min_insert_length (default 29 kb, the phage-packaging/lambda-window cutoff); the FASTA every downstream analysis (read-mapping, annotation, ECSPr) runs on
+      Format: FASTA
+      Data: nucleic acid sequence
+      content: reference fosmid inserts (length-filtered)
+      origin: assembler
+      ext: fna
+  insert_coverage:
+    properties:
+      _: read-mapping coverage summary of the pooled reads against the reference inserts; one row per (insert_id, pool) plus an "all"-pool aggregate, with depth/breadth stats
+      Format: CSV
+      fields:
+      - insert_id
+      - pool
+      - length
+      - mapped_bp
+      - mean_depth
+      - median_depth
+      - breadth_1x
+      - breadth_5x
+      ext: csv

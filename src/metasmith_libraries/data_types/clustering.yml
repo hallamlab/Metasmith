@@ -1,0 +1,26 @@
+types:
+  min_identity:
+    properties:
+      Data: minimum percent identity threshold for clustering
+      arity: 1
+      ext: txt
+  centroids:
+    properties:
+      Format: FASTA
+      Data: representative AA sequences from clustering
+      ext: faa
+  cluster_table:
+    properties:
+      Data: diamond linclust cluster membership assignments
+      Format: TSV
+      ext: tsv
+  augmented_centroids:
+    properties:
+      Format: FASTA
+      Data: representative AA sequences augmented with new ORFs
+      ext: faa
+  new_cluster_assignments:
+    properties:
+      Data: cluster assignments for newly added ORFs
+      Format: TSV
+      ext: tsv

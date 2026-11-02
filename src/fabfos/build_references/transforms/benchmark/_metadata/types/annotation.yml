@@ -1,0 +1,16 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  gpr_table:
+    properties:
+      Format: Parquet
+      _:
+      - Gene-attributed GPR evidence table (long-format, one row per source x ORF
+        x channel x intermediate x MNXR); the canonical chosen-4 lane set. Schema
+        in lib::fabfos_evidence.py::SCHEMA_COLS
+      ext: parquet
+      lane_set: chosen_4

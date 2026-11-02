@@ -1,0 +1,92 @@
+name: binning_and_gpr_from_assembly
+description: 'Bin an existing assembly with three binners, filter the bins on CheckM2
+  quality
+
+  and dereplicate them with skani, and in the same pass build the gene-attributed
+
+  GPR evidence table from KOFAMSCAN, CLEAN, DIAMOND UniRef50 and ProteinBERT.
+
+  Takes the assembly and the long reads it was built from; the reads are what the
+
+  coverage the binners need is computed from.'
+sample_type: sequences::read_metadata
+target_types:
+- sequences::assembly_stats
+- sequences::assembly_per_contig_coverage
+- sequences::assembly_per_bp_coverage
+- sequences::metabat2_bin_fasta
+- sequences::semibin2_bin_fasta
+- sequences::comebin_bin_fasta
+- binning_local::quality_bin_fasta
+- binning_local::cluster_table
+- binning::metabat2_contig_to_bin_table
+- binning::semibin2_contig_to_bin_table
+- binning::comebin_contig_to_bin_table
+- sequences::read_qc_stats
+- annotation::gpr_table
+- annotation::kofamscan_results
+- annotation::kofamscan_descriptions
+- annotation::clean_predictions
+- annotation::diamond_uniref50_results
+- annotation::diamond_uniref50_descriptions
+- annotation::proteinbert_embeddings
+- sequences::orfs
+- sequences::gff
+- type: taxonomy::checkm_stats
+  parents:
+  - 3
+- type: taxonomy::checkm_stats
+  parents:
+  - 4
+- type: taxonomy::checkm_stats
+  parents:
+  - 5
+transform_libraries:
+- metagenomics
+- assembly
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/30a9183d584b4330929f9e26dd2ac270:
+      type: ref::label_transfer_landmarks
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e2090f1e3b4785e65fb697a85ecc42576785918980cc479878ef72a8d86df5a3328
+      origin: leaf
+    /msm_deferred/5458d6a062374ba8a31056f27082e492:
+      type: ref::mnxr_lookup
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20c77675e1b09e1fed61d4148200331c69f04941487375f291077abef859a08eb3
+      origin: leaf
+    /msm_deferred/8c69f5bb5feb4dd3a838ec7a6693a945:
+      type: sequences::assembly
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e209ab0042eb81c6cd11b64fb74155587243ad9d02838f2166689cd1278b663e5d3
+      origin: leaf
+    /msm_deferred/90465fec362e4841a11274a24606a784:
+      type: sequences::long_reads
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20709b1abf4c34fcd6b7d169cee12e0f242dbdfda688f6c297cdd1f4d5ca792887
+      origin: leaf
+    /msm_deferred/ace8d3b3e4194f72be9432d88177c49a:
+      type: ref::lane_calibration
+      parents:
+        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e2037e825d2f90d4df937b05fb60aa27fea919b445df26a4a598580bf3b1a421b5e
+      origin: leaf
+    reads_metadata.json:
+      type: sequences::read_metadata
+      instance_id: 1e2032547691fc7096698c358995f91b4328af33191f1c96762c588c32d4c636be5f
+      origin: leaf
+  values:
+    reads_metadata.json: '{"parity": "single", "length_class": "long"}'

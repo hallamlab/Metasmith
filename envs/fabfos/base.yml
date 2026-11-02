@@ -1,0 +1,14 @@
+name: fabfos
+channels:
+  - hallamlab
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.12
+  # the planner/executor; provides the `metasmith`/`msm` CLI and python_api.
+  - metasmith
+  # caching backend deps (canonical CBOR + blake3 multihash cache keys). The
+  # merged metasmith declares these itself; pinned here too so a dev/source
+  # install of FabFos against an older metasmith build still resolves them.
+  - cbor2=5.6.5
+  - blake3=0.4.1

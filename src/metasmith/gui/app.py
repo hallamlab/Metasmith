@@ -1,13 +1,6 @@
-"""The Flask application: a localhost server for a single user.
-
-There is no authentication and no multi-tenancy here by design -- this binds to
-the loopback interface and drives the machine it runs on with the privileges of
-the person who started it.
-"""
 from __future__ import annotations
 
 import threading
-import webbrowser
 from pathlib import Path
 from uuid import uuid4
 
@@ -44,14 +37,6 @@ def bundle_exists() -> bool:
 
 
 def warm_type_index(project_root: Path) -> None:
-    """Build the browser's view of the type system before anyone asks for it.
-
-    Indexing imports every transform in the standard library -- ~15s on a cold
-    process -- and the first workflow opened after a start is what pays for it.
-    Held off the request path entirely: this runs on its own thread at startup,
-    under the same lock the planner uses (transform import is process-global),
-    so a request arriving mid-warm waits for the result rather than racing it.
-    """
     from ..logging import Log
     from . import stdlib
     from .api import _plan_lock
@@ -59,20 +44,11 @@ def warm_type_index(project_root: Path) -> None:
     try:
         with _plan_lock:
             stdlib.type_index(project_root)
-    except Exception as exc:  # a page that has to load it itself is the fallback
+    except Exception as exc:
         Log.Warn(f"could not pre-build the type index: {exc}")
 
 
 def warm_template_dags(p: "Project") -> None:  # noqa: F821
-    """Draw every template's DAG, in every theme, before anyone opens one.
-
-    Same reasoning as `warm_type_index`, and a separate thread from it: this
-    additionally needs the standard library and templates to exist, which
-    `warm_type_index` does not, so the two should degrade independently
-    rather than one's failure blocking the other. Each template+theme takes
-    `_plan_lock` for only its own solve (see `_render_template_dag`), so a
-    real request never queues behind the whole warm-up -- at most one solve.
-    """
     from ..logging import Log
     from ..models.dag_renderer import THEMES
     from .api import _all_templates, _render_template_dag, _template_dag_path, _template_version
@@ -88,8 +64,19 @@ def warm_template_dags(p: "Project") -> None:  # noqa: F821
                     _render_template_dag(p, tmpl, name, source, theme)
                 except Exception as exc:
                     Log.Warn(f"could not pre-draw template [{name}] ({theme}): {exc}")
-    except Exception as exc:  # a modal that has to draw it itself is the fallback
+    except Exception as exc:
         Log.Warn(f"could not warm template DAGs: {exc}")
+
+
+def _warm(fn, *args) -> None:
+    # A first run has nothing cached, so these three solve and draw every
+    # shipped template -- over a hundred planner lines, printed after the
+    # "serving at" banner and ending mid-solve. The terminal then reads as a
+    # GUI hung on a solve when the server has been up the whole time.
+    from ..logging import Log
+
+    with Log.Quiet():
+        fn(*args)
 
 
 def bind_project(
@@ -98,26 +85,16 @@ def bind_project(
     ssh_config_path: Path | str | None = None,
     watch: bool = True,
 ) -> "Flask":  # noqa: F821
-    """Point an app at a project: everything a run of the server is *about*.
-
-    Split out from `create_app` because the routes are the expensive half and
-    they hold no state -- werkzeug compiles a builder per rule, which costs more
-    than the project side does. Nothing in production rebinds; the GUI's own
-    tests do, once per case over one app, and that is the point.
-    """
     project = Project(project_root)
     project.initialize()
     install_log_capture()
-    threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
-    threading.Thread(target=warm_template_dags, args=(project,), daemon=True).start()
-    threading.Thread(target=resync_workflow_types, args=(project,), daemon=True).start()
+    for fn, arg in (
+        (warm_type_index, project.root),
+        (warm_template_dags, project),
+        (resync_workflow_types, project),
+    ):
+        threading.Thread(target=_warm, args=(fn, arg), daemon=True).start()
 
-    # Who this run of the server is. Recorded on every run it launches, so a
-    # later server can tell "a thread of mine owns this" from "the process that
-    # was staging this is gone" -- the difference between leaving a run alone
-    # and resolving it. Minted here rather than at import: the GUI's own tests
-    # rebind one app per case, and a module-level id would make every one of
-    # them the same server.
     instance_id = uuid4().hex
     jobs = JobRunner()
     app.config["MSM_PROJECT"] = project
@@ -136,22 +113,42 @@ def create_app(
     ssh_config_path: Path | str | None = None,
     watch: bool = True,
 ) -> "Flask":  # noqa: F821
-    from flask import Flask, Response, jsonify, send_from_directory
+    from flask import Flask, Response, jsonify, request, send_from_directory
 
     app = Flask(__name__, static_folder=None)
-    # A sample sheet is the only thing anyone uploads here, and a sheet that
-    # does not fit in this is a mistake rather than a study. Set on the app
-    # rather than in `bind_project`, which the GUI's own tests re-run per case.
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     bind_project(app, project_root, ssh_config_path=ssh_config_path, watch=watch)
 
     app.register_blueprint(api_bp)
 
+    GZIP_MIMETYPES = {"application/json", "text/plain", "image/svg+xml"}
+    GZIP_MIN_BYTES = 512
+
+    @app.after_request
+    def _gzip_response(response):
+        import gzip as gzip_mod
+
+        if response.direct_passthrough or response.is_streamed:
+            return response
+        if "gzip" not in (request.headers.get("Accept-Encoding", "") or ""):
+            return response
+        if response.headers.get("Content-Encoding"):
+            return response
+        mimetype = (response.mimetype or "").lower()
+        if mimetype not in GZIP_MIMETYPES:
+            return response
+        data = response.get_data()
+        if len(data) < GZIP_MIN_BYTES:
+            return response
+        response.set_data(gzip_mod.compress(data))
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(response.get_data()))
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = f"{vary}, Accept-Encoding" if vary else "Accept-Encoding"
+        return response
+
     @app.errorhandler(413)
     def _too_large(_exc):
-        # werkzeug raises this while parsing the body, before any blueprint
-        # handler is reached, so it needs an answer at the app level or the
-        # page gets html where it expects `{error, kind}`
         return jsonify({
             "error": f"that file is larger than {MAX_UPLOAD_BYTES // (1 << 20)} MB",
             "kind": "refused",
@@ -167,13 +164,56 @@ def create_app(
 
     @app.get("/<path:asset>")
     def assets(asset):
-        # a single-page app: unknown paths are routes, not missing files
         target = root / asset
         if target.is_file():
             return send_from_directory(root, asset)
         return index()
 
     return app
+
+
+def _is_loopback(host: str) -> bool:
+    # The bind address decides whether this GUI is reachable from off the
+    # machine, and that is the only thing the exposure warning is about.
+    import ipaddress
+
+    h = (host or "").strip().strip("[]")
+    if h in ("localhost", "localhost.localdomain"): return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        # An empty host means every interface; a name is resolved by the OS at
+        # bind time, and anything we cannot read as loopback is treated as
+        # exposed rather than quietly assumed safe.
+        return False
+
+
+def _open_browser(url: str) -> None:
+    # Two separate reasons this is not a bare `webbrowser.open`.
+    #
+    # A launcher inherits our stderr, and it is a shell script that walks a
+    # candidate list: xdg-open prints a line per candidate it cannot exec, and
+    # one dangling `x-www-browser` alternative is enough to put that in the
+    # console of a machine that has a working browser. So the child gets its
+    # own discarded streams, which costs an interpreter start and buys silence
+    # under every launcher rather than the ones we know about.
+    #
+    # And on Linux/BSD with no display there is nothing to open onto, so the
+    # attempt can only fail; every GUI reached over ssh is this case.
+    import os
+    import subprocess
+    import sys
+
+    if sys.platform.startswith(("linux", "freebsd", "openbsd", "netbsd")) and not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    ):
+        return
+    subprocess.Popen(
+        [sys.executable, "-c", "import sys, webbrowser; webbrowser.open(sys.argv[1])", url],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 def serve(
@@ -183,22 +223,42 @@ def serve(
     open_browser: bool = True,
     ssh_config_path: Path | str | None = None,
 ) -> int:
+    import logging
+
+    from werkzeug.serving import make_server
+
     from ..constants import VERSION
     from ..logging import Log
 
     app = create_app(project_root, ssh_config_path=ssh_config_path)
-    url = f"http://{host}:{port}"
+    # Below app.run(), which prints Flask's banner and werkzeug's production
+    # warning and offers no way to turn either off. Per-request access logs
+    # (one line per poll) are a separate, silenceable logger -- the frontend
+    # polls every few seconds, and at WARNING those lines stop while a real
+    # server error (5xx, broken pipe) still surfaces.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    server = make_server(host, port, app, threaded=True)
+    url = f"http://{host}:{server.server_port}"
     Log.Info(f"Metasmith {VERSION}")
     Log.Info(f"project [{Path(project_root).resolve()}]")
     if not bundle_exists():
         Log.Error("the GUI bundle is missing; run ./dev.sh --build-gui")
     Log.Info(f"serving at [{url}]")
+    if not _is_loopback(host):
+        Log.Warn(
+            f"bound to [{host}] -- this GUI is reachable from other machines, and it has no"
+            " authentication. Anyone who can reach the port can read files on this host and"
+            " stage and run work on every agent it knows. Bind 127.0.0.1 and use an ssh tunnel."
+        )
     if open_browser:
         try:
-            webbrowser.open(url)
+            _open_browser(url)
         except Exception:
             pass
-    # threaded is not optional: one open log stream would otherwise block every
-    # other request and the page would look hung.
-    app.run(host=host, port=port, threaded=True, debug=False, use_reloader=False)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0

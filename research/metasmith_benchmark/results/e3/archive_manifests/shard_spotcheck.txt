@@ -1,0 +1,43 @@
+=== lineage output_root samples (must be relative, no leading /) ===
+1e/200c4567a7c3e3d9cefaadd11fa3f07674b335263af9d31766577f3cb8a6cce8fa
+1e/20e69b5ca6e03b0a73ca09919f2809667194020acfa90a38f9ce65e0eec0098cd1
+1e/20c38a2b41bab77508cfec895205b4b90229a261e7cb668565fee20e092dc93acc
+1e/2064a1f6fbb45f1b6c7d1f3c8ac8aa78831836479824f0452acc4f0eebed29f96c
+
+=== spot-check: shards from this run exist on disk with a manifest ===
+--- 1e/20ada221eccdcaf37c13ddcc7a264017971c7e207523dba56aad0e11df017c3505
+total 1636
+drwxr-x---     4 phyberos phyberos    4096 Sep 22 11:47 .
+drwxr-x--- 11585 phyberos phyberos 1622016 Sep 22 05:08 ..
+drwxr-x---     2 phyberos phyberos    4096 Sep 22 11:47 logs
+-rw-r-----     1 phyberos phyberos   32841 Sep 21 13:47 manifest.cbor
+drwxr-x---     2 phyberos phyberos    4096 Sep 21 13:47 out
+--- 1e/204c638105b0d86df275385fd02983899fa88b7ebdffd1bc4c51a7b6e825662510
+total 1616
+drwxr-x---     4 phyberos phyberos    4096 Sep 22 11:47 .
+drwxr-x--- 11585 phyberos phyberos 1622016 Sep 22 05:08 ..
+drwxr-x---     2 phyberos phyberos    4096 Sep 22 11:47 logs
+-rw-r-----     1 phyberos phyberos   14208 Sep 21 19:24 manifest.cbor
+drwxr-x---     2 phyberos phyberos    4096 Sep 21 19:24 out
+--- 1e/2071e67502bb2b2d1ce868cec77407c1d1b74bf676c0ba758d1262a75041963f58
+total 1628
+drwxr-x---     4 phyberos phyberos    4096 Sep 22 11:47 .
+drwxr-x--- 11585 phyberos phyberos 1622016 Sep 22 05:08 ..
+drwxr-x---     2 phyberos phyberos    4096 Sep 22 11:47 logs
+-rw-r-----     1 phyberos phyberos   27739 Sep 21 19:46 manifest.cbor
+drwxr-x---     3 phyberos phyberos    4096 Sep 21 19:46 out
+
+=== spot-check: an imported shard (pointer, not a copy) ===
+--- imported/1e/208dd72cd964e96134e88befca92ff814c7c46b84cfd0d76cc03c887692e6179a9
+total 48
+drwxr-x---   3 phyberos phyberos  4096 Sep 13 01:58 .
+drwxr-x--- 245 phyberos phyberos 36864 Sep 16 18:43 ..
+-rw-r-----   1 phyberos phyberos   424 Sep 13 01:58 manifest.cbor
+drwxr-x---   2 phyberos phyberos  4096 Sep 13 01:58 out
+12K	/scratch/phyberos/pratama2026/metasmith/task_cache/imported/1e/208dd72cd964e96134e88befca92ff814c7c46b84cfd0d76cc03c887692e6179a9
+
+=== how many shard dirs exist on disk vs rows in the index ===
+index rows:          11326
+dirs under 1e/:      11583
+dirs under imported: 243
+tombstone files:     0

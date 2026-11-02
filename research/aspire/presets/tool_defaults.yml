@@ -1,0 +1,53 @@
+# The read-to-ASV pipeline at each tool's own defaults: fastp 0.24.0 and
+# vsearch 2.30.0. Same keys as aspire.yml.
+#
+# A 0 means the filter is off. The ASPIRE-only curation and table filters are off
+# here, since no tool supplies them. Read mapping identity has no tool default,
+# so this preset carries ASPIRE's 0.999.
+
+fastp:
+  trim_front_r1: 0
+  trim_tail_r1: 0
+  trim_front_r2: 0
+  trim_tail_r2: 0
+  qualified_quality: 15
+  unqualified_percent: 40
+  length_required: 15
+  n_base_limit: 5
+  adapter_trimming: true  # auto-detected for single-end reads
+
+merge:
+  max_diffs: 10
+  min_overlap: 10
+  trunc_quality: 0
+  allow_stagger: false
+
+filter:
+  max_ee: 0
+  min_len: 1
+  max_len: 0
+
+unoise:
+  min_size: 8
+  alpha: 2.0
+
+count:
+  identity: 0.999
+
+sina:
+  regions: [V4]             # upstream's code default
+  trim_to: V4               # upstream's code default: the first region
+
+table_filter:
+  min_sample_sum: 0
+  min_asv_sum: 0
+
+curate:
+  min_pident: 97.0        # the non-target call needs some cut; ASPIRE's code default
+  min_percov: 51.0
+  abundance_threshold: 0
+  min_consensus: 0.0
+  exclude_taxa: []
+
+analysis:
+  min_level_size: 0

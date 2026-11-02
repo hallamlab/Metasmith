@@ -3,7 +3,7 @@ from hashlib import sha256
 
 _ASCII_VOCAB_62 = [(48, 57), (65, 90), (97, 122)]
 _ASCII_VOCAB_62 = [i for a, b in _ASCII_VOCAB_62 for i in list(range(a, b+1))]
-_ASCII_VOCAB_62 = [chr(i) for i in _ASCII_VOCAB_62] # +["+", "!"]
+_ASCII_VOCAB_62 = [chr(i) for i in _ASCII_VOCAB_62]
 class KeyGenerator:
     vocab = _ASCII_VOCAB_62
     def __init__(self, seed=None) -> None:

@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import yaml
+
 from ..models.libraries import DataInstanceLibrary, DataTypeLibrary, TransformInstanceLibrary
 from ..logging import Log
+from ..models.libraries.pinned import PinnedLibraryError
 
 
 DISABLE_PREFIX = "_disabled"
@@ -20,16 +23,10 @@ def _file_ok(f: Path) -> bool:
 
 
 def _is_disabled(path: Path) -> bool:
-    # Disabled markers may appear at any path segment, not just the leaf.
     return any(part.startswith(DISABLE_PREFIX) for part in path.parts)
 
 
 def LoadTypeLibraries(data_type_dirs: list[Path]) -> dict[str, DataTypeLibrary]:
-    """Load every *.yml / *.yaml under each dir into a {namespace: DataTypeLibrary} dict.
-
-    The namespace is the YAML filename stem. Raises ValueError if the same namespace
-    appears in more than one source file.
-    """
     dtypes: dict[str, DataTypeLibrary] = {}
     sources: dict[str, Path] = {}
     for d in data_type_dirs:
@@ -52,14 +49,25 @@ def LoadTypeLibraries(data_type_dirs: list[Path]) -> dict[str, DataTypeLibrary]:
     return dtypes
 
 
+def _refuse_if_pinned(library_dir: Path) -> None:
+    # The compile writes a fresh library over the old one, so the pin guards on
+    # the new object see nothing. Read raw: an index too broken to Load is a
+    # reason to rebuild, not to fail.
+    index = library_dir/DataInstanceLibrary._path_to_meta/(DataInstanceLibrary._index_name+DataInstanceLibrary._metadata_ext)
+    if not index.exists(): return
+    try:
+        raw = yaml.safe_load(index.read_text()) or {}
+    except yaml.YAMLError:
+        return
+    if not raw.get("pinned", raw.get("frozen")): return
+    raise PinnedLibraryError(
+        f"refusing to compile [{library_dir}]: it is pinned, and a compile re-mints every"
+        f" member id it recorded, which re-keys every run that used it. Unpin it first"
+        f" (`metasmith data unpin {library_dir}`) if that is what you mean"
+    )
+
+
 def CompileUniqueLibrary(unique_dir: Path, types: dict[str, DataTypeLibrary]) -> dict:
-    """Compile one unique-resource directory into a DataInstanceLibrary.
-
-    The dir name must match a namespace in `types`. Every non-disabled file or subdir
-    inside is registered as `{namespace}::{name}`.
-
-    Returns {"library": str, "namespace": str, "count": int} on success.
-    """
     if not _dir_ok(unique_dir):
         return {"library": str(unique_dir), "namespace": unique_dir.name, "count": 0, "skipped": "filtered"}
     namespace = unique_dir.name
@@ -68,6 +76,7 @@ def CompileUniqueLibrary(unique_dir: Path, types: dict[str, DataTypeLibrary]) ->
             f"unique dir [{unique_dir}] has no matching type library "
             f"(looked for namespace [{namespace}]); available: {sorted(types.keys())}"
         )
+    _refuse_if_pinned(unique_dir)
     lib = DataInstanceLibrary(unique_dir)
     lib.AddTypeLibrary(namespace=namespace, lib=types[namespace])
     count = 0
@@ -84,14 +93,6 @@ def CompileUniqueLibrary(unique_dir: Path, types: dict[str, DataTypeLibrary]) ->
 
 
 def CompileTransformLibrary(transform_dir: Path, types: dict[str, DataTypeLibrary]) -> dict:
-    """Compile one transform directory into a TransformInstanceLibrary.
-
-    All loaded type libraries are attached, then **/*.py files are registered as
-    `transforms::transform`. Unused type definitions are pruned.
-
-    Returns {"library": str, "count": int}. If no transforms are found the library
-    is left untouched on disk.
-    """
     if not _dir_ok(transform_dir):
         return {"library": str(transform_dir), "count": 0, "skipped": "filtered"}
     lib = TransformInstanceLibrary(transform_dir)
@@ -120,13 +121,6 @@ def Build(
     transform_dirs: list[Path],
     unique_dirs: list[Path],
 ) -> dict:
-    """Top-level orchestrator: load types, then compile every unique and transform dir.
-
-    Validates upfront that every unique dir's name corresponds to a loaded namespace,
-    so a misnamed dir fails fast with a clear error before any side-effects.
-
-    Returns {"types": {ns: type_count}, "uniques": [...], "transforms": [...]}.
-    """
     types = LoadTypeLibraries(data_type_dirs)
 
     missing = [d for d in unique_dirs if _dir_ok(d) and d.name not in types]

@@ -11,8 +11,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class PlanExecutionOracle:
-    """Validate virtual runtime trace against WorkflowPlan semantics."""
-
     task: WorkflowTask
 
     def expected_bootstrap_sequence(self) -> list[int]:
@@ -50,12 +48,6 @@ class PlanExecutionOracle:
                 f"expected {expected_arity[step]}, got {got}"
             )
 
-        # Post-S6: the legacy `manifest_written` debug events emitted by
-        # virtual_runtime's publish loop are gone (manifests/ deleted).
-        # Per-target output presence is now verified by the C1 trace
-        # invariants in `tests/integration/test_telemetry_e2e.py` and
-        # `tests/integration/test_e2e_trace.py`; the bootstrap-sequence
-        # + arity checks above remain the load-bearing pre-S6 oracles.
         results = [e for e in events if e.get("type") == "bootstrap_result"]
         if results:
             assert any(int(e.get("code", 1)) == 0 for e in results), (
@@ -65,14 +57,6 @@ class PlanExecutionOracle:
     def validate_contract_only(
         self, plan: WorkflowPlan, compiled: "CompiledTask"
     ) -> "ContractReport":
-        """Validate a `CompiledTask` against this oracle's plan semantics.
-
-        The plan argument is accepted explicitly so callers that build a
-        plan independent of `self.task.plan` (e.g. cross-task fixtures)
-        can route through the same oracle. When `plan is self.task.plan`
-        the check reduces to the standard contract sweep; otherwise the
-        oracle confirms the compiled task references the same plan.
-        """
         from .contract_runtime import validate_contract
 
         assert plan is compiled.task.plan, (

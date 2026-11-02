@@ -1,0 +1,34 @@
+# prodigal-gv on the frozen viral set, under bench product types (tool table: E5 prodigal-gv).
+# As sequences::orfs the standard prodigal_gv.py also answers any per-sample ORF slot, because the
+# frozen set descends from every assembly: DAS Tool and MAGScoT then read viral genes (B23).
+from metasmith.python_api import *
+
+lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+
+# checkv.env ships prodigal-gv 2.11.0-gv.
+image  = model.AddRequirement(lib.GetType("env::checkv.env"))
+frozen = model.AddRequirement(lib.GetType("viromics::dereplicated_candidate_virus"))
+cds    = model.AddProduct(lib.GetType("bench::viral_orfs"))
+gff    = model.AddProduct(lib.GetType("bench::viral_gff"))
+
+
+def protocol(context: ExecutionContext):
+    ifrozen = context.Input(frozen)
+    outs = {p: context.Output(p) for p in (cds, gff)}
+    context.ExecWithEnv(env=image, cmd=f"""
+        prodigal-gv -p meta -i {ifrozen.container} -a viral_orfs.faa -f gff -o viral_orfs.gff
+    """)
+    context.LocalShell(f"cp viral_orfs.faa {outs[cds].local}")
+    context.LocalShell(f"cp viral_orfs.gff {outs[gff].local}")
+    return ExecutionResult(manifest=[{p: o.local for p, o in outs.items()}],
+                           success=all(o.local.exists() for o in outs.values()))
+
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=frozen,
+    output_signature={cds: "viral_orfs.faa", gff: "viral_orfs.gff"},
+    resources=Resources(cpus=8, memory=Size.GB(16), duration=Duration(hours=4)),
+)

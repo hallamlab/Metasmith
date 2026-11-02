@@ -1,0 +1,200 @@
+{"mnxr": "MNXR200613", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Nucleotide sugar donor with ADP release in biosynthetic lipid glycosylation"}
+{"mnxr": "MNXR192968", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Amidation incorporation of NH4+ into bleomycin biosynthesis"}
+{"mnxr": "MNXR102048", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Phosphoryl transfer to nucleotide, water release"}
+{"mnxr": "MNXR144082", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "UDP-glycosyl transfer to aglycone acceptor"}
+{"mnxr": "MNXR195931", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent reduction of anthocyanin"}
+{"mnxr": "MNXR118477", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "UDP-glycosyl transfer to flavonoid, UDP-sugar donation"}
+{"mnxr": "MNXR165294", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Acyl-CoA esterification of sugar alcohol"}
+{"mnxr": "MNXR193834", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "H2O2-dependent oxidative halogenation"}
+{"mnxr": "MNXR152055", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "UDP-glycosyl transfer releasing phenolic acid"}
+{"mnxr": "MNXR198245", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "UDP-glycosyl transfer to anthocyanin"}
+{"mnxr": "MNXR106629", "call": "UNKNOWN", "confidence": "low", "reason": "Methionine biosynthesis pathway unclear from equation shown"}
+{"mnxr": "MNXR119395", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "O2 production atypical; likely oxidation written backwards"}
+{"mnxr": "MNXR113634", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Lysine cyclization and decarboxylation to pipecolate"}
+{"mnxr": "MNXR122463", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Phosphoester bond formation, water release"}
+{"mnxr": "MNXR184482", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Acyl-CoA transesterification"}
+{"mnxr": "MNXR116684", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "H2O2-dependent oxidative degradation of melatonin"}
+{"mnxr": "MNXR112563", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "Pyrophosphorolysis of geranylgeranyl diphosphate"}
+{"mnxr": "MNXR116812", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "Flavin oxidation with O2 production suggests reversed direction"}
+{"mnxr": "MNXR116000", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Phosphoryl transfer from sugar phosphate to ADP"}
+{"mnxr": "MNXR164687", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "O2-dependent oxygenase oxidation of artemisinate"}
+{"mnxr": "MNXR119870", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Flavin-dependent oxidation consuming O2"}
+{"mnxr": "MNXR164601", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADH and O2 consumed in P450 oxidation"}
+{"mnxr": "MNXR120216", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Condensation/cyclization with water release"}
+{"mnxr": "MNXR188579", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Acyl-CoA esterification of alcohol"}
+{"mnxr": "MNXR191457", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Selenomethionine biosynthesis from alpha-ketoacid"}
+{"mnxr": "MNXR114250", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "ATP hydrolysis drives condensation to DAP derivative"}
+{"mnxr": "MNXR153081", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Acyl-CoA amidation with glycine"}
+{"mnxr": "MNXR165011", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Phosphorylation of shikimate pathway intermediate"}
+{"mnxr": "MNXR118302", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Glycosidase hydrolysis of iridoid glycoside"}
+{"mnxr": "MNXR151839", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Peptide bond formation in peptidoglycan synthesis"}
+{"mnxr": "MNXR117565", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NAD+-dependent oxidation of alkaloid"}
+{"mnxr": "MNXR197441", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Phosphatase hydrolysis of neopterin phosphate"}
+{"mnxr": "MNXR116905", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "P450-catalyzed oxidative decarboxylation with O2 and 2-oxoglutarate"}
+{"mnxr": "MNXR190501", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "Acyl-CoA condensation in fatty acid synthesis"}
+{"mnxr": "MNXR191561", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "Transglycosylation from lipid to UDP, atypical direction"}
+{"mnxr": "MNXR97026", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "ATP synthesis from ADP and phosphate"}
+{"mnxr": "MNXR123208", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent aldehyde reduction"}
+{"mnxr": "MNXR140858", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Ascorbate oxidation and cyclization to lactone"}
+{"mnxr": "MNXR106536", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH and O2-dependent monooxygenase hydroxylation"}
+{"mnxr": "MNXR110378", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "Phosphorylation of shikimate pathway intermediate"}
+{"mnxr": "MNXR121623", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADH-dependent reduction"}
+{"mnxr": "MNXR117474", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent aldehyde reduction"}
+{"mnxr": "MNXR191744", "call": "UNKNOWN", "confidence": "low", "reason": "equation as written (O2 produced while NADP+ reduced) is chemically implausible"}
+{"mnxr": "MNXR186240", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "nucleophilic substitution of chloroacetate"}
+{"mnxr": "MNXR195991", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "O2 consumed in oxidation"}
+{"mnxr": "MNXR121972", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation and CoA release"}
+{"mnxr": "MNXR104952", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "peroxidase-catalyzed coupling"}
+{"mnxr": "MNXR121964", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "2-oxoglutarate-dependent oxygenase, O2 consumed"}
+{"mnxr": "MNXR197617", "call": "UNKNOWN", "confidence": "low", "reason": "equation structure suggests product rearrangement, reversal of typical glycosyltransferase"}
+{"mnxr": "MNXR115703", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH and O2-dependent monooxygenation"}
+{"mnxr": "MNXR120722", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase, O2 and reduced flavin consumed"}
+{"mnxr": "MNXR193185", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation is irreversible"}
+{"mnxr": "MNXR192896", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "acyl-CoA transferase"}
+{"mnxr": "MNXR193075", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "carbamate/urea formation is irreversible"}
+{"mnxr": "MNXR119713", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADP+-dependent sugar oxidation"}
+{"mnxr": "MNXR118972", "call": "UNKNOWN", "confidence": "low", "reason": "dTDP product formation suggests reversed sugar transferase reaction"}
+{"mnxr": "MNXR120711", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "oxidative disulfide bond formation"}
+{"mnxr": "MNXR120910", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "vinyl hydration of porphyrin ring"}
+{"mnxr": "MNXR153431", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "enoyl-CoA hydratase-catalyzed hydration"}
+{"mnxr": "MNXR123760", "call": "REVERSIBLE", "confidence": "medium", "reason": "lipoxin rearrangement, near-equilibrium interconversion"}
+{"mnxr": "MNXR114928", "call": "RIGHT_TO_LEFT", "confidence": "high", "reason": "equation as written shows NAD(P)H production with O2 release, reaction runs opposite direction"}
+{"mnxr": "MNXR184511", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "hydrolysis of complex molecule"}
+{"mnxr": "MNXR144095", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "SAM-dependent methyltransferase"}
+{"mnxr": "MNXR186641", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "amino acid coupling via cysteine biosynthesis"}
+{"mnxr": "MNXR145737", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "intramolecular cyclization in aromatic degradation"}
+{"mnxr": "MNXR107777", "call": "REVERSIBLE", "confidence": "medium", "reason": "lysine isomerization, near-equilibrium"}
+{"mnxr": "MNXR117147", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "phosphoanhydride hydrolysis"}
+{"mnxr": "MNXR164406", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase, O2 and reduced flavin consumed"}
+{"mnxr": "MNXR165075", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "amidation reaction"}
+{"mnxr": "MNXR197982", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NAD+-dependent polyol oxidation"}
+{"mnxr": "MNXR196803", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "glycosidic bond formation in ginsenoside glycosylation"}
+{"mnxr": "MNXR144034", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "SAM-dependent methyltransferase"}
+{"mnxr": "MNXR143999", "call": "UNKNOWN", "confidence": "low", "reason": "product structure suggests reversed glycosyltransferase, UDP generated from substrate"}
+{"mnxr": "MNXR121959", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation and CoA release in polyketide synthesis"}
+{"mnxr": "MNXR114274", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation and aromatic ring formation"}
+{"mnxr": "MNXR192042", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "glycosidic bond formation, trehalose synthase"}
+{"mnxr": "MNXR120891", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NAD+-dependent conjugation and oxidation"}
+{"mnxr": "MNXR152870", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "ATP synthesis"}
+{"mnxr": "MNXR108199", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "arginine biosynthesis via guanidino transfer"}
+{"mnxr": "MNXR164380", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "peptide bond formation"}
+{"mnxr": "MNXR164586", "call": "UNKNOWN", "confidence": "low", "reason": "no clear thermodynamic or enzymatic warrant"}
+{"mnxr": "MNXR193289", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent reduction"}
+{"mnxr": "MNXR147547", "call": "UNKNOWN", "confidence": "medium", "reason": "condensation warrant unclear without ATP coupling"}
+{"mnxr": "MNXR119823", "call": "UNKNOWN", "confidence": "medium", "reason": "acyl transfer direction depends on cofactor context"}
+{"mnxr": "MNXR163552", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "hydrogenase oxidizes H2"}
+{"mnxr": "MNXR119145", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "O2 consumed by monooxygenase"}
+{"mnxr": "MNXR122639", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "nucleotide-dependent glycosyl transfer"}
+{"mnxr": "MNXR187506", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "O2-dependent oxidation of reduced carrier"}
+{"mnxr": "MNXR200708", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "phosphotransferase system catalyzes phosphoryl transfer to fructose"}
+{"mnxr": "MNXR143743", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "fucosyltransferase adds fucose to protein glycan"}
+{"mnxr": "MNXR115235", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "phosphatase catalyzes hydrolysis"}
+{"mnxr": "MNXR151132", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "caspase-catalyzed proteolysis"}
+{"mnxr": "MNXR199586", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent reduction of ketone"}
+{"mnxr": "MNXR193202", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "peptidoglycan transpeptidase"}
+{"mnxr": "MNXR118595", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "acyl-CoA dehydrogenase catalyzes FAD-dependent oxidation"}
+{"mnxr": "MNXR163647", "call": "UNKNOWN", "confidence": "medium", "reason": "sulfurylation warrant unclear"}
+{"mnxr": "MNXR151821", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "gamma-glutamyl transferase activity"}
+{"mnxr": "MNXR165235", "call": "REVERSIBLE", "confidence": "medium", "reason": "double-bond isomerization near equilibrium"}
+{"mnxr": "MNXR115041", "call": "RIGHT_TO_LEFT", "confidence": "high", "reason": "methyltransferase produces SAH from SAM"}
+{"mnxr": "MNXR150752", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent reduction of ketone"}
+{"mnxr": "MNXR123111", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "NADP+-dependent oxidation of dihydrouridine"}
+{"mnxr": "MNXR123612", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation in polyketide synthase condensation"}
+{"mnxr": "MNXR116745", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "quinol oxidase oxidizes menaquinol"}
+{"mnxr": "MNXR163908", "call": "UNKNOWN", "confidence": "low", "reason": "O2 production on right suggests unusual stoichiometry"}
+{"mnxr": "MNXR164839", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "carboxylation and NADPH-dependent reduction in polyketide synthase"}
+{"mnxr": "MNXR199355", "call": "RIGHT_TO_LEFT", "confidence": "high", "reason": "glycosyl transferase runs in opposite direction"}
+{"mnxr": "MNXR163985", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "adenylase catalyzes acyl-AMP formation"}
+{"mnxr": "MNXR150756", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADPH-dependent reduction of ketone"}
+{"mnxr": "MNXR164876", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "acylation of lysophospholipid with water release"}
+{"mnxr": "MNXR119529", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "adenine insertion into apurinic site"}
+{"mnxr": "MNXR147219", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "phospholipid synthesis via acyl transfer"}
+{"mnxr": "MNXR140139", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "nitrite oxidase oxidizes nitrite to nitrate"}
+{"mnxr": "MNXR117660", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "oxidation of zealexin with electron transfer"}
+{"mnxr": "MNXR115981", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "methyltransferase runs in reverse of this direction"}
+{"mnxr": "MNXR123556", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "NADH-dependent reduction of double bond"}
+{"mnxr": "MNXR164362", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "ATP-dependent acylation of carrier protein"}
+{"mnxr": "MNXR145329", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation in polyketide synthase condensation"}
+{"mnxr": "MNXR115022", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "monooxygenase catalyzes hydroxylation with water incorporation"}
+{"mnxr": "MNXR115629", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "degradation of trehalose-maltose conjugate"}
+{"mnxr": "MNXR121427", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "likely monooxygenase with O2 consumption, suggesting backwards direction"}
+{"mnxr": "MNXR120661", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "fatty acyl-ACP formation in biosynthesis"}
+{"mnxr": "MNXR117199", "call": "RIGHT_TO_LEFT", "confidence": "high", "reason": "methyltransferases consume SAM, not SAH"}
+{"mnxr": "MNXR164960", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "histone methylation consumes SAM"}
+{"mnxr": "MNXR121068", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "oxygenase reaction consuming O2"}
+{"mnxr": "MNXR200593", "call": "UNKNOWN", "confidence": "low", "reason": "protein aggregation doesn't normally couple to ATP synthesis"}
+{"mnxr": "MNXR116593", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "oxygenase consuming O2 and reducing electron carrier"}
+{"mnxr": "MNXR196496", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "amine oxidase activity with cytochrome reduction"}
+{"mnxr": "MNXR120462", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "NRPS condensation and ATP synthesis from AMP"}
+{"mnxr": "MNXR192822", "call": "UNKNOWN", "confidence": "low", "reason": "complex plant phenylpropanoid metabolism, direction uncertain"}
+{"mnxr": "MNXR193662", "call": "RIGHT_TO_LEFT", "confidence": "high", "reason": "methyltransferases consume SAM to produce SAH, not the reverse"}
+{"mnxr": "MNXR199334", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "acyl transfer from ACP to UDP-GlcNAc in LPS synthesis"}
+{"mnxr": "MNXR165207", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "polyketide synthase initiation with ACP"}
+{"mnxr": "MNXR118847", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "electron carrier reduction in steroid modification"}
+{"mnxr": "MNXR165107", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase consuming O2 and reduced flavin"}
+{"mnxr": "MNXR121469", "call": "UNKNOWN", "confidence": "low", "reason": "specialized non-ribosomal peptide product, direction unclear"}
+{"mnxr": "MNXR123726", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "O2 on product side suggests reversal of monooxygenase pattern"}
+{"mnxr": "MNXR199656", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "adenylation of acyl-ACP in NRPS initiation"}
+{"mnxr": "MNXR130446", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "polyol catabolism and degradation"}
+{"mnxr": "MNXR122186", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "hydroxylation consuming O2 and electron carrier"}
+{"mnxr": "MNXR120296", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "lipid-mediated glycosyltransfer in cell wall synthesis"}
+{"mnxr": "MNXR164302", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "UDP-GalNAc glycosyltransferase in protein glycosylation"}
+{"mnxr": "MNXR117336", "call": "REVERSIBLE", "confidence": "high", "reason": "electron transfer between cytochrome proteins, near-equilibrium"}
+{"mnxr": "MNXR118051", "call": "REVERSIBLE", "confidence": "high", "reason": "retinol cis-trans isomerization, near-equilibrium"}
+{"mnxr": "MNXR197079", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "O2 product and oxidized flavin as substrate suggests reversed monooxygenase"}
+{"mnxr": "MNXR164150", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "equation written backwards from glycosylation direction"}
+{"mnxr": "MNXR193854", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "arsenite transfer to metallochaperone"}
+{"mnxr": "MNXR123296", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "tRNA ligation in synthesis, opposite of degradation"}
+{"mnxr": "MNXR164883", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "phospholipid remodeling via acyl hydrolysis"}
+{"mnxr": "MNXR165021", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "disulfide reduction by thioredoxin-family reductase"}
+{"mnxr": "MNXR164683", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "oxygenase consuming O2, oxidizing ferredoxin"}
+{"mnxr": "MNXR121209", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "N-terminal acetylation using acetyl-CoA"}
+{"mnxr": "MNXR193855", "call": "UNKNOWN", "confidence": "low", "reason": "arsenic-coupled ATP synthesis is atypical and unclear"}
+{"mnxr": "MNXR163996", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "electron reduction of oxidized protein"}
+{"mnxr": "MNXR187761", "call": "LEFT_TO_RIGHT", "confidence": "low", "reason": "urolithin bioconversion pattern unclear"}
+{"mnxr": "MNXR120713", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "aryl adenylate condensation and AMP release from ACP"}
+{"mnxr": "MNXR121199", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "ribosomal peptidyl transferase, protein synthesis"}
+{"mnxr": "MNXR116019", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NAD(P) reduction coupled to ferroleghemoglobin oxidation"}
+{"mnxr": "MNXR186626", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NRPS oxazoline formation and condensation"}
+{"mnxr": "MNXR193108", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "disulfide reduction by thioredoxin"}
+{"mnxr": "MNXR194025", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "ATP synthesis from ADP and phosphate via proton coupling"}
+{"mnxr": "MNXR196904", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "O2 consumed, reduced carrier oxidized"}
+{"mnxr": "MNXR149366", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "monooxygenase; physiologically consumes NADPH and O2"}
+{"mnxr": "MNXR137927", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "electron transfer from reduced cytochrome to quinone"}
+{"mnxr": "MNXR199180", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "monooxygenase; physiologically consumes NADPH and O2"}
+{"mnxr": "MNXR185417", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "decarboxylation is irreversible"}
+{"mnxr": "MNXR173083", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "lactate oxidase; lactate oxidized to pyruvate"}
+{"mnxr": "MNXR149983", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "O2 consumed, reduced carriers oxidized"}
+{"mnxr": "MNXR192734", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "porphyrin reduction; reduced carriers oxidized"}
+{"mnxr": "MNXR168334", "call": "REVERSIBLE", "confidence": "medium", "reason": "phosphoryl transfer near equilibrium"}
+{"mnxr": "MNXR170452", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase; O2 consumed, reduced cytochrome oxidized"}
+{"mnxr": "MNXR179631", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "sulfate reduction; reduced cytochrome oxidized"}
+{"mnxr": "MNXR115025", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "enoyl reduction; reduced carrier oxidizes C=C"}
+{"mnxr": "MNXR168974", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "NADPH-dependent reduction of ferredoxin"}
+{"mnxr": "MNXR109809", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "reductive dechlorination; reduced acceptor oxidized"}
+{"mnxr": "MNXR130466", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "carbonyl reduction; reduced acceptor oxidized"}
+{"mnxr": "MNXR132331", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "ATP hydrolysis drives it"}
+{"mnxr": "MNXR108902", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "monooxygenase; physiologically consumes NADPH and O2"}
+{"mnxr": "MNXR170873", "call": "UNKNOWN", "confidence": "low", "reason": "glycolate ligation; no cofactors to determine direction"}
+{"mnxr": "MNXR163409", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "monooxygenase; physiologically consumes NADPH and O2"}
+{"mnxr": "MNXR157993", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "dehydration in fatty acid synthesis"}
+{"mnxr": "MNXR199186", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "biosynthetic lipid formation; reduced carriers oxidized"}
+{"mnxr": "MNXR194469", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase; O2 consumed, NADPH reduced"}
+{"mnxr": "MNXR168383", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "phosphoenolpyruvate phosphorylates protein"}
+{"mnxr": "MNXR163442", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "biosynthetic heme formation; oxidized flavodoxin reduced"}
+{"mnxr": "MNXR168969", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "NADH-dependent reduction of ferredoxin and caffeoyl-CoA"}
+{"mnxr": "MNXR203503", "call": "RIGHT_TO_LEFT", "confidence": "low", "reason": "ferredoxin normally electron donor, reaction appears reversed"}
+{"mnxr": "MNXR177652", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "CO2 reduction; reduced carrier oxidized"}
+{"mnxr": "MNXR170554", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "retinol dehydrogenase; alcohol oxidized to aldehyde"}
+{"mnxr": "MNXR165467", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "electron transfer from reduced cytochrome to quinone"}
+{"mnxr": "MNXR170970", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase; O2 consumed, NADPH reduced"}
+{"mnxr": "MNXR146960", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "carboxylic acid reduction; reduced acceptor oxidized"}
+{"mnxr": "MNXR196464", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "aromatic ring oxidation; reduced carrier oxidized"}
+{"mnxr": "MNXR113845", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase aromatase; O2 consumed, NADPH reduced"}
+{"mnxr": "MNXR135173", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "C=C saturation; reduced carrier oxidized"}
+{"mnxr": "MNXR153930", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "dehydration in fatty acid synthesis"}
+{"mnxr": "MNXR170420", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase; O2 consumed, NADPH reduced"}
+{"mnxr": "MNXR173546", "call": "RIGHT_TO_LEFT", "confidence": "medium", "reason": "cytokinin oxidase; physiologically consumes O2, produces reduced flavoprotein"}
+{"mnxr": "MNXR189377", "call": "LEFT_TO_RIGHT", "confidence": "high", "reason": "monooxygenase; O2 consumed, reduced carrier oxidized"}
+{"mnxr": "MNXR99496", "call": "RIGHT_TO_LEFT", "confidence": "low", "reason": "FMN typically oxidizes substrates, O2 production suggests reversal"}
+{"mnxr": "MNXR183327", "call": "LEFT_TO_RIGHT", "confidence": "medium", "reason": "SAM radical chemistry; reduced carrier and SAM used for tyrosine modification"}

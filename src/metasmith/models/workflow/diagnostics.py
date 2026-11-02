@@ -1,20 +1,3 @@
-"""Why no plan was found -- the structured answer, not "no plan".
-
-When the solver comes back empty, `WorkflowPlan.Generate` calls in here and
-attaches the result to `WorkflowPlan.hints`. Every consumer is expected to
-surface them; a bare "no plan" is not an acceptable failure.
-
-Three passes, in order of how specific an answer they can give: an unreachable
-target (nothing produces a match at all), a multi-hop reverse-BFS that reports
-where a chain dead-ends, and a lineage mismatch -- a given that matches a
-requirement on properties but does not descend from the parent the slot asked
-for. The last one is the reason a plan can look obviously satisfiable and not
-be: `parents=` puts lineage inside the type's identity.
-
-Everything here takes what it needs as arguments and holds no state, which is
-what lets it live outside `plan.py` rather than on `WorkflowPlan`.
-"""
-
 from __future__ import annotations
 
 import json
@@ -33,6 +16,36 @@ class PlanHint:
     chain: list[str] = field(default_factory=list)
     candidate_transforms: list[str] = field(default_factory=list)
     near_misses: list[str] = field(default_factory=list)
+
+
+# By properties only: a lineage constraint that blocks a route is what the
+# lineage_mismatch hint reports.
+def _forward_closure(givens: set[Endpoint], transform2inst: dict[Transform, TransformInstance]) -> list:
+    produced: list = list(givens)
+    satisfied: set[str] = set()
+    pending = list(transform2inst)
+    while True:
+        fired = []
+        for model in pending:
+            ok = True
+            for req in model.requires:
+                if req.key in satisfied:
+                    continue
+                if any(e.IsA(req) for e in produced):
+                    satisfied.add(req.key)
+                    continue
+                ok = False
+                break
+            if ok:
+                fired.append(model)
+        if not fired:
+            return produced
+        for model in fired:
+            for pgroup in model.produces:
+                produced.extend(pgroup)
+        pending = [m for m in pending if m not in fired]
+
+
 def _diagnose_plan_failure(
     target_model: Transform,
     target_names: list[str],
@@ -44,15 +57,6 @@ def _diagnose_plan_failure(
     max_hints_per_target: int = 4,
     near_miss_top_n: int = 3,
 ) -> list[PlanHint]:
-    """Build PlanHint objects explaining why no plan was found.
-
-    Three passes:
-        a. unreachable target: no transform produces a match.
-        b. multi-hop reverse-BFS: chain dead-ends at a demand with no
-           producer and no given match.
-        c. lineage mismatch: a given matches a requirement by properties
-           but does not descend from a required parent.
-    """
     from collections import deque
 
     hints: list[PlanHint] = []
@@ -77,8 +81,6 @@ def _diagnose_plan_failure(
                 out.append(model)
         return out
 
-    # build endpoint -> name cache from data instances, target_names, and any
-    # supplied type lookups (typically the transform libs)
     _name_cache: dict = {}
     for d, nm in zip(target_model.requires, target_names):
         _name_cache.setdefault(Endpoint(d.properties), nm)
@@ -88,9 +90,6 @@ def _diagnose_plan_failure(
                 _name_cache.setdefault(ep, inst.dtype_name)
                 break
     for lookup in (type_lookups or []):
-        # walk the inner DataTypeLibrary namespaces to capture every typed
-        # Endpoint (lookup.Iterate() only yields stored instances, not type
-        # definitions)
         try:
             for ns, tlib in lookup.types.items():
                 for type_name, ep in tlib.types.items():
@@ -102,7 +101,6 @@ def _diagnose_plan_failure(
         cached = _name_cache.get(d)
         if cached:
             return cached
-        # node hashes by properties+parents; try property-only match
         for ep, nm in _name_cache.items():
             if ep.properties == d.properties:
                 _name_cache[d] = nm
@@ -137,8 +135,6 @@ def _diagnose_plan_failure(
         return keys
 
     def _shape_key(d) -> str:
-        # canonical key that ignores parent identity — collapses two demands
-        # with the same property bag (but different `parents={...}`) into one
         return "|".join(sorted(d.properties)) or "<unspecified>"
 
     def _similarity_to_givens(demand) -> float:
@@ -153,7 +149,6 @@ def _diagnose_plan_failure(
         dkeys = _property_keys(demand.properties)
         if not dkeys:
             return 0.0
-        # 0.5 factor keeps shape-match scores strictly below value-match scores
         return max(
             (_jaccard(_property_keys(g.properties), dkeys) * 0.5 for g in all_givens),
             default=0.0,
@@ -177,8 +172,6 @@ def _diagnose_plan_failure(
         ]
         if out:
             return out
-        # fallback: rank by property-KEY overlap (helps when same shape but
-        # different value, e.g. ext=bam vs ext=fq.gz)
         demand_keys = _property_keys(demand.properties)
         if not demand_keys:
             return []
@@ -223,35 +216,17 @@ def _diagnose_plan_failure(
                 break
         return out
 
-    # ---- "you have the right thing, said too loosely" -----------------------
-    #
-    # `x.IsA(y)` is `y.properties <= x.properties`: more properties means more
-    # specific, and a *supertype* never satisfies a subtype's requirement. That
-    # asymmetry is correct and it is also the single most confusing failure the
-    # planner produces -- registering reads and asking for an assembly dead-ends
-    # somewhere five hops away at an ncbi accession, because every assembler
-    # wants `long_reads` or `short_reads_pe` and plain `reads` is neither.
-    #
-    # So a demand nothing satisfies is worth reporting against the givens that
-    # are *nearly* it in the one direction the type system cares about.
 
     def _too_general_givens(demand) -> list[tuple[Endpoint, list[DataInstance]]]:
-        """Givens that are strictly more general than `demand`."""
         out = []
         for ep, insts in given_map.items():
-            if ep.IsA(demand):       # already satisfies it; not this problem
+            if ep.IsA(demand):
                 continue
             if demand.properties > ep.properties:
                 out.append((ep, insts))
         return out
 
     def _retypings(demand, given_ep: Endpoint, limit: int = 4) -> list[str]:
-        """Named types that would satisfy `demand` and still describe `given_ep`.
-
-        A retyping is only a suggestion if it is a specialization of what the
-        user already said they have -- otherwise it is a different file, not a
-        better label for this one.
-        """
         found: list[tuple[int, str]] = []
         for ep, name in _name_cache.items():
             props = getattr(ep, "properties", None)
@@ -273,13 +248,6 @@ def _diagnose_plan_failure(
         return out
 
     def _unmet_parents(demand) -> list[str]:
-        """Parents the slot declares that nothing registered could stand in for.
-
-        A requirement's lineage is part of it: bbduk does not want three read
-        files, it wants the reads belonging to *this* metadata. When the parent
-        type is not registered at all, no amount of retyping the child will
-        help -- and nothing else in the diagnosis says so.
-        """
         out = []
         for parent in getattr(demand, "parents", None) or ():
             if any(g.properties >= parent.properties for g in all_givens):
@@ -289,9 +257,89 @@ def _diagnose_plan_failure(
                 out.append(name)
         return out
 
-    # ---- pass (a) + (b): per-target reverse-BFS ----
+    reachable = _forward_closure(all_givens, transform2inst)
+
+    def _reachable(d) -> bool:
+        return any(e.IsA(d) for e in reachable)
+
+    necessary: dict[str, frozenset[str]] = {}
+    leaf_of: dict[str, Dependency] = {}
+    required_by: dict[str, set[str]] = {}
+
+    # The unproduced requirements every route to `d` needs: a union over one
+    # producer's unmet requirements, intersected across producers. A route that
+    # cycles back to a demand still being computed is no route.
+    def _necessary(d, stack: frozenset[str]) -> frozenset[str]|None:
+        if d.key in necessary:
+            return necessary[d.key]
+        if d.key in stack:
+            return None
+        producers = _producers_of(d)
+        if not producers:
+            leaf_of[d.key] = d
+            necessary[d.key] = frozenset({d.key})
+            return necessary[d.key]
+        routes: list[frozenset[str]] = []
+        for prod in producers:
+            route: set[str] = set()
+            for req in prod.requires:
+                if _matches_any_given(req) or _reachable(req):
+                    continue
+                sub = _necessary(req, stack | {d.key})
+                if sub is None:
+                    route = None
+                    break
+                if req.key in leaf_of:
+                    required_by.setdefault(req.key, set()).add(_model_name(prod))
+                route |= sub
+            if route is not None:
+                routes.append(frozenset(route))
+        out = frozenset.intersection(*routes) if routes else frozenset()
+        necessary[d.key] = out
+        return out
+
+    unreachable_targets: list[str] = []
+    leaf_targets: dict[str, list[str]] = {}
+    for tr_req in target_model.requires:
+        if _matches_any_given(tr_req) or _reachable(tr_req) or not _producers_of(tr_req):
+            continue
+        target_name = _name(tr_req)
+        unreachable_targets.append(target_name)
+        leaves = sorted(_necessary(tr_req, frozenset()) or ())
+        if any(_too_general_givens(leaf_of[leaf]) for leaf in leaves):
+            continue
+        for leaf in leaves:
+            leaf_targets.setdefault(leaf, []).append(target_name)
+
+    for leaf, targets in sorted(leaf_targets.items(), key=lambda kv: (-len(kv[1]), _name(leaf_of[kv[0]]))):
+        leaf_name = _name(leaf_of[leaf])
+        users = sorted(required_by.get(leaf, ()))
+        hints.append(PlanHint(
+            kind='unproduced_requirement',
+            target=targets[0] if len(targets) == 1 else f"{len(targets)} targets",
+            message=(
+                f"no transform in the loaded libraries produces {leaf_name} and no given "
+                f"input matches it, and every route to {', '.join(targets)} needs it"
+                + (f" (required by {', '.join(users)})" if users else "")
+            ),
+            chain=[f"{u} needs {leaf_name}" for u in users],
+            candidate_transforms=users,
+        ))
+
     for tr_req in target_model.requires:
         target_name = _name(tr_req)
+        if unreachable_targets and target_name not in unreachable_targets and (
+                _matches_any_given(tr_req) or _reachable(tr_req)):
+            hints.append(PlanHint(
+                kind='blocked_by_other_target',
+                target=target_name,
+                message=(
+                    f"{target_name} can be produced from the given inputs. It was dropped "
+                    f"because the plan fails on "
+                    f"{', '.join(unreachable_targets)}"
+                ),
+            ))
+            continue
         producers = _producers_of(tr_req)
         if not producers:
             hints.append(PlanHint(
@@ -313,7 +361,6 @@ def _diagnose_plan_failure(
 
         visited: set[str] = set()
         dead_ends: dict[str, tuple[Dependency, list[str]]] = {}
-        # given endpoint -> the demands it is a supertype of, in walk order
         too_general: dict[Endpoint, list[tuple[Dependency, str]]] = {}
         steps_budget = max_hints_per_target * 16
         while queue and steps_budget > 0:
@@ -322,12 +369,8 @@ def _diagnose_plan_failure(
             if d.key in visited:
                 continue
             visited.add(d.key)
-            if _matches_any_given(d):
+            if _matches_any_given(d) or _reachable(d):
                 continue
-            # Recorded for every demand on the way, not only for the dead ends:
-            # the demand a too-general input was *meant* to answer usually has
-            # producers of its own, so the walk goes straight past it and the
-            # dead end it eventually reports is several hops off the point.
             for ep, _insts in _too_general_givens(d):
                 wanted_by = chain[-1].split(" produces ")[0] if chain else "a transform"
                 too_general.setdefault(ep, []).append((d, wanted_by))
@@ -358,14 +401,10 @@ def _diagnose_plan_failure(
                 _name(dc[0]),
             ),
         )
-        # Ahead of the dead ends on purpose: when one of these fires it is
-        # almost always the actual answer, and the dead end is a symptom of it.
         for ep, wants in too_general.items():
             insts = given_map.get(ep, [])
             label = next((i.dtype_name for i in insts if i.dtype_name), _name(ep))
             where = ", ".join(str(i.path) for i in insts[:3]) or "(no path)"
-            # retypings first, then what the lineage still wants: one is a
-            # correction to a row that exists, the other is a row that does not
             suggestions: list[str] = []
             parent_notes: list[str] = []
             seen_names: set[str] = set()
@@ -385,8 +424,6 @@ def _diagnose_plan_failure(
             suggestions += parent_notes
             if not suggestions:
                 continue
-            # by type, not by asker: three transforms wanting `long_reads` is
-            # one thing to fix, and saying it three times reads as three
             wanted_names = []
             said: set[str] = set()
             for demand, wanted_by in wants:
@@ -422,7 +459,6 @@ def _diagnose_plan_failure(
                 near_misses=_rank_near_misses_among_givens(d),
             ))
 
-    # ---- pass (c): lineage mismatch ----
     def _collect_ancestors(ep: Endpoint) -> set[Endpoint]:
         seen: set[Endpoint] = set()
         todo = [ep]

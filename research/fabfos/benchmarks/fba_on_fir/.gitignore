@@ -1,0 +1,3 @@
+# Shards pulled back from fir: 116,658 JSON files that reassemble into results.parquet,
+# which is what gets pinned. The retrieval is reproducible from `run.py --retrieve`.
+retrieved/

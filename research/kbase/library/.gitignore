@@ -1,0 +1,4 @@
+# compiled by `metasmith build all`; a build product, never committed
+_metadata/
+resources/*/_metadata/
+transforms/*/_metadata/

@@ -1,0 +1,13 @@
+din {"Ykw5A95e":["1e20edebd2db656c58bab851eb51cfd2e0ee1a8b8987dfdd8a87e20e6be59bf432c6"],"n96aWxQY":["1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7"],"giHCQ5sY":["1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551"],"m6AMyROB":["1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5"],"0sf1BjlL":["pnXjVQ8nFo"]}
+dot [{"3iAetd2T":["1e2078dc619edb0a30f92da2cec89869db9ca8f51aa79406c9b38411438fced67cf4"]},{"PuC0HWjC":["1e202597a4d5518f55b2b307fe15146f8629686c33071c67098caff7151c2ab2152b"]},{"hGb2H6fW":["1e20f6a0997c0abb81acaa6a7403dee62ff26329a751f31faa94a9437f514a893d4b"]}]
+sar {"Ykw5A95e":1,"n96aWxQY":1,"giHCQ5sY":1,"m6AMyROB":1,"0sf1BjlL":1,"3iAetd2T":1,"PuC0HWjC":1,"hGb2H6fW":1}
+slk {"Ykw5A95e":"Ykw5A95e","n96aWxQY":"n96aWxQY","giHCQ5sY":"giHCQ5sY","m6AMyROB":"m6AMyROB","0sf1BjlL":"SzwAMEfK"}
+par 1
+cache_key 1e2005c12f354e0dbc09ca5b3c278b49a28f14ed30602a2a0afc7de2588d3627098e
+out_identities {"3iAetd2T::0":"1e2078dc619edb0a30f92da2cec89869db9ca8f51aa79406c9b38411438fced67cf4","PuC0HWjC::1":"1e202597a4d5518f55b2b307fe15146f8629686c33071c67098caff7151c2ab2152b","hGb2H6fW::2":"1e20f6a0997c0abb81acaa6a7403dee62ff26329a751f31faa94a9437f514a893d4b"}
+cacheable true
+transform_key 2Lyy72Gx
+step_name dumpNcbiSra
+sorted_inputs [["0sf1BjlL",["pnXjVQ8nFo"]],["Ykw5A95e",["1e20edebd2db656c58bab851eb51cfd2e0ee1a8b8987dfdd8a87e20e6be59bf432c6"]],["giHCQ5sY",["1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551"]],["m6AMyROB",["1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5"]],["n96aWxQY",["1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7"]]]
+slot_files [{"dtype_key":"piCgPZrI","ext":".fq.gz","branch_idx":0,"slot_id":"1e2078dc619edb0a30f92da2cec89869db9ca8f51aa79406c9b38411438fced67cf4"},{"dtype_key":"kFt6uEPL","ext":".fq.gz","branch_idx":1,"slot_id":"1e202597a4d5518f55b2b307fe15146f8629686c33071c67098caff7151c2ab2152b"},{"dtype_key":"IdrvHnzr","ext":".fq.gz","branch_idx":2,"slot_id":"1e20f6a0997c0abb81acaa6a7403dee62ff26329a751f31faa94a9437f514a893d4b"}]
+batches [{"batch_idx":0,"start":0,"end":1,"sorted_inputs":[["0sf1BjlL",["pnXjVQ8nFo"]],["Ykw5A95e",["1e20edebd2db656c58bab851eb51cfd2e0ee1a8b8987dfdd8a87e20e6be59bf432c6"]],["giHCQ5sY",["1e20ad30679c868682bd437bda45a04730900ff3cf4458572a4c161fc93b19b06551"]],["m6AMyROB",["1e20ba19bd65db566dfd12eb5b81773d9cdf913516657385e1605f23f84ca76b0ab5"]],["n96aWxQY",["1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7"]]]}]

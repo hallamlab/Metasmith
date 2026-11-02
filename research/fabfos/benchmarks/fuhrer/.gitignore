@@ -1,0 +1,3 @@
+# Where every script writes when it is run WITHOUT --publish. A dry run is a report, not a
+# result, and its output must not be mistaken for one in the tree.
+out/

@@ -1,0 +1,26 @@
+
+=== metabolism_bake
+  N2 a node of the network : yes
+  N2<->NH4 reactions in GPR: 4 ['MNXR109381', 'MNXR163643', 'MNXR166146', 'MNXR175605']
+  endpoints offered        : 31
+  _n_reactions             : 13127.0
+  _n_reactions_used        : 8091.0
+  _n_aam_gap               : 5036.0
+  _converged               : 1.0
+  _conservation_error      : 9.099702102943752e-10
+  _missing_sinks           : 0.0
+  effective conductance    : 2.9687155091503
+  largest draws            : L-glutamate 0.3939, CTP 0.1638, L-aspartate 0.0708, glycine 0.0446, L-glutamine 0.0430
+
+=== metabolism_bake_r9
+  N2 a node of the network : yes
+  N2<->NH4 reactions in GPR: 4 ['MNXR109381', 'MNXR163643', 'MNXR166146', 'MNXR175605']
+  endpoints offered        : 31
+  _n_reactions             : 13127.0
+  _n_reactions_used        : 8091.0
+  _n_aam_gap               : 5036.0
+  _converged               : 1.0
+  _conservation_error      : 7.992639883269703e-10
+  _missing_sinks           : 0.0
+  effective conductance    : 2.9644915284237436
+  largest draws            : L-glutamate 0.3978, CTP 0.1654, L-aspartate 0.0714, L-glutamine 0.0434, L-tryptophan 0.0384

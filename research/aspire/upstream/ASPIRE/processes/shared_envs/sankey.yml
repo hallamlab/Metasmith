@@ -1,0 +1,11 @@
+name: asv_sankey_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pandas
+  - numpy
+  - plotly
+  - python-kaleido
+  - seaborn
+  - matplotlib

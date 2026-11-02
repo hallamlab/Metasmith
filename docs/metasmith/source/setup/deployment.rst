@@ -1,0 +1,321 @@
+.. role:: python(code)
+    :language: python
+
+Deploying agents
+############################################################
+
+Agents are deployed to their specified home:
+
+.. code-block:: python
+    :linenos:
+
+    agent_home = Source.FromLocal("/local/path/")
+    smith = Agent(
+        home = agent_home,
+        runtime=Runtime.DOCKER,
+    )
+    smith.Deploy()
+
+Previous deployments, such as those from an earlier version of Metasmith, can up overwritten by setting :python:`assertive=true`.
+
+.. code-block:: python
+    :linenos:
+
+    smith.Deploy(assertive=True)
+
+Agents can also be deployed to remote machines through SSH by changing their home.
+
+.. code-block:: python
+    :linenos:
+
+    agent_home = Source.FromSsh(
+        host="<host_name>",
+        path="/remote/path/",
+    )
+
+.. tip::
+
+    `SSH setup <../setup/ssh.html>`_
+
+Additional setup commands, to be run before the excution of each workflow, can be specifed:
+
+.. code-block:: python
+    :linenos:
+
+    smith = Agent(
+        # ...
+        setup_commands=[
+            'export TMPDIR="/home/$USER/tmp"',
+            'mkdir -p $TMPDIR',
+            'export APPTAINER_CACHEDIR="$TMPDIR"',
+            'export APPTAINER_TMPDIR="$TMPDIR"',
+        ]
+    )
+
+.. note::
+
+    For the Apptainer runtime, ``APPTAINER_CACHEDIR`` also selects where
+    Metasmith stores its built container images (the ``.sif`` files and any
+    unpacked ``.sandbox`` directories) — this is the store ``apptainer exec``
+    reads from at run time. When it is unset, Metasmith falls back to
+    ``<agent_home>/container_images``. If you export it (as above), point it at
+    **persistent** storage with room for the images; a location that is wiped
+    between sessions (e.g. a node-local ``/tmp``) forces a re-pull on every run.
+    The example above uses ``/home/$USER/tmp``, which persists, so it is safe.
+
+.. note::
+
+    On clusters that use environment modules, the runtime must be loaded in
+    ``setup_commands`` — and some sites need more than the runtime's own module.
+    On UBC's **Sockeye**, ``module load apptainer`` alone fails; the working form
+    names the compiler it was built against:
+
+    .. code-block:: python
+        :linenos:
+
+        setup_commands=[
+            "module load gcc/9.4.0 apptainer/1.3.1",
+        ]
+
+    Which modules a site needs is a fact about that site. If ``apptainer
+    --version`` works interactively but a deploy or a run cannot find it, the
+    login shell is loading something your ``setup_commands`` are not.
+
+.. _Offline Compute Nodes:
+
+Compute nodes with no internet
+------------------------------------------------------------
+
+Tool images are fetched lazily, by the first task that needs each one. On a
+cluster whose compute nodes can reach a registry that is the right behaviour —
+nothing is downloaded that no step turned out to need. Where the compute nodes
+have **no route out**, it is the wrong place for the fetch to happen, and the
+run fails inside its first task rather than at submit time.
+
+Fill the store ahead of the run, from a host that *can* fetch — a login node:
+
+.. code-block:: bash
+    :caption: Terminal (login node)
+
+    metasmith workflow stage <agent> <task>
+    metasmith workflow materialise <agent> <task>
+    metasmith workflow run <agent> <task>
+
+``materialise`` fetches every image the staged workflow needs into the agent's
+image store, on the agent's own host, and exits non-zero if any of them could
+not be fetched — so a failure is visible before you submit rather than hours
+into a run. It is idempotent: running it again does nothing, because each image
+is skipped on the same check every task performs. Pass ``--force`` to re-fetch
+regardless, which is what to reach for when a store is suspect rather than
+incomplete.
+
+``workflow run`` reports on the store without touching it: any image the agent
+does not already hold is named before anything is transferred. That warning is
+the cue to run ``materialise`` first.
+
+.. note::
+
+    The store must be somewhere the compute nodes can *read*, which on most
+    clusters means shared storage rather than node-local scratch. This is the
+    same choice as the ``APPTAINER_CACHEDIR`` note above, seen from the other
+    side: a store on a node-local path is invisible to every other node.
+
+.. _Setup Run:
+
+Set up a workflow before its first run
+------------------------------------------------------------
+
+A workflow's reference databases are downloaded by its own steps, and some take
+hours. A failed download in the real run is discovered only when that step
+fails. A **setup run** does that work first, so the real run starts with every
+reference already in place.
+
+.. code-block:: bash
+    :caption: Terminal
+
+    metasmith workflow setup <agent> <task> --preset slurm --params '{"slurmAccount": "<account>"}'
+    metasmith workflow wait <agent> <setup task>
+    metasmith workflow run <agent> <task> --preset slurm --params '{"slurmAccount": "<account>"}'
+
+``workflow setup`` prepares every tool image or conda env the task needs. Then
+it launches a run of only the steps that read no sample: the downloads, and the
+database builds that use only them. It prints the setup run's own task key as
+``setup_task_key``, which is the one to ``wait`` on. In the web GUI the same action is the
+workflow's **set up** button. **environments only** skips the downloads.
+
+When the setup run completes, the real run serves those steps from the agent's
+cache instead of running them again. Running setup a second time does nothing
+that is already done.
+
+.. important::
+
+    The real run must use the **same agent** and the **same task** as the setup
+    run. A different agent home has its own empty cache. A task planned again
+    from a rebuilt resource library cites different references, and so does not
+    find them.
+
+Downloads run on the login node
+------------------------------------------------------------
+
+On a cluster, the large downloads run on the node that runs the workflow's
+driver, which is normally a login node, not on a compute node. Compute nodes on
+many clusters download slowly or not at all. A separate build step then
+unpacks, indexes and checks each large download on a compute node. A download
+that stops partway continues from where it stopped when the step runs again,
+in the same run or a later one on the same agent.
+
+Each large download takes its source address from a run parameter, for example
+``gtdb_release_url``, ``uniref50_url`` and ``metabuli_db_url``. Point one at a
+local mirror to skip the internet download:
+
+.. code-block:: bash
+    :caption: Terminal
+
+    metasmith workflow setup <agent> <task> --preset slurm \
+        --params '{"slurmAccount": "<account>", "gtdb_release_url": "https://mirror.example.org/gtdb/release232/232.0"}'
+
+.. note::
+
+    GTDB-Tk uses GTDB release 232, whatever newer release exists. A GTDB
+    mirror must serve release 232 in the layout of its ``232.0`` directory,
+    ``MD5SUM.txt`` included.
+
+.. caution::
+
+    A download's parameters are not part of its cache key. A run that changes
+    what a download fetches, such as another release, a subset or a test
+    database, caches the result as the default database, and every later run
+    on that agent is served it. Run such a test on its own agent home.
+
+.. _Container Runtime:
+
+File quotas
+------------------------------------------------------------
+
+A cluster limits how many files each user or project may hold, and a run
+creates many: each step's work directories and each cache hit's link tree
+count. Before a launch, metasmith creates a file and a directory in the run's
+workspace. When it cannot, it refuses the launch and names the path and the
+reason, such as ``Disk quota exceeded (EDQUOT)``. On Lustre it also reads the
+agent home's file and space quotas, and warns when the files left look too few
+for the run. To clear either message, free files under the agent home, or ask
+the cluster admins for a higher file limit.
+
+Container Runtime
+------------------------------------------------------------
+
+To maximize reproducibility and portability, Metasmith relies on `OCI <https://en.wikipedia.org/wiki/Open_Container_Initiative>`_
+compliant containers to standardize the compute environment for itself and the tools that it runs. One of the following must be installed
+on the machine that the agent is deployed to:
+
+- `Apptainer <https://apptainer.org/>`_ is typically used by research compute infrastructure. See the :ref:`apptainer install notes <Apptainer Install>` for the recommended installation channel.
+- `Docker <https://docs.docker.com/get-docker/>`_ is the de facto industry standard for containerization.
+
+.. important::
+    
+    Docker must be invocable without explicit use of :python:`sudo`. Check to see that the following works.
+    
+    :python:`--rm` *just tells docker to clean up after itself.*
+
+    .. code-block:: bash
+        :caption: Terminal
+
+        docker run --rm hello-world
+
+    `There is this guide for linux systems <https://docs.docker.com/engine/install/linux-postinstall/>`_
+
+The agent must be configured to use the installed container runtime.
+
+.. code-block:: python
+    :linenos:
+
+    smith = Agent(
+        ...
+        runtime=Runtime.APPTAINER,
+    )
+
+    # or
+    smith = Agent(
+        ...
+        runtime=Runtime.DOCKER,
+    )
+
+Running tools without a container
+------------------------------------------------------------
+
+An agent with :python:`runtime=Runtime.MAMBA` runs each tool in a conda
+environment on its host instead of in a container. ``workflow setup`` and
+``workflow setup-env`` build the environments a workflow needs, as they fetch
+images for a container agent.
+
+Some tools run only in a container:
+
+- A tool whose environment declares no conda package. The run refuses to launch
+  and names the environment.
+- A tool whose database records the path it was built at, such as VirSorter2.
+  Its step fails and says it needs a container runtime.
+
+Run a workflow that needs one of them on a Docker or Apptainer agent.
+
+Running a development engine
+------------------------------------------------------------
+
+To run an engine from a source tree inside the agent's image, send the tree to
+the agent:
+
+.. code-block:: bash
+    :caption: Terminal
+
+    metasmith agent dev-overlay <agent> --src /path/to/src/metasmith
+
+Without ``--src`` it sends the engine the command itself runs from. Every task
+then runs that tree in place of the image's own engine. Send it again after
+each change to the tree. To return to the image's engine, move
+``dev/metasmith`` in the agent home aside.
+
+.. caution::
+
+    The overlay carries code, not dependencies. A tree that imports a package
+    the image lacks fails in every task, after staging succeeds.
+
+SLURM
+------------------------------------------------------------
+
+Provided Nextflow config presets are retrievable by name, including one for HPC
+platforms using SLURM.
+
+.. code-block:: python
+    :linenos:
+
+    with open("../secrets/slurm_account") as f:
+        SLURM_ACCOUNT = f.readline()
+
+    smith.RunWorkflow(
+        task,
+        config_file=smith.GetNxfConfigPresets()["slurm"],
+        params=dict(
+            slurmAccount=SLURM_ACCOUNT,
+        )
+    )
+
+.. tip::
+
+    Here is the Nextflow documentation on
+
+    - `config <https://www.nextflow.io/docs/latest/config.html>`
+    - `parameters <https://www.nextflow.io/docs/latest/cli.html#pipeline-parameters>`
+
+These are just paths to Nextflow config files, so feel free to point to your own config as well.
+Metasmith doesn't require a specific Nextflow configuration.
+
+.. code-block:: python
+    :linenos:
+
+    smith.RunWorkflow(
+        task,
+        config_file="path/to/my/config.nf",
+    )
+
+.. tip::
+
+    :python:`task` is the result of :python:`smith.GenerateWorkflow(...)`

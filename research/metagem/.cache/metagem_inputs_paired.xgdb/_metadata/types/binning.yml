@@ -1,0 +1,110 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  amber_bin_metrics:
+    properties:
+      _:
+      - AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for one contig_to_bin_table
+      ext: tsv
+  amber_results:
+    properties:
+      _:
+      - AMBER genome-binning assessment summary (results.tsv) for one contig_to_bin_table
+        scored against a contig_gold_standard_table
+      ext: tsv
+  cami_read_truth:
+    properties:
+      _:
+      - CAMISIM per-read genome-of-origin ground truth for one sample (gzipped tsv,
+        header "#anonymous_read_id genome_id tax_id read_id")
+      ext: tsv.gz
+  comebin_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table produced by exactly one binner, prior to any
+        cross-binner consolidation
+      ext: tsv
+      method: comebin
+  contig_gold_standard_table:
+    properties:
+      _:
+      - CAMI/AMBER Bioboxes-format binning ground truth (SEQUENCEID/BINID/TAXID[/_LENGTH])
+      ext: tsv
+      method: cami_read_truth_majority_vote
+  contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table
+      ext: tsv
+  das_tool_amber_bin_metrics:
+    properties:
+      _:
+      - AMBER per-bin purity/completeness detail (metrics_per_bin.tsv) for DAS Tool's
+        pooled contig_to_bin_table
+      ext: tsv
+  das_tool_amber_results:
+    properties:
+      _:
+      - AMBER genome-binning assessment summary (results.tsv) for DAS Tool's pooled
+        contig_to_bin_table scored against a contig_gold_standard_table
+      ext: tsv
+  das_tool_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table
+      ext: tsv
+      method: das_tool
+  das_tool_summary:
+    properties:
+      _:
+      - DAS Tool per-bin quality table (DASTool_summary.tsv) -- bin_set, SCG completeness/redundancy
+        and selection score per consolidated bin
+      ext: tsv
+  derep_mag_ref:
+    properties:
+    - dereplicated representative-MAG reference dir (mag_ref.fna + mag_ref.stb + mag_ref.mmi)
+  gold_standard_table:
+    properties:
+      _:
+      - CAMI/AMBER Bioboxes-format binning ground truth (SEQUENCEID/BINID/TAXID[/_LENGTH])
+      ext: tsv
+  metabat2_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table produced by exactly one binner, prior to any
+        cross-binner consolidation
+      ext: tsv
+      method: metabat2
+  metagenome_sample:
+    properties:
+    - a metagenome sample identifier for binning
+  metawrap_bin_stats:
+    properties:
+      _:
+      - MetaWRAP bin_refinement quality table -- completion, contamination and GC
+        per consolidated bin, from CheckM1
+      ext: tsv
+  metawrap_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table produced by exactly one binner, prior to any
+        cross-binner consolidation
+      ext: tsv
+      method: metawrap
+  raw_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table produced by exactly one binner, prior to any
+        cross-binner consolidation
+      ext: tsv
+  semibin2_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table produced by exactly one binner, prior to any
+        cross-binner consolidation
+      ext: tsv
+      method: semibin2

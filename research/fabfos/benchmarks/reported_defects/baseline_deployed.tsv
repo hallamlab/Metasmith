@@ -1,0 +1,98 @@
+lane	mnxr	ratio	dG_prime	dir_tier	note	dir_method	sigma	clamped	element	tail_met	tail_rank	head_met	n_rows	pair_w
+direction	MNXR132476	0.9232100043002399	-0.19805404372126362	2.0	anchor: maltotriose + ADPG -> maltotetraose + ADP	eq_gc_x_dgbyg	11.79362917543424	False						
+direction	MNXR145632	0.16663313373277022	-4.441946377569113	2.0	anchor: alpha-maltopentaose + Pi (family member 1)	eq_gc_x_dgbyg	12.753515690630605	False						
+direction	MNXR145633	0.4846986823470923	-1.7952298387993537	2.0	family member 2	eq_gc_x_dgbyg+biocyc	13.26427295208364	False						
+direction	MNXR145634	0.026636976708602312	-8.986846918404822	2.0	family member 3	eq_gc_x_dgbyg	13.175597106136554	False						
+direction	MNXR145635	0.21741909399173293	-3.782500659730077	2.0	family member 4	eq_gc_x_dgbyg	22.827699219665547	False						
+direction	MNXR145046	0.9232099380020619	-0.19805422173189524	2.0	glgA, unbalanced, inherits the anchor value	eq_gc_x_dgbyg	11.793629218347322	False						
+direction	MNXR145036	6.00119645583851	4.441941845248413	2.0	glgP/malP, unbalanced, inherits the anchor value	eq_gc_x_dgbyg	12.753515622404327	False						
+direction	MNXR145021	0.08519822674397576	-6.1047728618105275	2.0	glgB: Glycogen -> Branching glycogen	dgbyg	5.815830695765719	False						
+direction	MNXR145050	1000.0000000000007	17.12307572366675	1.0	glgC -- asked NOT to change (tier 1)	eq_rc+dgbyg	10.933086691086299	True						
+direction	MNXR103113	0.26327364890244404	-3.3081360346505004	2.0	ppK -- asked NOT to change	dgbyg	12.74455359998644	False						
+direction	MNXR146501	1000.0000000000007	17.12307572366675	2.0	talA -- recorded open, at the rail	dgbyg	12.044077413918583	True						
+direction	MNXR101036	1000.0000000000007	17.12307572366675	2.0	transketolase neighbour, same rail	dgbyg	10.497088190078758	True						
+direction	MNXR157776	1.0	0.0	0.0	the polymer aliasing artifact -- must stay declined	no_evidence	28.017	False						
+direction	MNXR145038	1.0	0.0	0.0	tier 0 today, cost of the MNXM8348 exclusion	no_evidence	28.017	False						
+direction	MNXR145039	1.0	0.0	0.0	tier 0 today, cost of the MNXM8348 exclusion	no_evidence	28.017	False						
+atom	MNXR166070				atom correspondence				C	MNXM1104186	0.0	MNXM731755	1.0	1.0
+atom	MNXR166070				atom correspondence				C	MNXM1104186	8.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	8.0	MNXM731755	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	10.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	10.0	MNXM731755	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	11.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	11.0	MNXM731755	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	12.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	12.0	MNXM731755	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	13.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM1104186	13.0	MNXM731755	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM40333	8.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				C	MNXM40333	9.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				C	MNXM40333	10.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM40333	17.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				C	MNXM40333	18.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				C	MNXM40333	19.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				C	MNXM40333	20.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM40333	21.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM40333	22.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				C	MNXM40333	23.0	MNXM3	1.0	0.5
+atom	MNXR166070				atom correspondence				N	MNXM40333	0.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				N	MNXM40333	11.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				N	MNXM40333	12.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				N	MNXM40333	13.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				N	MNXM40333	24.0	MNXM3	1.0	1.0
+atom	MNXR166070				atom correspondence				P	MNXM1104186	14.0	MNXM3	2.0	1.0
+atom	MNXR166070				atom correspondence				P	MNXM40333	25.0	MNXM3	2.0	1.0
+atom	MNXR166070				atom correspondence				P	MNXM40333	26.0	MNXM3	2.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM1104186	0.0	MNXM731756	1.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM1104186	8.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	8.0	MNXM731756	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	10.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	10.0	MNXM731756	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	11.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	11.0	MNXM731756	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	12.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	12.0	MNXM731756	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	13.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM1104186	13.0	MNXM731756	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM40333	8.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM40333	9.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM40333	10.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM40333	17.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM40333	18.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM40333	19.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				C	MNXM40333	20.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM40333	21.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM40333	22.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				C	MNXM40333	23.0	MNXM3	1.0	0.5
+atom	MNXR206779				atom correspondence				N	MNXM40333	0.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				N	MNXM40333	11.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				N	MNXM40333	12.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				N	MNXM40333	13.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				N	MNXM40333	24.0	MNXM3	1.0	1.0
+atom	MNXR206779				atom correspondence				P	MNXM1104186	14.0	MNXM3	2.0	1.0
+atom	MNXR206779				atom correspondence				P	MNXM40333	25.0	MNXM3	2.0	1.0
+atom	MNXR206779				atom correspondence				P	MNXM40333	26.0	MNXM3	2.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM1104186	0.0	MNXM38657	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM1104186	8.0	MNXM38657	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM1104186	10.0	MNXM38657	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM1104186	11.0	MNXM38657	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM1104186	12.0	MNXM38657	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM1104186	13.0	MNXM38657	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	8.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	9.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	10.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	17.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	18.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	19.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	20.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	21.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	22.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				C	MNXM40333	23.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				N	MNXM40333	0.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				N	MNXM40333	11.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				N	MNXM40333	12.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				N	MNXM40333	13.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				N	MNXM40333	24.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				P	MNXM1104186	14.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				P	MNXM40333	25.0	MNXM3	1.0	1.0
+atom	MNXR116249				atom correspondence				P	MNXM40333	26.0	MNXM3	1.0	1.0

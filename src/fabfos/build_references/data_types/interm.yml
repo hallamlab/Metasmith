@@ -1,0 +1,297 @@
+# interm:: -- transient build intermediates.
+#
+# These have a type so the DAG can express the real method, but they are NOT a
+# tier under data/. They live in a metasmith work directory for the length of a
+# build and are never pinned. That is the whole reason `raw/direction/` and
+# `raw/mnxref-4_5/` were deleted: they were exactly this, sitting in the
+# acquisition tier pretending to be sources.
+#
+# The metabolism trio is baked in one pass from these two, which is what makes
+# the bake-identity block coherent across the three output files.
+#
+# ONE TYPE PER TOOL LANE. The R6 bake used to be two transforms -- one per ensemble --
+# each running every one of its members internally, so the graph said "atom mapping
+# happens" and nothing more. The lanes below are what makes the ENSEMBLE a fact the
+# planner knows: each member is a step with its own environment, its own resources and
+# its own product, and a member that did not run is a missing node rather than a column
+# that quietly went empty. It is also what lets a driver hand one lane in and skip it --
+# the whole reason the split is worth its extra types.
+#
+# Every lane product is the EXTRACTOR's output, not the mapper's cache. The cache is a
+# tool's private format and lands in evidence::; the pairs table is the shared shape
+# (mnxr, element, substrate, product, sub_idx, prod_idx, pair_w, ...) the fuse and the
+# stack read. Keeping the boundary there means a member is swappable at the type level.
+types:
+  build_intermediate:
+    properties:
+      _: transient; produced and consumed within one build, never pinned
+
+  # -- the adjudication, ahead of every lane ----------------------------------
+  aam_worklist:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        ONE ROW PER MNXR over the whole reaction universe, each with a closed-set verdict
+        and, where the reaction is blocked, the family of each structureless participant.
+        Every mapper lane reads its todo list from HERE rather than deriving one from
+        `lookup::reactions`, which is what makes "the three members saw the same list" a
+        property of the graph instead of three filters that happen to agree. It is also
+        the ledger spine: a reaction that produced no pairs and a reaction that was never
+        attempted are different rows, and the tier-4 gate reads the verdict to say WHY a
+        reaction is missing.
+      ext: parquet
+
+  # -- the two twin searches, ahead of the rescue -----------------------------
+  # TWO TYPES FOR ONE MODULE, and the split is the point rather than an accident of
+  # packaging. `aam.twins` answers one question -- does MNXref already hold a structure
+  # for this, under another id -- with two evidence standards, and each standard's yield
+  # has to stay a number of its own: one admits a body with no tracked atoms, the other
+  # admits real atoms and has to earn it. Merged into one product, a gain in the safe
+  # half would cover a loss in the risky half.
+  aam_blockers:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        A DIRECTORY: `crosswalk.tsv` (the accepted twins, in the shape the rescue's
+        merge takes), `decisions.tsv` (EVERY candidate blocker with a named refusal
+        predicate) and `summary.tsv`. Accepts only an ELEMENT-NEUTRAL twin -- zero C, N,
+        S and P, all four known from the recount -- which is a coded predicate rather
+        than a maintained exclusion list: the acyl-carrier twin carries C14 N3 S1 P1 and
+        is refused by it without being named anywhere. `summary.tsv` also carries the
+        overlap with `curation.lane_acceptor`, because that lane already reaches six
+        spellings of the same claim and what this one ADDS is the number that matters.
+
+  aam_nametwin:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        Same three files, different standard of proof. This one admits a twin with REAL
+        atoms, so a shared name is never enough on its own: it wants a shared source
+        accession or a balance that closes only after the substitution, and it refuses
+        on a differing InChIKey connectivity block. `UDP` the glycan against `UDP` the
+        nucleotide is the case it exists to refuse.
+
+  # -- the rescue, between the two mapper passes ------------------------------
+  aam_rescue:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        A DIRECTORY, because the rescue is four artifacts that only mean anything
+        together: `crosswalk.tsv` (what structure each blocker was given, with the basis
+        that warrants it), `placeholders.tsv` (which of those are scaffolding whose atoms
+        must be suppressed), `balance.tsv` (the per-(reaction, element) concrete-balance
+        verdict, which is pure chemistry and needs no mapper), and `rescued.parquet` (the
+        completed reaction SMILES, in the shape a mapper lane reads). Splitting them into
+        four types would let a lane be handed one build's crosswalk and another's
+        placeholders, and the extractor would suppress the wrong atoms without complaint.
+
+  aam_algebra:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        A DIRECTORY holding TWO GRAINS that must never be joined. `forced_pairs.parquet`
+        is atom-grain, in `atom_pairs.PAIR_COLS` shape, and holds only what conservation
+        leaves no choice about once a participant standing on both sides with equal
+        multiplicity has cancelled -- cancellation on identity, so no formula is
+        consulted and nothing is inferred. `claims.tsv` is species-grain: the count
+        conservation fixes for a lone unknown, and the generic-carrier class that pairs
+        by name. Those settle a number about a MOLECULE and imply no atom
+        correspondence, so they are reported and never banked; a structureless species
+        has no canonical rank to hang one on in any case. One type, because the pair
+        table's honesty depends on the claim table being read beside it.
+
+  # -- the pre-filter, and the one table the members read ----------------------
+  aam_forecast:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        ONE ROW PER (reaction, element) carrying a predicted outcome from a closed set
+        and the NAMED MECHANISM behind it -- `char_cap`, `atom_cap`, `context_window`,
+        `prior_hang`, `prior_timeout`, `prior_empty`. Three of the six are exact (two are
+        our own constants and the third is a property of the string), and the other three
+        are read from the previous bake's records rather than predicted, because which
+        reaction Indigo hangs on is not a function of the string and does not need to be.
+        IT MAY ONLY EVER ADD SUBMISSIONS. Over-offering costs mapper time and nothing
+        else, since the layer stack is additive and its gates refuse rather than warn --
+        so a reduction built for a reaction that maps fine is never claimed. That
+        asymmetry is what lets the partial lane move UPSTREAM of the mappers, which is
+        what collapses three member passes into one.
+      ext: parquet
+
+  aam_universe:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        THE ONE SUBMISSION TABLE, and the only thing a mapper member consumes. Three
+        classes under one key: `whole` (the adjudicated reaction), `completed` (what the
+        rescue made mappable at all) and `reduced` (one element of a reaction the forecast
+        expects silence for). The keys cannot collide -- the first two are disjoint on
+        mnxr because the rescue completes exactly what the worklist refused, and the third
+        keys on `MNXR#X`, which is not a valid MNXR -- and uniqueness is asserted rather
+        than trusted, because a member reads this into a dict and a duplicate silently
+        drops one of two different molecules submitted under one name. It also makes "the
+        three members saw the same list" a fact about the GRAPH rather than a convention
+        three filters happen to honour.
+      ext: parquet
+
+  aam_partial:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        A DIRECTORY, for the same reason `aam_rescue` is: three artifacts that only mean
+        anything together. `partial_universe.parquet` holds the element-reduced
+        submissions AND the reduced participant lists -- the extractor must read those
+        rather than re-parse the equation, or the strict guard calls every submission
+        `stripped`. `partial_forced.parquet` holds the pairs conservation settles without
+        any mapper, already in the extractor's shape. `summary.tsv` records what the
+        reduction could NOT reach, which is the half a coverage claim is made of. Its
+        targets come from `interm::aam_forecast` now rather than from a finished run,
+        which is the single change that moves this lane upstream of the mappers.
+
+  # -- the AAM lanes ----------------------------------------------------------
+  # No `aam_layer_metacyc` here, and its absence is a decision. The curated layer was a
+  # type for one afternoon, produced by a lane of its own and consumed by the members as
+  # their `--exclude` list. That put a node between the licensed drop-in and every member
+  # -- nothing could start until the curated extraction finished -- to save mapping that
+  # `aam_layers.stack` discards anyway, since it restricts each layer to what nothing
+  # below it claimed. The curated read moved into `aam_ensemble`, where its output is
+  # consumed in the same step that makes it and needs no type at all.
+  aam_member_rxnmapper:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The RXNMapper member's pairs, extracted with `--align strict`. Strict is
+        correct for every L2 member and not for L1: WE build these reaction SMILES
+        from the equation, one fragment per participant, so a template-count mismatch
+        really does mean a molecule went missing and the mapper re-routed its atoms.
+      ext: parquet
+
+  aam_member_localmapper:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The LocalMapper member's pairs. The long pole of the whole build -- well under
+        one reaction per second over what layer 1 left -- which is the practical reason
+        this is its own step: a method change anywhere else must not re-pay it.
+      ext: parquet
+
+  aam_member_indigo:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The Indigo member's pairs, merged from its shards. Indigo can hang inside its
+        compiled search where no signal and no timeout option reaches it, so the lane
+        shards, records what it ATTEMPTED before attempting it, and retries recorded
+        timeouts at a longer budget. A hang writes no row; the sidecar is the only
+        thing that says it happened.
+      ext: parquet
+
+  # THERE ARE THREE MEMBER TYPES AND THERE USED TO BE NINE. Six of them existed because
+  # the three members ran three times over three universes, and a second producer for one
+  # type is silently DROPPED by the planner rather than reported -- so the passes could
+  # not be collapsed without also collapsing the ensemble to a third of its members behind
+  # a plan that looked fine. The distinction those six carried was real and it has not
+  # been lost, it has moved: a rescued reaction genuinely has a DIFFERENT SMILES for the
+  # same MNXR, and that is now the `submission_class` column on `interm::aam_universe`
+  # plus a key that cannot collide, rather than six types and six lanes.
+  #
+  # What the collapse was FOR is unchanged. In the deployed table every rescue-derived
+  # reaction is `mcs_only`: Indigo alone, at half weight, because the crosswalk did not
+  # exist when the neural members ran. Showing the completed reactions to all three
+  # promotes what they agree on to full-weight consensus, which is the one place this
+  # build is meant to BEAT the table it reproduces rather than match it -- and it now
+  # costs one pass instead of three.
+
+  # -- the direction lanes ----------------------------------------------------
+  direction_member_eq:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The eQuilibrator member: per-MNXR dG'0 with sigma and an abstention reason,
+        from component-contribution over the pinned compound cache. Carries BOTH arms;
+        the calibration reads only the measured one, because the group-contribution arm
+        returns identically zero for group-conserving chemistry and would manufacture a
+        fictitiously tight zero-centred REVERSIBLE bin.
+      ext: parquet
+
+  direction_member_dgbyg:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The dGbyG member: per-MNXR dG'0 from the 100-head GNN ensemble, sigma being a
+        genuine per-head spread. ABSTAINS on any reaction carrying an R-group wildcard
+        -- rdkit hands `*` a valid feature vector, so the model returns a confident
+        number for a compound it never trained on ('*C(=O)O' -> -360 +/- 26). Correlated
+        with the eQuilibrator member (both TECRDB-fitted), which is why the combiner
+        floors their fused uncertainty rather than counting two votes.
+      ext: parquet
+
+  # -- the assembly: stack, repair, reference -----------------------------------
+  # THREE TYPES WHERE THERE USED TO BE ONE STEP. `aam_ensemble` extracted the curated
+  # layer, fused the members, stacked them, closed the ledger and minted the bake in one
+  # protocol, which meant there was no point at which a finished stack existed and could be
+  # corrected. The redox repair has to run over exactly that -- a stack, before it becomes
+  # a reference -- so the seam it needs is a type.
+  aam_stack:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The additive stack BEFORE any correction: curated, then the three members' whole
+        submissions, then their completed ones, then what conservation forces, then their
+        reduced ones -- each layer claiming only the (reaction, element) combinations
+        nothing below it claimed. One row per atom correspondence, in `layers.ATOM_COLS`
+        shape. It is a product rather than a local file because the repair that follows is
+        a separate step, and because a stack whose gates passed is worth being able to hand
+        to a re-run of the correction without re-fusing anything.
+      ext: parquet
+
+  aam_pairs:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The stack AFTER the redox repair -- mnxr, element, substrate, product, sub_idx,
+        prod_idx, pair_w, method, source, confidence. What the repair changed: every C/N/P
+        correspondence running between a NAD(P)/FAD/FMN couple and a substrate is gone,
+        because a hydride transfer leaves both skeletons intact and an MCS mapper cannot
+        see that (H is not in the element vocabulary). The atoms those arms carried were
+        not deleted -- each affected source atom's surviving arms were rescaled back to
+        the total it started with, so a refusal CONCENTRATES the claim. `method` is still a
+        provenance record and never a usability gate.
+
+        A DIRECTORY, for the reason `aam_rescue` and `aam_algebra` are: the corrected
+        table's honesty depends on being read beside what was corrected. It holds
+        `aam_pairs.parquet`, `refusals.parquet` (every refused correspondence under the
+        named predicate), `cofactors.tsv` (which ids were treated as which family and
+        state, and which carry a family's signature under a name the map does not know),
+        `emptied.txt` (the reactions the repair left holding nothing, which is where the
+        ledger's `redox_emptied` outcome comes from) and `summary.tsv`.
+
+  aam_ledger:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        ONE OUTCOME PER REACTION from a closed set, over the whole universe -- including
+        the reactions no lane ever attempted, which is what makes a miss against the
+        deployed table a result rather than a mystery. It crosses a step boundary because
+        the reference minting and the ledger close are the same step's two answers and the
+        ledger is the one a human reads: what every reaction did, next to the counts that
+        explain it. A reaction the redox repair emptied carries `redox_emptied` and never
+        `mapped_nothing` -- a mapper answered and the answer was an artifact, which is a
+        different fact and the only one that says where to look next.
+      ext: parquet
+
+  direction_annotation:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        The fused direction call, keyed by `mnxr` and UNCODED: dG', its sigma, the
+        derived forward/reverse ratio, the tier, and which members spoke. What the
+        direction ensemble produces before anything is encoded against a vocabulary.
+        It crosses a step boundary because the encoding needs a vocabulary the atom
+        mapping mints while the science needs nothing from the atom mapping at all --
+        merged, a few minutes of encoding held a multi-hour assembly behind a day-long
+        branch. Same relationship `aam_pairs` has to `ref::atom_pairs`. Still written
+        under the literal name `direction_annotation.parquet` into the producing step's
+        evidence, because `check_references.py` finds the string table its equivalence
+        check needs by that name.
+      ext: parquet

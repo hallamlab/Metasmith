@@ -1,0 +1,22 @@
+{
+  "host": "e_coli_dh1",
+  "source": "/home/tony/.claude/jobs/31139d4c/tmp/mig_applied/reparse/e_coli_dh1/gpr_denovo_mapper.parquet",
+  "proteome": "NC_017638.1.faa",
+  "lane_set": "chosen_4",
+  "lanes": [
+    "clean",
+    "kofam",
+    "pbert",
+    "uniref50"
+  ],
+  "n_lanes": 4,
+  "extensions": [
+    "attribution",
+    "feature",
+    "universe"
+  ],
+  "rows": 30722,
+  "orfs": 2800,
+  "mnxr": 11252,
+  "route": "clone_gpr_on_hpc.py per ORF set; see this module's docstring"
+}

@@ -1,0 +1,13 @@
+# CAMI long-read + CAMI III restore, chinook -> fir
+# Source endpoint: 2602486c-1e0f-47a0-be15-eec1b0ff0f96 (ubcarc chinook guest collection, GMCF_3495)
+# Dest endpoint:   8dec4129-9ab4-451d-a45f-5b4b8471f7a3 (computecanada#cedar-globus & alliancecan#fir-globus)
+# Resolved 2026-09-12: the persistent CAMI mirror lives on chinook at
+# /Resources/external_data/CAMI/ (confirmed by directory listing), not sockeye.
+# Sockeye was a transient high-bandwidth relay used during the original external
+# ingest from Wasabi/de.NBI; it holds no persistent copy of this corpus.
+--recursive /Resources/external_data/CAMI/cami2_challenge/marine/long_read /scratch/phyberos/cami/cami2_challenge/marine/long_read
+--recursive /Resources/external_data/CAMI/cami2_challenge/strain/long_read /scratch/phyberos/cami/cami2_challenge/strain/long_read
+--recursive /Resources/external_data/CAMI/cami2_challenge/plant_associated/long_read_nano /scratch/phyberos/cami/cami2_challenge/plant_associated/long_read_nano
+--recursive /Resources/external_data/CAMI/cami2_challenge/plant_associated/long_read_pacbio /scratch/phyberos/cami/cami2_challenge/plant_associated/long_read_pacbio
+--recursive /Resources/external_data/CAMI/cami3_toy_humangut/long /scratch/phyberos/cami/cami3_toy_humangut/long
+--recursive /Resources/external_data/CAMI/cami3_toy_humangut/short /scratch/phyberos/cami/cami3_toy_humangut/short

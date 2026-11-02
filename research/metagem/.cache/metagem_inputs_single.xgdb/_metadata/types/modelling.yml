@@ -1,0 +1,113 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  bigg_model_id:
+    properties:
+      _:
+      - a BiGG model accession, the way ncbi::assembly_accession is an accession
+      arity: 1
+      ext: txt
+  biomass_model:
+    properties:
+      Format: SBML
+      _:
+      - SBML genome-scale metabolic model file
+      carveme_biomass: true
+      ext: xml
+  carveme_model:
+    properties:
+      Format: SBML
+      _:
+      - SBML genome-scale metabolic model file
+      carveme_from_orfs: true
+      ext: xml
+  carveme_model_cplex:
+    properties:
+      Format: SBML
+      _:
+      - SBML genome-scale metabolic model file
+      carveme_from_orfs: cplex
+      ext: xml
+  carveme_universe:
+    properties:
+      Format: SBML
+      _:
+      - CarveMe's shipped reaction universe SBML (bacteria or gramneg), borrowed only
+        for its Growth biomass reaction
+      ext: xml.gz
+  cplex_installation:
+    properties:
+    - a directory holding the full CPLEX 22.2.0.0 Python runtime (cplex + docplex),
+      upgraded past the Community Edition size cap
+  fba_solution:
+    properties:
+      Format: CSV
+      _:
+      - a flux distribution and its objective value, one row per condition
+      ext: csv
+  gapfilled_model:
+    properties:
+      Format: SBML
+      _:
+      - SBML genome-scale metabolic model file
+      ext: xml
+      gapfilled: true
+  media:
+    properties:
+      Format: TSV
+      _:
+      - a growth medium as a compound table; a deferred template input
+      ext: tsv
+  medium_name:
+    properties:
+      _:
+      - a medium name, matching the `medium` column of a modelling::media table; a
+        deferred template input
+      arity: 1
+      ext: txt
+  memote_report:
+    properties:
+      Format: HTML
+      _:
+      - MEMOTE's own HTML report -- `memote report snapshot`'s output, rendered from
+        one test run
+      ext: html
+  memote_results:
+    properties:
+      Format: JSON
+      _:
+      - the raw MEMOTE test result, exactly what `memote run --filename result.json.gz`
+        writes -- no score section
+      ext: json.gz
+  memote_score:
+    properties:
+      Format: JSON
+      _:
+      - MEMOTE's own total_score plus its per-section breakdown, computed by Report.compute_score()
+        and not re-derived here
+      ext: json
+  metabolic_model:
+    properties:
+      Format: SBML
+      _:
+      - SBML genome-scale metabolic model file
+      ext: xml
+  mnx_gapfill_universe:
+    properties:
+      Format: SBML
+      _:
+      - an unrestricted single-compartment MetaNetX reaction universe, for CarveMe's
+        gapfill MILP
+      ext: xml
+  transport_model:
+    properties:
+      Format: SBML
+      _:
+      - SBML genome-scale metabolic model file
+      carveme_biomass: true
+      carveme_transport: true
+      ext: xml

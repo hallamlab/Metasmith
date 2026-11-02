@@ -1,0 +1,1424 @@
+"""ECSPr Layer-2 evidence: MNXR bridges + 4-lane readers + evidence-table compiler.
+
+Faithful port of the scadc `03_layer2_evidence/` pipeline into a single
+path-parameterized CLI so a metasmith transform can call it (no hardcoded scadc
+paths). Ported verbatim (method-preserving) from:
+  - _lanes.py                     (bridge loaders + the 4 lane readers, 8-col schema)
+  - 00_build_uniprot_to_mnxr.py   (UniProt->MNXR Rhea DR bridge)
+  - 11_build_evidence_table_dlec.py (the dl_ec 4-channel compiler)
+
+Every lane reader emits the unified 10-column schema declared below as SCHEMA_COLS.
+The declarations there -- the channel vocabulary, the raw-score range contract, the
+score-to-nats calibration, and `validate_gpr` -- are the GPR table's definition, and
+both mappers in `transforms/fabfos/` read them from here rather than restating them.
+
+Confidence leaves a lane as `llr`, one number in nats, and the lane's own scale does
+not survive the reader. `ref::lane_calibration` holds the per-lane curve that makes
+that conversion; `calibrate` is the only place it is applied.
+
+The compiler folds the four fresh-annotation lanes into one evidence table (the
+canonical `dl_ec` variant); ECSPr consumes it as functional_annotation::evidence_table.
+
+SUBCOMMANDS
+  build-uniprot-bridge  reac_xref + rhea2uniprot{,_trembl}  -> uniprot_to_mnxr.parquet
+  build-ec-bridge       reac_prop.tsv                       -> ec_to_mnxr.tsv
+  build-mnxr-lookup     the ko/ec/uniprot trio              -> mnxr_lookup.parquet
+  compile               per-lane annotator outputs + bridges -> evidence_table.parquet
+
+ko_to_mnxr is a reused reference table (staged input), not built here.
+
+`build-mnxr-lookup` folds the trio into the single `ref::mnxr_lookup` the lanes
+now read; the per-bridge loaders above stay for reading the trio directly.
+
+GATES: the lane INPUTS are produced fresh upstream by the heavy annotator
+transforms (kofamscan, EZpred/ESM-C dl_ec, DIAMOND-vs-UniRef50, embed-transfer).
+This module only needs pandas + a parquet engine (see below) and the MetaNetX/Rhea
+reference tables (present on disk); it recomputes NOTHING that must be reused (the
+metaG null lives elsewhere).
+"""
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+import pandas as pd
+
+# =====================================================================
+# parquet I/O
+# =====================================================================
+# Two engines, because this module is imported in two places whose dependency
+# sets do not overlap: the `python_for_data_science` image, which carries polars
+# and no pyarrow, and the local analysis env, which carries pyarrow and no
+# polars. pandas is the common language but cannot be the common engine --
+# `pd.read_parquet` is itself a pyarrow/fastparquet front end.
+#
+# Every parquet touchpoint in this file and in both GPR mappers goes through the
+# two functions below, so an image whose engine changes costs one branch here
+# rather than a scatter of ModuleNotFoundErrors nine steps into a run.
+try:
+    import pyarrow  # noqa: F401
+    _PARQUET_ENGINE = "pyarrow"
+except ModuleNotFoundError:
+    _PARQUET_ENGINE = "polars"
+
+# Filters are (column, op, value) triples in pyarrow's own vocabulary, so that
+# branch passes them straight through. Both engines push them into the reader --
+# that pushdown is what keeps the bridge's 30.4M-row uniprot slice off the heap
+# when a lane wants only its own ids.
+_FILTER_OPS = {
+    "==": lambda col, v: col == v,
+    ">=": lambda col, v: col >= v,
+    "in": lambda col, v: col.is_in(list(v)),
+}
+
+
+def read_parquet(path, columns=None, filters=None) -> pd.DataFrame:
+    if _PARQUET_ENGINE == "pyarrow":
+        return pd.read_parquet(path, columns=columns, filters=filters)
+    import polars as pl
+    lf = pl.scan_parquet(path)
+    for col, op, value in filters or ():
+        if op not in _FILTER_OPS:
+            raise ValueError(f"unsupported parquet filter {op!r}")
+        lf = lf.filter(_FILTER_OPS[op](pl.col(col), value))
+    if columns is not None:
+        lf = lf.select(list(columns))
+    return _from_polars(lf.collect())
+
+
+def write_parquet(df: pd.DataFrame, path, compression=None) -> None:
+    if _PARQUET_ENGINE == "pyarrow":
+        extra = {} if compression is None else {"compression": compression}
+        df.to_parquet(path, index=False, **extra)
+        return
+    _to_polars(df).write_parquet(path, compression=compression or "zstd")
+
+
+# The two conversions below go column-wise through numpy on purpose: both of
+# polars' pandas bridges (`from_pandas`, `to_pandas`) are implemented over arrow,
+# and so need the one dependency this branch exists to do without.
+
+def _to_polars(df: pd.DataFrame):
+    import polars as pl
+    cols = {}
+    for name in df.columns:
+        s = df[name]
+        arr = s.to_numpy()
+        if arr.dtype.kind in "OUS":
+            # pandas spells a missing string NaN -- under pandas 3's `str` dtype as
+            # much as under object -- and polars refuses a float among strings, so
+            # the sentinel has to be translated rather than passed through.
+            arr = s.astype(object).where(s.notna(), None).to_numpy()
+        cols[name] = arr
+    return pl.DataFrame(cols)
+
+
+def _from_polars(df) -> pd.DataFrame:
+    return pd.DataFrame({c: df[c].to_numpy() for c in df.columns})
+
+SCHEMA_COLS = [
+    "source", "orf", "gene", "channel", "mnxr",
+    "intermediate_id", "intermediate_name",
+    "llr", "llr_route", "projection_via",
+    "evidence_quality", "lane_set",
+]
+
+# WHERE THIS ROW'S `llr` CAME FROM. A number in nats says nothing about whether anyone
+# measured it, and the tree holds both kinds at once: a `full_7` table is weighted on
+# its four fitted lanes and flat on the three that were never benchmarked. Without this
+# column the two are indistinguishable, and a ranking read off the flat half looks
+# exactly like a ranking read off the measured half.
+#
+# It is PER ROW, not per table, for that reason. It is core rather than an extension
+# block because every row has one -- there is no such thing as an llr from nowhere.
+LLR_ROUTES = (
+    # The lane's own score, through its fitted curve in `ref::lane_calibration`.
+    "calibrated",
+    # A lane with no fitted curve, at UNCALIBRATED_LLR. Not weighted-neutral --
+    # unweighted, and the difference matters when it is compared against a fitted lane.
+    "uncalibrated",
+    # An assertion channel at its declared constant (`ASSERTION_CHANNELS`). Nobody
+    # measured a curator; the constant is the strongest LLR any lane earned.
+    "asserted",
+    # A composition's bridge pseudo-reaction, at BRIDGE_LLR. Scaffolding the
+    # composition put there, not evidence about either member.
+    "bridge",
+    # Migrated off a pre-schema table that did not keep what the calibration reads.
+    # kofam stored a bare bitscore and dropped the family threshold the ratio needs,
+    # so there is nothing left to recover the score from. Re-run the mapper on the raw
+    # lane files to replace it.
+    "migrated",
+)
+
+# The grain: one row per (source, orf, channel, intermediate_id, mnxr). NO cross-lane
+# dedup -- the same ORF->MNXR claim from two lanes stays two rows, distinguished by
+# `channel`. That is the point of having lanes.
+#
+# `orf` NAMES WHATEVER NOMINATES THE REACTION, and is never null. Usually that is an
+# ORF; on a curated row it is the construct or the model gene, because a curated set
+# names a construct rather than a sequence. One always-populated column is what lets
+# belief conservation group per nominator without a fallback chain deciding, per table,
+# which column that is.
+#
+# `gene` NAMES THE SAME THING A PERSON WOULD, and is null where nobody knows one. It is
+# core rather than an extension block because a conditions table selects on it by name:
+# a column that is present on the host table and absent on the clone table would make
+# one condition resolve differently depending on which tables were staged, which is the
+# silently-empty selection the algebra exists to refuse. An ORF from an unnamed contig
+# carries null here, and null is not selectable -- that is the honest answer, not a gap.
+
+# Core columns a row may leave null, and the only ones. `mnxr` is null exactly on a
+# roster row (a nominator in the population that resolves to no reaction); `gene` is
+# null wherever the producer knows no symbol.
+NULLABLE_CORE = ("mnxr", "gene")
+
+# ---------------------------------------------------------------------------
+# EXTENSION BLOCKS. Every GPR table in this tree is SCHEMA_COLS plus zero or more of
+# these, in this order -- hosts, clones, cohorts and runs alike. They exist because
+# three layers each grew the columns they needed and none of them declared any, which
+# left four incompatible layouts that one validator could not check.
+#
+# A block is added when a LAYER needs it, not when a table happens to have it: a
+# consumer can then test for the block rather than for a column.
+SCHEMA_EXTENSIONS = {
+    # WHICH BUILD, WHICH ORGANISM, WHICH PHYSICAL COPY. `genome_unit` names ONE
+    # physically separate copy of DNA inside one cell -- a chromosome, a plasmid, a
+    # fosmid insert, an ASKA clone are each one -- and it is DECLARED here rather than
+    # inferred from a file name or from `source`, which is the engine's instance id on a
+    # pipeline-written table.
+    #
+    # It is the grain evidence pools over (`ecspr.model.evidence.ASSERTION_KEY`), and
+    # that is the whole account of what an overexpression is: the host's copy and the
+    # clone's copy are two units, so their conductances add. Collapse the two into one
+    # unit and every overexpression arm becomes a no-op.
+    #
+    # A unit is NOT an organism. Two organisms in one community are two `member`s, get
+    # private metabolites and are joined by bridges (`ecspr.model.compose`). Two units
+    # are one cell and simply add evidence.
+    "attribution": ("build_id", "host", "genome_unit"),
+    # HOW THE NOMINATOR MAPS TO REACTIONS. An ORF maps per gene; a GEM gene maps
+    # through a boolean rule, and `feature_kind=ruleless` says the model gave none.
+    "feature": ("feature_kind", "feature_name", "gpr_rule"),
+    # Whether the reaction has atom pairs, i.e. whether ECSPr can carry current through
+    # it. Null means NOT ASSERTED and is never defaulted to True: a row wrongly marked
+    # in-universe claims an edge for a reaction that has no atom pairs.
+    "universe": ("in_atom_universe",),
+    # WHICH EXPERIMENTAL CONDITION a row belongs to, for a cohort table.
+    "cohort": ("condition_id", "cohort", "action", "source_organism"),
+}
+
+
+GRAIN_KEY = ["source", "orf", "channel", "intermediate_id", "mnxr"]
+
+
+def grain_key(extensions=()) -> list:
+    """One row per this. `cohort` widens it: an ORF nominated under two conditions is
+    two claims about two constructs, not one claim written twice -- ASKA shares ORFs
+    between clones, and collapsing them would silently halve a clone's evidence."""
+    key = list(GRAIN_KEY)
+    if "cohort" in extensions:
+        # `action` too, and it is not redundant: a complementation condition deletes
+        # the chromosomal copy and adds a plasmid one, so the same gene appears twice
+        # under one condition_id with opposite actions. Both are true of it.
+        key.extend(("condition_id", "action"))
+    return key
+
+
+def extensions_of(df) -> tuple:
+    """The blocks a table carries, read off its columns.
+
+    Block membership is all-or-nothing: a table has the block or it does not. Counting
+    columns cannot answer this -- core plus attribution+feature+universe is 18 wide,
+    and so is the old cohort layout.
+
+    Retired spellings count as the column they became. A table on a pre-schema layout
+    HAS its blocks, under older names -- it is `to_unified`'s job to rename them, and
+    reading a legacy `unit_id` as a missing `genome_unit` would refuse the very tables
+    that mapping exists to accept.
+    """
+    cols = {_LEGACY_CORE.get(c, c) for c in df.columns}
+    found = []
+    for name, block in SCHEMA_EXTENSIONS.items():
+        have = [c for c in block if c in cols]
+        if not have:
+            continue
+        if len(have) != len(block):
+            raise SystemExit(f"[gpr] block {name!r} is half present: has {have}, "
+                             f"missing {[c for c in block if c not in cols]}. A block "
+                             f"is a unit; a table with part of one is not describable")
+        found.append(name)
+    return tuple(found)
+
+
+def is_unified(df) -> bool:
+    """True when the table already carries the core plus whole blocks, in order."""
+    return list(df.columns) == schema_for(extensions_of(df))
+
+
+def schema_for(extensions=()) -> list:
+    """The column list a table with these extension blocks must have, in order."""
+    cols = list(SCHEMA_COLS)
+    for b in extensions:
+        if b not in SCHEMA_EXTENSIONS:
+            raise SystemExit(f"[gpr] unknown schema extension {b!r}; "
+                             f"known: {sorted(SCHEMA_EXTENSIONS)}")
+        cols.extend(SCHEMA_EXTENSIONS[b])
+    return cols
+
+# ---------------------------------------------------------------------------
+# The frozen channel vocabulary. One name per lane, and the same name in every
+# producer and consumer. Two vocabularies existed here before (`dl_ec`,
+# `uniref50_dr`, `pbert_transfer` beside the mappers' `ezpred`, `uniref50`,
+# `pbert`); a join written against one silently returns nothing against the other,
+# so the names are declared once, here, and read from here.
+LANE_SETS = {
+    "chosen_4": ("kofam", "clean", "uniref50", "pbert"),
+    "full_7": ("kofam", "clean", "deepec", "ezpred", "uniref50", "pbert", "esmc"),
+}
+CHANNELS = tuple(sorted(set(c for cs in LANE_SETS.values() for c in cs)))
+
+# ASSERTIONS, not lane evidence. A lane can fail -- which is why a lane set is checked
+# for completeness, by name. These cannot: there is no "the gem_gpr lane returned
+# nothing", only a table that does or does not carry a curated model. They are legal in
+# any table and exempt from the completeness check.
+#
+# channel -> the LLR it carries, in nats. These are DECLARED, not measured: no truth set
+# adjudicates a curator. The value is the strongest LLR any lane earned on the DH10B
+# cohort (uniref50, 2.99), which is the conservative reading -- a curated GPR is at
+# least as good as the best annotator we can measure, and claiming more than the best
+# measured thing would be claiming something nothing here can check. `bridge` is
+# deliberately NOT one of them: a composition's bridge exists because the composition
+# put it there, and its conductance is set where the network is composed.
+ASSERTION_LLR = 2.99
+BRIDGE_LLR = 0.0
+ASSERTION_CHANNELS = {
+    "gem_gpr": ASSERTION_LLR,           # a curated genome-scale model's own GPR
+    "manual_gpr": ASSERTION_LLR,        # a curator's reading of a study
+    "curated_insertion": ASSERTION_LLR, # an engineered construct the study introduced
+    "bridge": BRIDGE_LLR,               # an edge composed between two community members
+}
+# The `lane_set` value for a table that carries assertions and no lane evidence.
+CURATED = "curated"
+
+# ---------------------------------------------------------------------------
+# `llr` IS ONE NUMBER IN ONE UNIT: what this call is worth as evidence, in nats.
+#
+#     llr = log P(this call | the reaction is real) / P(this call | it is not)
+#
+# It replaces `raw_score` and `score_kind` together. Those two said "here is a number,
+# and here is which incomparable scale it is on" -- a pair that only existed because
+# nothing had measured the lanes against each other. `ref::lane_calibration` has, so
+# the second column has nothing left to say and the first is no longer a lane's own
+# scale. See research/fabfos/annotation_lanes/calibration/.
+#
+# ADDITIVITY IS THE PROPERTY THAT MATTERS. Two independent calls about one reaction
+# add, in log-odds and in no other coordinate, which is exactly what `pool_logodds`
+# does with them. A precision could not be added, and a share-of-sum could not be
+# compared between lanes.
+#
+# THE RANGE CONTRACT DID NOT GO AWAY, it moved. A lane's own score is still a
+# direction-and-range claim -- higher is stronger, within these bounds -- and it is
+# still worth refusing a violation, because a reversed or out-of-range score becomes a
+# confidently wrong number of nats rather than an obviously wrong one. It is checked
+# where the score is turned into nats (`calibrate`), which is the last place the raw
+# number exists.
+RAW_SCORE_RANGE = {
+    # score / the family's own KOfam threshold. >= 1 by construction; ~39 at the top of
+    # the DH10B cohort. The ceiling is slack.
+    "kofam": (1.0, 200.0),
+    # CLEAN's GMM-calibrated confidence, as its wrapper writes it. IT IS NOT A DISTANCE:
+    # it was read as maxsep and stored as 1/(1+d) for a while, which ranked every CLEAN
+    # call backwards. Correct calls sit at a median 0.9973 and wrong ones at 0.1328 on
+    # the DH10B truth set, which is what settled the direction.
+    "clean": (0.0, 1.0),
+    # DIAMOND bit-score ratio. ~1.0 for a self-hit; a little over is normal.
+    "uniref50": (0.0, 4.0),
+    # kNN label-transfer vote share over the admitted neighbours.
+    "pbert": (0.0, 1.0),
+    "esmc": (0.0, 1.0),
+    # A classifier head's softmax over EC classes.
+    "ezpred": (0.0, 1.0),
+    # A score-less tool asserting presence.
+    "deepec": (1.0, 1.0),
+}
+
+# THE PRIOR THE LLR IS MEASURED AGAINST, and the one `pool_logodds` combines it with.
+# They are THE SAME NUMBER and that is not a coincidence -- it is the invariant this
+# whole scheme rests on:
+#
+#     sigmoid(llr + POOL_LAM0) == P(this call is correct)
+#
+# so a reaction carrying exactly one assertion comes out at that assertion's own
+# calibrated accuracy, and further assertions move it from there. Let the two drift
+# apart and a single-assertion reaction lands at a number that is nobody's estimate of
+# anything.
+#
+# **CAUTION** This is NOT the benchmark's prevalence. `pi_fit` in the calibration
+# artifact is the share of correct calls among calls the lanes MADE, which is 0.947 on
+# curated K-12 -- the reference the fitted intercept is relative to, and the wrong
+# reference to floor against, because "worse than the average call" is not the same
+# claim as "evidence the reaction is absent". POOL_LAM0 is the declared prior that a
+# reaction is present at all before any lane speaks, which is where an LLR belongs.
+# It is inherited unchanged from the pre-calibration pooling, so a before/after
+# comparison moves the RELATIVE weights and nothing else.
+#
+# `ecspr.model.evidence.POOL_LAM0` carries the same value for the consumer side and
+# checks it against the artifact. Two homes, one number, one assertion that says so.
+POOL_LAM0 = -3.0
+
+# A sane ceiling on the column itself, in nats. e^20 is 4.9e8 to 1 -- far past anything
+# a single annotation call could earn, and the number a scale error lands on.
+LLR_CEILING = 20.0
+
+# A lane whose calibration the artifact does not carry. DeepEC is score-less and EZpred
+# was never fitted, so the 7-lane mapper needs a value for them. It is deliberately the
+# WEAKEST fitted lane's floor rather than an average: an unmeasured lane should not
+# outweigh a measured one, and a placeholder that happened to sit mid-pack would be
+# claiming a measurement nobody made.
+UNCALIBRATED_LLR = 2.0
+
+
+def load_calibration(path):
+    """`ref::lane_calibration` as a dict, or None.
+
+    None is legal and means "no lane is calibrated": every lane then gets
+    UNCALIBRATED_LLR and the table says so. That is the migration path for a table
+    built before the reference existed, not a mode to run in.
+    """
+    import json
+    if path is None:
+        return None
+    p = Path(path)
+    if p.is_dir():
+        p = p / "lane_calibration.json"
+    if not p.exists():
+        return None
+    doc = json.loads(p.read_text())
+    ref = (doc.get("prior") or {}).get("reference_lam0")
+    if ref is not None and abs(float(ref) - POOL_LAM0) > 1e-9:
+        raise SystemExit(
+            "[gpr] " + str(p) + " was fitted against a prior of " + str(ref)
+            + " but this library declares POOL_LAM0 = " + str(POOL_LAM0) + ". The two "
+            "must agree, or a reaction with one assertion lands at a number that is "
+            "nobody's estimate of anything. Re-emit the calibration or revert the "
+            "constant -- do not paper over it")
+    if doc.get("schema") != "lane_calibration/v1":
+        raise SystemExit(
+            "[gpr] " + str(p) + " declares schema " + repr(doc.get("schema"))
+            + ", not 'lane_calibration/v1'. The apply rule is versioned with the "
+            "parameters on purpose -- a v2 that changed the clamp or the floor would "
+            "read as v1 and silently reweight every reaction")
+    return doc
+
+
+def llr_route_for(cal, channel: str) -> str:
+    """Which of LLR_ROUTES `calibrate` will have taken for this channel.
+
+    Read from the same two inputs `calibrate` branches on, so the column cannot claim a
+    fitted curve the artifact does not carry. A lane absent from the artifact is
+    `uncalibrated` whether the artifact is missing entirely or merely missing that lane
+    -- both give UNCALIBRATED_LLR, and both are the same claim about the number.
+    """
+    if channel in ASSERTION_CHANNELS:
+        return "bridge" if channel == "bridge" else "asserted"
+    if cal is None or channel not in cal.get("lanes", {}):
+        return "uncalibrated"
+    return "calibrated"
+
+
+def calibrate(cal, channel: str, scores) -> np.ndarray:
+    """A lane's own scores -> nats, by that lane's fitted curve.
+
+        llr = max(0, A * transform(clip(score, score_min, score_max)) + B - lam0)
+
+    THE CLAMP. Outside the fitted range the curve is extrapolation and nothing supports
+    it, so a score below `score_min` is worth what `score_min` is worth rather than
+    less. A lane that saturates -- ProteinBERT votes exactly 1.0 for over half its
+    calls -- would otherwise run its LLR wherever the transform's asymptote goes.
+
+    THE FLOOR. These lanes do not emit disconfirming calls: every one of them is a
+    positive assertion that a reaction is there. A negative LLR would say the call is
+    evidence AGAINST the reaction, which no lane here means. It means the lane's own
+    abstain is set too loose, and the honest reading of a call that weak is that it is
+    worth nothing -- not that it argues the other way.
+
+    **CAUTION** The floor is only meaningful because `lam0` is POOL_LAM0 rather than
+    the benchmark's own call prevalence. Against the latter it fires on every
+    below-average call -- 58% of the CLEAN and ProteinBERT lanes on DH10B -- which
+    reads "worse than average" as "argues the reaction is absent". They are not the
+    same claim, and the reference is what separates them.
+    """
+    import numpy as np  # local: the module is pandas-only for its bridge callers
+    s = np.asarray(scores, dtype=float)
+    lo, hi = RAW_SCORE_RANGE.get(channel, (None, None))
+    if len(s) and lo is not None:
+        # 1e-6 of slack: a kNN vote is a convex combination that sums to 1 in exact
+        # arithmetic and to 1.0000001 in float32.
+        if s.min() < lo - 1e-6 or s.max() > hi + 1e-6:
+            raise SystemExit(
+                "[gpr] channel " + repr(channel) + " scores run ["
+                + ("%.6g" % s.min()) + ", " + ("%.6g" % s.max()) + "], outside the "
+                "declared [" + str(lo) + ", " + str(hi) + "]. A reversed or rescaled "
+                "score does not fail here -- it becomes a confident number of nats")
+    if cal is None or channel not in cal.get("lanes", {}):
+        return np.full(len(s), UNCALIBRATED_LLR, dtype=float)
+    p = cal["lanes"][channel]
+    lam0 = float(cal["prior"]["reference_lam0"])
+    x = np.clip(s, p["score_min"], p["score_max"])
+    kind, eps = p["transform"], float(p["eps"])
+    if kind == "log":
+        x = np.log(np.clip(x, eps, None))
+    elif kind == "logit":
+        q = np.clip(x, eps, 1.0 - eps)
+        x = np.log(q / (1.0 - q))
+    elif kind != "identity":
+        raise SystemExit("[gpr] unknown calibration transform " + repr(kind))
+    return np.maximum(0.0, float(p["A"]) * x + float(p["B"]) - lam0)
+
+# Carried from ref::mnxr_lookup, which already computes it and whose keep-first dedup
+# already retains the stronger claim -- it was simply being dropped at the join. It is
+# the only thing separating a Swiss-Prot-backed reaction call from a TrEMBL one.
+# `unknown` is what a row migrated off one of the pre-schema layouts carries: those
+# tables dropped the quality at the join, and the migration will not invent one.
+# `synthetic` is a row nothing observed: a composition's bridge pseudo-reaction exists
+# because the composition put it there. Keeping it distinct from `reviewed` is what
+# stops a community's own scaffolding being counted as evidence about its members.
+EVIDENCE_QUALITY = ("reviewed", "unreviewed", "unknown", "synthetic")
+
+_MNXR_RE = re.compile(r"^MNXR\d+$")
+# A composition namespaces each member's reactions by member (`ERY:MNXR183533`) so two
+# members' copies of one reaction stay distinct nodes, and adds `BRIDGE:...`
+# pseudo-reactions for the edges between them. Both only ever appear under `composed`.
+_MNXR_COMPOSED_RE = re.compile(r"^(?:[A-Za-z0-9_.-]+:)?MNXR\d+$|^BRIDGE:[^\s]+$")
+
+# =====================================================================
+# LANE CUT-OFFS. Every threshold a lane abstains on, declared once and read by both
+# mappers -- the 4-lane and the 7-lane -- so a retuned number cannot ship in one and
+# not the other. They lived as literals in three files, which is how the pbert floor
+# came to have three homes.
+#
+# EVERY ONE OF THESE IS APPLIED INSIDE ITS LANE, BEFORE THE GPR TABLE EXISTS. That is
+# the kofam pattern, and kofam is the reason: it has always kept only `score >=
+# thrshld`, its family's own cutoff, at parse time. A lane that emits its weak calls
+# and leaves the cut to a reader has published them. There is nothing here to opt out
+# of, for the same reason there is no way to opt out of kofam's threshold.
+# =====================================================================
+
+# EZpred `ezpred` lane keeps level-4 ECs whose softmax score clears this floor.
+DL_EC_SCORE_FLOOR = 0.3
+
+# --- CLEAN -----------------------------------------------------------------
+# CLEAN never declines: it emits a full level-4 EC for ~99% of ORFs, so its coverage
+# measures its willingness rather than its reach. Its confidence separates well
+# (median 0.9973 on correct calls vs 0.1328 on wrong ones), so the abstain is a plain
+# threshold on it. 0.02 is the F1 argmax on the DH10B cohort -- P 0.954 / R 0.907 /
+# F1 0.930 / coverage 0.950, against P 0.919 / F1 0.918 with no abstain at all. The
+# scadc ablation's 0.01 scores 0.9293 on the same cohort, a tie within one grid step;
+# this is not a win over that study, it is the same cut re-derived on this chassis.
+CLEAN_MIN_SCORE = 0.02
+
+# --- ProteinBERT kNN label transfer ----------------------------------------
+# Tuned on the 1,288-ORF DH10B cohort against the 222,019-landmark set, choosing the
+# cell that maximises label-level (MNXR macro set-overlap) F1 under the `twin`
+# leakage condition -- every landmark at cosine >= 0.99 hidden. Label-level is the
+# axis that PENALISES over-prediction, which is the failure being fixed; the ORF-level
+# axis cannot see flooding at all, because more labels per ORF make an intersection
+# with the truth set EASIER. The cell sits on a broad plateau (0.4018-0.4036 across
+# nn_min 0.65-0.75 and tau 0.90-0.98), not a spike.
+#
+# `twin` IS A COSINE STAND-IN, NOT HOMOLOGY REMOVAL. It hides exact-ish duplicates,
+# not paralogs, isozymes, or a related E. coli protein sitting at cosine 0.95 -- and
+# Swiss-Prot contains E. coli's own proteome. The source study removed homologs by
+# DIAMOND clustering, so these numbers are an UPPER BOUND against lanes measured that
+# way, not a like-for-like comparison. See
+# research/fabfos/annotation_lanes/pbert/threshold_cosine_dh10b.tsv.
+#
+#                      ORF-level (EC)              label-level (MNXR)
+#   twin       P 0.6555 -> 0.8985   F1 0.6374 -> 0.8254   P 0.5655 -> 0.8050
+#   self       P 0.6852 -> 0.9204   F1 0.6683 -> 0.8505   P 0.5938 -> 0.8550
+#   pool       P 0.7104 -> 0.9611   F1 0.6929 -> 0.8983   P 0.6093 -> 0.9075
+#
+# Coverage falls from 0.946 to 0.849 on `twin`: 189 of 1,288 ORFs now get no pbert
+# call at all. That is the point of the change, not a side effect of it.
+
+# THE ORF-LEVEL CUT ON PROXIMITY, and the refusal this lane did not have. An ORF
+# whose nearest landmark is below it gets no call. PBERT_FLOOR cannot do this job:
+# it thresholds a vote normalised within the admitted set, so it measures neighbour
+# AGREEMENT -- thirty neighbours at cosine 0.15 that agree score 1.0.
+PBERT_NN_MIN = 0.70
+# THE RELATIVE BAND. A neighbour votes only if its cosine is also within this
+# fraction of the best one for that ORF, so a dense neighbourhood votes with many
+# neighbours and a thin one with a few or with exactly one. It is nearly invisible on
+# the ORF-level axis and worth a great deal on the label-level one -- at nn_min 0.75
+# it lifts label precision from 0.708 to 0.826 while moving ORF-level F1 by 0.008 --
+# because emitting more labels per ORF makes an ORF-level intersection EASIER, so
+# that axis cannot see flooding and this band is what stops it.
+PBERT_TAU = 0.95
+PBERT_K_MAX = 30
+# ZERO, AND MEASURED. The vote floor was 0.20 and its every increase costs F1 in all
+# three conditions (twin: 0.8254 at 0.00, 0.8081 at 0.20, 0.7888 at 0.50) -- once
+# nn_min decides which neighbours are close enough to speak and tau decides which of
+# those speak together, an agreement threshold has nothing left to reject but true
+# positives. It was standing in for a proximity gate, badly, and there is now a real
+# one. Kept as a knob rather than deleted; `lane_embed` refuses only a NEGATIVE
+# floor, because zero means "every label an admitted neighbour carries" and that is
+# a real setting, not a disabled one.
+PBERT_FLOOR = 0.00
+
+# THE ARCHIVE'S FLOOR IS NOT THE LANE'S. `read_embed_transfer` reads the retired
+# `embed_transfer_candidates.parquet`, which a different producer wrote against a
+# different reference pool with its own frozen 0.20 baked in. Sharing PBERT_FLOOR
+# with it meant retuning the live lane silently retuned how an archived table is
+# read -- and at 0.00 that filter became a no-op nobody asked for.
+EMBED_ARCHIVE_FLOOR = 0.20
+
+# --- ESM-C kNN label transfer ----------------------------------------------
+# The same lane against a different backbone, and cosine is not comparable between two
+# embedding spaces -- so pbert's tuned numbers are not transferable here, and are not
+# copied. 0.0 for both quota knobs is the pre-quota behaviour stated explicitly:
+# retrieve K_MAX, admit all of them, refuse no ORF. The seven-lane reproduction has
+# not been measured, and an unmeasured cut-off would refuse ORFs on a number nobody
+# checked. Tune these on an ESM-C cohort before quoting an ESM-C precision.
+ESMC_NN_MIN = 0.0
+ESMC_TAU = 0.0
+ESMC_K_MAX = 30
+ESMC_FLOOR = 0.10
+
+
+# =====================================================================
+# migration off the pre-schema layouts
+# =====================================================================
+
+# The retired spellings, and what each is now. A join written against one silently
+# returns nothing against the other, which is why they are mapped here once rather
+# than wherever a reader happens to notice.
+RETIRED_CHANNELS = {
+    "clean_ec": "clean",
+    "uniref50_dr": "uniref50",
+    "dl_ec": "ezpred",
+}
+
+# The 14-column benchmark layout and the 18-column cohort layout, by the column each
+# one contributed. Both are the same table with different blocks attached.
+_LEGACY_CORE = {
+    "feature_id": "orf",
+    "evidence_id": "intermediate_id",
+    "evidence_name": "intermediate_name",
+    # `unit_id` said "the model or proteome these rows describe", which conflated the
+    # organism with the copy. `genome_unit` names ONE physically separate copy, and the
+    # rename is the whole change -- every committed table's values are already units in
+    # that sense.
+    "unit_id": "genome_unit",
+}
+# `feature_id` is null on a curated row -- a curated set names a construct, not a
+# sequence -- so the nominator is recovered in this order and `orf` is populated once,
+# here, instead of every consumer re-deciding which column to read.
+_ORF_SOURCES = ("feature_id", "feature_name", "evidence_id")
+
+
+def normalise_channel(ch: str) -> str:
+    """A legacy channel spelling -> the frozen vocabulary.
+
+    Strips the `denovo_` prefix as well: it existed so a lane survived a merge with a
+    GEM table, and `lane_set` and the assertion channels now carry that distinction.
+    """
+    ch = str(ch)
+    if ch.startswith("denovo_"):
+        ch = ch[len("denovo_"):]
+    return RETIRED_CHANNELS.get(ch, ch)
+
+
+def to_unified(df, extensions=("attribution", "feature", "universe"), *, gene=None):
+    """One of the pre-schema layouts -> SCHEMA_COLS plus `extensions`.
+
+    `gene` names the column holding the gene symbol, or None when the table has none.
+    It is NOT guessed. `feature_name` holds a model gene on a GEM table and an EC
+    description on a de-novo one, so reading it blind would populate the ontology this
+    column exists to consolidate with strings out of a different namespace.
+
+    Single place for the mapping, so a producer and a one-off data migration cannot
+    disagree about it. The caller names the blocks because only the caller knows which
+    layer the table belongs to; the 18-column cohort tables add `cohort`.
+
+    Raises rather than guessing: an assertion channel whose `raw_score` is not 1.0, or
+    a table carrying more than one `genome_unit`, is a table this mapping does not describe.
+    """
+    import pandas as pd
+
+    out = df.rename(columns=_LEGACY_CORE).copy()
+
+    orf = None
+    for c in _ORF_SOURCES:
+        col = _LEGACY_CORE.get(c, c)
+        if col in out.columns:
+            orf = out[col] if orf is None else orf.fillna(out[col])
+    if orf is None or orf.isna().any():
+        raise SystemExit(f"[gpr] {int(orf.isna().sum()) if orf is not None else 'every'} "
+                         f"row(s) name no nominator in any of {_ORF_SOURCES}")
+    out["orf"] = orf.astype(str)
+    if gene is None:
+        out["gene"] = pd.Series([None] * len(out), dtype="object")
+    elif gene not in out.columns:
+        raise SystemExit(f"[gpr] --gene names {gene!r}, which is not a column of this "
+                         f"table (has {sorted(out.columns)})")
+    else:
+        out["gene"] = out[gene].astype("object").where(out[gene].notna(), None)
+
+    out["channel"] = out["channel"].map(normalise_channel)
+    lanes = sorted(set(out["channel"]) - set(ASSERTION_CHANNELS))
+    unknown = sorted(set(lanes) - set(CHANNELS))
+    if unknown:
+        raise SystemExit(f"[gpr] channel(s) {unknown} are neither a declared lane nor "
+                         f"an assertion; the vocabulary is {list(CHANNELS)} plus "
+                         f"{sorted(ASSERTION_CHANNELS)}")
+
+    assertion = out["channel"].isin(ASSERTION_CHANNELS)
+    bad = out.loc[assertion & (out["raw_score"].astype(float) != 1.0)]
+    if len(bad):
+        raise SystemExit(f"[gpr] {len(bad):,} assertion rows carry a raw_score that is "
+                         f"not 1.0, e.g. {sorted(set(bad['raw_score']))[:3]} -- an "
+                         f"assertion is a presence claim, not a ranked one")
+
+    # A PRE-SCHEMA TABLE CANNOT BE CALIBRATED, and this does not pretend otherwise.
+    # Its `raw_score` is on the lane's own scale, but not on the scale the fit was
+    # made against: kofam stored a bare bitscore and dropped the family threshold the
+    # ratio needs, so there is nothing left to recover it from. Lane rows therefore
+    # migrate to UNCALIBRATED_LLR -- "one call at the corpus average" -- and say so.
+    # Re-run the mapper against the raw lane files to get a weighted table.
+    import numpy as np
+    out["llr"] = np.where(assertion,
+                          out["channel"].map(ASSERTION_CHANNELS).astype(float),
+                          UNCALIBRATED_LLR)
+    # An assertion migrates EXACTLY -- its constant is declared, not fitted, so the
+    # pre-schema table and a freshly written one carry the same number for the same
+    # reason. Only the lane rows lose anything, and only they say `migrated`.
+    out["llr_route"] = np.where(
+        assertion, out["channel"].map(
+            {c: ("bridge" if c == "bridge" else "asserted") for c in ASSERTION_CHANNELS}),
+        "migrated")
+    n_lane = int((~assertion).sum())
+    if n_lane:
+        print(f"[gpr] WARNING: migrating {n_lane:,} lane rows with llr = "
+              f"{UNCALIBRATED_LLR}. A pre-schema table did not keep what the "
+              f"calibration reads, so this table is unweighted, not weighted-neutral. "
+              f"Re-run the mapper on the raw lane files.", flush=True)
+
+    if "genome_unit" in out.columns and out["genome_unit"].nunique() != 1:
+        raise SystemExit(f"[gpr] {out['genome_unit'].nunique()} genome_units in one table "
+                         f"{sorted(out['genome_unit'].unique())[:4]}; `source` names one "
+                         f"artifact, so this table is really several")
+    # `source` names the artifact the rows were read out of. A table that RECORDS one
+    # keeps it: `source` is half the grain key, so overwriting a real value strands
+    # every row against anything joined to it -- which is what happened to the cohort
+    # graft, whose reparsed mapper says `eydallin_clones` where the unit says `clones`.
+    # Only the oldest layout is missing it, and there `genome_unit` is the closest thing
+    # the table has, so a migrated row from THAT era says the model or proteome where a
+    # freshly produced one says the ORF set. They are not the same string, and a reader
+    # comparing `source` across the two eras has to know that.
+    if "source" not in out.columns or out["source"].isna().all():
+        out["source"] = out["genome_unit"].astype(str) if "genome_unit" in out.columns else ""
+    # The lane set is a property of the evidence, not of the file: a table with no lane
+    # channels asserts rather than measures, whatever it is called.
+    out["lane_set"] = _lane_set_for(set(lanes))
+    if "evidence_quality" not in out.columns:
+        out["evidence_quality"] = "unknown"
+    if "projection_via" not in out.columns:
+        out["projection_via"] = ""
+    out["projection_via"] = out["projection_via"].fillna("")
+    out["intermediate_id"] = out["intermediate_id"].fillna("")
+    out["intermediate_name"] = out["intermediate_name"].fillna("")
+
+    want = schema_for(extensions)
+    missing = [c for c in want if c not in out.columns]
+    if missing:
+        raise SystemExit(f"[gpr] the source table has no {missing} to carry into "
+                         f"extension blocks {list(extensions)}")
+    return out[want].reset_index(drop=True)
+
+
+def read_gpr(paths, extensions=None):
+    """Read one or more GPR tables and return them on the declared schema.
+
+    The point of entry for a CONSUMER. A table written before the schema is converted
+    on the way through, so a reader never has to know which layout it got -- which is
+    what the four layouts cost every reader until now, each one re-deciding whether the
+    nominator lived in `feature_id`, `feature_name` or `evidence_id`.
+
+    `extensions` defaults to the blocks the table already carries. Pass it to require
+    a block: a reader that needs `genome_unit` should say so and fail on a table without it,
+    rather than discover the gap as a KeyError three frames later.
+    """
+    if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
+        paths = [paths]
+    frames = []
+    for path in paths:
+        df = read_parquet(path)
+        ext = tuple(extensions) if extensions is not None else extensions_of(df)
+        if not is_unified(df) or (extensions is not None
+                                  and list(df.columns) != schema_for(ext)):
+            df = to_unified(df, ext)
+        frames.append(df)
+    if len(frames) == 1:
+        return frames[0]
+    # Concatenating is how "this condition runs against this host" is expressed, and it
+    # only means anything once every frame is on one schema -- which it now is.
+    return pd.concat(frames, ignore_index=True)
+
+
+def _lane_set_for(lanes: set) -> str:
+    """The declared set these lanes are, or CURATED when there are none."""
+    if not lanes:
+        return CURATED
+    for name, members in LANE_SETS.items():
+        if lanes == set(members):
+            return name
+    raise SystemExit(
+        f"[gpr] lanes {sorted(lanes)} are not a declared set. Known: "
+        + "; ".join(f"{k}={list(v)}" for k, v in LANE_SETS.items())
+        + ". A table carrying some of a set is the failure this schema exists to name.")
+
+
+# =====================================================================
+# the validator -- called by both mappers immediately before to_parquet
+# =====================================================================
+
+def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
+                 composed: bool = False):
+    """Refuse to write a GPR table that violates the contract above.
+
+    `extensions` names the blocks this table carries beyond SCHEMA_COLS (see
+    SCHEMA_EXTENSIONS). `lane_set` is a LANE_SETS key, or CURATED for a table of
+    assertions with no lane evidence. `orf_ids` may be None when there is no ORF set to
+    check against -- a curated model names genes, not sequences. `composed` says the
+    table is a community composition rather than one artifact's evidence, which is the
+    only thing that may namespace `mnxr` and mix `bridge` rows in.
+
+    Every check here exists because its absence was silent. An empty concat, an
+    ORF-id mismatch between two lanes, a CLEAN header drift, or a lane whose
+    reference never staged all produced a zero-row parquet and reported success.
+
+    Raises SystemExit naming the specific failure; prints per-channel coverage and
+    score distributions on the way through, because the first real run is also the
+    measurement that settles what these numbers look like.
+    """
+    import numpy as np  # local: the module is pandas-only for its bridge callers
+
+    if lane_set == CURATED:
+        expected = ()
+    else:
+        expected = LANE_SETS.get(lane_set)
+        if expected is None:
+            raise SystemExit(f"[gpr] unknown lane_set {lane_set!r}; known: "
+                             f"{sorted(LANE_SETS) + [CURATED]}")
+
+    want = schema_for(extensions)
+    if list(df.columns) != want:
+        raise SystemExit(
+            f"[gpr] column set/order is not the schema for extensions {list(extensions)}.\n"
+            f"      got:      {list(df.columns)}\n"
+            f"      expected: {want}")
+
+    if len(df) == 0:
+        raise SystemExit(
+            "[gpr] the table is empty. Every lane joined to nothing, which is a "
+            "staging or id-space failure, not a biological finding -- 157 fosmid "
+            "inserts do not encode zero recognisable enzymes")
+
+    # The CORE is non-null by contract. Extension columns are not: `in_atom_universe`
+    # null means "not asserted" and `gpr_rule` null means the model gave no rule, and
+    # both are information a consumer can see and act on.
+    assertion = df["channel"].isin(ASSERTION_CHANNELS)
+    # `mnxr` is null exactly on a ROSTER row: an assertion that this nominator is in the
+    # population and resolves to no reaction at all. A census keeps those rows on
+    # purpose -- dropping them would silently shrink the denominator of every rate
+    # measured over the population. On a lane row a null mnxr is a broken join.
+    core = [c for c in SCHEMA_COLS if c not in NULLABLE_CORE]
+    nulls = {c: int(df[c].isna().sum()) for c in core if df[c].isna().any()}
+    n_bad_mnxr = int((df["mnxr"].isna() & ~assertion).sum())
+    if n_bad_mnxr:
+        nulls["mnxr (on lane rows)"] = n_bad_mnxr
+    if nulls:
+        raise SystemExit(f"[gpr] null values in {nulls} -- every core column is "
+                         f"non-null by contract, except {list(NULLABLE_CORE)}")
+
+    allowed = set(expected) | set(ASSERTION_CHANNELS)
+
+    unknown = set(df["channel"].unique()) - allowed
+    if unknown:
+        raise SystemExit(
+            f"[gpr] channels not in lane_set {lane_set}: {sorted(unknown)}; "
+            f"the vocabulary is {list(expected)} plus the assertion channels "
+            f"{sorted(ASSERTION_CHANNELS)}")
+
+    # An assertion carries the declared constant and nothing else. A curated row that
+    # picked up a lane's fitted value would be claiming a measurement nothing made.
+    tol = 1e-6
+    bad_assert = sorted(
+        f"{c}:{v:.4g}" for c, v in
+        df.loc[assertion, ["channel", "llr"]].drop_duplicates().itertuples(index=False)
+        if abs(float(v) - ASSERTION_CHANNELS[c]) > tol)
+    if bad_assert:
+        raise SystemExit(f"[gpr] assertion channel(s) carry an llr that is not their "
+                         f"declared constant: {bad_assert}; declared {ASSERTION_CHANNELS}")
+
+    # --- the evidence contract. One number, one unit, one direction.
+    s = df["llr"].astype(float)
+    if not np.isfinite(s).all():
+        n = int((~np.isfinite(s)).sum())
+        raise SystemExit(
+            f"[gpr] {n:,} llr values are NaN or infinite. Pooling sums this column, so "
+            f"one NaN takes a whole reaction's belief with it")
+    if s.min() < -tol:
+        raise SystemExit(
+            f"[gpr] {int((s < -tol).sum()):,} llr values are negative, the lowest "
+            f"{s.min():.4g}. These lanes do not emit disconfirming calls; `calibrate` "
+            f"floors at zero, so a negative here means the column was written by "
+            f"something that bypassed it")
+    if s.max() > LLR_CEILING:
+        raise SystemExit(
+            f"[gpr] llr reaches {s.max():.4g} nats, past the {LLR_CEILING} ceiling. "
+            f"e^{LLR_CEILING:.0f} is odds no single annotation call earns -- this is "
+            f"what a raw score written into the column looks like")
+
+    # --- keys and vocabularies
+    named = df.loc[df["mnxr"].notna()]
+    pattern = _MNXR_COMPOSED_RE if composed else _MNXR_RE
+    bad_mnxr = named.loc[~named["mnxr"].astype(str).str.match(pattern), "mnxr"].unique()
+    if len(bad_mnxr):
+        raise SystemExit(f"[gpr] {len(bad_mnxr):,} non-MNXR reaction ids, e.g. {list(bad_mnxr[:5])}")
+    bad_eq = set(df["evidence_quality"].unique()) - set(EVIDENCE_QUALITY)
+    if bad_eq:
+        raise SystemExit(f"[gpr] unknown evidence_quality {sorted(bad_eq)}; known: {list(EVIDENCE_QUALITY)}")
+    bad_route = set(df["llr_route"].unique()) - set(LLR_ROUTES)
+    if bad_route:
+        raise SystemExit(f"[gpr] unknown llr_route {sorted(bad_route)}; known: "
+                         f"{list(LLR_ROUTES)}")
+    # An assertion's weight is a declared constant and a lane's is not, so the two
+    # cannot share a route. A lane row claiming `asserted` would read as a curator's
+    # call, which is the one thing this column exists to keep separable.
+    crossed = sorted(set(
+        f"{c}/{r}" for c, r in
+        df[["channel", "llr_route"]].drop_duplicates().itertuples(index=False)
+        if (c in ASSERTION_CHANNELS) != (r in ("asserted", "bridge"))))
+    if crossed:
+        raise SystemExit(f"[gpr] channel and llr_route disagree about whether the row "
+                         f"is an assertion: {crossed}")
+    # A COMPOSED network is a community, and its rows come from two places: each
+    # member's own lane evidence, and the bridges that join them. Those are different
+    # claims, so they carry different `lane_set` values in one table -- which is why a
+    # composition has to say so rather than be validated as a single-source table.
+    want_ls = {lane_set} | ({"bridge"} if composed else set())
+    if not set(df["lane_set"].unique()) <= want_ls or lane_set not in set(df["lane_set"]):
+        raise SystemExit(f"[gpr] lane_set column carries {sorted(set(df['lane_set']))}, "
+                         f"expected {sorted(want_ls)}")
+    if set(df["source"].unique()) != {source}:
+        raise SystemExit(f"[gpr] source column carries {sorted(set(df['source']))}, expected [{source!r}]")
+
+    key = grain_key(extensions)
+    dupes = int(df.duplicated(subset=key).sum())
+    if dupes:
+        raise SystemExit(f"[gpr] {dupes:,} rows duplicate the grain key {key}")
+
+    ids = set(orf_ids) if orf_ids is not None else None
+    stray = (set(df["orf"].unique()) - ids) if ids is not None else set()
+    if stray:
+        raise SystemExit(
+            f"[gpr] {len(stray):,} ORF ids are not in the input FASTA, e.g. "
+            f"{sorted(stray)[:5]}. The lanes annotate different ORF sets, or one "
+            f"lane's tool rewrote the ids (CLEAN splits on whitespace, DIAMOND does "
+            f"not) -- a join on gene id across lanes is meaningless until this is 0")
+
+    # --- completeness, last: the per-row contract above is what a malformed table
+    # violates, and a lane that emptied is more legible once those are known good.
+    # Named individually, so the message says WHICH lane is missing.
+    for ch in expected:
+        if int((df["channel"] == ch).sum()) == 0:
+            raise SystemExit(
+                f"[gpr] channel {ch!r} contributed 0 rows. A lane that produces "
+                f"nothing is a broken join or an unstaged reference; writing the "
+                f"table anyway hides which of the {len(expected)} lanes failed")
+
+    # --- the measurement half: everything below prints, nothing below raises
+    n_ids = len(ids) if ids is not None else df["orf"].nunique()
+    print(f"[gpr] {len(df):,} rows | source={source} | lane_set={lane_set} | "
+          f"{df['orf'].nunique():,} of {n_ids:,} nominators | "
+          f"{df['mnxr'].nunique():,} MNXR", flush=True)
+    present_assertions = [c for c in sorted(ASSERTION_CHANNELS)
+                          if (df["channel"] == c).any()]
+    for ch in tuple(expected) + tuple(present_assertions):
+        g = df[df["channel"] == ch]
+        v = g["llr"].astype(float)
+        # The share at zero is the number to watch: it is how much of a lane the
+        # calibration floored, and a lane that is mostly zero has an abstain set too
+        # loose rather than a weighting problem.
+        print(f"[gpr]   {ch:9s} {len(g):>9,} rows  {g['orf'].nunique():>7,} ORFs "
+              f"({100.0*g['orf'].nunique()/max(n_ids,1):5.1f}% cover)  "
+              f"{g['mnxr'].nunique():>6,} MNXR  "
+              f"llr med={v.median():.4g} max={v.max():.4g} "
+              f"zero={100.0*(v <= 0).mean():.1f}%  "
+              f"{'/'.join(sorted(set(g['llr_route'])))}", flush=True)
+    print(f"[gpr]   evidence_quality {df['evidence_quality'].value_counts().to_dict()}", flush=True)
+    return df
+
+
+# =====================================================================
+# bridge loaders
+# =====================================================================
+
+def load_ko_to_mnxr(path: Path) -> pd.DataFrame:
+    """KO -> MNXR fan-out table (reused reference cache). Multi-row per KO is normal."""
+    df = pd.read_csv(path, sep="\t")
+    df = df.rename(columns={"ko": "ko", "mnx_r": "mnxr"})
+    df = df[["ko", "mnxr"]].drop_duplicates()
+    return df
+
+
+def load_ec_to_mnxr(path: Path) -> pd.DataFrame:
+    """Parse reac_prop.tsv classifs (col 4) -> long-format ec -> mnxr fan-out.
+
+    classifs is `;`-separated; each token is a raw EC number (no `ec:` prefix).
+    Partial ECs like "1.2.1" are kept verbatim.
+    """
+    rows = []
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 5:
+                continue
+            mnxr, classifs = parts[0], parts[3]
+            if not mnxr.startswith("MNXR") or not classifs:
+                continue
+            for ec in classifs.split(";"):
+                ec = ec.strip()
+                if not ec:
+                    continue
+                rows.append((ec, mnxr))
+    return pd.DataFrame(rows, columns=["ec", "mnxr"]).drop_duplicates()
+
+
+def load_uniprot_to_mnxr(path: Path) -> pd.DataFrame:
+    """The cache produced by build-uniprot-bridge."""
+    return read_parquet(path)
+
+
+# The three id spaces share no ids, so `id` alone is unambiguous in the
+# consolidated lookup and `id_source` is a label rather than a disambiguator.
+MNXR_LOOKUP_SOURCES = ("ko", "ec", "uniprot")
+
+
+def load_mnxr_lookup(path: Path, id_source: str) -> pd.DataFrame:
+    """One lane's slice of the consolidated `ref::mnxr_lookup` bridge.
+
+    Returns the two columns the lane readers join on, renamed to that lane's id
+    column, so the loaders above and this one are interchangeable at the call
+    site. Reading with a pushdown filter keeps the uniprot slice (30.4M rows) off
+    the heap when a lane only wants ko or ec.
+    """
+    if id_source not in MNXR_LOOKUP_SOURCES:
+        raise ValueError(f"unknown id_source {id_source!r}; expected one of {MNXR_LOOKUP_SOURCES}")
+    df = read_parquet(
+        path, columns=["id", "mnxr"], filters=[("id_source", "==", id_source)],
+    )
+    if df.empty:
+        raise ValueError(f"mnxr_lookup at {path} carries no {id_source!r} rows")
+    key = {"uniprot": "uniprot_accession"}.get(id_source, id_source)
+    return df.rename(columns={"id": key}).drop_duplicates()
+
+
+# =====================================================================
+# helpers
+# =====================================================================
+
+_BOILERPLATE_RE = re.compile(r"\s+(n=\d+|Tax=.+?|RepID=\S+)(?=\s|$)")
+
+
+def _clean_stitle(stitle: str) -> str:
+    """Strip UniRef50 boilerplate from a stitle to get a readable name."""
+    if not isinstance(stitle, str):
+        return ""
+    s = stitle
+    if s.startswith("UniRef50_"):
+        head, _, rest = s.partition(" ")
+        s = rest
+    return _BOILERPLATE_RE.sub("", s).strip()
+
+
+# =====================================================================
+# lane readers (unified 11-col schema)
+#
+# These read the DEPLOYED scadc lane layouts, which differ from the ones the
+# `transforms/fabfos/` mappers consume (a kofam CSV with `fosmid`/`contig`
+# columns, an EZpred parquet rather than a CSV). They are kept because that
+# layout still exists in the archive; the mappers are authoritative for the
+# pipeline as it runs now. Both emit the same schema and the same channel names.
+# =====================================================================
+
+def _finish(df: pd.DataFrame, source: str, channel: str, lane_set: str,
+            cal=None) -> pd.DataFrame:
+    """Stamp the columns every lane sets identically and order to the schema.
+
+    `raw_score` is consumed here and never leaves: it is the last point at which the
+    lane's own scale exists, so it is the only correct place to turn it into nats."""
+    df["source"] = source
+    df["channel"] = channel
+    df["llr"] = calibrate(cal, channel, df.pop("raw_score").to_numpy())
+    df["llr_route"] = llr_route_for(cal, channel)
+    df["lane_set"] = lane_set
+    if "evidence_quality" not in df.columns:
+        df["evidence_quality"] = "reviewed"
+    if "intermediate_name" not in df.columns:
+        df["intermediate_name"] = ""
+    df["intermediate_name"] = df["intermediate_name"].fillna("")
+    # A lane annotates a sequence and never learns a gene symbol for it. Null here is
+    # the measurement, not a gap to be filled from `intermediate_name`, which holds an
+    # EC or KO description.
+    if "gene" not in df.columns:
+        df["gene"] = pd.Series([None] * len(df), dtype="object")
+    return df[SCHEMA_COLS]
+
+
+def read_kofam(path, source: str, ko_to_mnxr: pd.DataFrame,
+               lane_set: str = "chosen_4", cal=None) -> pd.DataFrame:
+    """Load *.kofam.csv, keep above-threshold hits, project KO -> MNXR."""
+    if path is None or not Path(path).exists():
+        return pd.DataFrame(columns=SCHEMA_COLS)
+    df = pd.read_csv(path)
+    df["score"] = pd.to_numeric(df["score"], errors="coerce")
+    df["hmm_threshold"] = pd.to_numeric(df["hmm_threshold"], errors="coerce")
+    df = df[df["score"].notna() & df["hmm_threshold"].notna()]
+    df = df[df["score"] >= df["hmm_threshold"]]
+    if "fosmid" in df.columns:
+        df["orf_id"] = df["fosmid"].astype(str) + "_" + df["orf"].astype(str)
+    elif "contig" in df.columns:
+        df["orf_id"] = df["contig"].astype(str) + "_" + df["orf"].astype(str)
+    else:
+        df["orf_id"] = df["orf"].astype(str)
+    # THE RATIO, not the bitscore. A bitscore is a length-and-family quantity; the
+    # family's own threshold is the only thing that makes two of them comparable, and
+    # it is already a column here.
+    df["raw_score"] = df["score"] / df["hmm_threshold"]
+    df = df[["orf_id", "ko", "raw_score", "description"]].rename(
+        columns={"orf_id": "orf", "description": "intermediate_name"}
+    )
+    df = df.merge(ko_to_mnxr, on="ko", how="inner")
+    df["intermediate_id"] = df["ko"]
+    df["projection_via"] = "kegg.reaction"
+    return _finish(df, source, "kofam", lane_set, cal)
+
+
+def read_dl_ec(path, source: str, ec_to_mnxr: pd.DataFrame,
+               lane_set: str = "full_7", cal=None) -> pd.DataFrame:
+    """Load EZpred (ESM-C 600M DL-only) EC predictions, project EC -> MNXR.
+
+    parquet columns: sequence_id, ec_number, score, head_kind. Keeps enzyme-head,
+    level-4 ECs (x.x.x.x) clearing DL_EC_SCORE_FLOOR; raw_score carries the
+    EZpred confidence. Filters pushed into the reader so huge parquets never fully load.
+    """
+    if path is None or not Path(path).exists():
+        return pd.DataFrame(columns=SCHEMA_COLS)
+    df = read_parquet(
+        path,
+        columns=["sequence_id", "ec_number", "score"],
+        filters=[("head_kind", "==", "enzyme"), ("score", ">=", DL_EC_SCORE_FLOOR)],
+    )
+    df = df[df["ec_number"].astype(str).str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
+    df = df.merge(ec_to_mnxr, left_on="ec_number", right_on="ec", how="inner")
+    df["intermediate_id"] = df["ec_number"]
+    df = df.rename(columns={"sequence_id": "orf", "score": "raw_score"})
+    df["orf"] = df["orf"].str.replace(r"-(\d+)$", r"_\1", regex=True)
+    df["projection_via"] = "ec"
+    return _finish(df, source, "ezpred", lane_set, cal)
+
+
+_BLAST6_BSR_COLS = [
+    "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+    "qstart", "qend", "sstart", "send", "evalue", "bitscore", "bsr",
+]
+
+
+def read_uniref50_titles(path) -> dict:
+    """`sseqid -> stitle` from the descriptions table beside a hit table."""
+    if path is None or not Path(path).exists():
+        return {}
+    df = pd.read_csv(path, sep="\t", dtype=str).fillna("")
+    if list(df.columns[:2]) != ["sseqid", "description"]:
+        raise SystemExit(
+            "[evidence] uniref50 descriptions header is not (sseqid, description): "
+            "got " + repr(list(df.columns)) + ". merge_diamond_uniref50 writes it, "
+            "so a drift here silently empties every intermediate_name")
+    return dict(zip(df["sseqid"], df["description"]))
+
+
+def read_uniref50(path, source: str, uniprot_to_mnxr: pd.DataFrame,
+                  lane_set: str = "chosen_4", descriptions=None, cal=None) -> pd.DataFrame:
+    """Load DIAMOND BLAST6+BSR; best-hit per ORF; project UniProt -> MNXR."""
+    if path is None or not Path(path).exists():
+        return pd.DataFrame(columns=SCHEMA_COLS)
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    if list(df.columns) != _BLAST6_BSR_COLS:
+        raise SystemExit(
+            "[evidence] uniref50 hit header is not the " + str(len(_BLAST6_BSR_COLS))
+            + " columns this lane parses: got " + repr(list(df.columns))
+            + ". diamond_uniref50 writes the header, so a drift here silently "
+            "renames every column and empties the lane")
+    df["evalue"] = pd.to_numeric(df["evalue"], errors="coerce")
+    df["bitscore"] = pd.to_numeric(df["bitscore"], errors="coerce")
+    df["bsr"] = pd.to_numeric(df["bsr"], errors="coerce")
+    df = (df.sort_values(["qseqid", "evalue", "bitscore"], ascending=[True, True, False])
+            .drop_duplicates(subset=["qseqid"], keep="first"))
+    df["uniprot_accession"] = df["sseqid"].str.replace(r"^UniRef50_", "", regex=True)
+    titles = read_uniref50_titles(descriptions)
+    df["intermediate_name"] = df["sseqid"].map(titles).fillna("").apply(_clean_stitle)
+    df = df[["qseqid", "uniprot_accession", "intermediate_name", "bsr"]].rename(
+        columns={"qseqid": "orf", "bsr": "raw_score"})
+    df["orf"] = df["orf"].str.replace(r"-(\d+)$", r"_\1", regex=True)
+    cols = ["uniprot_accession", "dr_source", "mnxr"]
+    if "evidence_quality" in uniprot_to_mnxr.columns:
+        cols.append("evidence_quality")
+    joined = df.merge(uniprot_to_mnxr[cols], on="uniprot_accession", how="inner")
+    joined["intermediate_id"] = joined["uniprot_accession"]
+    joined["projection_via"] = joined["dr_source"]
+    return _finish(joined, source, "uniref50", lane_set, cal)
+
+
+def read_embed_transfer(path, source: str, _bridge=None,
+                        lane_set: str = "chosen_4", cal=None) -> pd.DataFrame:
+    """Load the embedding-transfer candidate table, ProteinBERT channel.
+
+    Label transfer *is* the projection (mnxr already present,
+    projection_via='embedding_knn'), so this only cuts on the vote floor and
+    restamps. Accepts the archived `pbert_transfer` channel name as well as the
+    frozen `pbert` -- the deployed tables on disk carry the former.
+    """
+    if path is None or not Path(path).exists():
+        return pd.DataFrame(columns=SCHEMA_COLS)
+    df = read_parquet(path)
+    df = df[df["channel"].isin(("pbert", "pbert_transfer"))
+            & (df["raw_score"] >= EMBED_ARCHIVE_FLOOR)].copy()
+    # The pool is the bridge's `reviewed` cut by construction, so every transferred
+    # label inherits that quality -- see compile/label_transfer_landmarks.py.
+    df["evidence_quality"] = "reviewed"
+    return _finish(df, source, "pbert", lane_set, cal)
+
+
+# =====================================================================
+# build-uniprot-bridge  (port of 00_build_uniprot_to_mnxr.py)
+# =====================================================================
+
+def _load_rhea_to_mnxr(reac_xref: Path) -> pd.DataFrame:
+    rows = []
+    with open(reac_xref) as fh:
+        for line in fh:
+            if line.startswith("#") or line.startswith("EMPTY"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 2:
+                continue
+            src, mnxr = parts[0], parts[1]
+            if not src.startswith("rhea:") or not mnxr.startswith("MNXR"):
+                continue
+            rows.append((int(src[len("rhea:"):]), mnxr))
+    return pd.DataFrame(rows, columns=["rhea_id", "mnxr"])
+
+
+def _load_rhea2uniprot(path: Path, evidence_quality: str) -> pd.DataFrame:
+    df = pd.read_csv(
+        path, sep="\t",
+        dtype={"RHEA_ID": "int64", "DIRECTION": "string", "MASTER_ID": "int64", "ID": "string"},
+    )
+    df = df.rename(columns={"RHEA_ID": "rhea_id", "DIRECTION": "direction", "ID": "uniprot_accession"})
+    df = df[["rhea_id", "direction", "uniprot_accession"]]
+    df["evidence_quality"] = evidence_quality
+    return df
+
+
+def build_uniprot_bridge(reac_xref: Path, rhea_swiss: Path, rhea_trembl: Path, out: Path):
+    print("[bridge] rhea -> MNXR from reac_xref...", flush=True)
+    rhea_mnxr = _load_rhea_to_mnxr(reac_xref)
+    print(f"         {len(rhea_mnxr):,} rows ({rhea_mnxr['mnxr'].nunique():,} MNXRs)", flush=True)
+    frames = [_load_rhea2uniprot(rhea_swiss, "reviewed")]
+    if rhea_trembl is not None and Path(rhea_trembl).exists():
+        print("[bridge] rhea2uniprot TrEMBL (big)...", flush=True)
+        frames.append(_load_rhea2uniprot(rhea_trembl, "unreviewed"))
+    all_u = pd.concat(frames, ignore_index=True)
+    joined = all_u.merge(rhea_mnxr, on="rhea_id", how="inner")
+    out_df = pd.DataFrame({
+        "uniprot_accession": joined["uniprot_accession"],
+        "protein_name": "", "gene_name": "",
+        "dr_source": "rhea",
+        "external_id": "rhea:" + joined["rhea_id"].astype(str),
+        "mnxr": joined["mnxr"],
+        "evidence_quality": joined["evidence_quality"],
+        "direction": joined["direction"],
+    })
+    out_df = (out_df.sort_values(["uniprot_accession", "mnxr", "evidence_quality"])
+                    .drop_duplicates(subset=["uniprot_accession", "external_id", "mnxr"], keep="first"))
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    write_parquet(out_df, out)
+    print(f"[bridge] wrote {len(out_df):,} rows ({out_df['uniprot_accession'].nunique():,} UniProts) -> {out}", flush=True)
+
+
+# =====================================================================
+# build-mnxr-lookup  (consolidate the ko/ec/uniprot trio into one table)
+# =====================================================================
+
+def build_mnxr_lookup(ko: Path, ec: Path, uniprot: Path, out: Path):
+    """Fold the three bridges into `id, id_source, mnxr, evidence_quality`.
+
+    The three id spaces are disjoint, so one `id` column is unambiguous. The
+    uniprot side deduplicates to distinct (accession, mnxr): the shipped bridge
+    keys its dedup on `external_id` as well, so the same accession-reaction claim
+    appears once per Rhea id that reaches it -- and nothing downstream reads
+    `external_id`. `evidence_quality` survives the dedup because "reviewed" sorts
+    before "unreviewed", so keep-first already retains the stronger claim.
+
+    ko and ec are curated database mappings with no per-row provenance flag, so
+    they carry `evidence_quality` empty rather than being assigned one here.
+    `dr_source` is dropped: it is constant "rhea" across every uniprot row, and
+    the lane that used it already declares `projection_via` itself.
+
+    The uniprot side is 30.4M rows and is the one step here that will not fit in
+    pandas -- object-dtype strings at that count are gigabytes to then dedup away
+    -- so this function is polars-only rather than going through `read_parquet`
+    above. It is a build step, run in the image that carries polars.
+    """
+    import polars as pl
+
+    frames = []
+    for path, source, col in ((ko, "ko", "ko"), (ec, "ec", "ec")):
+        df = pd.read_csv(path, sep="\t")[[col, "mnxr"]].drop_duplicates()
+        print(f"[lookup] {source}: {len(df):,} distinct pairs", flush=True)
+        frames.append(pl.LazyFrame({
+            "id": df[col].to_numpy(),
+            "id_source": [source] * len(df),
+            "mnxr": df["mnxr"].to_numpy(),
+            "evidence_quality": [""] * len(df),
+        }))
+
+    up = pl.scan_parquet(uniprot).select(
+        ["uniprot_accession", "mnxr", "evidence_quality", "dr_source"])
+    seen = up.select(pl.col("dr_source").unique()).collect().to_series().to_list()
+    if seen != ["rhea"]:
+        raise ValueError(f"dr_source is not constant 'rhea' ({seen}); it cannot be dropped")
+    up = (
+        up.group_by(["uniprot_accession", "mnxr"])
+          # min() over the group keeps "reviewed" wherever any route was reviewed.
+          .agg(pl.col("evidence_quality").min())
+          .select([
+              pl.col("uniprot_accession").alias("id"),
+              pl.lit("uniprot").alias("id_source"),
+              pl.col("mnxr"),
+              pl.col("evidence_quality"),
+          ])
+    )
+
+    # Sorting on the two keys the readers filter and join by is what makes the
+    # `id_source` pushdown skip row groups rather than scan them, and it is most
+    # of the difference between 100 MB and 82 MB on disk.
+    table = pl.concat(frames + [up], how="vertical").sort(["id_source", "id"]).collect()
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    table.write_parquet(out, compression="zstd")
+    print(f"[lookup] wrote {len(table):,} rows -> {out}", flush=True)
+    return len(table)
+
+
+# =====================================================================
+# compile  (port of 11_build_evidence_table_dlec.py, single-source capable)
+# =====================================================================
+
+def compile_evidence(source, kofam, dl_ec, uniref50, embed,
+                     ko_to_mnxr_path, ec_to_mnxr_path, uniprot_to_mnxr_path, out,
+                     uniref50_descriptions=None):
+    print("[compile] loading bridges...", flush=True)
+    ko_to_mnxr = load_ko_to_mnxr(ko_to_mnxr_path) if ko_to_mnxr_path else pd.DataFrame(columns=["ko", "mnxr"])
+    # ec_to_mnxr here is the PRE-BUILT 2-col bridge (from build-ec-bridge), not
+    # reac_prop -- read it plainly rather than re-running the reac_prop parser.
+    if ec_to_mnxr_path:
+        ec_to_mnxr = pd.read_csv(ec_to_mnxr_path, sep="\t")[["ec", "mnxr"]].drop_duplicates()
+    else:
+        ec_to_mnxr = pd.DataFrame(columns=["ec", "mnxr"])
+    if uniprot_to_mnxr_path and Path(uniprot_to_mnxr_path).exists():
+        uniprot_to_mnxr = load_uniprot_to_mnxr(uniprot_to_mnxr_path)
+    else:
+        print("[compile] uniprot_to_mnxr absent -> uniref50 lane skipped", flush=True)
+        uniprot_to_mnxr = pd.DataFrame(columns=["uniprot_accession", "dr_source", "mnxr"])
+
+    lanes = [
+        ("kofam", read_kofam, kofam, ko_to_mnxr),
+        ("ezpred", read_dl_ec, dl_ec, ec_to_mnxr),
+        ("uniref50", read_uniref50, uniref50, uniprot_to_mnxr),
+        ("pbert", read_embed_transfer, embed, None),
+    ]
+    extra = {"uniref50": {"descriptions": uniref50_descriptions}}
+    frames = []
+    for name, reader, path, bridge in lanes:
+        if not path:
+            continue
+        f = reader(path, source, bridge, **extra.get(name, {}))
+        print(f"[compile] {name}: {len(f):,} rows ({f['orf'].nunique():,} ORFs, {f['mnxr'].nunique():,} MNXRs)", flush=True)
+        frames.append(f)
+    if not frames:
+        raise SystemExit("no lane inputs provided; nothing to compile")
+    out_df = pd.concat(frames, ignore_index=True)
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    write_parquet(out_df, out)
+    print(f"[compile] wrote {len(out_df):,} rows -> {out}", flush=True)
+
+
+# =====================================================================
+# CLI
+# =====================================================================
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    b = sub.add_parser("build-uniprot-bridge", help="UniProt->MNXR via Rhea DR")
+    b.add_argument("--reac-xref", type=Path, required=True)
+    b.add_argument("--rhea-swiss", type=Path, required=True)
+    b.add_argument("--rhea-trembl", type=Path, default=None)
+    b.add_argument("--out", type=Path, required=True)
+
+    e = sub.add_parser("build-ec-bridge", help="EC(level-4)->MNXR from reac_prop classifs")
+    e.add_argument("--reac-prop", type=Path, required=True)
+    e.add_argument("--out", type=Path, required=True)
+
+    m = sub.add_parser("build-mnxr-lookup", help="ko+ec+uniprot bridges -> one mnxr_lookup")
+    m.add_argument("--ko-to-mnxr", type=Path, required=True)
+    m.add_argument("--ec-to-mnxr", type=Path, required=True)
+    m.add_argument("--uniprot-to-mnxr", type=Path, required=True)
+    m.add_argument("--out", type=Path, required=True)
+
+    c = sub.add_parser("compile", help="fold lanes -> evidence_table.parquet")
+    c.add_argument("--source", default="fosmid")
+    c.add_argument("--kofam", type=Path, default=None)
+    c.add_argument("--dl-ec", type=Path, default=None)
+    c.add_argument("--uniref50", type=Path, default=None)
+    c.add_argument("--uniref50-descriptions", type=Path, default=None)
+    c.add_argument("--embed", type=Path, default=None)
+    c.add_argument("--ko-to-mnxr", type=Path, default=None)
+    c.add_argument("--ec-to-mnxr", type=Path, default=None)
+    c.add_argument("--uniprot-to-mnxr", type=Path, default=None)
+    c.add_argument("--out", type=Path, required=True)
+
+    a = ap.parse_args()
+    if a.cmd == "build-uniprot-bridge":
+        build_uniprot_bridge(a.reac_xref, a.rhea_swiss, a.rhea_trembl, a.out)
+    elif a.cmd == "build-ec-bridge":
+        df = load_ec_to_mnxr(a.reac_prop)
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(a.out, sep="\t", index=False)
+        print(f"[bridge] wrote {len(df):,} ec->mnxr rows ({df['ec'].nunique():,} ECs) -> {a.out}", flush=True)
+    elif a.cmd == "build-mnxr-lookup":
+        build_mnxr_lookup(a.ko_to_mnxr, a.ec_to_mnxr, a.uniprot_to_mnxr, a.out)
+    elif a.cmd == "compile":
+        compile_evidence(a.source, a.kofam, a.dl_ec, a.uniref50, a.embed,
+                         a.ko_to_mnxr, a.ec_to_mnxr, a.uniprot_to_mnxr, a.out,
+                         uniref50_descriptions=a.uniref50_descriptions)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,30 @@
+name: report_from_any_paired_end_library
+description: create_sample_set -> runFastQC -> align_reads_using_hisat2 -> run_stringtie
+  -> run_DESeq2 -> upload_featureset_from_diff_expr. Seen in 24 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::report
+transform_libraries:
+- w_s0007
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/17e59dd318324845beecf2de3af175c4:
+      type: kbase::study
+      instance_id: 1e20a1f5bb860a6e247173a89def1359e2b0b928e5407ddc91dc58df0eb297ae13ca
+      origin: leaf
+    /msm_deferred/50f45d9f5924442db43aa3868cd819b3:
+      type: kbase::sample
+      parents:
+        Yq6wacQmQpcm@/msm_deferred/17e59dd318324845beecf2de3af175c4: kbase::study
+      instance_id: 1e20ba960bc7482609d5c72db5e64a7c7906d9c9b79970dc0f570c3cbbb8b15c6230
+      origin: leaf
+    /msm_deferred/f4cf7a0b1c1c485fbd70fccab2210c0c:
+      type: kbase::accepts_05
+      parents:
+        Yq6wacQmQpcm@/msm_deferred/50f45d9f5924442db43aa3868cd819b3: kbase::sample
+      instance_id: 1e20ab7ee80e871a20b738b8952375c504e54d054c9bfd073b29cefe638756867825
+      origin: leaf

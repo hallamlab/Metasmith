@@ -1,0 +1,56 @@
+# build-refs-rdkit -- the AAM ensemble's environment.
+#
+# Named by src/metasmith_libraries/resources/env/rdkit.env (`conda: build-refs-rdkit`)
+# and used by every lane of the AAM branch under build_references/transforms/bake/.
+#
+# Holds all four members' dependencies, because one image serves the whole branch:
+#   metacyc      the curated member, LAYER 1        (rdkit only -- it parses the
+#                                                    shipped mapped reaction SMILES)
+#   rxnmapper    the BERT attention mapper          (transformers + torch)
+#   localmapper  the graph-neural mapper            (torch -> dgl -> torchdata)
+#   indigo       the deterministic structural mapper (epam-indigo, a compiled lib)
+# and rdkit underneath all of them, because the shared identity every member is
+# expressed in -- (metabolite, canonical atom rank) -- is an rdkit canonical rank.
+# All four canonicalise through the SAME rdkit for that reason; splitting indigo
+# into its own env would give it a second rank system and silently break the join.
+#
+# Indigo is also the ARBITER of the curation sweep: a proposed structure is accepted
+# only if indigo can map the completed reaction and at least one element then
+# balances. So it is a hard dependency of layer 3, not only of layer 2.
+#
+# Modelled on the machine-local `scadc-aam` env that produced the deployed
+# atom_pairs, deliberately: two mappers on different rdkit versions can canonicalise
+# the same metabolite to different atom ranks, and then the members stop naming the
+# same physical atom the same node without anything raising.
+#
+# CPU torch. The mappers run over ~57.5k reactions; that is a long job either way and
+# a CUDA pin here would make the env unbuildable on a machine without a GPU.
+name: build-refs-rdkit
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - rdkit=2026.03.*
+  - numpy<2
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  - networkx=3.*
+  - requests
+  - pip
+  # setuptools 81 removed pkg_resources from the default install, and BOTH neural
+  # mappers `import pkg_resources` at module top -- so an unpinned env resolves to
+  # setuptools 83 and neither mapper imports at all. This is not a soft pin: it is
+  # the difference between a two-member ensemble and a zero-member one. Upstream's
+  # own deprecation notice says "pin to Setuptools<81"; this is that.
+  - setuptools<81
+  - pip:
+      - torch==2.2.1
+      # localmapper -> dgl 2.1 -> `torchdata.datapipes`, which torchdata REMOVED in
+      # 0.10. Unpinned, pip takes 0.11 and localmapper does not import. Same class of
+      # break as the setuptools pin above, two layers down.
+      - torchdata==0.7.1
+      - transformers==4.49.0
+      - rxnmapper==0.4.3
+      - localmapper==0.1.5
+      - epam-indigo==1.45.0

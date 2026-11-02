@@ -1,0 +1,21 @@
+=== symlinks in the ARCHIVED set, by containing subtree ===
+count: 3511
+   3511 metasmith/runs/Qt0rbV1R
+
+=== target shape ===
+   3511 relative
+
+=== how many resolve INTO an excluded subtree (would dangle) ===
+resolve into nxf_work (EXCLUDED): 3510
+resolve into results  (EXCLUDED): 0
+already broken before archiving:  0
+resolve inside the archived set:  1
+
+=== a sample of each kind ===
+/scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/_metasmith/logs.latest	./logs.2026-09-21_13-11-13
+/scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/_metasmith/logs.2026-09-21_13-11-13/steps/p19__genomad_pratama_ef-74a2ca.log	../../../nxf_work/ef/74a2ca0d7b2a6e27d2ea2b3ab4c5fc/.command.log
+/scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/_metasmith/logs.2026-09-21_13-11-13/steps/p32__dramv_checkv_pratama_60-e3045e.log	../../../nxf_work/60/e3045e66c141417ad64097b8eb4227/.command.log
+/scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/_metasmith/logs.2026-09-21_13-11-13/steps/p14__vibrant_pratama_0c-b60ef0.log	../../../nxf_work/0c/b60ef0a3c413ce6cf90145b7f3c5ab/.command.log
+/scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/_metasmith/logs.2026-09-21_13-11-13/steps/p13__assembly_stats_pratama_cb-b311f1.log	../../../nxf_work/cb/b311f1559f36892cb796eca61a0e95/.command.log
+/scratch/phyberos/pratama2026/metasmith/runs/Qt0rbV1R/_metasmith/logs.2026-09-21_13-11-13/steps/p07__splitContigsForAmr_ae-8bb124.log	../../../nxf_work/ae/8bb124c55619ea7b3ab059592db580/.command.log
+--- absolute targets ---

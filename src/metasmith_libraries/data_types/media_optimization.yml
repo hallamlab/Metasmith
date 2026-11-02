@@ -1,0 +1,54 @@
+types:
+  growth_data:
+    properties:
+      ext: csv
+      format: CSV
+      atomic_description: media optimization growth curve data
+
+  response_surface_coefficients:
+    properties:
+      ext: csv
+      format: CSV
+      atomic_description: polynomial response surface model coefficients
+
+  model_suggestions:
+    properties:
+      ext: csv
+      format: CSV
+      atomic_description: optimized media composition suggestions
+
+  crashed_cultures:
+    properties:
+      ext: csv
+      format: CSV
+      atomic_description: table of crashed/outlier culture replicates per sample
+
+  growth_characteristics_plot:
+    properties:
+      ext: svg
+      format: SVG
+      atomic_description: growth curve panel plot with logistic fits
+
+  factor_importance_plot:
+    properties:
+      ext: svg
+      format: SVG
+      atomic_description: top factor importance bar chart
+
+  model_suggestions_plot:
+    properties:
+      ext: svg
+      format: SVG
+      atomic_description: model suggestions vs best tested scatter
+
+  response_surface_1d_plot:
+    properties:
+      ext: svg
+      format: SVG
+      atomic_description: 1D cross-section response surface plot
+
+  response_surface_2d_plot:
+    properties:
+      ext: svg
+      format: SVG
+      atomic_description: 2D heatmap response surface plot

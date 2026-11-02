@@ -1,0 +1,72 @@
+HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+cd $HERE
+
+USER="hallamlab"
+NAME="rust_build_env"
+VERSION="0.1.0"
+# DOCKER_IMAGE=quay.io/$USER/$NAME:$VERSION
+DOCKER_IMAGE=joseluisq/rust-linux-darwin-builder:2.0.0-beta.1
+
+in_container() {
+    echo "in container: $@"
+        # -u $(id -u):$(id -g) \
+    docker run --rm \
+        --mount type=bind,source="$HERE",target="/root/src"\
+        --workdir /root/src \
+        -e MSM_ENGINE_VERSION="$(cat $HERE/../metasmith/version.txt)" \
+        $DOCKER_IMAGE \
+        "$@"
+}
+
+case $1 in
+    --init)
+        project=msm_relay
+        [[ -e ./src ]] && exit 0
+        [[ -e $project ]] && rm -r $project
+        in_container cargo new $project
+        mv $project/* ./
+        mv $project/.* ./
+        rmdir $project
+    ;;
+    ###################################################
+    # build
+    -bb)
+        # DOCKER_IMAGE is an *upstream* image: it carries the osxcross toolchain
+        # that the two *-apple-darwin targets link against. Building ./Dockerfile
+        # over this tag (which is what this branch used to do) replaces it with a
+        # plain rust image, so `-b` fails both darwin targets with
+        # "cc: unrecognized command-line option '-framework'" and leaves the stub
+        # binaries in target/ for the image build to bake. That is the 0.18.4
+        # stub-relay bug. Pull, do not build.
+        docker pull $DOCKER_IMAGE
+    ;;
+    -b)
+        in_container sh ./build.sh
+    ;;
+    -b1)
+        in_container sh ./build.sh --single
+    ;;
+    ###################################################
+    # run
+    -rd)
+        docker run -it --rm \
+        -u $(id -u):$(id -g) \
+            --mount type=bind,source="$HERE",target="/ws"\
+            --workdir /ws \
+            $BUILD_IMAGE \
+            sh
+    ;;
+    -r)
+        shift
+        mkdir -p ./scratch/ws
+        rsync -au $HERE/target/x86_64-unknown-linux-musl/release/msm_relay ./scratch/ws/msm_relay
+        cd ./scratch/ws
+        ./msm_relay $@
+    ;;
+    ###################################################
+    # run
+    *)
+        echo "bad option"
+        echo $1
+    ;;
+esac

@@ -1,0 +1,76 @@
+Running as unit: run-r94bf61e07adc4e17b75a8f675ee62b65.scope; invocation ID: b665b2919d054c1389b015426cb2c8a8
+[a1_model_from_isolate_reads]
+2026-09-04_19-51-09  | [sequences::megahit_assembly] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-51-09  | [annotation::bakta_annotated_proteins] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-09  | [annotation::gpr_table] resolved by [...metasmith_libraries/transforms/fabfos]
+2026-09-04_19-51-09  | [modelling::gapfilled_model] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-09  | [modelling::fba_solution] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-10  | solving plan for [1] sample as [1] unique case
+2026-09-04_19-51-10 W| solving with the python implementation because no [msm_solver] is staged for [x86_64-linux] -- build one with [./dev/metasmith.sh -bel], or [./dev/metasmith.sh -be] to cross-build all four. The plans are the same either way; the search is roughly 15x slower.
+  OK   23 steps    4.82s  solved
+[a2_model_from_bigg]
+2026-09-04_19-51-14  | [modelling::fba_solution] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-14  | solving plan for [1] sample as [1] unique case
+  OK    2 steps    0.25s  solved
+[a3_finish_long_read_isolate]
+2026-09-04_19-51-14  | [sequences::polished_assembly] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-14  | [sequences::gbk] resolved by [...metasmith_libraries/transforms/logistics]
+2026-09-04_19-51-14  | [annotation::bakta_summary] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-09-04_19-51-14  | [sequences::nanoplot_html_report] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-15  | solving plan for [1] sample as [1] unique case
+  OK    7 steps    1.29s  solved
+[a4_mags_from_metagenome]
+2026-09-04_19-51-15  | [sequences::megahit_assembly] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-51-15  | [sequences::filtered_assembly] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-15  | [sequences::metabat2_bin_fasta] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-51-15  | [taxonomy::checkm_stats] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-51-15  | [taxonomy::gtdbtk] resolved by [...metasmith_libraries/transforms/metagenomics]
+2026-09-04_19-51-15  | [sequences::fastqc_html_report] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-15  | [sequences::fastp_json_report] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-16  | solving plan for [1] sample as [1] unique case
+  OK   13 steps    1.80s  solved
+[a5_community_structure]
+2026-09-04_19-51-17  | [amplicon::asv_table] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-17  | [aspire::diversity_outputs] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-51-17  | [aspire::umap_plots] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-51-17  | [aspire::paired_group_contrast_outputs] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-51-17  | [aspire::measurement_association_outputs] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-51-18  | solving plan for [1] sample as [1] unique case
+  OK    7 steps    1.16s  solved
+[a5b_cooccurrence_network]
+2026-09-04_19-51-18  | [amplicon::asv_table] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-18  | [aspire::network_graph_all] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-51-18  | [aspire::network_outputs] resolved by [...metasmith_libraries/transforms/aspire]
+2026-09-04_19-51-19  | solving plan for [1] sample as [1] unique case
+  OK    8 steps    1.03s  solved
+[a6_expression_response]
+2026-09-04_19-51-20  | [transcriptomics::bowtie2_bam] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-20  | [transcriptomics::stringtie_quant_gtf] resolved by [...metasmith_libraries/transforms/transcriptomics]
+2026-09-04_19-51-20  | [transcriptomics::gene_count_table] resolved by [...metasmith_libraries/transforms/transcriptomics]
+2026-09-04_19-51-20  | [transcriptomics::expression_clusters] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-20  | [transcriptomics::diff_count_table] resolved by [...metasmith_libraries/transforms/transcriptomics]
+2026-09-04_19-51-20  | solving plan for [1] sample as [1] unique case
+  OK    8 steps    1.42s  solved
+[a6b_functional_enrichment]
+2026-09-04_19-51-21  | [annotation::go_overrepresentation] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-21  | solving plan for [1] sample as [1] unique case
+  OK    5 steps    1.15s  solved
+[a7_compare_strains]
+2026-09-04_19-51-22  | [pangenome::ppanggolin_matrix] resolved by [...metasmith_libraries/transforms/pangenome]
+2026-09-04_19-51-22  | [pangenome::ppanggolin_summary] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-22  | [taxonomy::gtdbtk_tree] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-22  | solving plan for [1] sample as [1] unique case
+  OK   10 steps    1.21s  solved
+[a8_gene_presence]
+2026-09-04_19-51-23  | [annotation::homolog_hits] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-23  | [comparative::msa] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-23  | solving plan for [1] sample as [1] unique case
+  OK    3 steps    0.77s  solved
+[a9_strain_variants]
+2026-09-04_19-51-24  | [alignment::bam] resolved by [...metasmith_libraries/transforms/assembly]
+2026-09-04_19-51-24  | [alignment::alignment_stats] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-24  | [sequences::variant_calls] resolved by [...metasmith_libraries/transforms/kbase]
+2026-09-04_19-51-24  | solving plan for [1] sample as [1] unique case
+  OK    7 steps    0.82s  solved
+
+11/11 solved -> research/metasmith_libraries/kbase_parity.jsonl

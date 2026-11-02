@@ -1,0 +1,40 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  esm_c_600m_weights:
+    properties:
+      _:
+      - ESM-C 600M weights (EvolutionaryScale/esmc-600m)
+      ext: tgz
+  kofamscan_ko_list:
+    properties:
+      _:
+      - KofamScan KO list file
+      ext: tsv
+  kofamscan_profiles:
+    properties:
+    - KofamScan HMM profile directory -- .hmm files directly under it, unpacked
+  label_transfer_landmarks:
+    properties:
+    - Reference ProteinBERT embeddings beside their MNXR labels, one row per accession
+      (landmarks.parquet + source.txt)
+  label_transfer_landmarks_esmc:
+    properties:
+    - Reference ESM-C embeddings beside their MNXR labels, one row per accession (landmarks.parquet
+      + source.txt)
+  mnxr_lookup:
+    properties:
+      _:
+      - Consolidated intermediate-id -> MNXR bridge (id, id_source in {ko,ec,uniprot},
+        mnxr, evidence_quality); the three id spaces are disjoint, so id alone is
+        unambiguous and id_source is a label
+      ext: parquet
+  uniref50_diamond_db:
+    properties:
+      _:
+      - DIAMOND-formatted UniRef50 database
+      ext: dmnd

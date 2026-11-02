@@ -1,0 +1,26 @@
+manifest:
+  /arc/project/st-shallam-1/fabfos_refs/processed/kofam_ref/ko_list.tsv:
+    instance_id: 1e20ec4b53f338e9d014be64174a56e138ee7b3ed8d0ccd0073db2fa8b29a7ffa137
+    origin: leaf
+    type: ref::kofamscan_ko_list
+  /arc/project/st-shallam-1/fabfos_refs/processed/kofam_ref/profiles:
+    instance_id: 1e20e74179529877cb26eab25f663edec27724ea6aded22d3789b36f892d510222aa
+    origin: leaf
+    type: ref::kofamscan_profiles
+  /arc/project/st-shallam-1/fabfos_refs/processed/mnxr_lookup/mnxr_lookup.parquet:
+    instance_id: 1e204fd3f515fdfa7eacebcd67ac5fc7030ae31416ff76f180f648348c5a159d7a8a
+    origin: leaf
+    type: ref::mnxr_lookup
+  /arc/project/st-shallam-1/fabfos_refs/processed/reference_label_pool/pool:
+    instance_id: 1e205f03cf9f64adf3b3d71637b9370f0c662243249aecf74621666d3819e96abd86
+    origin: leaf
+    type: ref::reference_label_pool
+  /arc/project/st-shallam-1/fabfos_refs/processed/uniref50_dmnd/uniref50.dmnd:
+    instance_id: 1e20c78b10b01f9232bfe5a7c1134e34811dbcf83ab57f0c54158878b58494a8668e
+    origin: leaf
+    type: ref::uniref50_diamond_db
+  NC_010473.1.faa:
+    instance_id: 1e201456820701f9cec3cff5e9a32e06a652276367d0a295fca8a5e4ddf0d67ce57f
+    origin: leaf
+    type: sequences::orfs
+schema: v1

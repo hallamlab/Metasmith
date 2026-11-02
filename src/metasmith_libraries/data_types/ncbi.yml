@@ -1,0 +1,34 @@
+types:
+  accession_list:
+    properties:
+      database: NCBI
+      arity: N
+      ext: csv
+  accession:
+    properties:
+      Data: NCBI accession
+      arity: 1
+      ext: txt
+  assembly_accession:
+    extends: accession
+    properties:
+      database: assemblies
+  sra_accession:
+    extends: accession
+    properties:
+      database: SRA
+  # What the user calls the thing an accession fetches. Sits ABOVE the accession
+  # in lineage, so everything downloaded from it inherits the name and any later
+  # step can ask which name a file descends from. It lives here rather than in
+  # `pangenome` because `getNcbiAssembly` requires it, and a logistics transform
+  # should not depend on a pangenome namespace.
+  #
+  # This exists because no GenBank header field is both unique and readable:
+  # ORGANISM is bare species for most isolates, DEFINITION carries the strain
+  # only sometimes, and two assemblies of one species collide under either. The
+  # name is a fact about intent, not about the file.
+  genome_name:
+    properties:
+      Data: name for a genome, chosen by whoever asked for it
+      arity: 1
+      ext: txt

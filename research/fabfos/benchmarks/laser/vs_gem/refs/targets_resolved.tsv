@@ -1,0 +1,125 @@
+token	n_obs	status	tier	note	mnxms	in_universe	via
+(+)-catechin	1	resolved	conservative_in_universe	unique	MNXM734430	True	
+(2S)-naringenin	1	resolved	conservative_in_universe	unique	MNXM738152	True	
+(R)-acetoin	1	resolved	conservative_in_universe	unique	MNXM664	True	
+1-propanol	2	resolved	conservative_in_universe	unique	MNXM6396	True	
+1_2-Propanediol	1	resolved	override_name+conservative_in_universe	unique	MNXM1364595	True	propane-1,2-diol
+1_2-propanediol	3	resolved	override_name+conservative_in_universe	unique	MNXM1364595	True	propane-1,2-diol
+1_2_4-butanetriol	1	resolved	aggressive_in_universe	unique	MNXM1106823	True	
+1_3-propanediol	1	resolved	aggressive_in_universe	unique	MNXM2861	True	
+1_4-butanediol	1	resolved	override_name+conservative_in_universe	unique	MNXM16407	True	butane-1,4-diol
+2-oxoglutarate	1	resolved	conservative_in_universe	unique	MNXM1368744	True	
+3-HP	4	resolved	override_name+conservative_in_universe	unique	MNXM872	True	3-hydroxypropanoate
+3-hydroxy-gamma-butyrolactone	1	unresolved	override	status declaration		False	
+3-methyl-1-butanol	1	resolved	override_name+conservative_in_universe	unique	MNXM1670	True	isoamyl alcohol
+4-hydroxycoumarin	5	resolved	conservative_in_universe	unique	MNXM729045	True	
+6-Deoxyerythronolide B	1	resolved	conservative_in_universe	unique	MNXM2496	True	
+Abietadiene	1	resolved	aggressive_in_universe	unique	MNXM1997	True	
+Adipic Acid	1	resolved	override_name+conservative_in_universe	unique	MNXM2800	True	adipate
+Alanine-Glutamine	1	resolved	override_name+conservative_in_universe	unique	MNXM1369382	True	L-alanyl-L-glutamine
+B-ALANINE	1	resolved	override_name+conservative_in_universe	unique	MNXM144	True	beta-alanine
+Biomass	2	biomass	override	status declaration		False	
+CIS-CIS-MUCONATE	1	resolved	aggressive_in_universe	ruleA	MNXM1371012	True	
+Carboxylic acids	4	class_noun	override	status declaration		False	
+Carotenoids	1	class_noun	override	status declaration		False	
+Cytoplasmic disulfide-bonded proteins	2	non_metabolite	override	status declaration		False	
+D-cycloserine	1	resolved	conservative_in_universe	unique	MNXM59345	True	
+D-galactonate	1	resolved	conservative_in_universe	unique	MNXM1734	True	
+D-lactate	9	resolved	conservative_in_universe	unique	MNXM1371362	True	
+Deoxycytidine	1	resolved	conservative_in_universe	unique	MNXM704	True	
+Ethanol	2	resolved	conservative_in_universe	unique	MNXM1108092	True	
+Ethyl butyrate	1	resolved	override_name+conservative_in_universe	unique	MNXM11527	True	ethyl butanoate
+Fatty Acids	6	class_noun	override	status declaration		False	
+Fatty acids	1	class_noun	override	status declaration		False	
+Flavonoids	1	class_noun	override	status declaration		False	
+Fumaric acid	1	resolved	override_name+conservative_in_universe	unique	MNXM737340	True	fumarate
+GFP	1	non_metabolite	override	status declaration		False	
+Glucaric Acid	1	resolved	conservative_off_universe	unique	MNXM55106	False	
+H2	7	no_scoreable_element	override	status declaration		False	
+IMP	1	resolved	conservative_in_universe	unique	MNXM1101868	True	
+Isoprene	2	resolved	conservative_in_universe	unique	MNXM3288	True	
+L-alanine	1	resolved	conservative_in_universe	unique	MNXM1105732	True	
+L-aspartate	1	resolved	conservative_in_universe	unique	MNXM1364497	True	
+L-erythro-5,6,7,8-tetrahydrobiopterin	1	resolved	conservative_off_universe	unique	MNXM1106145	False	
+L-fumarate	1	resolved	override_name+conservative_in_universe	unique	MNXM737340	True	fumarate
+L-lactate	3	resolved	conservative_in_universe	ruleB_merge	MNXM1371363;MNXM733758	True	
+L-serine	2	resolved	conservative_in_universe	unique	MNXM737787	True	
+Lycopene	1	resolved	conservative_in_universe	ruleA	MNXM1364638	True	
+NADPH	2	resolved	conservative_in_universe	unique	MNXM738702	True	
+Naringenin	1	resolved	conservative_in_universe	ruleB_merge	MNXM738152;MNXM738153	True	
+PE(16:1)	1	resolved	override_name+conservative_off_universe	unique	MNXM611798	False	phosphatidylethanolamine (16:1)
+PG(16:0) dipalmitoyl	1	resolved	override_name+conservative_off_universe	unique	MNXM622492	False	phosphatidylglycerol (16:0)
+PG(16:1) palmitoleoyl	1	resolved	override_name+conservative_off_universe	unique	MNXM622611	False	phosphatidylglycerol (16:1)
+PHA	1	polymer	override	status declaration		False	
+PHB	4	polymer	override	status declaration		False	
+Protein	1	non_metabolite	override	status declaration		False	
+Protein-Glycosylation	1	non_metabolite	override	status declaration		False	
+Putrescine	1	resolved	conservative_in_universe	unique	MNXM118	True	
+R-3HB	1	resolved	override_name+conservative_in_universe	unique	MNXM1104965	True	(R)-3-hydroxybutanoate
+R-3HV	1	unresolved	override	status declaration		False	
+S-3HB	1	resolved	override_name+conservative_in_universe	unique	MNXM1104966	True	(S)-3-hydroxybutanoate
+S-3HV	1	unresolved	override	status declaration		False	
+Serine-rich proteins	1	non_metabolite	override	status declaration		False	
+Silk	1	polymer	override	status declaration		False	
+Taxadiene	2	resolved	override_name+conservative_in_universe	unique	MNXM1780	True	taxa-4(5),11(12)-diene
+acetalaldehyde	1	resolved	override_name+conservative_in_universe	unique	MNXM75	True	acetaldehyde
+acetate	1	resolved	conservative_in_universe	unique	MNXM26	True	
+acetone	1	resolved	conservative_in_universe	unique	MNXM398	True	
+acetyl-CoA	2	resolved	conservative_in_universe	unique	MNXM1104266	True	
+all-trans-retinol	1	resolved	conservative_in_universe	unique	MNXM1363773	True	
+alpha-pinene	1	resolved	conservative_in_universe	unique	MNXM1364660	True	
+amorphadiene	1	resolved	override_name+conservative_in_universe	unique	MNXM3912	True	amorpha-4,11-diene
+astragalin	1	resolved	override_name+conservative_in_universe	unique	MNXM1371610	True	kaempferol 3-O-beta-D-glucoside
+beta-carotene	2	resolved	conservative_in_universe	unique	MNXM1108250	True	
+biomass	4	biomass	override	status declaration		False	
+butanol	2	resolved	conservative_in_universe	unique	MNXM3230	True	
+butyrate	1	resolved	conservative_in_universe	unique	MNXM458	True	
+caffeic acid	1	resolved	conservative_in_universe	unique	MNXM1370996	True	
+cardiolipin C16:0	1	ambiguous	override	status declaration		False	
+d-lactate	3	resolved	conservative_in_universe	unique	MNXM1371362	True	
+dihydroxyacetone	1	resolved	conservative_in_universe	unique	MNXM460	True	
+ethanol	20	resolved	conservative_in_universe	unique	MNXM1108092	True	
+ethylene	1	resolved	conservative_in_universe	unique	MNXM740127	True	
+ethylene glycol	1	resolved	conservative_in_universe	unique	MNXM1107139	True	
+fatty alcohols	1	class_noun	override	status declaration		False	
+glucose-6P	1	resolved	override_name+conservative_in_universe	unique	MNXM1364111	True	D-glucose 6-phosphate
+glutaric acid	1	resolved	override_name+conservative_in_universe	unique	MNXM1021	True	glutarate
+glycoglycerolipids	1	class_noun	override	status declaration		False	
+h2	7	no_scoreable_element	override	status declaration		False	
+hexadec-2-enoyl-ACP C16:1	1	resolved	override_name+conservative_in_universe	ruleA	MNXM728712	True	(2E)-hexadecenoyl-[acp]
+hydroxytyrosol	1	resolved	conservative_in_universe	unique	MNXM56953	True	
+indigoidine	1	resolved	conservative_in_universe	unique	MNXM156781	True	
+isobutanol	4	resolved	conservative_in_universe	ruleA	MNXM5188	True	
+isopentanol	2	resolved	override_name+conservative_in_universe	unique	MNXM1670	True	isoamyl alcohol
+isoprenol	2	resolved	override_name+conservative_off_universe	ruleB_merge	MNXM1510545;MNXM737752	False	isopentenol
+isopropanol	2	resolved	override_name+conservative_in_universe	unique	MNXM3085	True	propan-2-ol
+itaconate	1	resolved	conservative_in_universe	unique	MNXM1747	True	
+l-alanine	1	resolved	conservative_in_universe	unique	MNXM1105732	True	
+lycopene	22	resolved	conservative_in_universe	ruleA	MNXM1364638	True	
+malonyl-CoA	1	resolved	conservative_in_universe	unique	MNXM1106093	True	
+membrane protein	1	non_metabolite	override	status declaration		False	
+methyl ketones	1	class_noun	override	status declaration		False	
+mevalonate_phosphate	1	resolved	override_name+conservative_in_universe	unique	MNXM738283	True	(R)-5-phosphomevalonate
+n-butanol	5	resolved	override_name+conservative_in_universe	unique	MNXM3230	True	butan-1-ol
+octadec-2-enoyl-ACP C18:1	1	ambiguous	override	status declaration		False	
+omega-hydroxyacids	1	class_noun	override	status declaration		False	
+pDNA	1	non_metabolite	override	status declaration		False	
+palmitoyl-ACP C16:0	1	resolved	override_name+conservative_in_universe	unique	MNXM1093691	True	palmitoyl-[acp]
+penicillin G	1	resolved	conservative_in_universe	unique	MNXM1812	True	
+phosphatidylethanolamine	1	class_noun	override	status declaration		False	
+phosphatidylglycerol	1	class_noun	override	status declaration		False	
+phosphatidylglycerol C16:0	1	resolved	override_name+conservative_off_universe	unique	MNXM622492	False	phosphatidylglycerol (16:0)
+plasmidDNA	1	non_metabolite	override	status declaration		False	
+poly (3-hydroxybutyrate-co-3-hydroxypropionate)	1	polymer	override	status declaration		False	
+prenol	1	resolved	conservative_in_universe	ruleA	MNXM737751	True	
+pyruvate	1	resolved	conservative_in_universe	unique	MNXM23	True	
+quercetin 3-O-xyloside	1	resolved	override_name+aggressive_off_universe	unique	MNXM108399	False	quercetin 3-O-beta-D-xylopyranoside
+riboflavin	1	resolved	conservative_in_universe	unique	MNXM270	True	
+rosmarinate	1	resolved	override_name+conservative_off_universe	unique	MNXM731508	False	rosmarinic acid
+rr-2_3-BDO	2	resolved	override_name+conservative_in_universe	unique	MNXM2757	True	(R,R)-butane-2,3-diol
+sabinene	1	resolved	conservative_in_universe	unique	MNXM81353	True	
+shikimate	1	resolved	conservative_in_universe	unique	MNXM602	True	
+succinate	22	resolved	conservative_in_universe	unique	MNXM25	True	
+succinyl-CoA	1	resolved	conservative_in_universe	unique	MNXM1104774	True	
+taxanes	1	class_noun	override	status declaration		False	
+xylitol	2	resolved	conservative_in_universe	unique	MNXM737068	True	

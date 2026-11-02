@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+REPO = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO / "src"))
+
+from ecspr.bake.aam.forecast import CONTEXT_WINDOW_CHARS, read_prior   # noqa: E402
+
+LOGS = REPO / "data" / "fabfos" / "processed" / "metabolism_bake" / "logs"
+LOOKUPS = REPO / "data" / "fabfos" / "processed" / "lookups"
+
+
+def main() -> int:
+    rx = pd.read_parquet(LOOKUPS / "reactions.parquet", columns=["mnxr", "rxn_smiles"])
+    chars = {m: (len(s) if isinstance(s, str) else None)
+             for m, s in zip(rx["mnxr"], rx["rxn_smiles"])}
+    prior, had = read_prior(LOGS)
+    if not had:
+        print(f"no prior logs at {LOGS}")
+        return 1
+
+    print("=" * 74)
+    print("THE THRESHOLD: RXNMapper's silence against the length of what it was sent")
+    print("=" * 74)
+    st = pd.read_csv(LOGS / "rxnmapper_derived_status.tsv", sep="\t")
+    st["chars"] = st["mnxr"].map(chars)
+    st = st[st["chars"].notna()]
+    for k, g in st.groupby("derived_status"):
+        q = np.percentile(g["chars"], [10, 50, 90])
+        print(f"  {k:<16} n={len(g):>7,}   p10={q[0]:>6.0f}  median={q[1]:>6.0f}  "
+              f"p90={q[2]:>6.0f}")
+    silent = set(st.loc[st["derived_status"] != "ok", "mnxr"])
+    print(f"\n  {'threshold':>9}  {'recall':>8}  {'offered':>8}  {'precision':>9}")
+    for t in (256, 384, 448, CONTEXT_WINDOW_CHARS, 600, 700, 800, 1000):
+        off = set(st.loc[st["chars"] > t, "mnxr"])
+        mark = "  <- CONTEXT_WINDOW_CHARS" if t == CONTEXT_WINDOW_CHARS else ""
+        print(f"  {t:>9}  {len(off & silent)/len(silent):>7.1%}  "
+              f"{len(off)/len(st):>7.1%}  {len(off & silent)/max(1,len(off)):>8.1%}{mark}")
+
+    print("\n" + "=" * 74)
+    print("THE OFFER RULE against every silence the run recorded")
+    print("=" * 74)
+    offered = {m for m, c in chars.items() if c is not None and c > CONTEXT_WINDOW_CHARS}
+    empirical = prior["prior_timeout"] | prior["prior_hang"] | prior["prior_empty"]
+    both = offered | empirical
+
+    ind = pd.read_csv(LOGS / "indigo_status.tsv", sep="\t")
+    truth = {
+        "RXNMapper returned nothing": silent,
+        "Indigo timed out": set(ind.loc[ind["status"] == "timeout", "mnxr"]),
+        "Indigo errored": set(ind.loc[ind["status"] == "error", "mnxr"]),
+        "Indigo hung (attempted, never returned)": prior["prior_hang"],
+    }
+    print(f"  {'recorded silence':<42} {'n':>6}  {'string':>7} {'recorded':>8} {'both':>7}")
+    for name, s in truth.items():
+        if not s:
+            continue
+        print(f"  {name:<42} {len(s):>6,}  {len(s & offered)/len(s):>6.1%} "
+              f"{len(s & empirical)/len(s):>7.1%} {len(s & both)/len(s):>6.1%}")
+
+    print("\n" + "=" * 74)
+    print("THE DENOMINATOR the prior run cannot speak for")
+    print("=" * 74)
+    seen = set(st["mnxr"]) | set(ind["mnxr"])
+    buildable = {m for m, c in chars.items() if c is not None}
+    print(f"  reactions with a buildable string       {len(buildable):>8,}")
+    print(f"  ...with any record from the prior run   {len(buildable & seen):>8,}  "
+          f"({len(buildable & seen)/len(buildable):.1%})")
+    print(f"  ...with none                            "
+          f"{len(buildable - seen):>8,}  ({len(buildable - seen)/len(buildable):.1%})")
+    print(f"\n  offered by the string rule alone        {len(offered & buildable):>8,}"
+          f"  ({len(offered & buildable)/len(buildable):.1%} of buildable)")
+    print(f"  added by the prior run's records        "
+          f"{len((empirical & buildable) - offered):>8,}")
+    print(f"  offered by the two together             {len(both & buildable):>8,}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

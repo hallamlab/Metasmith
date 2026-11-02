@@ -1,0 +1,6 @@
+outs:
+- md5: fc13ed6a39870fa9df9815eadc49486a.dir
+  size: 102404
+  nfiles: 7
+  hash: md5
+  path: parse

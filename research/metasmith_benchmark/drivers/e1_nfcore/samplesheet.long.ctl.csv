@@ -1,0 +1,5 @@
+sample,group,long_reads,long_reads_platform
+plant_associated_long_nano_sample_11,plant_associated_long_nano,/scratch/phyberos/cami/work/plant_long_read_nano/simulation_nanosim/2020.01.23_15.51.11_sample_11/reads/anonymous_reads.fq.gz,OXFORD_NANOPORE
+plant_associated_long_nano_sample_19,plant_associated_long_nano,/scratch/phyberos/cami/work/plant_long_read_nano/simulation_nanosim/2020.01.23_15.51.11_sample_19/reads/anonymous_reads.fq.gz,OXFORD_NANOPORE
+toy_humangut_long_sample_0,toy_humangut_long,/scratch/phyberos/cami/work/toy_humangut_long_read/sample_0_reads/anonymous_reads.fq.gz,OXFORD_NANOPORE
+toy_humangut_long_sample_6,toy_humangut_long,/scratch/phyberos/cami/work/toy_humangut_long_read/sample_6_reads/anonymous_reads.fq.gz,OXFORD_NANOPORE

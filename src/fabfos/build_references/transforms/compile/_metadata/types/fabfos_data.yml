@@ -1,0 +1,69 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  chebi:
+    properties:
+    - 'ChEBI flat files (chebi/rel<N>/): compounds, names and structures as served,
+      gzipped. Taken from `archive/rel<N>/flat_files/`, NOT from the rolling `flat_files/`
+      path -- the archive is frozen at its own URL, so the release number is a true
+      pin rather than a label on whatever is current. Feeds the curation sweep''s
+      supplier lane: a name and an accession are the only handles a structureless
+      MetaNetX stub has.'
+  esm_c:
+    properties:
+    - 'The ESM-C 600M HuggingFace snapshot (esm_c/<revision>/), tarred as `esmc_600m.tgz`
+      with the repo''s own layout inside -- `data/weights/ esmc_600m_2024_12_v0.pth`
+      plus config.json and the README, verbatim. The directory is named after the
+      resolved commit sha, read from the server before any bytes move, because `main`
+      rolls. GATED: an account that has accepted the model''s terms is the only way
+      to fetch it, so the acquisition refuses without a token rather than writing
+      the 401 body to disk.'
+  kegg:
+    properties:
+    - KEGG REST bulk link responses (kegg/<release>/), saved as the endpoints returned
+      them (ko:K##### <TAB> rn:R#####). No prefix stripping, no header, no join. REST
+      serves the live database rather than the numbered release, so the info response
+      is kept alongside to date the pull within it.
+  kofam:
+    properties:
+    - 'KOfam distribution (kofam/<build-date>/): profiles.tar.gz, ko_list.gz and README,
+      all exactly as served. The tarball is NOT untarred and the list is NOT gunzipped
+      -- both are the processed tier''s work. KOfam publishes no release number and
+      no checksums, so the directory is named after the gzip header''s MTIME on the
+      profiles -- a stamp carried inside the artifact, so it stays re-derivable offline
+      from the file it names.'
+  metacyc:
+    properties:
+    - 'The MetaCyc flat-file distribution as dropped in (metacyc/<version>/). Licensed
+      and not redistributable: it is the reason this graph has a given at all. Verified
+      here, never fetched.'
+  metanetx:
+    properties:
+    - 'MetaNetX/MNXref release tree (metanetx/<version>/): chem_prop, chem_xref, reac_prop,
+      reac_xref and their upstream .md5 sidecars. The identity space everything else
+      is expressed in.'
+  modelseed:
+    properties:
+    - The ModelSEED biochemistry compound table (modelseed/<commit>/), pinned by the
+      git commit that last touched it. ModelSEED publishes no releases and the file
+      is served from a branch, so the commit sha IS the version -- and it is a stronger
+      pin than a release number, because it names the exact tree.
+  rhea:
+    properties:
+    - 'Rhea release tree (rhea/<release>/), mirroring the FTP layout: tsv/, ctfiles/,
+      rhea-release.properties and LICENSE.txt. The release number is read from the
+      server, not assumed.'
+  swissprot:
+    properties:
+    - UniProtKB/Swiss-Prot complete sequences (swissprot/<release>/) plus both release
+      markers, reldate.txt and RELEASE.metalink. The reviewed half -- the label pool's
+      accessions are exactly this set.
+  uniref:
+    properties:
+    - UniRef50 cluster representative sequences (uniref/<release>/), gzipped as served,
+      with the RELEASE.metalink that names the release and carries the md5 they are
+      verified against.

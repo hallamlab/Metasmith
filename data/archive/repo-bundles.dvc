@@ -1,0 +1,6 @@
+outs:
+- md5: 4cf5e98a903047a9b9997726d98a8f9d.dir
+  size: 609570234
+  nfiles: 4
+  hash: md5
+  path: repo-bundles

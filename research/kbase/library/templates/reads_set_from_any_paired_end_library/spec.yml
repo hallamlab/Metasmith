@@ -1,0 +1,36 @@
+name: reads_set_from_any_paired_end_library
+description: import_sra_as_reads_from_web -> runFastQC -> run_trimmomatic. Seen in
+  8 public narratives.
+sample_type: kbase::sample
+target_types:
+- kbase::KBaseSets_ReadsSet
+transform_libraries:
+- w_s0024
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/51dab7cadc0a4273b884e3af8ef239d3:
+      type: kbase::sample
+      parents:
+        thC3CThD3c70@/msm_deferred/6e743cce99dd4a4da709c51c974288ee: kbase::study
+      instance_id: 1e20087585325794ed59cf5d1aeefebfdf2e9bfc5c4c0c243569ba5133d50d8f9144
+      origin: leaf
+    /msm_deferred/6e743cce99dd4a4da709c51c974288ee:
+      type: kbase::study
+      instance_id: 1e205fd96c75fd634b8679350a52ab0a173fc8908b64e50a1ac2dc66facfd2cd1c65
+      origin: leaf
+    /msm_deferred/b0239c674be140fb8c9dc98bd44fcb1c:
+      type: kbase::accepts_10
+      parents:
+        thC3CThD3c70@/msm_deferred/51dab7cadc0a4273b884e3af8ef239d3: kbase::sample
+      instance_id: 1e206c684eac1d7ceec295e2eb89fb2851ebd6f8a93ec8d351b1d55acc930858d785
+      origin: leaf
+    /msm_deferred/cc8e7d9b26554a848677fc76fbdd720b:
+      type: kbase::accepts_09
+      parents:
+        thC3CThD3c70@/msm_deferred/51dab7cadc0a4273b884e3af8ef239d3: kbase::sample
+      instance_id: 1e20c7acb9ea9b36677bada3a664e41100521fe967d5f07b86cfdda244bd56a872e1
+      origin: leaf

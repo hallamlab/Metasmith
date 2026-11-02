@@ -1,0 +1,36 @@
+total rows                 11326
+rows carrying a path       243
+  imported                 243
+
+LINEAGE rows carrying an absolute path (must be 0): 0
+
+=== external trees referenced, by number of rows ===
+   228  /scratch/phyberos/pratama2026
+     6  /scratch/phyberos/refs
+     4  /project/6004975/phyberos
+     2  /scratch/phyberos/staging
+     1  /scratch/phyberos/databases
+     1  /scratch/phyberos/viromics_refs
+     1  /scratch/phyberos/wave2_b3_nfcore
+
+=== 229 distinct absolute paths; top-level roots ===
+   225  /scratch/phyberos
+     4  /project/6004975
+
+=== every distinct path NOT under /scratch/phyberos/pratama2026 ===
+    /project/6004975/phyberos/cplex/cplex_runtime
+    /project/6004975/phyberos/lib/diamond/uniref50.dmnd
+    /project/6004975/phyberos/lib/kofamscan/ko_list.tsv
+    /project/6004975/phyberos/lib/kofamscan/profiles
+    /scratch/phyberos/databases/genomad
+    /scratch/phyberos/refs/checkv_db
+    /scratch/phyberos/refs/dram_1.5.0
+    /scratch/phyberos/refs/metapop_0.0.60_env.sqfs
+    /scratch/phyberos/refs/vcontact3_v230
+    /scratch/phyberos/refs/vibrant_1.2.1
+    /scratch/phyberos/refs/virsorter2_2.2.4
+    /scratch/phyberos/staging/gtdb/release232_skani_genomes.sqfs
+    /scratch/phyberos/staging/gtdb/release232
+    /scratch/phyberos/viromics_refs/iphop_db/Aug_2023_pub_rw
+    /scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd
+(15 of 229)

@@ -1,0 +1,42 @@
+#	LASER medium string -> a defined exchange set. `base` is derived from the model
+#	itself, not guessed: both GEMs ship a default medium that IS M9 salts + aerobic
+#	+ glucose at -10, so M9 is exactly those exchanges minus the carbon one. LB adds
+#	every amino-acid exchange the model has plus its nucleoside/base exchanges
+#	(riboflavin, PABA and folate exchanges do not exist in iML1515 and are recorded
+#	as absent rather than silently skipped).
+#
+#	status=exact    the string names one of the two defined sets
+#	status=aliased  a named medium not separately defined; the note says why the
+#	                assignment is defensible
+#	status=fallback unresolved; solves under M9 but is stratified OUT of the
+#	                primary metric rather than silently defaulted
+medium	base	status	note
+M9	M9	exact	the model's own shipped medium, carbon replaced per record
+Minimal	M9	exact	generic minimal medium
+MOPS	M9	aliased	Neidhardt MOPS minimal; same limiting composition as M9 in a GEM
+NBS	M9	aliased	no-salt-added minimal (Causey et al.)
+NCE	M9	aliased	non-carbon E medium, minimal
+M63	M9	aliased	minimal
+MR	M9	aliased	minimal defined (Lee lab)
+R/2	M9	aliased	minimal defined (Lee lab)
+AM1	M9	aliased	low-salt minimal (Ingram lab)
+AMM	M9	aliased	minimal
+AMX	M9	aliased	minimal
+MM29	M9	aliased	minimal
+SDM	M9	aliased	synthetic defined minimal
+BC(minimal)	M9	aliased	stated minimal by the source record
+MVK	M9	aliased	defined medium, mevalonate-pathway paper
+OD2	M9	aliased	defined medium
+J Medium	M9	aliased	defined medium
+Water	M9	fallback	resting-cell biotransformation, not a growth medium
+LB	LB	exact	rich; all amino acids and nucleobases available
+TB	LB	aliased	terrific broth: LB plus glycerol and phosphate, rich
+2xPY	LB	aliased	peptone-yeast, rich
+2YT	LB	aliased	2x yeast-tryptone, rich
+Rich	LB	aliased	stated rich by the source record
+Rich (LB like)	LB	aliased	stated rich by the source record
+EZRich	LB	aliased	MOPS EZ Rich defined: all amino acids and bases
+Peptone	LB	aliased	peptone-only, rich in amino acids
+SD-8	LB	aliased	semi-defined with 8 supplements, rich
+SD8	LB	aliased	semi-defined with 8 supplements, rich
+Culture medium for enterobacteria. J Bacteriol 1974, 119:736-747 Medium	M9	fallback	citation, not a composition

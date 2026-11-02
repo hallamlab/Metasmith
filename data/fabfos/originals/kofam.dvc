@@ -1,0 +1,6 @@
+outs:
+- md5: 111ef5c42f2b35eeb06d784165edc1c0.dir
+  size: 1558554408
+  nfiles: 3
+  hash: md5
+  path: kofam

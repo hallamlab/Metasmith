@@ -1,0 +1,6 @@
+outs:
+- md5: d3e8ebdb272eca8781ca52c84e814b53.dir
+  size: 104488269
+  nfiles: 3
+  hash: md5
+  path: chebi

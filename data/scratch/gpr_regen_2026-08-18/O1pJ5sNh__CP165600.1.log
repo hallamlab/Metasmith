@@ -1,0 +1,12 @@
+[gpr] clean: 5420 calls, 3523 below the abstain at 0.02
+[gpr] landmarks: 222019 references, 13112 MNXR, 310493 label edges (1.2 MiB sparse vs 10.84 GiB dense)
+[gpr] pbert: 4509 ORFs, 2004 with no landmark at cosine 0.7000 or better (abstain), 2505 voting on 10.2 admitted neighbours on average, 6984 calls
+[gpr] 31,657 rows | source=CP165600.1 | lane_set=chosen_4 | 2,870 of 4,509 nominators | 11,255 MNXR
+[gpr]   kofam         2,349 rows    1,060 ORFs ( 23.5% cover)   1,488 MNXR  score[hmm_bitscore] min=40.8 med=429.8 max=2282
+[gpr]   clean        20,240 rows    1,753 ORFs ( 38.9% cover)   9,784 MNXR  score[clean_confidence] min=0.02 med=0.9122 max=0.9989
+[gpr]   uniref50      2,084 rows    1,329 ORFs ( 29.5% cover)   1,566 MNXR  score[blast_bsr] min=0.311 med=0.992 max=1.012
+[gpr]   pbert         6,984 rows    2,505 ORFs ( 55.6% cover)   2,597 MNXR  score[knn_vote] min=0.03261 med=0.4586 max=1
+[gpr]   evidence_quality {'reviewed': 31641, 'unreviewed': 16}
+[gpr_4lane] wrote 31657 rows -> /scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/regen/out/O1pJ5sNh__CP165600.1.partial
+
+--- stderr ---

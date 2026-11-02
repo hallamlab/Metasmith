@@ -1,0 +1,120 @@
+name: ecspr_survey_from_pooled_reads
+description: 'Recover fosmid inserts from pooled reads, build their canonical chosen-4
+  GPR
+
+  evidence table, and measure ECSPr conductance over it -- saving the recovered
+
+  inserts, the per-lane annotations and the GPR table as outputs alongside the
+
+  final ecspr::results.'
+sample_type: null
+target_types:
+- fabfos::putative_inserts
+- fabfos::insert_metadata
+- type: sequences::assembly_stats
+  parents:
+  - 0
+- type: annotation::kofamscan_results
+  parents:
+  - 0
+- type: annotation::kofamscan_descriptions
+  parents:
+  - 0
+- type: annotation::clean_predictions
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_results
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_descriptions
+  parents:
+  - 0
+- type: annotation::proteinbert_embeddings
+  parents:
+  - 0
+- type: annotation::gpr_table
+  parents:
+  - 0
+- type: ecspr::results
+  parents:
+  - 0
+transform_libraries:
+- assembly
+- metagenomics
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/101b2d54112842cabebcbe8a93c3c4ed:
+      type: ecspr::direction_ratios
+      instance_id: 1e20dab999d4075ff58ad7c7b78e7b63b70b1c8e91e8363741e8799a36179fa11807
+      origin: leaf
+    /msm_deferred/127cd0bb34d0420b9578f4604b12e34b:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e207e36472c9bf68a8b50204954358a5dba4c86fcedb71fd4d51021e58f34a9c0df
+      origin: leaf
+    /msm_deferred/403aca9614104dde98563f8cc6368dae:
+      type: ref::lane_calibration
+      instance_id: 1e20ee5628af111cfa023e67ef239d60acb047e4f859f3b78da2b0c5e6b4da1d6dee
+      origin: leaf
+    /msm_deferred/6990584b7df940fc87eea7a8a987c5e4:
+      type: algorithm::fabfos_recovery.py
+      instance_id: 1e2052870f91de5feca108f6f13d3fdc24de66340243e58f6c73f33a8d6085f31312
+      origin: leaf
+    /msm_deferred/b2be4f79f75548f0b9b010982938f504:
+      type: sequences::background_genome
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e2095ac76c799e0316a5fb884c22c3c2619fcf8ef020ec5d24e3cd0b3dd2cc2e54c
+      origin: leaf
+    /msm_deferred/ba123ef0de1043f49fa3556447178f30:
+      type: fabfos::vector_backbone
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e2015748826b00bafe2188cc0435b44e22639b4bd91ba4b1a94b4eeb6d9e6012a3f
+      origin: leaf
+    /msm_deferred/bb75787fad1f4ea89d4f86a9fc0e6398:
+      type: sequences::short_reads_pe
+      parents:
+        B3953eg5RMmC@read_metadata.json: sequences::read_metadata
+      instance_id: 1e20f91732ede26fd9732240dfdd81a7ea668979bfbcb7788c2a42b677ed09b3ecb5
+      origin: leaf
+    /msm_deferred/cc2ded6429854584a8f055ae3cc58912:
+      type: ref::mnxr_lookup
+      instance_id: 1e2051d449ec188aa320224166e5bcc131aac6926802715e915432364d351684c9e6
+      origin: leaf
+    /msm_deferred/d54e61bda1e8490b98f53b167df5ea44:
+      type: ecspr::ecspr_tests
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e2047b0fe058d65dfa73d84a53a500b6ddabb0e379b4ec1eab5b331258de809f2d9
+      origin: leaf
+    /msm_deferred/e45784288350431dba2776dfbed77ffc:
+      type: ecspr::conditions
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e204fa0ba54cd8ab6d2948730adf7136158de3150cdd69fcb8f454428dd02f528ab
+      origin: leaf
+    /msm_deferred/fa3dbd6f15a84eab9ae3763732cf5f22:
+      type: ecspr::atom_pairs
+      instance_id: 1e2079f1d45ea974889060e53fc51edc44a3226213df292ecbc154bbfb9c9f105600
+      origin: leaf
+    experiment.txt:
+      type: fabfos::experiment
+      instance_id: 1e208e5b330b68e360f2fbfe1b363ba9a6b697251f6fd6917b624dfa7e65b077483f
+      origin: leaf
+    read_metadata.json:
+      type: sequences::read_metadata
+      parents:
+        B3953eg5RMmC@experiment.txt: fabfos::experiment
+      instance_id: 1e20dfcb127bc4a012902033fe5e4fadb8cd9fce9907a21a8bd50442e0e0400c632c
+      origin: leaf
+  values:
+    experiment.txt: fosmid_pool_study
+    read_metadata.json: '{"parity": "paired", "length_class": "short"}'

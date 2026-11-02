@@ -1,0 +1,23 @@
+measure	bin	n_reactions	n_banked	rate
+expanded	0-100	29205	28782	0.9855
+expanded	100-200	21858	21681	0.9919
+expanded	200-300	4478	4389	0.9801
+expanded	300-400	942	930	0.9873
+expanded	400-500	371	363	0.9784
+expanded	500-600	204	199	0.9755
+expanded	600-800	117	15	0.1282
+expanded	800-1200	153	2	0.0131
+expanded	1200-1600	70	0	0.0
+expanded	1600-inf	124	0	0.0
+expanded	over-char-cap	71	0	0.0
+collapsed	0-100	30028	29537	0.9836
+collapsed	100-200	22687	22390	0.9869
+collapsed	200-300	3727	3574	0.9589
+collapsed	300-400	783	607	0.7752
+collapsed	400-500	195	160	0.8205
+collapsed	500-600	94	82	0.8723
+collapsed	600-800	48	10	0.2083
+collapsed	800-1200	20	1	0.05
+collapsed	1200-1600	3	0	0.0
+collapsed	1600-inf	8	0	0.0
+collapsed	over-char-cap	0	0	

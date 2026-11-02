@@ -1,0 +1,45 @@
+# E3 cache index fingerprint -- /scratch/phyberos/pratama2026/metasmith/task_cache/cache.sqlite
+# taken 2026-09-22T11:54:26-07:00 on login1, after driver 60837426 exited COMPLETED 0:0 at 2026-09-22T11:52:16
+# no cache.sqlite-wal / -shm existed; integrity_check ok; every read used ?immutable=1
+
+size_bytes        196866048
+mtime             2026-09-22 11:47:48.000000000 -0700
+sha256            eaee257a460bf743cd4631fb1dd66853fa680129caaaa0ade316f8e79598bc0a
+
+schema_version          2
+lineage_payload_version 6
+shard_layout_version    3
+
+entries_total     11326
+origin_lineage    11083
+origin_imported   243
+tombstoned        0
+distinct_runs     8
+sum_size_bytes    3124620719713
+
+# output_root must be RELATIVE for the archive to be relocatable.
+output_roots_absolute   0
+output_roots_distinct   11326
+-- sample output_root values --
+imported/1e/208dd72cd964e96134e88befca92ff814c7c46b84cfd0d76cc03c887692e6179a9
+imported/1e/2069ba31691bed86f9b4502af289bc188003607c3d0b54d985fd052d8d0d16d391
+imported/1e/20825e38b553757288d165b61e4318ba0bfcf8e73e0335edc57fab364670ef1481
+imported/1e/205607ce8c42f7c1a00424facfc513f7d7148658785afa41ac5dd5a5b3a5a50f38
+imported/1e/200f30545a15106dd5a40ee1a2a1245e0eced2182f0bb43d000105acc8ee21d7f8
+
+# a payload holding an absolute /scratch path would pin the cache to this host.
+payloads_with_scratch_path  239
+payloads_with_slash_home    0
+
+-- rows per run --
+run       origin    n   
+--------  --------  ----
+          lineage   4155
+JtWdzRCY  lineage   2284
+Son2YJiI  lineage   1581
+bqyYO0Ip  lineage   1494
+AvPNgFtP  lineage   758 
+F3KJbPJK  lineage   380 
+qcMKf68s  lineage   299 
+          imported  243 
+Qt0rbV1R  lineage   132 

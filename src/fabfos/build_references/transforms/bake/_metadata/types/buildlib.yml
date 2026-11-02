@@ -1,0 +1,14 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  ecspr:
+    properties:
+      _:
+      - the ecspr package -- `ecspr.bake` is the whole bake method (both lanes, the
+        extractor, the encoding, the tool-output ledger), reached as `python3 -m ecspr.bake.<lane>.<module>`
+      src: ecspr
+      usage: library

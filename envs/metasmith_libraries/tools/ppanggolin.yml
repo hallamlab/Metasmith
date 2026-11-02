@@ -1,0 +1,6 @@
+name: ppanggolin
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - ppanggolin=2.2.5

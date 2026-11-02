@@ -1,32 +1,23 @@
-"""The `.xgdb` store: real files on disk, each tagged with a type.
-
-A `DataInstance` is one such file. Its `instance_id` is the identity every
-downstream cache decision is made from, which is why minting one lives next
-door in `identity` rather than inline here.
-
-`DataInstanceLibrary` composes three mixins onto the store operations below:
-`_LeafIdentity` for how a leaf is named, `_StoreTransfer` for getting the
-store on and off disk, `_TelemetryQueries` for reading its trace back. Mixins
-rather than modules of free functions because each needs the store's own state
-(`instance_meta`, `location`, `_trace_index`); kept off this class so a change
-to any one of them is a file someone can read end to end.
-"""
-
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Iterable
 
 import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
-from ..paths import DEFERRED, _DeferredPath, mint_deferred_path
+from ..paths import DEFERRED, _DeferredPath, is_deferred, mint_deferred_path
 from ..remote import Logistics, Source, SourceType
 from ..solver import Dependency, Endpoint
+from .pinned import _PinnedLibrary
 from .identity import _LeafIdentity
 from .telemetry_api import _TelemetryQueries
 from .transfer import _StoreTransfer
@@ -39,21 +30,11 @@ class DataInstance:
     dtype: Endpoint
     dtype_name: str
     parent_lib: DataInstanceLibrary
-    # S2 — two-source identity. `origin` is one of:
-    #   "leaf"     — user-added via AddItem / AddValue. Unique per call.
-    #   "lineage"  — produced by a transform; instance_id is the lineage_key
-    #                over (transform_key, signature, sorted_input_ids).
-    #   "imported" — round-tripped through msm data import-library from a
-    #                foreign workspace; instance_id and lineage_payload are
-    #                preserved verbatim.
     origin: str = "leaf"
     lineage_payload: bytes | None = None
     instance_id: str | None = None
 
     def __post_init__(self):
-        # When instance_id is not provided, defer to the parent_lib's
-        # per-path metadata cache. The lib mints + stores a fresh leaf id
-        # on first sight of an unknown path (S2: unique-per-AddItem-call).
         if self.instance_id is None:
             meta = self.parent_lib._resolve_instance_meta(
                 self.path, self.dtype_name
@@ -71,12 +52,6 @@ class DataInstance:
         return isinstance(other, DataInstance) and self.instance_id == other.instance_id
 
     def _refresh_derived_keys(self):
-        """Recompute _hash, _key, legacy_key from instance_id + dtype.
-
-        _key tracks instance_id (modern callers); legacy_key preserves the
-        old (path + dtype.key + dtype_name) shape so v0.18 serializations
-        that referenced DataInstances by the old key still resolve.
-        """
         self._hash, _ = KeyGenerator.FromStr(self.instance_id, l=10)
         self._key = self.instance_id
         _, self.legacy_key = KeyGenerator.FromStr("".join([
@@ -86,13 +61,6 @@ class DataInstance:
         ]), l=8)
 
     def RecalculateKey(self):
-        """Backward-compat shim — see _refresh_derived_keys.
-
-        Callers that mutate the instance in place (e.g., a dtype rename)
-        used to invoke this to bring _hash / instance_id into sync with
-        path + dtype. Under S2 the instance_id is owned by the library,
-        so this just refreshes the derived shorter keys.
-        """
         self._refresh_derived_keys()
         return self._key
 
@@ -147,11 +115,6 @@ class DataInstance:
             lineage_payload=payload,
             instance_id=raw.get("instance_id"),
         )
-        # Mirror the unpacked instance_id back into the library's meta so
-        # subsequent lib.Get(path) calls return the same id rather than
-        # minting a new leaf. Critical for round-trip stability when the
-        # library YAML lacks per-path instance_ids but a referencing
-        # workflow plan does carry them.
         if raw.get("instance_id"):
             lib.instance_meta[inst.path] = {
                 "instance_id": inst.instance_id,
@@ -160,7 +123,7 @@ class DataInstance:
             }
         return inst
 
-class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
+class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _TelemetryQueries):
     schema: str = "v1"
     _path_to_meta: Path = Path("./_metadata")
     _path_to_types: Path = Path("./_metadata/types")
@@ -179,23 +142,14 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
         self.remote_src: Source|None = None
-        # an optional user-set discriminator. Identity here is deliberately content-free
-        # (inputs reach 100s of GB), so two libraries listing the same paths are the same
-        # library. Setting this is how a user says "no, treat this as new" -- it is packed
-        # into the manifest, so it flows into the library key, every instance_id, and the
-        # plan/task key without any special casing downstream.
         self.fork_id: str|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
-        # S2 — per-path identity metadata. Each entry:
-        #   {"instance_id": str, "origin": "leaf"|"lineage"|"imported",
-        #    "lineage_payload": bytes|None}
         self.instance_meta: dict[Path, dict] = {}
-        # Where each type namespace in `self.types` was loaded from, when that
-        # was a plain path -- not needed for the normal directory-backed
-        # round trip (Save/Load copy the namespace itself), only for
-        # PackInline, which references the namespace instead of copying it.
         self._type_sources: dict[str, Path] = {}
+        # The `pinned:` block from index.yml, or None for the overwhelming
+        # majority of libraries. See pinned.py.
+        self._pinned: dict|None = None
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -204,6 +158,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             self.instance_meta = other.instance_meta
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
+            self._pinned = other._pinned
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -216,12 +171,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         return other in self.manifest
 
     def Purge(self):
+        self._refuse_if_pinned("Purge")
         if self.location.exists():
             shutil.rmtree(self.location)
         self.location.mkdir(exist_ok=True)
 
     def AddTypeLibrary(self, lib: DataTypeLibrary|Source|Path|str, namespace: str|None=None, on_exist: str="skip"):
-        # Auto-detect swapped args: AddTypeLibrary("name", DataTypeLibrary(...))
         if isinstance(lib, str) and isinstance(namespace, DataTypeLibrary):
             lib, namespace = namespace, lib
         assert on_exist in {"skip", "error", "overwrite"}
@@ -239,8 +194,8 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                 return self.types[namespace]
             elif on_exist == "error":
                 raise AssertionError(msg)
-            else: # on_exist == "clear":
-                pass # just overwrite
+            else:
+                pass
 
         if not isinstance(lib, DataTypeLibrary):
             mover = Logistics()
@@ -277,7 +232,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         e_name = self.manifest[p]
         e = self.GetType(e_name)
         if p in self.parents:
-            # Build parent endpoints with their own lineage chains
             parent_endpoints = set()
             for parent_meta in self.parents[p]:
                 parent_ep = self._build_endpoint_with_lineage(parent_meta.path)
@@ -286,11 +240,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         return DataInstance(p, e, e_name, self)
 
     def _build_endpoint_with_lineage(self, path: Path, _seen: set[Path] | None = None) -> Endpoint:
-        """Recursively build an endpoint with its full parent chain."""
         if _seen is None:
             _seen = set()
         if path in _seen:
-            # Avoid infinite recursion
             e_name = self.manifest[path]
             return self.GetType(e_name)
         if path in self._endpoint_cache:
@@ -345,7 +297,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                 return any(model.IsA(e) for e in _wl)
 
         def _get_all_ancestors(path: Path) -> set[Path]:
-            """Recursively collect all ancestor paths."""
             ancestors = set()
             to_check = [path]
             while to_check:
@@ -356,14 +307,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                         to_check.append(p.path)
             return ancestors
 
-        # Build children_of reverse index once — O(N×P)
         children_of: dict[Path, set[Path]] = {}
         for item_path, parent_list in self.parents.items():
             for pm in parent_list:
                 children_of.setdefault(pm.path, set()).add(item_path)
 
         def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
-            """BFS down children_of index to find all descendants."""
             descendants = set()
             queue = list(ancestor_paths)
             while queue:
@@ -381,44 +330,17 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             ancestors = _get_all_ancestors(path)
             cache_key = frozenset(ancestors)
             if ancestors:
-                # Everything under the shared ancestors, which is the same set
-                # for every index item beneath them -- that is what makes this
-                # topology collapse to one view, and what makes the cache safe.
-                # `path`'s own subtree is inside it already.
                 if cache_key not in _desc_cache:
                     _desc_cache[cache_key] = _get_all_descendants(ancestors)
                 siblings = _desc_cache[cache_key]
             else:
-                # A *root* index item has no ancestors, so every root shares the
-                # empty cache key -- and caching against it handed every sample
-                # the first item's subtree. Three views of the right shape, each
-                # holding s0's files, silently. Roots are walked per item; each
-                # walk covers only its own subtree, so the total is still linear.
                 siblings = _get_all_descendants({path})
-            # When path is already in siblings (shared-parent topology),
-            # the mask is identical for all items with the same ancestors.
-            # Yield only unique masks to avoid O(n^2) downstream.
             if path in siblings and cache_key in _yielded_ancestors:
                 continue
             _yielded_ancestors.add(cache_key)
             yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
 
     def Trace(self, from_type: str, to_type: str):
-        """Trace lineage relationships between data types.
-
-        Yields (from_instance, to_instance) pairs where from_instance is of
-        from_type and to_instance is of to_type, connected through lineage.
-        Works in both directions: ancestor (follow parents) and descendant
-        (reverse lookup).
-
-        Args:
-            from_type: Source data type name (e.g. "mock::assembly")
-            to_type: Target data type name (e.g. "mock::reads")
-
-        Yields:
-            Tuple of (DataInstance, DataInstance) pairs
-        """
-        # Build reverse index: path -> list of paths that have it as ancestor
         children_of: dict[Path, list[Path]] = {}
         for path, parents_list in self.parents.items():
             for p in parents_list:
@@ -429,41 +351,57 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                 continue
             from_inst = self.Get(from_path)
 
-            # Check ancestors (to_type is an ancestor of from_type)
             for parent_meta in self.parents.get(from_path, []):
                 if parent_meta.name == to_type:
                     to_inst = self.Get(parent_meta.path)
                     yield (from_inst, to_inst)
 
-            # Check descendants (to_type is a descendant of from_type)
             for child_path in children_of.get(from_path, []):
                 if self.manifest.get(child_path) == to_type:
                     to_inst = self.Get(child_path)
                     yield (from_inst, to_inst)
 
-    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+    def _register(self, path, dtype: str, parents, set_identity):
         if parents is None:
             parents = []
         for p in parents:
             assert p in self.manifest
-        # DEFERRED is a constant, so what the caller passes carries nothing to
-        # tell two deferred rows apart. The manifest is keyed by path and
-        # identity derives from path, so the distinct value is minted here, on
-        # receipt, and persisted from then on.
         path = mint_deferred_path() if path is DEFERRED else Path(path)
         assert path not in self.manifest, f"[{path}] already added"
-        type_model = self.GetType(dtype) # check if datatype exists
+        self.GetType(dtype)
         self.manifest[path] = dtype
-        # R1: mint the leaf instance_id at AddItem time. When the file is
-        # present the id is derived from (content digest ⊕ relative path)
-        # so two runs on byte-identical inputs at the same layout mint the
-        # same id → cross-run cache reuse, while distinct files that share
-        # bytes stay distinct; when the file is absent it falls back to a
-        # unique-per-call random id (legacy S2 behaviour). See _mint_leaf_id.
-        self._mint_leaf_id(path)
+        set_identity(path)
         self.AddParentsTo(path, [self.Get(p) for p in parents])
         self._invalidate_endpoint_cache()
         return path
+
+    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+        self._refuse_if_pinned("AddItem")
+        return self._register(path, dtype, parents, self._mint_leaf_id)
+
+    # The caller supplies the identity, so nothing here invents one and the
+    # given path does not refuse what this produces. That is the route a pool
+    # reference, a published lineage and a DVC content pin all arrive by.
+    def RegisterItem(
+        self,
+        path: Path|str,
+        dtype: str,
+        *,
+        instance_id: str,
+        origin: str = "leaf",
+        lineage_payload: bytes|None = None,
+        parents: Iterable[Path]|None = None,
+    ):
+        def _set(p: Path):
+            self.instance_meta[p] = {
+                "instance_id": instance_id,
+                "origin": origin,
+                "lineage_payload": lineage_payload,
+                "fork_id": self.fork_id,
+            }
+        self._refuse_if_pinned("RegisterItem")
+        assert origin in {"leaf", "lineage", "imported"}, f"bad origin {origin!r}"
+        return self._register(path, dtype, parents, _set)
 
     def SetLineageInstance(
         self,
@@ -473,12 +411,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         lineage_payload: bytes,
         origin: str = "lineage",
     ) -> None:
-        """Register a non-leaf (origin=lineage|imported) entry.
-
-        Used by the post-execution promote step (S5) to record that a
-        transform produced an output whose identity is the lineage_key
-        over its (transform_key, signature, sorted_input_ids).
-        """
+        self._refuse_if_pinned("SetLineageInstance")
         assert origin in {"lineage", "imported"}, (
             f"origin must be lineage or imported, got {origin!r}"
         )
@@ -489,18 +422,90 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
+        # The file is written before it is registered: a leaf id is derived from
+        # the file's stat, and registering first would find nothing there and
+        # fall back to a random id.
+        self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
-        path = self.AddItem(path=path, dtype=dtype, parents=parents) # perform checks first
         with open(self.location/path, "w") as f:
             f.write(value)
-        return path
+        return self.AddItem(path=path, dtype=dtype, parents=parents)
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()
 
+    def Invalidate(self, paths: Iterable[Path]|None = None) -> dict:
+        """Say that the data behind these items has changed.
+
+        A leaf's identity is the absolute path it sits at and the mtime of the
+        top node -- one stat, whatever the size of what is there, which is what
+        keeps a 24 GB reference from costing a tree walk on every run. The
+        price is that a change below the top node is invisible, and this is the
+        lever for it: touch the path, re-mint through the same formula the
+        agent uses, and every cache key built on the old id stops matching.
+        """
+        self._refuse_if_pinned("Invalidate")
+        targets = (
+            list(self.manifest) if paths is None
+            else [Path(p) for p in paths]
+        )
+        moved: dict[str, dict[str, str]] = {}
+        skipped: dict[str, str] = {}
+        for path in targets:
+            if path not in self.manifest:
+                skipped[str(path)] = "not in the library"
+                continue
+            entry = self.instance_meta.get(path) or {}
+            origin = entry.get("origin", "leaf")
+            if origin == "imported":
+                skipped[str(path)] = (
+                    "imported; its identity is the pool's record, so say the "
+                    "data changed by importing it again"
+                )
+                continue
+            if origin != "leaf":
+                skipped[str(path)] = (
+                    "produced by a run; its identity is its lineage"
+                )
+                continue
+            abs_path = self._abs(path)
+            if is_deferred(abs_path):
+                skipped[str(path)] = "deferred; there is nothing to touch yet"
+                continue
+            try:
+                # Follows symlinks, because the id does. Strictly forward, so
+                # an item touched twice inside one clock tick still moves --
+                # an invalidate that leaves the id where it was is worse than
+                # no invalidate at all.
+                st = abs_path.stat()
+                bump = max(time.time_ns(), st.st_mtime_ns + 1)
+                os.utime(abs_path, ns=(bump, bump))
+            except OSError as e:
+                # Minting a random id for something this host cannot see is how
+                # a false hit gets built. Report it instead.
+                skipped[str(path)] = f"not reachable from this host: {e}"
+                continue
+            old_id = entry.get("instance_id", "")
+            moved[str(path)] = {
+                "from": old_id, "to": self._mint_leaf_id(path)
+            }
+            # An invalidate is the operator saying this identity moves now, and
+            # it has already refused every path it could not stat. That is an
+            # act on a record, not the invention of one, so the given path has
+            # no business refusing what it produces.
+            self.instance_meta[path].pop("minted", None)
+        if moved:
+            self.Save()
+        return {
+            "library": str(self.location),
+            "moved": moved,
+            "skipped": skipped,
+        }
+
     def Remove(self, path: Path):
+        self._refuse_if_pinned("Remove")
         assert path in self.manifest, f"not found [{path}]"
         try:
             K = Path("./test")
@@ -516,21 +521,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         self._invalidate_endpoint_cache()
 
     def _migrate_instance_meta(self, old: Path, new: Path):
-        """Move a path's identity entry through a rename.
-
-        A lineage or imported id hashes how the output was produced and
-        does not depend on where it sits, so it follows the file. A leaf
-        id folds the library-relative path, so it is re-minted at the new
-        path -- which is what a library freshly built over the same bytes
-        at that path holds. Carrying the old id across instead leaves one
-        library state with two possible ids depending on how it got there,
-        and two runs that should share a cache key stop sharing one.
-
-        Re-minting here rather than dropping the entry is deliberate: an
-        absent entry falls through to the legacy `(path, dtype, lib_key)`
-        derivation, which is neither content-addressed nor what a fresh
-        build would produce. That path is for v0.18 manifests only.
-        """
         meta = self.instance_meta.pop(old, None)
         if meta is None:
             return
@@ -540,10 +530,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             self._mint_leaf_id(new)
 
     def Rename(self, path: Path, new: Path, _save=True):
-        """
-        Rename data instance in library and the file system.
-        *library will be corrupted if change is not saved
-        """
+        self._refuse_if_pinned("Rename")
         assert path in self.manifest, f"not found [{path}]"
         assert path.is_absolute() == new.is_absolute(), f"can not mix relative and absolute paths [{path}, {new}]"
         assert new not in self.manifest, f"already exists [{new}]"
@@ -572,12 +559,8 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         if _save: self.Save()
 
     def RenameByParent(self, parent_type: str):
-        """
-        Rename all items in the library based on the path stem of their parent of the given type.
-        Uses a transactional approach: plans all renames, executes filesystem moves, then commits manifest atomically.
-        """
-        # Phase A — Plan (read-only)
-        rename_plan: list[tuple[Path, Path]] = []  # (old_path, proposed_new_path)
+        self._refuse_if_pinned("RenameByParent")
+        rename_plan: list[tuple[Path, Path]] = []
 
         for item_path, item_type in self.manifest.items():
             if item_type == parent_type:
@@ -592,12 +575,10 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             new_path = item_path.parent / (parent.path.stem + item_path.suffix)
             rename_plan.append((item_path, new_path))
 
-        # Detect collisions: group by (directory, new_filename)
-        # Also account for non-renamed items that occupy target paths
         renamed_old_paths = {old for old, _ in rename_plan}
         occupied_paths = {p for p in self.manifest if p not in renamed_old_paths}
         final_plan: list[tuple[Path, Path]] = []
-        seen: dict[Path, list[int]] = {}  # new_path -> list of indices in rename_plan
+        seen: dict[Path, list[int]] = {}
         for i, (old, new) in enumerate(rename_plan):
             seen.setdefault(new, []).append(i)
 
@@ -616,7 +597,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         if not final_plan:
             return
 
-        # Execute filesystem moves
         completed: list[tuple[Path, Path]] = []
         try:
             for old, new in final_plan:
@@ -626,7 +606,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                 abs_old.rename(abs_new)
                 completed.append((old, new))
         except Exception:
-            # Rollback: move completed renames back to originals
             for orig, renamed in completed:
                 abs_renamed = renamed if renamed.is_absolute() else self.location / renamed
                 abs_orig = orig if orig.is_absolute() else self.location / orig
@@ -634,9 +613,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                     abs_renamed.rename(abs_orig)
             raise
 
-        # Commit manifest atomically — two-phase for O(N×P) instead of O(R×N×P)
         old_to_new = {old: new for old, new in final_plan}
-        # Phase 1: Move manifest and parents keys
         for old, new in final_plan:
             self.manifest[new] = self.manifest[old]
             del self.manifest[old]
@@ -644,7 +621,6 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                 self.parents[new] = self.parents[old]
                 del self.parents[old]
             self._migrate_instance_meta(old, new)
-        # Phase 2: Single pass to update all parent references
         for parent_list in self.parents.values():
             for pm in parent_list:
                 if pm.path in old_to_new:
@@ -654,7 +630,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
 
     def AddParentsTo(self, path: Path|str, parents: Iterable[DataInstance]):
         if all(False for _ in parents):
-            return # there were no parents
+            return
         p = Path(path)
         current = self.parents.get(p, [])
         seen = {f"{x.library_key}/{x.path}" for x in current}
@@ -665,28 +641,26 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         self._invalidate_endpoint_cache()
 
     def SetParentsOf(self, path: Path|str, parents: Iterable[DataInstance]):
-        """Declare an item's lineage to be exactly this, dropping what it was.
-
-        `AddParentsTo` is a union, which is what declaring lineage as items
-        arrive wants and what taking a link back cannot use. Editing needs both
-        directions, so this clears first and then goes through the same add --
-        the parent metadata is built in one place either way.
-        """
         p = Path(path)
         if p in self.parents:
             del self.parents[p]
-            # ...even when the new list is empty, which AddParentsTo returns
-            # early on: an endpoint cached with the old parents is now wrong
             self._invalidate_endpoint_cache()
         self.AddParentsTo(p, parents)
 
+    #: Top-level index keys that are ABOUT the library rather than part of what
+    #: it is. `remote_src` is where a copy came from; `pinned` is a stat stamp
+    #: over the same manifest. Letting either into the key would move the
+    #: library key -- and so every task key built on it -- when nothing about
+    #: the data changed, which for `pinned` would re-break the plan stability
+    #: pinning exists to buy: a legitimate re-stamp must be invisible here.
+    #: `frozen` is the pre-rename spelling of the same block; an index written
+    #: under it must key the same as one written now, or the rename moves every
+    #: task key built on a library nobody re-pinned.
+    _KEY_EXCLUDED_TOP_LEVEL = ("remote_src", "pinned", "frozen")
+
     def _calculate_key(self, _raw_override=None):
-        if _raw_override is not None:
-            me_d = {k: v for k, v in _raw_override.items() if k != "remote_src"}
-        else:
-            me_d = self.Pack()
-            for k in ["remote_src"]:
-                if k in me_d: del me_d[k]
+        src = _raw_override if _raw_override is not None else self.Pack()
+        me_d = {k: v for k, v in src.items() if k not in self._KEY_EXCLUDED_TOP_LEVEL}
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key
@@ -702,24 +676,62 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         return self._hash
 
     def PruneTypes(self, save: bool=True, whitelist: set[str|Dependency|Endpoint]|None=None):
-        used_type_names = set(self.manifest.values())
-        if whitelist is None: whitelist = set() 
-        wl_names = {x for x in whitelist if isinstance(x, str)}
-        wl_types = {x for x in whitelist if not isinstance(x, str)}
-        used_type_names |= wl_names
+        self._refuse_if_pinned("PruneTypes")
+        used_type_names = self._used_type_names()
+        if whitelist is None: whitelist = set()
+        used_type_names |= {x for x in whitelist if isinstance(x, str)}
+        # Matched on properties, not on the node hash: a Dependency minted by
+        # AddRequirement(example=e) carries the caller's parents, so it hashes
+        # differently from the library Endpoint it was cloned from.
+        wl_props = {
+            frozenset(x.properties)
+            for x in whitelist if not isinstance(x, str)
+        }
+        # Subset, not equality: a type is satisfied by any type holding at least
+        # its properties, so every ancestor of a declared type is a name this
+        # library can still answer for. Equality dropped them, and a target may
+        # only name a type the library carries -- which made the documented
+        # "write the shared ancestor as target 0" pattern resolve only when some
+        # unrelated transform happened to declare that ancestor by hand.
         for namespace, lib in list(self.types.items()):
-            lib_types = {f"{namespace}::{dtype}" for dtype in lib.types}
-            _used = used_type_names.intersection(lib_types)
-            if len(_used) == 0:
+            keep = {
+                k for k, v in lib.types.items()
+                if f"{namespace}::{k}" in used_type_names
+                or any(frozenset(v.properties) <= w for w in wl_props)
+            }
+            if len(keep) == 0:
                 del self.types[namespace]
             else:
                 new = DataTypeLibrary.Unpack(lib.Pack())
-                new.types = {k:v for k, v in lib.types.items() if f"{namespace}::{k}" in _used or v in wl_types}
+                new.types = {k: v for k, v in lib.types.items() if k in keep}
                 self.types[namespace] = new
-        if save: self.Save(update_types=True)
+        if save:
+            # Load re-reads every file under _metadata/types/ and takes each one
+            # as a namespace, so a prune that only narrows memory is undone by
+            # the next load -- and a file left by an older build with a wider
+            # --types is a namespace nobody declared. What survives here is what
+            # the directory holds.
+            #
+            # The unlink lives in PruneTypes rather than in _persist because
+            # _ensure_saved() calls _persist on every PrepTransfer, and stripping
+            # a source library as a side effect of preparing to send it is not
+            # what that call means.
+            types_dir = self.location/self._path_to_types
+            if types_dir.is_dir():
+                for f in types_dir.iterdir():
+                    if f.is_dir() or f.suffix != self._metadata_ext: continue
+                    if f.stem in self.types: continue
+                    f.unlink(missing_ok=True)
+            self.Save(update_types=True)
+
+    def _used_type_names(self) -> set[str]:
+        # Index `parents:` entries name types too, and Unpack dereferences them
+        # before any manifest entry is read.
+        names = set(self.manifest.values())
+        names |= {p.name for lst in self.parents.values() for p in lst}
+        return names
 
     def AsView(self, mask: set[Path], invert=False):
-        """if invert=True, then items in mask are excluded"""
         return DataInstanceLibraryView(self, mask, invert)
 
 
@@ -734,12 +746,6 @@ class DataInstanceLibraryView:
         self._mask = mask
 
     def __getattr__(self, name):
-        # Delegate anything the view does not override (GetKey, PrepTransfer,
-        # GetPath, manifest, ...) to the wrapped library. The mask only needs
-        # to affect iteration and lookup; identity and transfer -- used by
-        # WorkflowTask.Pack / SaveAs when staging -- come straight from the
-        # original, so a masked view stages like a real library. The masked-out
-        # entries are transferred but never referenced by any plan step.
         if name.startswith("__") and name.endswith("__"):
             raise AttributeError(name)
         try:
@@ -760,12 +766,51 @@ class DataInstanceLibraryView:
         return self._original.Get(path)
     
     def Iterate(self):
-        # sorted, not set order: `Path.__hash__` is the string hash, which
-        # python randomizes per process, so an unsorted walk hands the solver
-        # its transforms and instances in a different order every run. Where
-        # two of them are interchangeable the solver then picks a different one
-        # each time -- the same template solved twice produced two different
-        # plans, and the whole verification harness rests on that not happening.
         for p in sorted(self._mask):
             inst = self._original.Get(p)
             yield p, inst.dtype_name, inst.dtype
+
+    def _prune_whitelist(self) -> set:
+        return set()
+
+    def PruneTypes(self, save: bool=True, whitelist: set|None=None):
+        wl = set(whitelist) if whitelist else set()
+        return self._original.PruneTypes(save=save, whitelist=wl|self._prune_whitelist())
+
+    def PrepTransfer(self, dest: Source, mover: Logistics|None=None, image_root: Path|None=None):
+        # The masked half of the library, and only it. Materialized once and
+        # queued as a single transfer, so the SSH executor still opens one
+        # rsync per library rather than one per file.
+        o = self._original
+        o._ensure_saved()
+        for p, _name, _dtype in self.Iterate():
+            assert p.is_absolute() or (o.location/p).exists(), f"file not found [{p}]"
+        drop = {p for p in o.manifest if p not in self._mask}
+        if image_root is None:
+            image_root = Path(tempfile.mkdtemp(prefix="msm.image."))
+        image_root = Path(image_root)
+        skipped = o.MaterializeImage(image_root, drop)
+        # The manifest is never narrowed -- the library key is a hash of it --
+        # so every type the manifest names has to survive. The mask narrows the
+        # whitelist instead, which is where a transform library's 28 namespaces
+        # collapse to the handful its kept transforms declare.
+        # Not check_pinned_stamps: the image was written a moment ago and the
+        # witness is about the library it came from, not about this copy.
+        image = type(o).Load(image_root, check_pinned_stamps=False)
+        if not image.is_pinned:
+            image.PruneTypes(save=True, whitelist=self._prune_whitelist())
+        Log.Info(
+            f"staging [{o.location.name}] as [{len(self._mask)}] of"
+            f" [{len(o.manifest)}] entries; [{skipped}] skipped"
+        )
+        if mover is None:
+            mover = Logistics()
+        mover.QueueTransfer(src=Source.FromLocal(image_root), dest=dest)
+        return mover
+
+    def SaveAs(self, dest: Source, label: str|None=None):
+        with TemporaryDirectory(prefix="msm.image.") as tmp:
+            mover = self.PrepTransfer(dest, image_root=Path(tmp)/self._original.location.name)
+            res = mover.ExecuteTransfers(label=label)
+        assert len(res.completed) == 1, f"move failed"
+        return res

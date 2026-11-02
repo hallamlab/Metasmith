@@ -1,0 +1,6 @@
+outs:
+- md5: 3e90783da34a77637069d051577c7f69.dir
+  size: 348286925
+  nfiles: 5
+  hash: md5
+  path: lookups

@@ -1,0 +1,14 @@
+baseline bins_only     0.127
+baseline ladder-43     0.030
+baseline ladder-53     0.070
+baseline ladder-68     0.243
+baseline orfs_only     0.310
+baseline shipped       0.017
+baseline unpinned      0.493
+head bins_only         0.070
+head ladder-43         0.037
+head ladder-53         0.063
+head ladder-68         0.073
+head orfs_only         0.057
+head shipped           0.017
+head unpinned          0.080

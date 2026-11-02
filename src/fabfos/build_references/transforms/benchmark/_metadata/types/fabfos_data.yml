@@ -1,0 +1,17 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  genomes:
+    properties:
+    - Per-host NCBI assembly data (genomes/<host>/genome/) and the published curated
+      model where one exists (genomes/<host>/GEM/). The host set is a fact in the
+      transform, not a caller's argument.
+  metanetx:
+    properties:
+    - 'MetaNetX/MNXref release tree (metanetx/<version>/): chem_prop, chem_xref, reac_prop,
+      reac_xref and their upstream .md5 sidecars. The identity space everything else
+      is expressed in.'

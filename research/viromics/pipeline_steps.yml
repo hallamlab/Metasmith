@@ -1,0 +1,418 @@
+# Antonio Castellano-Hinojosa's manual viromics pipeline, step by step, against
+# what src/metasmith_libraries can plan.
+#
+# Transcribed from `Viromics_workflow_table.xlsx` (gmail, 2026-06-10), which is
+# the authoritative contract sketch: one row per step with tool, version, key
+# parameters, inputs and outputs. The `01_`..`15_` shell scripts (gmail
+# 2026-05-15, slack 2026-06-16) cover rows 1-15 only and are the source for the
+# exact thresholds. Both are under reference/.
+#
+# status is what the LIBRARY can do, not what the pipeline needs:
+#   available   a transform produces the row's output on the row's tool
+#   substitute  a transform reaches the same contract by a different tool, or
+#               reaches part of the row's output
+#   mock        a transform declares the row's inputs and products for real, and
+#               its protocol touches its outputs and runs no tool
+#   dropped     deliberately not planned; the note says what answers it instead
+#   missing     nothing in the library produces it and nothing is planned
+#
+# `produces` names the metasmith type a target can be asked for. A row without
+# one cannot be a target, whatever its status.
+#
+# Where a viral tool runs follows one rule. Cross-sample tools run on the frozen
+# set, because pooling is what they are for -- MMseqs2 defines a vOTU by
+# clustering across samples, and CheckV, vConTACT3, iPHoP and the spacer BLAST all
+# want one catalogue. Per-contig annotators run once per sample and join to the
+# frozen set through viromics::candidate_call_provenance: nothing about geNomad,
+# VirSorter2, VIBRANT or DRAM-v is cross-sample, and a frozen contig is an
+# interval of a contig they already annotated. Antonio ran the second group on his
+# curated vOTU set; running them per sample computes the same per-contig facts on
+# the parent contig, which for the step-8 host-gene fraction is the better input
+# and elsewhere is a documented caveat.
+#
+# Ten rows are dropped, and nine of those are one decision. Antonio's pipeline is
+# a chain of filters -- each curation step writes a smaller FASTA and every later
+# tool reads whatever the previous filter left -- so changing any threshold means
+# re-running everything below it. This template writes exactly one FASTA after
+# assembly (viromics::dereplicated_candidate_virus, the frozen candidate set) and
+# then emits only tables keyed on its contig ids. The size cuts, the gene-content
+# rule, the mobile-element rule and the vOTU slice become a join over those
+# tables, run after the DAG, where a different threshold costs a groupby.
+
+steps:
+  # ---------------------------------------------------------------- A. reads
+  - n: 1
+    group: read preprocessing
+    tool: FastQC v0.12.1
+    status: substitute
+    transform: assembly/seqkit_reads.py
+    produces: sequences::read_qc_stats
+    note: >-
+      assembly/_disabled/fastqc.py is the tool-for-tool match and is disabled;
+      seqkit reports the same read statistics without the html.
+  - n: 2
+    group: read preprocessing
+    tool: Trimmomatic v0.39
+    status: substitute
+    transform: assembly/bbduk.py
+    produces: sequences::clean_short_reads
+    note: >-
+      bbduk trims to the same contract (short_reads -> clean_short_reads). The
+      thresholds differ from LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:50.
+
+  # ------------------------------------------------------------- B. assembly
+  - n: 3
+    group: assembly
+    tool: metaSPAdes v4.2.0
+    status: dropped
+    note: >-
+      Redundant against megahit, and expensive twice over: spades_assembly and
+      megahit_assembly are both sequences::assembly, so an unpinned slot is
+      satisfiable from either and the planner did answer the MAG lane from one
+      assembler and the viral lane from the other. The driver now masks
+      spades.py out of the assembly library rather than hoping the targets pin
+      every slot.
+  - n: 4
+    group: assembly
+    tool: MEGAHIT v1.1.3
+    status: available
+    transform: assembly/megahit.py
+    produces: sequences::megahit_assembly
+
+  # ----------------------------------------- C. viral identification, curation
+  - n: 5
+    group: viral identification
+    tool: SeqKit (combine + rename + >=1 kb)
+    status: mock
+    transform: viromics/contig_length_table.py
+    produces: viromics::contig_length_table
+    note: >-
+      A length table, not a filtered FASTA. The cross-sample pooling and the
+      SAMPLE|assembler|id renaming this row also did now happen once, in
+      viromics/merge_candidate_calls.py, and the >=1 kb cut is a predicate over
+      this table.
+  - n: 6
+    group: viral identification
+    tool: MMseqs2 easy-cluster (95% id, 80% cov, cov-mode 0)
+    status: mock
+    transform: viromics/mmseqs_precluster.py
+    produces: viromics::precluster_table
+    note: membership only; the representative FASTA is deliberately not a product.
+  - n: 7
+    group: viral identification
+    tool: geNomad v1.5.1 end-to-end
+    status: available
+    transform: metagenomics/taxonomy/genomad.py
+    produces: >-
+      viromics::genomad_candidate_virus, taxonomy::genomad_virus_genes,
+      taxonomy::genomad_virus_summary, taxonomy::genomad_plasmid_summary
+    note: >-
+      One of the three callers. It now declares the gene table every one of
+      Antonio's curation predicates reads, plus a normalised interval table --
+      contig id, start, end, caller, score -- read off the `coordinates` column.
+  - n: 8
+    group: viral identification
+    tool: python (pandas + Biopython) gene-level filter
+    status: dropped
+    note: >-
+      Keep a contig if viral_genes>0, or viral==0 and host==0, or >=75% unknown
+      genes; and length >=1 kb. Every column it reads is emitted:
+      marker/virus_hallmark/uscg by taxonomy::genomad_virus_genes, length by
+      viromics::contig_length_table. The rule is a groupby over the join. Its
+      `length >= 1000` was already a no-op, because step 5 had cut at 1 kb --
+      the signature of thresholds copied from a methods section.
+  - n: 9
+    group: viral identification
+    tool: CheckV v1.0.1 (db v1.5) end_to_end
+    status: mock
+    transform: viromics/checkv.py
+    produces: viromics::checkv_contamination
+    note: >-
+      Trim suggestions as coordinates. contamination.tsv carries
+      region_coords_bp and region_coords_genes, so a provirus boundary is
+      recorded without cutting anything out of the frozen set. Note that CheckV
+      drops nothing -- a contig with no detected boundary is written whole to
+      viruses.fna, so that file is "contigs with no host region", not "the
+      viral contigs"; it only reads as a viral set because step 8 ran first.
+  - n: 10
+    group: viral identification
+    tool: MMseqs2 cluster (95% id, 80% cov of shorter, cov-mode 1)
+    status: mock
+    transform: viromics/mmseqs_votu.py
+    produces: viromics::votu_cluster_table
+    note: this table IS the vOTU definition; nothing downstream reads a representative FASTA.
+  - n: 11
+    group: viral identification
+    tool: SeqKit fx2tab (vOTU counts by size)
+    status: dropped
+    note: a groupby of viromics::votu_cluster_table against viromics::contig_length_table.
+  - n: 12
+    group: viral identification
+    tool: python annotation filter (>=100 kb mobile-element artefacts)
+    status: dropped
+    note: >-
+      Drops vOTUs >=100 kb whose geNomad gene annotations match transposase,
+      glycosyltransferase, nucleotidyltransferase, carbohydrate kinase,
+      NDP-sugar epimerase, LPS, endonuclease, integrase, plasmid stability /
+      parA-parB, or toxin-antitoxin. Every column it reads -- marker,
+      annotation_description, annotation_accessions, annotation_conjscan,
+      annotation_amr, taxname -- is in taxonomy::genomad_virus_genes. The
+      original also joined a pre-cluster gene table to post-cluster
+      representatives; the frozen set removes that hazard, but not the fact that
+      its `_[0-9]+` contig regex collides with CheckV's `_1` provirus suffix.
+  - n: 13
+    group: viral identification
+    tool: SeqKit (counts after curation)
+    status: dropped
+    note: same table as 11, after the 8/12 predicates.
+  - n: 14
+    group: viral identification
+    tool: CheckV v1.0.1 (final QA)
+    status: mock
+    transform: viromics/checkv.py
+    produces: viromics::checkv_quality_summary
+    note: >-
+      The SAME task as step 9, not a second one. `checkv end_to_end` is
+      contamination -> completeness -> complete_genomes -> quality_summary over
+      one tmp/, so both files come out of a single prodigal-gv and DIAMOND pass;
+      running the two rows as two transforms repeats that pass for nothing.
+      quality_summary.tsv is half of the paper's Supplementary Data 2.
+  - n: 15
+    group: viral identification
+    tool: VIBRANT v1.2.1
+    status: mock
+    transform: viromics/vibrant.py
+    produces: >-
+      viromics::vibrant_candidate_virus, viromics::vibrant_lifestyle_table,
+      viromics::vibrant_amgs, viromics::vibrant_genome_quality
+    note: >-
+      The third caller, and an annotator, in one per-sample run. The lifestyle
+      call -- the other half of Supplementary Data 2 -- is reported per viral
+      sequence, so it reaches a vOTU through candidate_call_provenance rather
+      than by re-running VIBRANT on the frozen set.
+
+  # ------------------------------- D. read mapping, abundance, microdiversity
+  - n: 16
+    group: abundance
+    tool: CoverM v0.7.0 contig (minimap2-sr, trimmed_mean)
+    status: dropped
+    note: >-
+      vOTU abundance is sequences::assembly_per_contig_coverage joined through
+      viromics::candidate_call_provenance and viromics::votu_cluster_table. This
+      is the same arithmetic bin depth already uses in this library. It is not
+      identical to CoverM's numbers: a sample whose assembly did not recover a
+      contig contributes zero for it, where cross-mapping would have counted its
+      reads.
+  - n: 17
+    group: abundance
+    tool: minimap2 + SAMtools (microdiversity bams)
+    status: available
+    transform: assembly/assembly_stats.py
+    produces: alignment::bam
+    note: the reference is the sample's own assembly, not a shared vOTU reference.
+  - n: 18
+    group: abundance
+    tool: MetaPop v0.0.48 (pi, Watterson theta, FST)
+    status: missing
+    note: >-
+      Not blocked on the tool: /usr/local/bin/MetaPop.R is a standalone Rscript
+      driver taking -dir (a BAM directory), -assem, -ct and optionally -genes on
+      argv, with samtools and bcftools on PATH. It is blocked on the mapping.
+      MetaPop needs every BAM to be against ONE assembly, and the library's BAMs
+      are per sample against that sample's own. Either a cross-mapping transform
+      is added -- every sample's clean reads to the frozen set -- or MetaPop runs
+      per sample and loses the cross-sample comparison. That is a topology
+      decision, so it is left out of the mock set until it is made.
+
+  # -------------------------------------------------------------- E. taxonomy
+  - n: 19
+    group: taxonomy
+    tool: geNomad v1.5.1 (ICTV markers, virus_score >=0.7)
+    status: available
+    transform: metagenomics/taxonomy/genomad.py
+    produces: taxonomy::genomad_virus_summary
+    produces: taxonomy::genomad_taxonomy
+    note: >-
+      The same per-sample geNomad run as row 7, not a second instance. The ICTV
+      lineage is `<out>/<prefix>_annotate/<prefix>_taxonomy.tsv`, which survives
+      `--cleanup` (that removes only `_mmseqs2`), and the score >=0.7 cut is a
+      predicate over virus_summary.tsv rather than a filter in the DAG.
+  - n: 20
+    group: taxonomy
+    tool: vConTACT3 v3.1.4
+    status: mock
+    transform: viromics/vcontact3.py
+    produces: viromics::vcontact3_assignments, viromics::vcontact3_network
+    note: >-
+      Run once on everything. There is no path that reuses protein clusters
+      against a subset of genomes, so a filtered rerun costs the whole thing.
+      v3 renamed its outputs: the xlsx's genome_by_genome_overview.csv and
+      viral_cluster_overview.csv are v2 names and do not exist in 3.1.4.
+
+  # ------------------------------------------- F. host prediction, virus-host
+  - n: 21
+    group: host prediction
+    tool: iPHoP v1.8.0 (add_to_db, then predict)
+    status: mock
+    transform: viromics/iphop_add_to_db.py, viromics/iphop_predict.py
+    produces: viromics::host_prediction_genus, viromics::host_prediction_genome
+    note: >-
+      Two transforms, ordered by a real product: predict requires
+      viromics::iphop_augmented_db, which only add_to_db produces. This is where
+      the viral and MAG catalogues have to be in one template rather than two.
+  - n: 22
+    group: host prediction
+    tool: CCTyper (CRISPRCasTyper)
+    status: mock
+    transform: viromics/cctyper.py
+    produces: >-
+      viromics::crispr_arrays, viromics::cas_operons, viromics::crispr_spacers
+    note: runs on the MAG lane, per quality bin.
+  - n: 23
+    group: host prediction
+    tool: BLASTn v2.13.0 (spacer -> vOTU matching)
+    status: mock
+    transform: viromics/blast_spacers_to_contigs.py
+    produces: viromics::spacer_host_links
+    note: the second place the two lanes meet; one task, because a spacer database is only useful pooled.
+
+  # ------------------------------------------------------------------ G. AMGs
+  - n: 24
+    group: AMGs
+    tool: DRAM-v v1.5.0 annotate + distill
+    status: available
+    transform: functionalAnnotation/dramv.py
+    produces: annotation::dramv_annotations, annotation::dramv_distill
+    note: >-
+      DRAM-v reads VirSorter2's affi_contigs table, so VirSorter2 is in the plan
+      for two reasons now -- as a caller and as DRAM-v's input. dramv.py's first
+      requirement is sequences::contig_batch, the contig set VirSorter2 actually
+      ran on, rather than the assembly behind it: that is what pairs one
+      VirSorter2 run's sequences with the same run's affi table. Antonio ran
+      DRAM-v on vOTUs >=10 kb; here it runs per sample over every viral contig,
+      and the >=10 kb restriction -- which was a cost measure -- becomes a
+      predicate on the join.
+  - n: 25
+    group: AMGs
+    tool: KEGG Mapper (web)
+    status: substitute
+    transform: viromics/prodigal_gv.py -> logistics/chunkOrfsForAnnotation.py -> functionalAnnotation/kofamscan.py -> functionalAnnotation/merge_kofamscan.py
+    produces: annotation::kofamscan_results, annotation::kofamscan_descriptions
+    note: >-
+      KO assignment in the DAG instead of a web upload. The only new piece is
+      gene calling on the frozen set, and it is prodigal-gv rather than the
+      library's plain `pprodigal -p meta` for a correctness reason: many phage
+      recode TAG or TGA and the standard tables truncate their genes. Everything
+      after it is the library's existing chain, unchanged.
+
+  # --------------------------------------------------- H. MAG recovery (virome)
+  # The metagenomics_from_paired_reads template already answers this whole
+  # block; this driver targets it rather than re-deriving it.
+  - n: 26
+    group: MAG recovery
+    tool: SeqKit (contigs >=1 kb)
+    status: dropped
+    note: a length cut before binning; each binner applies its own minimum contig length.
+  - n: 27
+    group: MAG recovery
+    tool: BWA + SAMtools
+    status: substitute
+    transform: assembly/assembly_stats.py
+    produces: alignment::bam
+    note: minimap2 rather than bwa.
+  - n: 28
+    group: MAG recovery
+    tool: jgi_summarize_bam_contig_depths
+    status: substitute
+    note: each binner computes its own depth from alignment::bam.
+  - n: 29
+    group: MAG recovery
+    tool: MetaBAT2 v2.18
+    status: available
+    transform: metagenomics/binning/metabat2.py
+    produces: sequences::metabat2_bin_fasta
+  - n: 30
+    group: MAG recovery
+    tool: MaxBin2 v2.2.7
+    status: substitute
+    transform: metagenomics/binning/semibin2.py
+    produces: sequences::semibin2_bin_fasta
+    note: a second binner, not this binner.
+  - n: 31
+    group: MAG recovery
+    tool: CONCOCT v1.1.0
+    status: substitute
+    transform: metagenomics/binning/comebin.py
+    produces: sequences::comebin_bin_fasta
+    note: a third binner, not this binner.
+  - n: 32
+    group: MAG recovery
+    tool: BinSanity v0.5.4
+    status: dropped
+    note: a fourth binner on a lane that already runs three.
+  - n: 33
+    group: MAG recovery
+    tool: ABAWACA + ESOM v1.0.0
+    status: dropped
+    note: a fifth binner on a lane that already runs three.
+  - n: 34
+    group: MAG recovery
+    tool: metaWRAP Bin_refinement v1.3.2
+    status: substitute
+    transform: metagenomics/binning/aggregator.py
+    produces: binning_local::quality_bin_fasta
+    note: a CheckM2-gated union of the three binners rather than metaWRAP's refinement.
+  - n: 35
+    group: MAG recovery
+    tool: shell/python MAG collection
+    status: substitute
+    transform: metagenomics/binning/aggregator.py
+  - n: 36
+    group: MAG recovery
+    tool: dRep v3.4.0
+    status: substitute
+    transform: metagenomics/binning/skani_dedup.py
+    produces: binning_local::cluster_table
+    note: skANI rather than dRep, and within a sample rather than across the survey.
+  - n: 37
+    group: MAG recovery
+    tool: CheckM2 v1.1.0
+    status: available
+    transform: metagenomics/binning/checkm.py
+    produces: taxonomy::checkm_stats
+    note: >-
+      The file name is legacy: it already runs `checkm2 predict`, in --genes
+      mode behind a per-bin prodigal workaround for CheckM2 v1.1.0's pyrodigal-gv
+      heap bug (GitHub #149), which otherwise aborts a whole batch. What does
+      differ is the gate -- aggregator.py uses completeness >= 50 and
+      contamination <= 10, not QS = completeness - 5 x contamination -- so the
+      MAG counts will not match the paper's.
+  - n: 38
+    group: MAG recovery
+    tool: GTDB-Tk v2 (r214)
+    status: available
+    transform: metagenomics/taxonomy/gtdbtk.py
+    produces: taxonomy::gtdbtk
+    note: >-
+      r232, not r214; logistics/downloadGtdbDB.py pins release232 and
+      downloadMetabuliDB.py now pins the matching gtdb232, so bin-level and
+      contig-level taxonomy agree.
+  - n: 39
+    group: MAG recovery
+    tool: CoverM v0.7.0 genome
+    status: dropped
+    note: >-
+      Bin depth in this library is already derived from contig depth against the
+      sample's own assembly; this is the same arithmetic one level up, and the
+      same caveat as row 16 applies.
+  - n: 40
+    group: MAG recovery
+    tool: DRAM v1.5.0
+    status: substitute
+    transform: functionalAnnotation/dram_annotate_genes.py -> functionalAnnotation/merge_dram_annotate_genes.py
+    produces: annotation::dram_annotations
+    note: annotates the assembly's ORF chunks; no distill step and no per-MAG rollup.
+
+# Reachable but absent from the table: crAssphage coverage as a faecal-source
+# marker (metagenomics/crassphage.py), which the shipped
+# viromics_survey_from_assembly template already targets.

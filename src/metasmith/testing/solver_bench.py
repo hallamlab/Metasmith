@@ -12,8 +12,8 @@ Usage::
 
 The corpus is the four shipped templates (real transform libraries, real
 search) plus a fixed slice of generated instances covering the pressures the
-harness dials expose. Template cases are skipped, not failed, when the sibling
-``metasmith-libraries`` checkout is absent — the generated slice always runs.
+harness dials expose. Template cases are skipped, not failed, when the standard
+library has not been compiled — the generated slice always runs.
 """
 
 from __future__ import annotations
@@ -34,10 +34,49 @@ from .solver_verification import (
     problem_of_plan,
 )
 
-__all__ = ["CORPUS", "run_generated", "run_templates", "run_all", "diff"]
+__all__ = ["CORPUS", "SWEEP_PROFILES", "run_generated", "run_templates", "run_all", "diff"]
 
 
-#: (name, seed, dials) — fixed so a fingerprint means the same thing tomorrow.
+#: Problem shapes the generated sweeps draw from, and the solve seeds they draw
+#: under. `sink` is the only profile that reaches the iteration cap, and one seed
+#: is not a corpus: the same problem settles on a 7-step plan under seed 42 and a
+#: 57-step one under 2**31-1, and only the second regime puts the refiner under
+#: load.
+SWEEP_PROFILES: list[tuple[str, GeneratorDials]] = [
+    ("plain", GeneratorDials(n_types=6, n_extra_transforms=3)),
+    ("cyclic", GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8)),
+    (
+        "lineage",
+        GeneratorDials(
+            n_types=7, n_extra_transforms=5, lineage_density=0.9, target_lineage=1.0
+        ),
+    ),
+    ("dupes", GeneratorDials(n_types=7, n_extra_transforms=3, n_duplicate_transforms=5)),
+    ("pgroups", GeneratorDials(n_types=7, n_extra_transforms=4, product_group_density=0.9)),
+    ("multi", GeneratorDials(n_types=7, n_given=2, n_given_groups=3, n_extra_transforms=4)),
+    (
+        "tiny",
+        GeneratorDials(n_types=4, n_extra_transforms=2, lineage_density=0.6, target_lineage=0.6),
+    ),
+    (
+        "sink",
+        GeneratorDials(
+            n_types=9,
+            n_given=2,
+            n_given_groups=2,
+            n_extra_transforms=6,
+            cycle_density=0.4,
+            lineage_density=0.7,
+            n_duplicate_transforms=2,
+            product_group_density=0.5,
+            target_lineage=0.8,
+        ),
+    ),
+]
+
+SOLVE_SEEDS: tuple[int, ...] = (42, 7, 1234, 2**31 - 1)
+
+
 CORPUS: list[tuple[str, int, GeneratorDials]] = [
     ("chain-6", 1, GeneratorDials(n_types=6, n_extra_transforms=3)),
     ("chain-10", 2, GeneratorDials(n_types=10, n_extra_transforms=6)),
@@ -86,18 +125,6 @@ CORPUS: list[tuple[str, int, GeneratorDials]] = [
 ]
 
 
-#: Deliberately expensive instances, kept out of `CORPUS` so the pinned fast
-#: gate stays fast. These are *mcts*-bound — the search itself, not the
-#: refiner. The shipped templates are the opposite (metagenomics spends >99% of
-#: its solve inside `refine_mcts`), which is why the perf corpus needs both:
-#: a change that only helps one phase looks free on the other's cases.
-#:
-#: The genuinely refiner-bound instances are deliberately *not* here. They are
-#: `sink-178` under solve seed 7 and `sink-24` under 2³¹−1, and both need a
-#: pinned `max_refine` to terminate at all — a corpus entry that only carries a
-#: problem seed cannot express them, and one of them does not finish at the
-#: default budget in either implementation. They live in
-#: `tests/perf/test_solver_differential.py`, which can say what budget it means.
 STRESS_CORPUS: list[tuple[str, int, GeneratorDials]] = [
     (
         "wide-search",
@@ -143,9 +170,9 @@ def _libraries_root() -> Path | None:
     if env:
         p = Path(env).expanduser().resolve()
         return p if p.exists() else None
-    # .../projects/metasmith/<checkout>/src/metasmith/testing/solver_bench.py
-    sibling = Path(__file__).resolve().parents[5] / "metasmith-libraries" / "main"
-    return sibling if sibling.exists() else None
+    root = Path(__file__).resolve().parents[2] / "metasmith_libraries"
+    compiled = root / "transforms" / "logistics" / "_metadata" / "index.yml"
+    return root if compiled.exists() else None
 
 
 def run_generated(cases: list[tuple[str, int, GeneratorDials]] | None = None) -> dict[str, Any]:
@@ -183,8 +210,6 @@ def run_templates(root: Path | None = None) -> dict[str, Any]:
         result = getattr(task.plan, "_solver_result", None)
         problem = problem_of_plan(task.plan, name=template.name)
         if problem is None or result is None:
-            # Not "nothing to check" -- an unadjudicable template is a hole in
-            # the gate, and a silent skip here is how it would stay one.
             verdict_ok, violations = False, [
                 "plan carries no solver inputs, so the checker cannot see it"
             ]
@@ -218,8 +243,6 @@ def run_all(*, templates: bool = True, root: Path | None = None) -> dict[str, An
 
 
 def diff(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
-    """Human-readable report; fingerprint changes come first because they are
-    the only line that can veto a change."""
     lines: list[str] = []
     b, c = baseline["cases"], current["cases"]
     changed = [k for k in sorted(set(b) & set(c)) if b[k]["fingerprint"] != c[k]["fingerprint"]]
@@ -270,7 +293,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         args.out.write_text(json.dumps(current, indent=2), encoding="utf-8")
     if args.pin:
-        # timings are machine noise and would churn the diff on every run
         pin = {
             "cases": {
                 k: {f: v[f] for f in ("fingerprint", "steps", "ok")}

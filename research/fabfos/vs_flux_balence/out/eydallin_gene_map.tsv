@@ -1,0 +1,87 @@
+gene	measured_pct_wt	b_number	current_symbol	iml_gene	map_route	rxns	n_rxn
+aspP	69.9	b3034	nudF	b3034	b_number	ADPRDP	1
+clpA	23.4	b0882	clpA				0
+cpdB	31.5	b4213	cpdB	b4213	b_number	23PDE2pp,23PDE4pp,23PDE7pp,23PDE9pp,3NTD2pp,3NTD4pp,3NTD7pp,3NTD9pp	8
+csrA	52.7	b2696	csrA				0
+csrD	61.8	b3252	csrD				0
+cydC	54.8	b0886	cydC	b0886	b_number	CYSabc2pp,GTHRDabc2pp	2
+cysI	41.6	b2763	cysI	b2763	b_number	FADRx2,FLVR,FMNRx2,SULR	4
+cysP	57.8	b2425	cysP	b2425	b_number	MOBDabcpp,SELabcpp,SLNTabcpp,SULabcpp,TSULabcpp	5
+ddg	149.8	b2378	lpxP	b2378	b_number	EDTXS3	1
+dos	170.1	b1489	dosP	b1489	b_number	CDGUNPD,PDE1,PDE4	3
+erfK	269.2	b1990	ldtA	b1990	b_number	MLDCP1App,MLDCP1Bpp,MLDCP2App,MLDCP2Bpp,MLDCP3App	5
+exuR	60.8	b3094	exuR				0
+galS	38.6	b2151	galS				0
+glgA	327.9	b3429	glgA	b3429	b_number	GLCS1	1
+glgB	26.4	b3432	glgB	b3432	b_number	GLBRAN2	1
+glgC	453.3	b3430	glgC	b3430	b_number	GLGC	1
+glgP	59.8	b3428	glgP	b3428	b_number	GLCP,GLCP2	2
+glgS	215.6	b3049	glgS				0
+gltI	28.5	b0655	gltI	b0655	b_number	ASPabcpp,GLUabcpp	2
+gntT	42.6	b3415	gntT	b3415	b_number	GLCNt2rpp	1
+gor	60.8	b3500	gor	b3500	b_number	GTHOr	1
+gpp	49.7	b3779	gpp	b3779	b_number	GTPDPDP	1
+gspD	40.6	b3325	gspD				0
+hokA	32.5	b4455	hokA				0
+holC	52.7	b4259	holC				0
+hyuA	161.0	b2873	hyuA	b2873	b_number	PHDA	1
+malP	60.8	b3417	malP	b3417	b_number	GLCP,GLCP2,MLTP1,MLTP2,MLTP3	5
+malT	66.9	b3418	malT				0
+mdtG	196.4	b1053	mdtG				0
+metH	47.7	b4019	metH	b4019	b_number	METS	1
+mlc	58.8	b1594	mlc				0
+nagB	44.7	b0678	nagB	b0678	b_number	G6PDA	1
+nagD	30.5	b0675	umpH	b0675	b_number	G3PT,NTD2,NTD4,NTD7,NTD9,PYDXPP,R5PP	7
+napF	53.8	b2208	napF				0
+pfs	68.9	b0159	mtn	b0159	b_number	5DOAN,AHCYSNS,MTAN	3
+phr	47.7	b0708	phr				0
+pnp	66.9	b3164	pnp				0
+ppdB	162.0	b2825	ppdB				0
+ppk	61.8	b2501	ppk	b2501	b_number	PPK,PPK2	2
+ppx	211.5	b2502	ppx	b2502	b_number	PPA,PPA2	2
+prfB	41.6	b2891	prfB				0
+pspE	160.0	b1308	pspE	b1308	b_number	CYANSTpp	1
+pstC	38.6	b3727	pstC	b3727	b_number	PIuabcpp	1
+ptsI	149.8	b2416	ptsI	b2416	b_number	2DGLCptspp,ACGAptspp,ACMANAptspp,ACMUMptspp,ARBTptspp,ASCBptspp,CELBpts,CHTBSptspp,DHAPT,FRUpts2pp,FRUptspp,GALTptspp,GAMptspp,GLCptspp,MALTptspp,MANGLYCptspp,MANptspp,MNLptspp,SBTptspp,SUCptspp,TREptspp	21
+ptsN	21.4	b3204	ptsN				0
+putP	157.9	b1015	putP	b1015	b_number	PPAt4pp,PROt4pp	2
+rbsR	161.0	b3753	rbsR				0
+recQ	8.2	b3822	recQ				0
+rpiB	35.5	b4090	rpiB	b4090	b_number	ALLPI,RPI	2
+rpoS	230.8	b2741	rpoS				0
+rutF	177.1	b1007	rutF	b1007	b_number	PYROX	1
+serB	49.7	b4388	serB	b4388	b_number	PSP_L	1
+smg	39.6	b3284	smg				0
+spoT	36.6	b3650	spoT	b3650	b_number	GDPDPK,GDPTPDP,PPGPPDP	3
+ssuA	191.3	b0936	ssuA	b0936	b_number	BUTSO3abcpp,ETHSO3abcpp,ISETACabcpp,MSO3abcpp,SULFACabcpp	5
+talA	49.7	b2464	talA	b2464	b_number	TALA	1
+tdcA	249.0	b3118	tdcA				0
+thrB	33.5	b0003	thrB	b0003	b_number	4HTHRK,HSK	2
+tnaA	50.7	b3708	tnaA	b3708	b_number	CYSDS,SERD_L,TRPAS2	3
+ucpA	64.9	b2426	ucpA				0
+wzc	58.8	b2060	wzc				0
+xylG	29.5	b3567	xylG	b3567	b_number	XYLabcpp	1
+yabI	47.7	b0065	yabI				0
+yafV	55.8	b0219	yafV				0
+ybcV	57.8	b0558	ybcV				0
+ycbJ	151.9	b0919	ycbJ				0
+yciN	151.9	b1273	yciN				0
+ydcJ	173.1	b1423	ydcJ				0
+yeaP	35.5	b1794	dgcP	b1794	b_number	DGUNC	1
+yegH	53.8	b2063	yegH				0
+yfaY	53.8	b2249	yfaY				0
+yfdN	41.6	b2357	yfdN				0
+yfeD	178.2	b2399	yfeD				0
+yfjR	44.7	b2634	yfjR				0
+yhcE	49.7	b4569	yhcE				0
+yifJ	192.3	b3792	wzxE	b3792	b_number	ECAtpp	1
+yjcC	173.1	b4061	pdeC				0
+yjcQ	33.5	b4081	mdtO				0
+ylcG	16.3	b4509	ylcG				0
+ymgC	220.6	b1167	ymgC				0
+ynbD	51.7	b1411	ynbD				0
+yncC	225.7	b1450	mcbR				0
+yncG	214.6	b1454	yncG				0
+yoaE	66.9	b1816	yoaE				0
+yoeB	49.7	b4539	yoeB				0
+yqjA	180.2	b3095	yqjA				0

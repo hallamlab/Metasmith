@@ -1,0 +1,50 @@
+manifest:
+  /msm_home/runs/MBY6OPuI/_metasmith/task/data/I7hIwKCXX1B8/ncbi-datasets.env:
+    instance_id: 1e207d223ca868bea972a8a8fbccfdddf3cd3e2cbb65fd2bee912d7ab83fdc322334
+    origin: leaf
+    type: env::ncbi-datasets.env
+  /msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.acc:
+    instance_id: 1e2051d7edc2514ca09716d8e100f95b6abb6a09efe00b72c8fe78f47c6fbd69d20d
+    origin: leaf
+    type: ncbi::assembly_accession
+  /msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.name:
+    instance_id: 1e2099dff1a282e40d0960395e98dd6e7f952b30bb46a410330dd9188e9761473ba8
+    origin: leaf
+    type: ncbi::genome_name
+  1_sequences-gbk/1-1-1.mavZzgJClMt2zjjs-Un1fiNqA.gbk:
+    instance_id: a5c8386d5298221779484775514558f7
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/I7hIwKCXX1B8/ncbi-datasets.env: env::ncbi-datasets.env
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.acc: ncbi::assembly_accession
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.name: ncbi::genome_name
+    type: sequences::gbk
+  1_sequences-gff/1-1-1.mavZzgJClMt2zjjs-INe0ozcd.gff:
+    instance_id: 69af0eccf9f59c3ad47520fcf07e61df
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/I7hIwKCXX1B8/ncbi-datasets.env: env::ncbi-datasets.env
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.acc: ncbi::assembly_accession
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.name: ncbi::genome_name
+    type: sequences::gff
+  1_sequences-orfs/1-1-1.mavZzgJClMt2zjjs-r29AenmT.faa:
+    instance_id: 18c456d419410977093f0a38e9c288bc
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/I7hIwKCXX1B8/ncbi-datasets.env: env::ncbi-datasets.env
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.acc: ncbi::assembly_accession
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.name: ncbi::genome_name
+    type: sequences::orfs
+  sequences-assembly/1-1-1.mavZzgJClMt2zjjs-xhJxsmvT.fna:
+    instance_id: 5783d143dd58cb83ff066540e30fbff8
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/I7hIwKCXX1B8/ncbi-datasets.env: env::ncbi-datasets.env
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.acc: ncbi::assembly_accession
+      gK8EPc1OCn9R@/msm_home/runs/MBY6OPuI/_metasmith/task/data/wN6HaNFM4NWT/GCF_000005845.name: ncbi::genome_name
+    type: sequences::isolate_assembly
+schema: v1

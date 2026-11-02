@@ -1,0 +1,15 @@
+types:
+  bam:
+    properties:
+      _: binary alignment map
+      ext: bam
+  csi:
+    properties:
+      _: coordinate sorted index
+      ext: csi
+
+  # curation round 3 -- KBase parity
+  alignment_stats:
+    properties:
+      _: mapping rate, depth and insert size for one bam (samtools stats)
+      ext: txt

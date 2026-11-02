@@ -1,0 +1,6 @@
+outs:
+- md5: c93a6ada41b88adadc12e49862e6d856.dir
+  size: 1104021596
+  nfiles: 4887
+  hash: md5
+  path: kbase

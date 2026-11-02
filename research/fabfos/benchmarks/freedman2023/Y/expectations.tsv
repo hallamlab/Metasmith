@@ -1,0 +1,4 @@
+condition_id	element	mnxm	expected_dir	basis	tier
+freedman2023:H10_Phage:0	C	MNXM1108092	+	measured_endpoint	observed
+freedman2023:H10_Phage:0	C	MNXM1371363	-	measured_endpoint	observed
+freedman2023:H10_Phage:0	C	MNXM23	+	measured_peak	observed

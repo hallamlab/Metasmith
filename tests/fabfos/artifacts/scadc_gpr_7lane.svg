@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="583" height="1210" viewBox="0 0 583 1210">
+<rect width="583" height="1210" fill="#FFFFFF"/>
+<g fill="none" stroke="#666666" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M 362.8,41.3 L 362.8,341.4" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,48.9 A 8.5,8.5 0 0 1 354.4,57.4 L 354.4,57.4 A 8.5,8.5 0 0 0 345.9,65.8 L 345.9,65.8" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 337.5,50.5 A 8.5,8.5 0 0 0 329.0,59.0 L 329.0,100.3" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 320.6,50.5 A 8.5,8.5 0 0 0 312.1,59.0 L 312.1,134.7" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 303.7,50.5 A 8.5,8.5 0 0 0 295.2,59.0 L 295.2,169.2" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 286.8,50.5 A 8.5,8.5 0 0 0 278.3,59.0 L 278.3,203.6" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 269.9,50.5 A 8.5,8.5 0 0 0 261.4,59.0 L 261.4,238.1" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 253.0,50.5 A 8.5,8.5 0 0 0 244.5,59.0 L 244.5,272.5" stroke="#636EFA"/>
+<path d="M 362.8,41.3 L 362.8,42.1 A 8.5,8.5 0 0 1 354.4,50.5 L 236.1,50.5 A 8.5,8.5 0 0 0 227.6,59.0 L 227.6,307.0" stroke="#636EFA"/>
+<path d="M 345.9,76.5 L 345.9,737.9 A 8.5,8.5 0 0 0 354.4,746.4 L 354.4,746.4 A 8.5,8.5 0 0 1 362.8,754.8 L 362.8,755.6" stroke="#636EFA"/>
+<path d="M 329.0,111.0 L 329.0,875.7 A 8.5,8.5 0 0 0 337.5,884.2 L 354.4,884.2 A 8.5,8.5 0 0 1 362.8,892.6 L 362.8,893.4" stroke="#636EFA"/>
+<path d="M 312.1,145.4 L 312.1,686.7" stroke="#636EFA"/>
+<path d="M 295.2,179.9 L 295.2,669.0 A 8.4,8.4 0 0 0 303.7,677.5 A 8.4,8.4 0 0 1 312.1,685.9 L 312.1,686.7" stroke="#636EFA"/>
+<path d="M 278.3,214.3 L 278.3,1048.0 A 8.5,8.5 0 0 0 286.8,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#636EFA"/>
+<path d="M 261.4,248.8 L 261.4,617.8" stroke="#636EFA"/>
+<path d="M 244.5,283.2 L 244.5,1048.0 A 8.5,8.5 0 0 0 253.0,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#636EFA"/>
+<path d="M 244.5,283.2 L 244.5,283.2 A 8.5,8.5 0 0 1 236.1,291.7 L 219.2,291.7 A 8.5,8.5 0 0 0 210.7,300.1 L 210.7,1116.9 A 8.5,8.5 0 0 0 219.2,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#636EFA"/>
+<path d="M 227.6,317.7 L 227.6,1048.0 A 8.5,8.5 0 0 0 236.1,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#636EFA"/>
+<path d="M 227.6,317.7 A 8.4,8.4 0 0 1 219.2,326.1 L 202.3,326.1 A 8.5,8.5 0 0 0 193.8,334.6 L 193.8,1116.9 A 8.5,8.5 0 0 0 202.3,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#636EFA"/>
+<path d="M 362.8,352.1 L 362.8,376.6" stroke="#EF553B"/>
+<path d="M 362.8,385.8 L 362.8,444.8" stroke="#636EFA"/>
+<path d="M 362.8,385.8 L 362.8,393.4 A 8.5,8.5 0 0 1 354.4,401.9 L 185.4,401.9 A 8.4,8.4 0 0 0 176.9,410.3 L 176.9,410.3" stroke="#636EFA"/>
+<path d="M 362.8,455.5 L 362.8,755.6" stroke="#EF553B"/>
+<path d="M 362.8,455.5 L 362.8,462.3 A 8.5,8.5 0 0 1 354.4,470.8 L 185.4,470.8 A 8.5,8.5 0 0 0 176.9,479.2 L 176.9,480.0" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 168.5,463.9 A 8.5,8.5 0 0 0 160.0,472.4 L 160.0,548.9" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 151.6,463.9 A 8.5,8.5 0 0 0 143.1,472.4 L 143.1,600.1 A 8.5,8.5 0 0 0 151.6,608.6 L 253.0,608.6 A 8.5,8.5 0 0 1 261.4,617.0 L 261.4,617.8" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 134.7,463.9 A 8.5,8.5 0 0 0 126.2,472.4 L 126.2,669.0 A 8.5,8.5 0 0 0 134.7,677.5 L 303.7,677.5 A 8.5,8.5 0 0 1 312.1,685.9 L 312.1,686.7" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 117.8,463.9 A 8.5,8.5 0 0 0 109.3,472.4 L 109.3,875.7 A 8.5,8.5 0 0 0 117.8,884.2 L 354.4,884.2 A 8.5,8.5 0 0 1 362.8,892.6 L 362.8,893.4" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 100.9,463.9 A 8.5,8.5 0 0 0 92.4,472.4 L 92.4,962.3" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 84.0,463.9 A 8.5,8.5 0 0 0 75.5,472.4 L 75.5,1048.0 A 8.5,8.5 0 0 0 84.0,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#EF553B"/>
+<path d="M 362.8,455.5 A 8.4,8.4 0 0 1 354.4,463.9 L 67.1,463.9 A 8.5,8.5 0 0 0 58.6,472.4 L 58.6,1116.9 A 8.5,8.5 0 0 0 67.1,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#EF553B"/>
+<path d="M 176.9,489.2 L 176.9,513.7" stroke="#EF553B"/>
+<path d="M 176.9,524.4 L 176.9,1048.0 A 8.5,8.5 0 0 0 185.4,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#EF553B"/>
+<path d="M 160.0,558.1 L 160.0,582.6" stroke="#EF553B"/>
+<path d="M 160.0,593.3 L 160.0,1048.0 A 8.5,8.5 0 0 0 168.5,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#EF553B"/>
+<path d="M 160.0,593.3 A 8.4,8.4 0 0 1 151.6,601.7 L 50.2,601.7 A 8.5,8.5 0 0 0 41.7,610.2 L 41.7,1116.9 A 8.5,8.5 0 0 0 50.2,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#EF553B"/>
+<path d="M 261.4,627.0 L 261.4,651.5" stroke="#636EFA"/>
+<path d="M 261.4,662.2 L 261.4,1048.0 A 8.5,8.5 0 0 0 269.9,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#636EFA"/>
+<path d="M 261.4,662.2 A 8.4,8.4 0 0 1 253.0,670.6 L 151.6,670.6 A 8.5,8.5 0 0 0 143.1,679.1 L 143.1,1116.9 A 8.5,8.5 0 0 0 151.6,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#636EFA"/>
+<path d="M 312.1,695.9 L 312.1,720.4" stroke="#636EFA"/>
+<path d="M 312.1,731.1 L 312.1,1048.0 A 8.5,8.5 0 0 0 320.6,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#636EFA"/>
+<path d="M 312.1,731.1 A 8.4,8.4 0 0 1 303.7,739.5 L 303.7,739.5 A 8.5,8.5 0 0 0 295.2,748.0 L 295.2,1134.5" stroke="#636EFA"/>
+<path d="M 362.8,764.8 L 362.8,823.7" stroke="#00CC96"/>
+<path d="M 362.8,764.8 L 362.8,772.4 A 8.5,8.5 0 0 1 354.4,780.8 L 354.4,780.8 A 8.4,8.4 0 0 0 345.9,789.3 L 345.9,789.3" stroke="#00CC96"/>
+<path d="M 362.8,764.8 L 362.8,765.5 A 8.5,8.5 0 0 1 354.4,774.0 L 134.7,774.0 A 8.5,8.5 0 0 0 126.2,782.4 L 126.2,858.2" stroke="#00CC96"/>
+<path d="M 345.9,800.0 L 345.9,1048.0 A 8.5,8.5 0 0 0 354.4,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#00CC96"/>
+<path d="M 362.8,834.4 L 362.8,893.4" stroke="#00CC96"/>
+<path d="M 362.8,834.4 A 8.4,8.4 0 0 1 354.4,842.9 L 33.3,842.9 A 8.5,8.5 0 0 0 24.8,851.3 L 24.8,1048.0 A 8.5,8.5 0 0 0 33.3,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#00CC96"/>
+<path d="M 126.2,868.9 L 126.2,875.7 A 8.5,8.5 0 0 0 134.7,884.2 L 354.4,884.2 A 8.5,8.5 0 0 1 362.8,892.6 L 362.8,893.4" stroke="#00CC96"/>
+<path d="M 362.8,902.6 L 362.8,927.1" stroke="#636EFA"/>
+<path d="M 362.8,937.8 L 362.8,1065.6" stroke="#636EFA"/>
+<path d="M 92.4,971.5 L 92.4,972.2 A 8.5,8.5 0 0 0 100.9,980.7 L 320.6,980.7 A 8.5,8.5 0 0 1 329.0,989.1 L 329.0,1030.4" stroke="#00CC96"/>
+<path d="M 92.4,971.5 L 92.4,996.0" stroke="#00CC96"/>
+<path d="M 92.4,1006.7 A 8.4,8.4 0 0 0 100.9,1015.1 L 117.8,1015.1 A 8.5,8.5 0 0 1 126.2,1023.6 L 126.2,1116.9 A 8.5,8.5 0 0 0 134.7,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#00CC96"/>
+<path d="M 92.4,1006.7 L 92.4,1048.0 A 8.5,8.5 0 0 0 100.9,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#00CC96"/>
+<path d="M 329.0,1041.1 L 329.0,1048.0 A 8.5,8.5 0 0 0 337.5,1056.4 L 354.4,1056.4 A 8.5,8.5 0 0 1 362.8,1064.9 L 362.8,1065.6" stroke="#00CC96"/>
+<path d="M 329.0,1041.1 A 8.5,8.5 0 0 1 320.6,1049.6 L 117.8,1049.6 A 8.5,8.5 0 0 0 109.3,1058.0 L 109.3,1116.9 A 8.5,8.5 0 0 0 117.8,1125.3 L 286.8,1125.3 A 8.5,8.5 0 0 1 295.2,1133.8 L 295.2,1134.5" stroke="#00CC96"/>
+<path d="M 362.8,1074.8 L 362.8,1099.3" stroke="#636EFA"/>
+<path d="M 295.2,1143.7 L 295.2,1168.2" stroke="#636EFA"/>
+</g>
+<g><title>given</title>
+<polygon points="357.5,32.1 368.2,32.1 362.8,41.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="41.4" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">given</text></g>
+<g><title>ref::esm_c_600m_weights</title>
+<circle cx="345.9" cy="71.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="65.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="75.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">esm_c_600m_weights</text></g>
+<g><title>ref::ezpred_model</title>
+<circle cx="329.0" cy="105.6" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="100.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="110.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">ezpred_model</text></g>
+<g><title>ref::kofamscan_ko_list</title>
+<circle cx="312.1" cy="140.1" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="134.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="144.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">kofamscan_ko_list</text></g>
+<g><title>ref::kofamscan_profiles</title>
+<circle cx="295.2" cy="174.5" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="169.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="179.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">kofamscan_profiles</text></g>
+<g><title>ref::reference_label_pool_esmc</title>
+<circle cx="278.3" cy="209.0" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="203.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="213.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">reference_label_pool_esmc</text></g>
+<g><title>ref::uniref50_diamond_db</title>
+<circle cx="261.4" cy="243.4" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="238.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="248.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">uniref50_diamond_db</text></g>
+<g><title>ref::mnxr_lookup</title>
+<circle cx="244.5" cy="277.9" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="272.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="282.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">mnxr_lookup</text></g>
+<g><title>ref::reference_label_pool</title>
+<circle cx="227.6" cy="312.3" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="306.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">ref</text>
+<text x="375.3" y="317.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">reference_label_pool</text></g>
+<g><title>fabfos::putative_inserts</title>
+<circle cx="362.8" cy="346.8" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="375.3" y="341.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">fabfos</text>
+<text x="375.3" y="351.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">putative_inserts</text></g>
+<g><title>1 prodigal</title>
+<polygon points="357.5,376.6 368.2,376.6 362.8,385.8" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="385.9" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">prodigal</text></g>
+<g><title>sequences::gff</title>
+<circle cx="176.9" cy="415.7" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="410.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
+<text x="375.3" y="420.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">gff</text></g>
+<g><title>sequences::orfs</title>
+<circle cx="362.8" cy="450.1" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="375.3" y="444.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">sequences</text>
+<text x="375.3" y="454.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">orfs</text></g>
+<g><title>2 deepec</title>
+<polygon points="171.6,480.0 182.3,480.0 176.9,489.2" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="489.3" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">deepec</text></g>
+<g><title>annotation::deepec_predictions</title>
+<circle cx="176.9" cy="519.0" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="375.3" y="513.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="523.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">deepec_predictions</text></g>
+<g><title>3 clean</title>
+<polygon points="154.7,548.9 165.4,548.9 160.0,558.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="558.2" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">clean</text></g>
+<g><title>annotation::clean_predictions</title>
+<circle cx="160.0" cy="587.9" r="5.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="1.5"/>
+<text x="375.3" y="582.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="592.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">clean_predictions</text></g>
+<g><title>6 diamond_uniref50</title>
+<polygon points="256.1,617.8 266.8,617.8 261.4,627.0" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="627.1" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">diamond_uniref50</text></g>
+<g><title>annotation::diamond_uniref50_results</title>
+<circle cx="261.4" cy="656.8" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="651.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="661.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">diamond_uniref50_results</text></g>
+<g><title>7 kofamscan</title>
+<polygon points="306.8,686.7 317.5,686.7 312.1,695.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="696.0" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">kofamscan</text></g>
+<g><title>annotation::kofamscan_results</title>
+<circle cx="312.1" cy="725.7" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="720.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="730.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">kofamscan_results</text></g>
+<g><title>4 esm_c</title>
+<polygon points="357.5,755.6 368.2,755.6 362.8,764.8" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="764.9" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">esm_c</text></g>
+<g><title>annotation::esm_c_embeddings</title>
+<circle cx="345.9" cy="794.6" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="375.3" y="789.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="799.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">esm_c_embeddings</text></g>
+<g><title>annotation::esm_c_index</title>
+<circle cx="362.8" cy="829.1" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="375.3" y="823.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="833.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">esm_c_index</text></g>
+<g><title>annotation::esm_c_layer_means</title>
+<circle cx="126.2" cy="863.5" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="375.3" y="858.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="868.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">esm_c_layer_means</text></g>
+<g><title>8 ezpred</title>
+<polygon points="357.5,893.4 368.2,893.4 362.8,902.6" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="902.7" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">ezpred</text></g>
+<g><title>annotation::ezpred_predictions</title>
+<circle cx="362.8" cy="932.4" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="375.3" y="927.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="937.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">ezpred_predictions</text></g>
+<g><title>5 proteinbert</title>
+<polygon points="87.1,962.3 97.8,962.3 92.4,971.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="971.6" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">proteinbert</text></g>
+<g><title>annotation::proteinbert_embeddings</title>
+<circle cx="92.4" cy="1001.3" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="375.3" y="995.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="1006.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">proteinbert_embeddings</text></g>
+<g><title>annotation::proteinbert_index</title>
+<circle cx="329.0" cy="1035.8" r="5.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="1.5"/>
+<text x="375.3" y="1030.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="1040.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">proteinbert_index</text></g>
+<g><title>10 gpr_7lane</title>
+<polygon points="357.5,1065.6 368.2,1065.6 362.8,1074.8" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="1074.9" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">gpr_7lane</text></g>
+<g><title>annotation::gpr_table_7lane</title>
+<circle cx="362.8" cy="1104.7" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="3.0"/>
+<text x="375.3" y="1099.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="1109.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">gpr_table_7lane</text></g>
+<g><title>9 gpr_4lane</title>
+<polygon points="289.9,1134.5 300.6,1134.5 295.2,1143.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="375.3" y="1143.8" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">gpr_4lane</text></g>
+<g><title>annotation::gpr_table</title>
+<circle cx="295.2" cy="1173.6" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="3.0"/>
+<text x="375.3" y="1168.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">annotation</text>
+<text x="375.3" y="1178.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">gpr_table</text></g>
+</svg>

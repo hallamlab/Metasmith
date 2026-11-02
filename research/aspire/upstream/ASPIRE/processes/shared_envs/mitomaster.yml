@@ -1,0 +1,11 @@
+name: asv_mitomaster_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - requests
+  - seqkit
+  - blast
+  - urllib3

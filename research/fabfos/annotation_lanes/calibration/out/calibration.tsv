@@ -1,0 +1,5 @@
+lane	model	transform	A	B	lam0	pi_fit	p_correct_at_median	n	errors	score_min	score_max	llr_at_min	llr_at_max	llr_at_median	llr_scalar	llr_at_max_eps1e6	cv_logloss_sloped	cv_logloss_constant	slope_gain	slope_gain_se	slope_gain_z	cv_logloss	cv_brier	cv_logloss_sloped_ecfam	cv_logloss_constant_ecfam	converged_at_prior
+kofam	constant	log	0.0	3.14485	-3.0	0.94691	0.95871	1260	52	1.00008	39.17484	6.1448	6.1448	6.1448	6.1455	6.1448	0.17109	0.17276	0.00109	0.00174	0.62	0.17276	0.03958	0.18362	0.18475	False
+clean	sloped	logit	0.45028	1.00176	-3.0	0.94691	0.9746	1309	85	0.0251	0.9989	2.354	7.0688	6.6473	5.6672	7.0688	0.19299	0.24242	0.04707	0.00925	5.09	0.19299	0.05242	0.18944	0.23608	False
+uniref50	constant	identity	0.0	5.86945	-3.0	0.94691	0.99718	1086	3	0.5872	1.0119	8.8694	8.8694	8.8694	8.8889	8.8694	0.0195	0.01954	4e-05	0.00018	0.23	0.01954	0.00276	0.02746	0.02762	False
+pbert	sloped	logit	0.25361	0.82117	-3.0	0.94691	0.95918	1657	142	0.03267	1.0	2.9619	6.157	6.157	5.3673	6.1879	0.24011	0.29688	0.0441	0.00689	6.4	0.24011	0.06782	0.25168	0.31325	False

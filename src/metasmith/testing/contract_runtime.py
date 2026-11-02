@@ -1,20 +1,3 @@
-"""Input-contract-only fast e2e mock — stages a task without executing it.
-
-`ContractRuntime` runs `WorkflowTask.PrepareNextflow` against a temp workspace
-and stops there: no bootstrap, no virtual Nextflow, no protocol bodies. It
-returns a `CompiledTask` snapshot that `validate()` inspects for the five
-structural invariants that matter at compile-time — workflow.nf parses,
-declared inputs are reachable from upstream channel definitions, produced
-slots align with `WorkflowPlan.steps[*].produces`, `cacheable=False` flags
-reach the matching `workflow.step_N.meta`, and every address written into
-the graph is one the bootstrap container can actually resolve.
-
-That last one needs the host and container views of the agent home held
-apart to have any teeth, which `stage(external_home=...)` does. The default
-keeps them collapsed — that is the relay-free (mamba/native) configuration,
-where the two really are one directory.
-"""
-
 from __future__ import annotations
 
 import re
@@ -31,15 +14,11 @@ from ..models.workflow import NextflowGenContext, WorkflowTask
 
 @dataclass
 class CompiledTask:
-    """Snapshot of a staged-but-not-executed WorkflowTask."""
-
     workspace: Path
     key: str
     task: WorkflowTask
     workflow_nf: str
     step_meta_paths: dict[int, Path] = field(default_factory=dict)
-    # Captured at stage time: AgentPaths is monkeypatched per-runtime, so
-    # reading it back later would answer a different question.
     home_root: Path | None = None
     work_root: Path | None = None
     external_home: Path | None = None
@@ -47,21 +26,15 @@ class CompiledTask:
 
 @dataclass
 class ContractReport:
-    """Per-axis verdicts for a `CompiledTask`."""
-
     nf_compiles: bool
     step_inputs_reachable: dict[str, list[str]]
     produces_match_plan: bool
     cacheable_flags_propagated: bool
     errors: list[str] = field(default_factory=list)
-    # Addresses written into the graph that the bootstrap container has no
-    # mount for. Empty is the contract; the list is the diagnosis.
     address_violations: list[str] = field(default_factory=list)
 
 
 class ContractRuntime:
-    """Stage a task to disk and validate the compiled workflow contract."""
-
     def __init__(self, tmp_path: Path, monkeypatch) -> None:
         self.tmp_path = Path(tmp_path)
         self.monkeypatch = monkeypatch
@@ -73,13 +46,6 @@ class ContractRuntime:
     def stage(
         self, task: WorkflowTask, *, external_home: Path | None = None
     ) -> CompiledTask:
-        """Run `PrepareNextflow` and capture workflow.nf + step meta paths.
-
-        `external_home` is the host spelling of the agent home. Pass one to
-        model the containerized agent, where the host path and `HOME_ROOT`
-        are different strings for the same directory; omit it for the
-        relay-free arm, where they are not.
-        """
         key = task.GetKey()
         task_path = AgentPaths.to_task(key)
         task_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,13 +97,7 @@ class ContractRuntime:
         )
 
     def validate(self, compiled: CompiledTask) -> ContractReport:
-        """Run every contract check and return a combined report."""
         return validate_contract(compiled)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers (module-level so PlanExecutionOracle can reuse them)
-# ---------------------------------------------------------------------------
 
 
 _PROCESS_RE = re.compile(r"^process\s+\S", re.MULTILINE)
@@ -145,7 +105,6 @@ _WORKFLOW_RE = re.compile(r"^workflow(\s|\{)", re.MULTILINE)
 
 
 def _check_nf_compiles(nf_text: str, errors: list[str]) -> bool:
-    """Coarse re-parse: confirm process/workflow markers + matched braces."""
     if not nf_text.strip():
         errors.append("workflow.nf is empty or missing")
         return False
@@ -155,7 +114,7 @@ def _check_nf_compiles(nf_text: str, errors: list[str]) -> bool:
     depth = 0
     in_squote = False
     in_dquote = False
-    in_tsquote = False  # triple single quote
+    in_tsquote = False
     in_tdquote = False
     i = 0
     n = len(nf_text)
@@ -201,11 +160,6 @@ def _check_nf_compiles(nf_text: str, errors: list[str]) -> bool:
 def _compute_step_inputs_reachable(
     compiled: CompiledTask,
 ) -> dict[str, list[str]]:
-    """Per step, list the dep keys whose backing instances appear upstream.
-
-    An input is "reachable" when each of its bound DataInstances either
-    appears in `plan.given` or is produced by an earlier step.
-    """
     task = compiled.task
     plan = task.plan
     produced_so_far: set[str] = set()
@@ -235,7 +189,6 @@ def _compute_step_inputs_reachable(
 def _check_produces_match_plan(
     compiled: CompiledTask, errors: list[str]
 ) -> bool:
-    """Every produces-slot from the contract has at least one bound instance."""
     ok = True
     for step in compiled.task.plan.steps:
         for branch_idx, dep_group in enumerate(step.transform.model.produces):
@@ -251,15 +204,11 @@ def _check_produces_match_plan(
 
 
 def _check_cacheable_flags(compiled: CompiledTask, errors: list[str]) -> bool:
-    """`cacheable=False` on TransformInstance lands as `cacheable false` in meta."""
     ok = True
     for step in compiled.task.plan.steps:
         expected = bool(getattr(step.transform, "cacheable", True))
         meta_path = compiled.step_meta_paths.get(step.order)
         if meta_path is None or not meta_path.exists():
-            # PrepareNextflow only writes a `cacheable` line when a cache
-            # decision exists; when cache is disabled there is no meta to
-            # inspect, so we treat the flag as trivially propagated.
             continue
         meta_text = meta_path.read_text(encoding="utf-8")
         flag: bool | None = None
@@ -268,8 +217,6 @@ def _check_cacheable_flags(compiled: CompiledTask, errors: list[str]) -> bool:
                 flag = line.split(" ", 1)[1].strip().lower() == "true"
                 break
         if flag is None:
-            # No cacheable line emitted (e.g. METASMITH_CACHE=0). Treat
-            # as propagated to avoid false negatives.
             continue
         if flag != expected:
             errors.append(
@@ -280,11 +227,6 @@ def _check_cacheable_flags(compiled: CompiledTask, errors: list[str]) -> bool:
     return ok
 
 
-# ---------------------------------------------------------------------------
-# The FILES address contract
-# ---------------------------------------------------------------------------
-
-
 _FILE_LITERAL_RE = re.compile(r"file\(\s*'(/[^']*)'\s*\)")
 _BIND_ASSIGN_RE = re.compile(r'^\s*b\d+="(/[^"]*)"\s*$', re.MULTILINE)
 _GIVEN_INPUT_RE = re.compile(
@@ -293,34 +235,6 @@ _GIVEN_INPUT_RE = re.compile(
 
 
 def check_emitted_addresses(compiled: CompiledTask) -> list[str]:
-    """Every address codegen writes into the graph must be mountable.
-
-    Whatever reaches the FILES manifest is read back inside the per-step
-    bootstrap container, which mounts three things: the task work dir at
-    `WORK_ROOT`, the agent home at `HOME_ROOT`, and whatever the step's own
-    `.command.binds` declares. An address outside all three names a file
-    that exists and cannot be opened — which is reported as a missing input,
-    the least useful true statement available.
-
-    Two emission sites carry addresses:
-
-    - `file('...')` literals in the workflow body. These are the synthetic
-      cache-hit channels, and they have no bind mechanism at all — nothing
-      declares binds on behalf of a channel the head process invents — so
-      they must be work- or home-rooted, full stop.
-    - the given-input CSVs. These may be foreign (a reference DB, a sample
-      outside the agent home) and are served by the identity binds emitted
-      into `.command.binds`, so they are checked against the union of every
-      declared bind source rather than against nothing.
-
-    A given-input channel whose only consumer was cached away is still
-    emitted -- `o.postIn` is lineage registration, not just plumbing -- but
-    nothing stages its files into a container, so its rows are skipped. The
-    liveness test is whether the channel variable is referenced anywhere
-    beyond its own assignment.
-
-    Returns a list of human-readable violations; empty is the contract.
-    """
     nf = compiled.workflow_nf
     home_root = compiled.home_root
     work_root = compiled.work_root
@@ -348,7 +262,7 @@ def check_emitted_addresses(compiled: CompiledTask) -> list[str]:
 
     for var, rel in _GIVEN_INPUT_RE.findall(nf):
         if len(re.findall(rf"{re.escape(var)}\b", nf)) < 2:
-            continue  # registered for lineage, never staged into a container
+            continue
         csv = compiled.workspace / rel
         if not csv.exists():
             continue
@@ -368,13 +282,7 @@ def check_emitted_addresses(compiled: CompiledTask) -> list[str]:
     return violations
 
 
-# ---------------------------------------------------------------------------
-# Re-exports for PlanExecutionOracle bridge
-# ---------------------------------------------------------------------------
-
-
 def validate_contract(compiled: CompiledTask) -> ContractReport:
-    """Module-level shim used by `PlanExecutionOracle.validate_contract_only`."""
     errors: list[str] = []
     nf_ok = _check_nf_compiles(compiled.workflow_nf, errors)
     reachable = _compute_step_inputs_reachable(compiled)

@@ -1,0 +1,146 @@
+types:
+  metabuli:
+    properties:
+      _: metabuli per contig classifications
+      ext: tsv
+  metabuli_report:
+    properties:
+      _: metabuli report
+      ext: tsv
+  metabuli_krona:
+    properties:
+      _: metabuli krona report
+      ext: html
+
+  genomad_virus_summary:
+    properties:
+      _: genomad virus summary
+      ext: tsv
+  genomad_plasmid_summary:
+    properties:
+      _: genomad plasmid summary
+      ext: tsv
+  # The gene table is what every one of Antonio's curation predicates actually
+  # reads -- marker, virus_hallmark and uscg are columns here and nowhere else --
+  # so declaring it is what moves those rules out of the DAG and into a join.
+  # `<out>/<prefix>_annotate/<prefix>_taxonomy.tsv`, NOT a file in the summary
+  # directory -- and it survives `--cleanup`, which removes only the `_mmseqs2`
+  # subdirectory (genomad/modules/annotate.py:210).
+  genomad_taxonomy:
+    properties:
+      _: genomad ICTV lineage and agreement score per called viral sequence
+      ext: tsv
+  genomad_virus_genes:
+    properties:
+      _: genomad per-gene table for the called viral sequences -- marker, virus_hallmark, uscg, annotation_description, annotation_accessions, annotation_conjscan, annotation_amr, taxname
+      ext: tsv
+
+  checkm_stats:
+    properties:
+      _: checkm quality stats
+      ext: csv
+  checkm_raw:
+    properties:
+      _: checkm workspace
+
+  gtdbtk:
+    properties:
+      _: gtdbtk per contig classifications 
+      ext: tsv
+  gtdbtk_raw:
+    properties:
+      _: gtdbtk raw workspace
+
+  ani_table:
+    properties:
+      _: fastani pairwise average nucleotide identity
+      ext: tsv
+
+  # kraken2 + bracken (k-mer LCA bridge slot - same kreport format as centrifuger)
+  kraken2_classifications:
+    properties:
+      _: kraken2 per-read classifications (5 cols, no header - C/U readID taxID lenR1|lenR2 kmer_hits), zstd-compressed parquet
+      ext: parquet
+  kraken2_report:
+    properties:
+      _: kraken2 sample report (kraken-style 6-col format - pct reads_clade reads_taxon rank taxid indented_name)
+      ext: tsv
+  bracken_species:
+    properties:
+      _: bracken re-estimated species abundance (7 cols WITH header - name taxonomy_id taxonomy_lvl kraken_assigned_reads added_reads new_est_reads fraction_total_reads)
+      ext: tsv
+  bracken_kreport:
+    properties:
+      _: bracken kraken-style report after abundance re-estimation (same 6-col kreport format as kraken2_report)
+      ext: tsv
+
+  # centrifuger (k-mer LCA bridge slot)
+  centrifuger_classifications:
+    properties:
+      _: centrifuger per-read classifications (8 cols WITH header - readID seqID taxID score 2ndBestScore hitLength queryLength numMatches), zstd-compressed parquet
+      ext: parquet
+  centrifuger_kreport:
+    properties:
+      _: centrifuger kraken-style report via centrifuger-kreport (same 6-col format as kraken2_report - the bridge target)
+      ext: tsv
+  centrifuger_summary:
+    properties:
+      _: centrifuger-quant per-taxon abundance summary (7 cols WITH header - name taxID taxRank genomeSize numReads numUniqueReads abundance)
+      ext: tsv
+
+  # sylph (ANI-containment profiler)
+  sylph_profile:
+    properties:
+      _: sylph profile output (15 cols WITH header - Sample_file Genome_file Taxonomic_abundance Sequence_abundance Adjusted_ANI Eff_cov ANI_5-95_percentile Eff_lambda Lambda_5-95_percentile Median_cov Mean_cov_geq1 Containment_ind Naive_ANI kmers_reassigned Contig_name)
+      ext: tsv
+
+  # ganon2 (interleaved Bloom filter)
+  ganon2_classifications:
+    properties:
+      _: ganon2 raw classifications (.rep - 7 cols, no header, plus trailing #-prefixed summary lines)
+      ext: rep
+  ganon2_report:
+    properties:
+      _: ganon2 tree-like abundance report (.tre - 9 cols, no header - rank taxid lineage(pipe-sep) name unique shared children total percent)
+      ext: tre
+
+  # MetaPhlAn 4 (clade-specific marker genes)
+  metaphlan_profile:
+    properties:
+      _: MetaPhlAn 4 relative-abundance profile (4 cols, #-prefixed comment header - clade_name NCBI_tax_id relative_abundance additional_species)
+      ext: tsv
+  metaphlan_sam:
+    properties:
+      _: MetaPhlAn 4 bowtie2 alignment SAM (companion artifact via --mapout - SAM format)
+      ext: sam
+
+  # phyloFlash (SSU rRNA reconstruction + taxonomic profile from PE reads)
+  phyloflash_report_html:
+    properties:
+      _: phyloFlash run HTML report (interactive summary - <lib>.phyloFlash.html)
+      ext: html
+  phyloflash_summary:
+    properties:
+      _: phyloFlash run summary report (key,value CSV - <lib>.phyloFlash.report.csv)
+      ext: csv
+  phyloflash_ntu_abundance:
+    properties:
+      _: phyloFlash NTU abundance table (2 cols CSV - taxonomy,read_count - <lib>.phyloFlash.NTUabundance.csv)
+      ext: csv
+  phyloflash_ssu_spades:
+    properties:
+      _: phyloFlash SPAdes-reconstructed full-length SSU rRNA sequences (<lib>.spades_rRNAs.final.fasta)
+      ext: fasta
+
+  # curation round 3 -- KBase parity. classify_wf already performs identify and align
+  # and the shipped transform globs only the summary; `gtdbtk infer` builds the tree.
+  gtdbtk_msa:
+    properties:
+      _: GTDB-Tk concatenated marker protein alignment over the user genomes
+      Format: FASTA
+      ext: fasta
+  gtdbtk_tree:
+    properties:
+      _: newick phylogeny over the genomes GTDB-Tk aligned
+      Format: newick
+      ext: tree

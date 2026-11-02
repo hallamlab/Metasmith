@@ -1,0 +1,6 @@
+name: carveme
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - carveme=1.6.1

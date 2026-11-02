@@ -1,0 +1,22 @@
+# WHAT WAS CONSIDERED AND REFUSED, with the reason. An unusable source stated clearly is
+# worth as much as a kept one, and dissolved CO2 is the largest thing this lane declines.
+bnid	quantity	verdict	why
+106223	dissolved CO2	rejected	Concentration in equilibrium with 35 Pa CO2 in the GAS PHASE at 35 C, organism Generic. An extracellular equilibrium, not an E. coli intracellular pool -- a respiring cell makes its own CO2 and sits far above air equilibrium.
+106207	dissolved CO2	rejected	Solubility of CO2 in water at 25 C and 1 atm partial pressure, organism Generic. A solubility table needs a partial pressure assumption to become a concentration, which makes it a derivation rather than a measurement.
+106208	dissolved CO2	rejected	Solubility of CO2 in water at 35 C and 1 atm partial pressure. Same defect as 106207.
+106209	dissolved CO2	rejected	Solubility of CO2 in water at 15 C, in grams per 100 ml. Same defect, and not at growth temperature.
+104500	O2 redox	rejected	Standard redox potential of water/oxygen, 800 mV. A midpoint potential is a standard quantity eQuilibrator's dG' already accounts for, not an in-vivo poise.
+104604	CO2/CH2O redox	rejected	Redox potential for the carbohydrate unit. Same defect as 104500.
+100615	O2 diffusion	rejected	Diffusion coefficient of oxygen in water. A transport property, not a concentration.
+104440	O2 diffusion	rejected	Diffusion coefficient of oxygen in water. Same as 100615.
+114984	O2 diffusion	rejected	Diffusion coefficient of oxygen in water. Same as 100615.
+111065	O2 at half pmf	rejected	The oxygen concentration at which respiration still makes ~50% of normal pmf. A threshold in an experiment, not a physiological pool.
+111098	O2 at max pmf	rejected	The oxygen concentration at which respiration still makes near-maximal pmf. Same defect as 111065.
+106799	growth rate	rejected	Growth rate on gluconate at high oxygen. A rate in hour^-1, not a concentration.
+106800	growth rate	rejected	Growth rate on gluconate at low oxygen. Same as 106799.
+105022	NAD poise	rejected	NAD+/NADH ratio from Henry 2006, which is a THERMODYNAMIC FIT. Feeding a thermodynamically-derived number back into a thermodynamic calculation is circular.
+105023	NADP poise	rejected	NADP+/NADPH ratio from Henry 2006. Same defect as 105022.
+104681	NAD	rejected	2.6 mM from Bennett 2009 -- already inside ECMDB by PMID, so keeping it here would double-weight one study rather than add a source.
+104680	glutathione	rejected	17 mM from Bennett 2009. Same defect as 104681.
+104689	NADP	rejected	120 uM from Bennett 2009. Same defect as 104681.
+105980	cytoplasmic pH	rejected	pH 7.5-7.6. Not a concentration, and eQuilibrator already takes pH as a parameter of the prime transform.

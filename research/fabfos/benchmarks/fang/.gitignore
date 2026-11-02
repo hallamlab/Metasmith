@@ -1,0 +1,12 @@
+cache/
+
+# Resume scratch and bulk results from the glycerol -> FFA panel arm. The shards exist so a
+# killed run resumes; the parquets are the probes' raw output. Both are reproducible from the
+# committed scripts and the recorded seed -- `conditions_null.tsv` byte-identically so, which
+# is the property `ecspr draw` is built to have. The TSVs beside them are the findings and are
+# tracked.
+out/**/shards_*/
+out/**/*.parquet
+out/**/conditions_null.tsv
+out/**/run.log
+out/dryrun/

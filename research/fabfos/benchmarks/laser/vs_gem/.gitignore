@@ -1,0 +1,5 @@
+cache/
+out/*.png
+out/*.svg
+out/*.log
+benchmark_report.html
