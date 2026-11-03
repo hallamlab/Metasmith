@@ -1,8 +1,6 @@
-# CPE3 enrichments: binning, taxonomy and functional annotation (plan)
+# Binning, taxonomy and functional annotation (plan)
 
-Samples: the six CPE3 HiFi libraries from TCAG run DAV36689. These are cpe3_parent, cpe3_r2a, cpe3_r2a_cu1_5, cpe3_r2a_cu6, cpe3_r2a_cu7_8 and cpe3_r2a_cu9_11.
-
-The plan handles each sample on its own. Metasmith solved both versions below for all six samples as one case. Nothing has run yet.
+This is a draft of the pipeline. The inputs are still open. The test solve used the six CPE3 HiFi libraries from DAV36689, but the same steps fit whatever samples you want to run. The plan handles each sample on its own. Nothing has run yet.
 
 ## Two ways in
 
@@ -24,7 +22,7 @@ The plan handles each sample on its own. Metasmith solved both versions below fo
 
 ## Notes
 
-- Compute would run on fir, not Sockeye. The six BAMs are 40–50 GB each, and the binners plus the four lanes make this a multi-day job.
-- The Illumina libraries from the same samples (DAV36690) are not used in either version. They could be added as a second coverage source for the binners if you want that.
+- Compute would run on fir, not Sockeye. With HiFi libraries of 40–50 GB each, the binners plus the four lanes make this a multi-day job.
+- Short reads can be added as a second coverage source for the binners, or used as the main input instead.
 - The 4-lane annotation can also run on a set of finished MAGs, such as your dRep representatives, instead of on whole assemblies.
 - Before a run, the plan's database downloads (GTDB, KOfam, UniRef50) will be replaced with existing copies.
