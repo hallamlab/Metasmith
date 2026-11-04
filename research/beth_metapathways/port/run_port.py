@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPO / "research" / "metasmith_benchmark" / "drivers"))
 CACHE_DIR = Path(os.environ.get("BETH_PORT_CACHE_DIR", HERE / ".cache"))
 
 import _common as c  # noqa: E402
+from metasmith.agents.agent_lock import AgentBusyError  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
     Agent, DataInstanceLibrary, Runtime, Source, SshSource, TargetBuilder, TransformInstanceLibrary,
 )
@@ -286,10 +287,20 @@ def cmd_run(args):
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
         return 0
     parent = args.sample.endswith("_parent")
-    c.stage_and_run(smith, task, CACHE_DIR / args.sample, tag,
-                    stage_only=args.stage_only, materialise=args.materialise,
-                    params=dict(executor=dict(queueSize=120 if parent else 200), process=dict(tries=3)),
-                    scaled=PARENT_SCALED if parent else SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
+    # The home stages one workflow at a time and refuses a second rather than queueing it.
+    for attempt in range(40):
+        try:
+            c.stage_and_run(smith, task, CACHE_DIR / args.sample, tag,
+                            stage_only=args.stage_only, materialise=args.materialise,
+                            params=dict(executor=dict(queueSize=120 if parent else 200), process=dict(tries=3)),
+                            scaled=PARENT_SCALED if parent else SCALED, gpus=c.FIR_GPU,
+                            on_exist="clear" if args.clear else "update")
+            break
+        except AgentBusyError as e:
+            print(f"retrying in 60 s: {e}", flush=True)
+            time.sleep(60)
+    else:
+        raise RuntimeError("the agent home stayed busy for 40 minutes")
     if args.materialise:
         c.host_sh('rm -rf /var/tmp/phyberos_apt.beth_port')
     return 0
