@@ -95,8 +95,10 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
 LOCAL_IMAGES = {
     "docker..quay.io_txyliu_pathologic..27.0.sif": Path("/scratch/phyberos/engcyc/licensed/pathologic.sif"),
 }
-# Pulls unpack in node-local tmp, never on Lustre. Deploy bakes only the first and last lines.
-APPTAINER_TMP = "${SLURM_TMPDIR:-/tmp}/phyberos_apt.beth_port"
+# Pulls unpack in node-local tmp, never on Lustre. A login node's /tmp is tmpfs, charged unreclaimably to
+# the 16 GiB per-user cgroup, so a login-node pull uses its local-disk /var/tmp. Deploy bakes only the
+# first and last lines.
+APPTAINER_TMP = "${SLURM_TMPDIR:-/var/tmp}/phyberos_apt.beth_port"
 SETUP_COMMANDS = [*c.SETUP_COMMANDS,
                   f'export APPTAINER_TMPDIR="{APPTAINER_TMP}" SINGULARITY_TMPDIR="{APPTAINER_TMP}";'
                   f' mkdir -p "{APPTAINER_TMP}"',
@@ -260,7 +262,7 @@ def cmd_run(args):
                     params=dict(executor=dict(queueSize=200), process=dict(tries=3)),
                     scaled=SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
     if args.materialise:
-        c.host_sh('rm -rf /tmp/phyberos_apt.beth_port')
+        c.host_sh('rm -rf /var/tmp/phyberos_apt.beth_port')
     return 0
 
 
