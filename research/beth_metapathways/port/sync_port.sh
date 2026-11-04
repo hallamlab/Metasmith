@@ -8,6 +8,8 @@
 #       <checkout> <checkout>/research/beth_metapathways/port/run_port.py import --sample S
 # CAUTION the checkout copies the working tree, ignored build products included, so it refuses
 # when that tree differs from HEAD.
+# CAUTION a pushed overlay restages on every node of a live run, since the stage key is the tarball's
+# mtime. Set SKIP_OVERLAY=1 when only the driver changed and a run is live.
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
@@ -33,5 +35,5 @@ cd "$REPO"
 ssh "$HOST" "mkdir -p $DEST $PORT/logs && test -d $HOME_DIR"
 rsync -a --relative --exclude='__pycache__' --exclude='*.pyc' --exclude='.cache' "${PATHS[@]}" "$HOST:$DEST/"
 ssh "$HOST" "echo $SHA > $DEST/COMMIT"
-MSM_HPC_HOST="$HOST" MSM_AGENT_HOME="$HOME_DIR" "$REPO/research/cami/ops/push_dev_overlay.sh"
+[ "${SKIP_OVERLAY:-0}" = 1 ] || MSM_HPC_HOST="$HOST" MSM_AGENT_HOME="$HOME_DIR" "$REPO/research/cami/ops/push_dev_overlay.sh"
 echo "checkout: $HOST:$DEST"

@@ -2,7 +2,9 @@
 """The metasmith port of MetaPathways on Beth Davenport's 17 CPE3 assemblies, one workflow per assembly.
 
 Each workflow takes one assembly as sequences::assembly and its eligible UniteM MAGs (mags.tsv,
-written by build_mags.py) as binning_local::quality_bin_fasta.
+written by build_mags.py) as binning_local::quality_bin_fasta. --group picks one of several target
+sets per assembly (mp is the MetaPathways port itself); they share the home's task cache, so a lane two
+groups need runs once.
 
 Subcommands: setup [--deploy], import --sample S, run --sample S [--dag]
 [--stage-only|--materialise|--launch] [--clear], status.
@@ -62,6 +64,23 @@ GLOBAL_REFS = {
     "ref::label_transfer_landmarks": Path("/scratch/phyberos/fabfos_refs/processed/label_transfer_landmarks/landmarks"),
 }
 
+# For the extra annotation groups; existing fir copies only, so no plan carries a download.
+EXTRA_REFS = {
+    "ref::genomad": Path("/scratch/phyberos/databases/genomad"),
+    # CAUTION built under a /db bind, which virsorter2.py also uses. VirSorter2 hashes its env path.
+    "annotation::virsorter2_db": Path("/scratch/phyberos/refs/virsorter2_2.2.4"),
+    "annotation::bakta_db": Path("/project/6004975/phyberos/databases/bakta"),
+    "ref::antismash": Path("/project/6004975/phyberos/databases/antismash"),
+    "annotation::eggnog_data": Path("/scratch/phyberos/databases/eggnog"),
+    "ref::interproscan_data": Path("/project/6004975/phyberos/lib/interproscan/interproscan_data.tgz"),
+    "annotation::amrfinderplus_db": Path("/scratch/phyberos/databases/amrfinderplus/2026-05-15.1"),
+    "annotation::bacmet_diamond_db": Path("/scratch/phyberos/databases/bacmet/bacmet.dmnd"),
+    "annotation::megares_diamond_db": Path("/scratch/phyberos/databases/megares/megares.dmnd"),
+    "annotation::vfdb_diamond_db": Path("/scratch/phyberos/databases/vfdb/vfdb.dmnd"),
+    "annotation::tcdb_diamond_db": Path("/scratch/phyberos/databases/tcdb/tcdb.dmnd"),
+    "annotation::pathofact_db": Path("/scratch/phyberos/databases/pathofact_db"),
+}
+
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
     "sequences.yml", "ref.yml", "annotation.yml", "taxonomy.yml", "binning.yml", "binning_local.yml",
     "modelling.yml", "env.yml", "lib.yml")]
@@ -71,7 +90,12 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
 LOCAL_IMAGES = {
     "docker..quay.io_txyliu_pathologic..27.0.sif": Path("/scratch/phyberos/engcyc/licensed/pathologic.sif"),
 }
-SETUP_COMMANDS = [*c.SETUP_COMMANDS, f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
+# Pulls unpack in node-local tmp, never on Lustre. Deploy bakes only the first and last lines.
+APPTAINER_TMP = "${SLURM_TMPDIR:-/tmp}/phyberos_apt.beth_port"
+SETUP_COMMANDS = [*c.SETUP_COMMANDS,
+                  f'export APPTAINER_TMPDIR="{APPTAINER_TMP}" SINGULARITY_TMPDIR="{APPTAINER_TMP}";'
+                  f' mkdir -p "{APPTAINER_TMP}"',
+                  f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.24.2")
 
 SCALED = {
@@ -107,23 +131,41 @@ def declare_globals(smith, ensure):
     return c.cite(givens, CACHE_DIR / "globals.xgdb", TYPE_LIBS, ensure)
 
 
-def build_transforms():
-    def load(name, masked=(), keep=None):
-        lib = TransformInstanceLibrary.Load((c.MLIB / "transforms" / name).resolve())
-        if keep is not None:
-            return lib.AsView({Path(p) for p in keep})
-        return lib.AsView({Path(p) for p in masked}, invert=True)
+def declare_extra_refs(smith, ensure):
+    givens = smith.PoolGivens()
+    c.declare_refs(givens, EXTRA_REFS, tags=["beth_mp_port"])
+    return c.cite(givens, CACHE_DIR / "extra_refs.xgdb", TYPE_LIBS, ensure)
 
+
+def load_lib(name, masked=(), keep=None):
+    lib = TransformInstanceLibrary.Load((c.MLIB / "transforms" / name).resolve())
+    if keep is not None:
+        return lib.AsView({Path(p) for p in keep})
+    return lib.AsView({Path(p) for p in masked}, invert=True)
+
+
+def mp_transforms():
     return [
-        load("metagenomics", {"binning/das_tool.py", "taxonomy/gtdbtk_de_novo.py"}),
-        load("functionalAnnotation"),
-        load("fabfos"),
-        load("logistics"),
-        load("metabolicModelling", keep={"prodigal_from_quality_bin.py"}),
+        load_lib("metagenomics", {"binning/das_tool.py", "taxonomy/gtdbtk_de_novo.py"}),
+        load_lib("functionalAnnotation"),
+        load_lib("fabfos"),
+        load_lib("logistics"),
+        load_lib("metabolicModelling", keep={"prodigal_from_quality_bin.py"}),
     ]
 
 
-def build_targets():
+# No per-bin prodigal, so every ORF target resolves to the assembly's ORFs, and logistics holds only
+# the splitters, so a reference that fails to match cannot be replaced by a download.
+def annotation_transforms():
+    return [
+        load_lib("metagenomics", {"binning/das_tool.py", "taxonomy/gtdbtk_de_novo.py"}),
+        load_lib("functionalAnnotation"),
+        load_lib("fabfos"),
+        load_lib("logistics", keep={"chunkOrfsForAnnotation.py", "splitOrfsForAmr.py", "splitContigsForAmr.py"}),
+    ]
+
+
+def mp_targets():
     t = TargetBuilder()
     orfs = t.Add("sequences::orfs")
     for dtype in ("annotation::diamond_uniref50_results", "annotation::pgdb_archive",
@@ -133,6 +175,34 @@ def build_targets():
                   "taxonomy::contig_lcastar", "annotation::bin_pgdb_archive", "annotation::bin_pathway_table"):
         t.Add(dtype)
     return t
+
+
+def flat_targets(*dtypes):
+    def build():
+        t = TargetBuilder()
+        for dtype in dtypes:
+            t.Add(dtype)
+        return t
+    return build
+
+
+# gpr_7lane needs ref::esm_c_600m_weights, ref::ezpred_model and ref::label_transfer_landmarks_esmc,
+# none of which is on fir, so the GPR group is the 4-lane table.
+GROUPS = {
+    "mp": (mp_targets, mp_transforms, True),
+    "gpr": (flat_targets("annotation::gpr_table"), annotation_transforms, False),
+    "mge": (flat_targets("taxonomy::genomad_virus_summary", "annotation::virsorter2_scores",
+                         "annotation::integronfinder_summary", "annotation::mobileelementfinder_results"),
+            annotation_transforms, False),
+    "noncoding": (flat_targets("annotation::bakta_gff", "annotation::promotech_predictions",
+                               "annotation::deeptfactor_results"), annotation_transforms, False),
+    "amr_a": (flat_targets("annotation::amrfinderplus_results", "annotation::bacmet_diamond_results",
+                           "annotation::megares_diamond_results"), annotation_transforms, False),
+    "amr_b": (flat_targets("annotation::vfdb_diamond_results", "annotation::diamond_tcdb_results",
+                           "annotation::pathofact_amr"), annotation_transforms, False),
+    "bgc_func": (flat_targets("annotation::antismash_json", "annotation::eggnog_results",
+                              "annotation::interproscan_results"), annotation_transforms, False),
+}
 
 
 def cmd_setup(args):
@@ -154,30 +224,39 @@ def cmd_run(args):
     ensure = importing or not remote
     inputs = declare_sample(smith, args.sample, ensure)
     refs = declare_globals(smith, ensure)
+    extra = declare_extra_refs(smith, ensure) if importing or args.group != "mp" else None
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds {args.sample}'s givens and the port references")
         return 0
+
+    targets, transforms, with_bins = GROUPS[args.group]
+    expected = {"sequences::assembly": 1}
+    if with_bins:
+        expected["binning_local::quality_bin_fasta"] = len(SAMPLES[args.sample][1])
 
     t0 = time.time()
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::assembly")),
         resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
-                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), refs],
-        transforms=build_transforms(),
-        targets=build_targets(),
+                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"), refs, *([extra] if extra else [])],
+        transforms=transforms(),
+        targets=targets(),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
-    c.check_plan(task, {"sequences::assembly": 1, "binning_local::quality_bin_fasta": len(SAMPLES[args.sample][1])})
+    c.check_plan(task, expected)
     c.print_plan(task, width=34)
+    tag = args.tag or "_".join(["beth_mp_port", args.sample, *([args.group] if args.group != "mp" else [])])
     if args.dag:
-        c.write_dag(task, f"beth_mp_port_{args.sample}", CACHE_DIR / args.sample)
+        c.write_dag(task, tag, CACHE_DIR / args.sample)
     if not remote:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
         return 0
-    c.stage_and_run(smith, task, CACHE_DIR / args.sample, args.tag or f"beth_mp_port_{args.sample}",
+    c.stage_and_run(smith, task, CACHE_DIR / args.sample, tag,
                     stage_only=args.stage_only, materialise=args.materialise,
                     params=dict(executor=dict(queueSize=200), process=dict(tries=3)),
                     scaled=SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
+    if args.materialise:
+        c.host_sh('rm -rf /tmp/phyberos_apt.beth_port')
     return 0
 
 
@@ -202,8 +281,10 @@ def main():
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--sample", required=True, choices=sorted(SAMPLES))
-        p.set_defaults(fn=cmd_run, stage_only=False, materialise=False, launch=False, dag=False, clear=False, tag=None)
+        p.set_defaults(fn=cmd_run, stage_only=False, materialise=False, launch=False, dag=False, clear=False, tag=None,
+                       group="mp")
         if name == "run":
+            p.add_argument("--group", choices=list(GROUPS), default="mp")
             p.add_argument("--dag", action="store_true")
             mode = p.add_mutually_exclusive_group()
             mode.add_argument("--stage-only", action="store_true")
