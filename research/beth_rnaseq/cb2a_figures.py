@@ -54,7 +54,24 @@ def load(args):
     g["strong"] = g.strong.astype("boolean").fillna(False).astype(bool)
     g["copper"] = g.copper.astype("boolean").fillna(False).astype(bool)
     g["label"] = g.name.fillna(g.bacmet_gene).fillna(g.gene_id.str.replace("ACP82L_", ""))
+    g["family"] = np.nan
+    g["refines"] = False
+    if args.labels:
+        fam = pd.read_csv(args.labels, sep="\t").set_index("gene_id")
+        g["family"] = g.gene_id.map(fam.short_label)
+        g["refines"] = g.gene_id.map(fam.refines).fillna(0).astype(bool)
+    g["has_family"] = g.family.notna() & ~g.strong
     return g, gff, bac
+
+
+def colours(s):
+    return np.where(s.copper & s.strong, ORANGE, np.where(s.copper, "#f3a27f", np.where(
+        s.strong, BLUE, np.where(s.has_family, VIOLET, GREY))))
+
+
+LABEL_GAP_KB = 0.75
+LEGEND = ["BacMet copper gene, strong hit", "BacMet copper gene, weak hit", "other BacMet gene, strong hit",
+          "no strong BacMet hit; family from RefSeq, Pfam or structure", "no family found"]
 
 
 def label_of(row):
@@ -124,28 +141,36 @@ def fig_island(g, out):
     kb0 = s.start.min()
     mid = ((s.start + s.end) / 2 - kb0) / 1e3
     width = (s.end - s.start) / 1e3 * 0.9
-    col = np.where(s.copper & s.strong, ORANGE, np.where(s.copper, "#f3a27f",
-                   np.where(s.strong, BLUE, GREY)))
-    ax.bar(mid, s[TPM], width=width, color=col, lw=0)
+    ax.bar(mid, s[TPM], width=width, color=colours(s), lw=0)
     ax.set_yscale("log")
     ax.axhline(med, color=INK2, lw=0.8, ls=(0, (3, 3)))
     ax.set_ylabel("TPM (log scale)")
     ax.set_title("The metal-resistance island (ACP82L_RS07640–RS07925) at 10 ppm copper", loc="left", fontsize=10.5)
+    last = -np.inf
     for m, row in zip(mid, s.itertuples()):
         if isinstance(row.bacmet_gene, str) and (row.strong or row.copper):
             tag = row.bacmet_gene
+        elif isinstance(row.family, str):
+            tag = row.family
         elif getattr(row, TPM) >= 1000:
             tag = row.gene_id.replace("ACP82L_", "")
         else:
             continue
-        ax.text(m, getattr(row, TPM) * 1.15, tag, rotation=90, ha="center", va="bottom", fontsize=7, color=INK)
+        x = max(m, last + LABEL_GAP_KB)
+        last = x
+        y = getattr(row, TPM) * 1.15
+        if x - m > 0.1:
+            ax.plot([m, x], [y, y * 1.6], color=INK2, lw=0.5)
+            y *= 1.6
+        ax.text(x, y, tag, rotation=90, ha="center", va="bottom", fontsize=7, color=INK)
     ax.set_ylim(top=s[TPM].max() * 40)
     for row in s.itertuples():
         a, b = (row.start - kb0) / 1e3, (row.end - kb0) / 1e3
         y = 0.62 if row.strand == "+" else 0.38
         dx = (b - a) if row.strand == "+" else -(b - a)
         x0 = a if row.strand == "+" else b
-        c = ORANGE if (row.copper and row.strong) else ("#f3a27f" if row.copper else (BLUE if row.strong else GREY))
+        c = ORANGE if (row.copper and row.strong) else ("#f3a27f" if row.copper else (
+            BLUE if row.strong else (VIOLET if row.has_family else GREY)))
         am.add_patch(FancyArrow(x0, y, dx, 0, width=0.16, head_width=0.24,
                                 head_length=min(0.25, abs(dx) * 0.4), length_includes_head=True,
                                 color=c, lw=0))
@@ -154,23 +179,21 @@ def fig_island(g, out):
     am.grid(False)
     am.spines["left"].set_visible(False)
     am.set_xlabel(f"kb from {s.gene_id.iloc[0]} (chromosome {kb0/1e6:.3f} Mb)")
-    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in (ORANGE, "#f3a27f", BLUE, GREY)]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in (ORANGE, "#f3a27f", BLUE, VIOLET, GREY)]
     handles.append(plt.Line2D([], [], color=INK2, lw=0.8, ls=(0, (3, 3))))
-    ax.legend(handles, ["BacMet copper gene, strong hit", "BacMet copper gene, weak hit",
-                        "other BacMet gene, strong hit", "no strong BacMet hit", f"genome median {med:.0f} TPM"],
-              fontsize=7.5, frameon=False, loc="upper left", ncol=3)
+    ax.legend(handles, LEGEND + [f"genome median {med:.0f} TPM"], fontsize=7.5, frameon=False, loc="upper left", ncol=3)
     fig.savefig(out / "2_copper_island_locus.png")
     plt.close(fig)
-    s[["gene_id", "start", "end", "strand", "product", "bacmet_gene", "pident", "qcov_pct", TPM,
+    s[["gene_id", "start", "end", "strand", "product", "bacmet_gene", "pident", "qcov_pct", "family", TPM,
        "count_cb2a_cu3"]].to_csv(out / "2_copper_island_genes.csv", index=False)
 
 
 def fig_top(g, out, n=30):
     t = g.nlargest(n, TPM).iloc[::-1]
     fig, ax = plt.subplots(figsize=(8, 7.5))
-    col = np.where(t.copper & t.strong, ORANGE, np.where(t.copper, "#f3a27f", np.where(t.strong, BLUE, GREY)))
-    ax.barh(range(len(t)), t[TPM], color=col, height=0.72, lw=0)
-    names = [f"{r.gene_id.replace('ACP82L_', '')}  {str(r.product)[:48]}" for r in t.itertuples()]
+    ax.barh(range(len(t)), t[TPM], color=colours(t), height=0.72, lw=0)
+    names = [f"{r.gene_id.replace('ACP82L_', '')}  {str(r.product)[:44]}" + (f"  → {r.family}" if r.refines else "")
+             for r in t.itertuples()]
     ax.set_yticks(range(len(t)), names, fontsize=7.5)
     for i, r in enumerate(t.itertuples()):
         tag = f"  {r.bacmet_gene}" if isinstance(r.bacmet_gene, str) and (r.strong or r.copper) else ""
@@ -180,9 +203,8 @@ def fig_top(g, out, n=30):
     ax.grid(axis="y", visible=False)
     ax.set_xlabel("TPM")
     ax.set_title(f"CB2A at 10 ppm: the {n} most expressed protein-coding genes", loc="left", fontsize=10.5)
-    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in (ORANGE, "#f3a27f", BLUE, GREY)]
-    ax.legend(handles, ["BacMet copper gene, strong hit", "BacMet copper gene, weak hit",
-                        "other BacMet gene, strong hit", "no strong BacMet hit"],
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in (ORANGE, "#f3a27f", BLUE, VIOLET, GREY)]
+    ax.legend(handles, LEGEND,
               title="◆ island = in the metal-resistance island RS07640–RS07925", title_fontsize=7.5,
               fontsize=7.5, frameon=False, loc="lower right")
     fig.savefig(out / "3_top_expressed_genes.png")
@@ -288,6 +310,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     for a in ("tpm", "raw", "gff", "bacmet", "epi300-tpm", "epi300-classes", "out"):
         ap.add_argument(f"--{a}", required=True)
+    ap.add_argument("--labels", help="TSV of gene_id, short_label, refines (1 when the label adds to the RefSeq product)")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
