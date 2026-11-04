@@ -36,6 +36,7 @@ def protocol(context: ExecutionContext):
             bakta \
                 --db /db/db-light \
                 --skip-cds --skip-sorf --skip-pseudo --skip-plot --skip-crispr \
+                --keep-contig-headers \
                 --force \
                 --prefix bakta_noncoding \
                 --output bakta_out \
