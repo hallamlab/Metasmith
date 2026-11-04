@@ -17,10 +17,13 @@ All scripts take their working folder as the current directory unless they take 
 
 The origin analysis uses `uniparc_orgs.py` for organisms that carry an identical sequence, `gc.py` for GC content, and `cov.py` for merged-interval minimap2 coverage.
 
-The lineage follow-up matches the genomes to the PPanGGOLiN clusters of the JS4038 genome announcement (Fig. 1). It has three parts:
+The lineage follow-up draws the genomes in the leaf order of a PPanGGOLiN `draw --tile_plot` HTML that Beth supplies (`--tree`), beside its dendrogram. It has four parts:
+- `ppanggolin_tree.py` reads the plot and maps each tile label to an NCBI accession.
 - `skani triangle -E` gives whole-genome ANI (`ani_edges.tsv`). `element_figure.py --ani` reads it.
 - `accessory_figure.py` scores six JS4038 accessory regions across those genomes.
 - Each region is cut from JS4038 and aligned on its own, with `minimap2 -c`.
+
+A tile-plot genome with no gene families, such as an NCBI entry that has no annotation, still gets a leaf, and its place in the tree means nothing. The figures mark such a genome with †.
 
 ## Traps
 
