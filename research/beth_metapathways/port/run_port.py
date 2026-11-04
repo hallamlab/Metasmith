@@ -105,9 +105,12 @@ SETUP_COMMANDS = [*c.SETUP_COMMANDS,
                   f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.24.2")
 
+# gpr_7lane's dense landmark x MNXR matrix is ~11 GiB, past its declared 8 GB. A Slurm OOM reaches
+# nextflow as exit 1, not 137, so the memory ladder never retries it.
 SCALED = {
     "diamond_uniref50": (16, 64, 12),
     "pathologic": (2, 32, 24),
+    "gpr_7lane": (4, 64, 1),
 }
 
 
