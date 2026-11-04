@@ -83,6 +83,7 @@ EXTRA_REFS = {
     # ref::label_transfer_landmarks's `landmarks`, which nextflow would otherwise stage over.
     "ref::esm_c_600m_weights": PORT / "refs" / "esm_c_weights" / "esmc_600m.tgz",
     "ref::label_transfer_landmarks_esmc": PORT / "refs" / "label_transfer_landmarks_esmc" / "landmarks_esmc",
+    "ref::ezpred_model": PORT / "refs" / "ezpred_model" / "EZpred",
 }
 
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
@@ -190,7 +191,6 @@ def flat_targets(*dtypes):
     return build
 
 
-# gpr7 also needs ref::ezpred_model, which is not on fir.
 GROUPS = {
     "mp": (mp_targets, mp_transforms, True),
     "gpr": (flat_targets("annotation::gpr_table"), annotation_transforms, False),
