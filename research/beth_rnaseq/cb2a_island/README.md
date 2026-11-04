@@ -17,8 +17,15 @@ All scripts take their working folder as the current directory unless they take 
 
 The origin analysis uses `uniparc_orgs.py` for organisms that carry an identical sequence, `gc.py` for GC content, and `cov.py` for merged-interval minimap2 coverage.
 
+The lineage follow-up matches the genomes to the PPanGGOLiN clusters of the JS4038 genome announcement (Fig. 1). It has three parts:
+- `skani triangle -E` gives whole-genome ANI (`ani_edges.tsv`). `element_figure.py --ani` reads it.
+- `accessory_figure.py` scores six JS4038 accessory regions across those genomes.
+- Each region is cut from JS4038 and aligned on its own, with `minimap2 -c`.
+
 ## Traps
 
 - Sum minimap2 blocks only after merging them. Overlapping blocks over-count coverage.
+- Run minimap2 with `-c` for identity. Without it, column 10 counts seed matches only. That gave 82% for JS4038 against NA1000, where the true ANI is 98.2%.
+- A whole-genome chain spans small indels. CB2 looked 100% covered over the 5 kb repBAC insert, which it lacks. Align the region on its own to test whether a genome carries it.
 - ESMFold writes pLDDT to the B-factor on a 0–1 scale. AlphaFold DB uses 0–100.
 - Foldseek's top PDB hit can carry a misleading name, such as a microtubule complex for the CopC-like RS07740. Check the SwissProt and AFDB50 hits before you write a label.
