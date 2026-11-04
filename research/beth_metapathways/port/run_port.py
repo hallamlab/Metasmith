@@ -79,6 +79,10 @@ EXTRA_REFS = {
     "annotation::vfdb_diamond_db": Path("/scratch/phyberos/databases/vfdb/vfdb.dmnd"),
     "annotation::tcdb_diamond_db": Path("/scratch/phyberos/databases/tcdb/tcdb.dmnd"),
     "annotation::pathofact_db": Path("/scratch/phyberos/databases/pathofact_db"),
+    # Copied from the workstation DVC cache (data/fabfos/processed). The leaf names differ from
+    # ref::label_transfer_landmarks's `landmarks`, which nextflow would otherwise stage over.
+    "ref::esm_c_600m_weights": PORT / "refs" / "esm_c_weights" / "esmc_600m.tgz",
+    "ref::label_transfer_landmarks_esmc": PORT / "refs" / "label_transfer_landmarks_esmc" / "landmarks_esmc",
 }
 
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
@@ -186,11 +190,11 @@ def flat_targets(*dtypes):
     return build
 
 
-# gpr_7lane needs ref::esm_c_600m_weights, ref::ezpred_model and ref::label_transfer_landmarks_esmc,
-# none of which is on fir, so the GPR group is the 4-lane table.
+# gpr7 also needs ref::ezpred_model, which is not on fir.
 GROUPS = {
     "mp": (mp_targets, mp_transforms, True),
     "gpr": (flat_targets("annotation::gpr_table"), annotation_transforms, False),
+    "gpr7": (flat_targets("annotation::gpr_table", "annotation::gpr_table_7lane"), annotation_transforms, False),
     "mge": (flat_targets("taxonomy::genomad_virus_summary", "annotation::virsorter2_scores",
                          "annotation::integronfinder_summary", "annotation::mobileelementfinder_results"),
             annotation_transforms, False),
