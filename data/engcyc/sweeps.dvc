@@ -1,0 +1,6 @@
+outs:
+- md5: f982bce50219bc1c572ae6b1e5087bbc.dir
+  size: 6172860
+  nfiles: 7
+  hash: md5
+  path: sweeps
