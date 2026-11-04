@@ -3,7 +3,7 @@
 
 Prints one row per step (tasks, summed wall, CPU-hours allocated, CPU-hours used, GPU-hours,
 max MaxRSS) and a total. Local and cached tasks have no Slurm job and count zero.
-Run on fir: stdlib only. Usage: run_cost.py <run_dir>
+Run on fir: stdlib only. Usage: run_cost.py <run_dir> [--logs logs.<stamp>] for an earlier attempt.
 """
 
 import argparse
@@ -53,8 +53,9 @@ def sacct(ids):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir", type=Path)
+    ap.add_argument("--logs", default="logs.latest")
     a = ap.parse_args()
-    tasks = list(csv.DictReader((a.run_dir / "_metasmith" / "logs.latest" / "nxf_tasks.csv").open()))
+    tasks = list(csv.DictReader((a.run_dir / "_metasmith" / a.logs / "nxf_tasks.csv").open()))
     ids = sorted({t["native_id"] for t in tasks if re.fullmatch(r"\d+(_\d+)?", t["native_id"] or "")
                   and "_cached" not in t["name"]})
     jobs = sacct(ids) if ids else {}

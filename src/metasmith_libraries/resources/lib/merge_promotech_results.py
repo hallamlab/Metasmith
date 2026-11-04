@@ -20,6 +20,11 @@ def load_manifest(path):
         return json.load(f)
 
 
+# PromoTech's chrom field joins every contig ID in the chunk, which passes csv's 131,072-character
+# default on an assembly of a few thousand contigs. The field is never read.
+csv.field_size_limit(sys.maxsize)
+
+
 def remap_predictions(predictions_path, regions):
     offsets = []
     cum = 0
