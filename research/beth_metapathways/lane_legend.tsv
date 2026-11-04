@@ -1,0 +1,44 @@
+lane	pipeline	tool	reference	feature_type	id	desc	conf_measure	conf_unit	conf_direction	source
+swissprot	metapathways	FAST	UniProtKB/Swiss-Prot	CDS	target accession	product	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	blast_results/<sample>.swissprot.FASTout.parsed.txt
+uniref50	metapathways	FAST	UniRef50	CDS	target accession	product	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	blast_results/<sample>.uniref50.FASTout.parsed.txt
+uniref90	metapathways	FAST	UniRef90	CDS	target accession	product	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	blast_results/<sample>.uniref90.FASTout.parsed.txt
+cazy	metapathways	FAST	dbCAN CAZyDB	CDS	target accession	product	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	blast_results/<sample>.cazy.FASTout.parsed.txt
+eggnog	metapathways	FAST	eggNOG proteins	CDS	target accession	product	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	blast_results/<sample>.eggnog.FASTout.parsed.txt
+metacyc	metapathways	FAST	MetaCyc proteins	CDS	target accession	product	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	blast_results/<sample>.metacyc.FASTout.parsed.txt
+mp_product	metapathways	MetaPathways consensus	the reference_db in extras	CDS	target accession	product	none		none	results/annotation_table/<sample>.functional_and_taxonomic_table.txt
+mp_lca	metapathways	per-database LCA	NCBI taxonomy	CDS	LCA taxon	reference database	none		none	results/annotation_table/<sample>.annotation_taxonomy.tsv; rank 1 is the database the consensus product came from
+silva	metapathways	barrnap and BLAST	SILVA SSU and LSU	rRNA	deepest taxon	SILVA taxonomy	percent identity	%	higher_is_better	results/rRNA/<sample>.<db>.rRNA.stats.txt
+mp_trna	metapathways	tRNAscan-SE	none	tRNA	tRNA isotype	anticodon	Infernal score	bits	higher_is_better	results/tRNA/<sample>.tRNA.results.txt
+mp_pathologic	metapathways	Pathway Tools PathoLogic	MetaCyc	CDS	MetaCyc reactions (all, ;-joined in the wide table)	MetaCyc pathways (all, ;-joined)	none		none	export_pgdb.py on results/pgdb/community/<sample>cyc.tar.bz2
+mp_pathologic_mag	metapathways	Pathway Tools PathoLogic	MetaCyc	CDS	MetaCyc reactions (all, ;-joined)	MetaCyc pathways (all, ;-joined)	none		none	export_pgdb.py on results/pgdb/MAGs/<bin>/<bin>cyc.tar.bz2; the bin is in extras
+diamond_uniref50	port	DIAMOND	UniRef50	CDS	UniRef50 cluster	cluster description	blast score ratio	bitscore / query self-bitscore, 0-1	higher_is_better	annotation::diamond_uniref50_results + annotation::diamond_uniref50_descriptions
+kofam	port	KofamScan	KOfam profiles	CDS	KO	KO definition	HMM bitscore (all rows clear the KO's own threshold)	bits	higher_is_better	annotation::kofamscan_results + annotation::kofamscan_descriptions
+clean	port	CLEAN	CLEAN model	CDS	EC number		CLEAN confidence	0-1	higher_is_better	annotation::clean_predictions
+deepec	port	DeepEC	DeepEC model	CDS	EC number		none (DeepEC reports no score)		none	annotation::deepec_predictions
+ezpred	port	EZpred	EZpred model on ESM-C 600M	CDS	EC term at any level	head kind	EZpred probability	0-1	higher_is_better	annotation::ezpred_predictions; rows scoring >= 0.1 only, the raw CSV keeps every term
+proteinbert	port	ProteinBERT label transfer	label-transfer landmarks	CDS	MetaNetX reaction	landmark	transfer vote share	0-1	higher_is_better	channel pbert of annotation::gpr_table_7lane, else annotation::gpr_table
+esm_c	port	ESM-C 600M label transfer	ESM-C landmarks	CDS	MetaNetX reaction	landmark	transfer vote share	0-1	higher_is_better	channel esmc of annotation::gpr_table_7lane
+gpr	port	4-lane GPR merge (kofam, CLEAN, UniRef50, ProteinBERT)	MetaNetX lookup	CDS	MetaNetX reaction with the most supporting channels	supporting channels	supporting channels	count of 4	higher_is_better	annotation::gpr_table; the long table keeps every channel row with its raw_score
+gpr7	port	7-lane GPR merge (adds DeepEC, EZpred, ESM-C)	MetaNetX lookup	CDS	MetaNetX reaction with the most supporting channels	supporting channels	supporting channels	count of 7	higher_is_better	annotation::gpr_table_7lane; the long table keeps every channel row with its raw_score
+port_pathologic	port	Pathway Tools PathoLogic	MetaCyc	CDS	MetaCyc reactions (all, ;-joined in the wide table)	MetaCyc pathways (all, ;-joined)	none		none	export_pgdb.py on annotation::pgdb_archive
+port_pathologic_mag	port	Pathway Tools PathoLogic	MetaCyc	CDS	MetaCyc reactions (all, ;-joined)	MetaCyc pathways (all, ;-joined)	none		none	export_pgdb.py on annotation::bin_pgdb_archive; the bin is in extras
+contig_lcastar	port	LCA* vote	GTDB via UniRef50, Metabuli and rRNA	contig	deepest taxon	GTDB lineage	LCA* p-value	probability	lower_is_better	taxonomy::contig_lcastar
+metabuli	port	Metabuli	GTDB	contig	deepest taxon	GTDB lineage	Metabuli score	0-1	higher_is_better	taxonomy::metabuli
+rrna_gtdb	port	barrnap and BLAST	GTDB SSU	rRNA	deepest taxon	GTDB lineage	best percent identity	%	higher_is_better	taxonomy::rrna_gtdb
+aragorn	port	ARAGORN	none	tRNA	tRNA product	anticodon	none		none	annotation::trna_gff
+genomad	port	geNomad	geNomad database	element (virus, provirus, plasmid)	geNomad sequence name	class and taxonomy	virus or plasmid score	0-1	higher_is_better	taxonomy::genomad_virus_summary + taxonomy::genomad_plasmid_summary
+virsorter2	port	VirSorter2	VirSorter2 database	element (virus)	VirSorter2 sequence name	best viral group	max score	0-1	higher_is_better	annotation::virsorter2_boundary + annotation::virsorter2_scores
+integronfinder	port	IntegronFinder	built-in models	element (integron)	replicon:integron	integron type and elements	best element e-value	e-value	lower_is_better	annotation::integronfinder_integrons
+mobileelementfinder	port	MobileElementFinder	built-in database	element (MGE)	element name	element type	identity	fraction, 0-1	higher_is_better	annotation::mobileelementfinder_results
+bakta_ncrna	port	Bakta non-coding	Bakta light database	ncRNA, tRNA, rRNA, CRISPR	feature name	product and cross-references	none		none	annotation::bakta_gff
+promotech	port	PromoTech	built-in RF-HOT model	promoter	promoter		promoter probability	0-1	higher_is_better	annotation::promotech_predictions
+deeptfactor	port	DeepTFactor	built-in model	CDS	TF (predicted transcription factors only)		TF probability	0-1	higher_is_better	annotation::deeptfactor_results
+amrfinderplus	port	AMRFinderPlus	AMRFinderPlus database	CDS	element symbol	element name and class	percent identity to reference	%	higher_is_better	annotation::amrfinderplus_results
+bacmet	port	DIAMOND	BacMet2	CDS	target	target title	bitscore	bits	higher_is_better	annotation::bacmet_diamond_results
+megares	port	DIAMOND	MEGARes	CDS	target	target title	bitscore	bits	higher_is_better	annotation::megares_diamond_results
+vfdb	port	DIAMOND	VFDB	CDS	target	target title	bitscore	bits	higher_is_better	annotation::vfdb_diamond_results
+tcdb	port	DIAMOND	TCDB	CDS	target	target title	bitscore	bits	higher_is_better	annotation::diamond_tcdb_results
+pathofact	port	PathoFact	PathoFact database	CDS	ARG	AMR category	none		none	annotation::pathofact_amr
+antismash	port	antiSMASH	antiSMASH database	element (BGC)	contig.region	BGC products	none (rule-based)		none	annotation::antismash_json
+eggnog_mapper	port	eggNOG-mapper, best ortholog	eggNOG 5.0.2	CDS	seed ortholog	preferred name and description	seed ortholog bitscore	bits	higher_is_better	annotation::eggnog_results
+interproscan	port	InterProScan	InterProScan data	CDS	signature accession	signature description and InterPro accession	match score (e-value for most member databases)	e-value	lower_is_better	annotation::interproscan_results + annotation::interproscan_descriptions
