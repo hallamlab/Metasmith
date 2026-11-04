@@ -15,6 +15,9 @@ out_gbk  = model.AddProduct(lib.GetType("annotation::antismash_regions_gbk"))
 
 
 MIN_CONTIG_LENGTH = 1000
+# One antiSMASH process uses ~3 cores whatever --cpus says, and a 1 Gbp assembly ran ~20 h that way,
+# against the 24 h task ceiling. Past SHARD_BP the contigs are split into shards run side by side.
+SHARD_BP = 120_000_000
 
 
 def _has_long_enough_contigs(fasta_path: Path, min_len: int = MIN_CONTIG_LENGTH) -> bool:
@@ -44,6 +47,57 @@ def _write_mock_outputs(ojson_path: Path, ogbk_path: Path, assembly_name: str):
         pass
 
 
+def _iter_fasta(path: Path):
+    head, buf = None, []
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                if head is not None:
+                    yield head, buf
+                head, buf = line, []
+            else:
+                buf.append(line)
+    if head is not None:
+        yield head, buf
+
+
+def _shard_fasta(path: Path, n: int, outdir: Path) -> list:
+    outdir.mkdir(parents=True, exist_ok=True)
+    shards = [outdir / f"shard_{i}.fasta" for i in range(n)]
+    fhs = [open(s, "w") for s in shards]
+    filled = [0] * n
+    for head, buf in _iter_fasta(path):
+        i = filled.index(min(filled))
+        fhs[i].write(head)
+        fhs[i].writelines(buf)
+        filled[i] += sum(len(l.strip()) for l in buf)
+    for fh in fhs:
+        fh.close()
+    return [s for s, bp in zip(shards, filled) if bp > 0]
+
+
+# Records are written one shard at a time, so peak memory is one shard's JSON, not the assembly's.
+def _merge_json(parts: list, out: Path, input_file: str):
+    import json as _json
+    tail, timings = None, {}
+    with open(out, "w") as fo:
+        first = True
+        for part in parts:
+            with open(part) as f:
+                doc = _json.load(f)
+            if tail is None:
+                fo.write(f'{{"version": {_json.dumps(doc["version"])}, '
+                         f'"input_file": {_json.dumps(input_file)}, "records": [')
+                tail = {k: v for k, v in doc.items() if k not in ("version", "input_file", "records")}
+            for rec in doc["records"]:
+                fo.write(("" if first else ", ") + _json.dumps(rec))
+                first = False
+            timings.update(doc.get("timings") or {})
+            del doc
+        tail["timings"] = timings
+        fo.write("]" + "".join(f", {_json.dumps(k)}: {_json.dumps(v)}" for k, v in tail.items()) + "}")
+
+
 def protocol(context: ExecutionContext):
     iasm = context.Input(assembly)
     idb  = context.Input(db)
@@ -62,36 +116,40 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus = 8 if cpus is None else cpus
 
+    total_bp = sum(sum(len(l.strip()) for l in buf) for _, buf in _iter_fasta(iasm.local))
+    n = max(1, min(-(-total_bp // SHARD_BP), cpus // 2))
+    inputs = [Path(iasm.container)] if n == 1 else _shard_fasta(Path(iasm.local), n, Path("antismash_shards"))
+    per = max(1, cpus // len(inputs))
+    outdirs = [Path("antismash_out")] if len(inputs) == 1 else [Path(f"antismash_out_{i}") for i in range(len(inputs))]
+    runs = " ".join(
+        f"( antismash --databases /antismash_db --genefinding-tool prodigal-m --cb-general --cb-knownclusters"
+        f" --cb-subclusters --cpus {per} --output-dir {o} {i} > {o}.log 2>&1 || {{ tail -50 {o}.log; exit 1; }} ) &"
+        for i, o in zip(inputs, outdirs))
+    print(f"antiSMASH on {total_bp} bp: {len(inputs)} shard(s) at {per} cpus each", flush=True)
+
     context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/antismash_db")],
         cmd=f"""
-            antismash \
-                --databases /antismash_db \
-                --genefinding-tool prodigal-m \
-                --cb-general \
-                --cb-knownclusters \
-                --cb-subclusters \
-                --cpus {cpus} \
-                --output-dir antismash_out \
-                {iasm.container}
+            rc=0
+            {runs}
+            for p in $(jobs -p); do wait $p || rc=1; done
+            cat {" ".join(f"{o}.log" for o in outdirs)} | tail -100
+            exit $rc
         """,
     )
 
-    outdir = Path("antismash_out")
+    json_files = [j for o in outdirs for j in sorted(o.glob("*.json"))[:1]]
+    if len(outdirs) == 1:
+        if json_files:
+            shutil.copy2(json_files[0], ojson.local)
+    elif len(json_files) == len(outdirs):
+        _merge_json(json_files, ojson.local, iasm.local.name)
 
-    json_files = list(outdir.glob("*.json"))
-    if json_files:
-        shutil.copy2(json_files[0], ojson.local)
-
-    gbk_files = list(outdir.glob("*.region*.gbk"))
-    if gbk_files:
-        with tarfile.open(ogbk.local, "w:gz") as tar:
-            for gbk in gbk_files:
-                tar.add(gbk, arcname=gbk.name)
-    else:
-        with tarfile.open(ogbk.local, "w:gz") as tar:
-            pass
+    gbk_files = [g for o in outdirs for g in o.glob("*.region*.gbk")]
+    with tarfile.open(ogbk.local, "w:gz") as tar:
+        for gbk in gbk_files:
+            tar.add(gbk, arcname=gbk.name)
 
     return ExecutionResult(
         manifest=[

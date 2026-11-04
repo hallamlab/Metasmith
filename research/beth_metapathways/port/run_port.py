@@ -107,10 +107,35 @@ AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/meta
 
 # gpr_7lane's dense landmark x MNXR matrix is ~11 GiB, past its declared 8 GB. A Slurm OOM reaches
 # nextflow as exit 1, not 137, so the memory ladder never retries it.
+# Promotech pinned cu6 at its full 64 GB grant.
 SCALED = {
     "diamond_uniref50": (16, 64, 12),
     "pathologic": (2, 32, 24),
     "gpr_7lane": (4, 64, 1),
+    "promotech": (4, 96, 4),
+}
+# The two parents are 0.81 and 0.96 Gbp against cu6's 49 Mbp, up to ~31x its ORFs. Each entry is a
+# single per-assembly task (or a merge over every chunk) whose cu6 wall or MaxRSS, scaled that far,
+# passes its declared first grant. Memory has to be right first time, since an OOM is not retried.
+PARENT_SCALED = {
+    **SCALED,
+    "antismash": (32, 160, 12),
+    "clean": (4, 64, 20),
+    "promotech": (8, 192, 12),
+    "esm_c": (4, 32, 12),
+    "ezpred": (4, 64, 6),
+    "gpr_4lane": (4, 128, 6),
+    "gpr_7lane": (4, 192, 6),
+    "bakta_noncoding": (8, 64, 16),
+    "virsorter2": (8, 32, 16),
+    "genomad": (16, 96, 12),
+    "pathofact": (8, 96, 12),
+    "mobileelementfinder": (4, 32, 6),
+    "ptools_annotation_gather": (1, 64, 2),
+    "pathologic": (2, 64, 24),
+    "prodigal": (4, 64, 6),
+    **{m: (2, 64, 4) for m in ("merge_diamond_uniref50", "merge_proteinbert", "merge_interproscan",
+                               "merge_eggnog_mapper", "merge_deepec", "merge_kofamscan", "merge_deeptfactor")},
 }
 
 
@@ -260,10 +285,11 @@ def cmd_run(args):
     if not remote:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
         return 0
+    parent = args.sample.endswith("_parent")
     c.stage_and_run(smith, task, CACHE_DIR / args.sample, tag,
                     stage_only=args.stage_only, materialise=args.materialise,
-                    params=dict(executor=dict(queueSize=200), process=dict(tries=3)),
-                    scaled=SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
+                    params=dict(executor=dict(queueSize=120 if parent else 200), process=dict(tries=3)),
+                    scaled=PARENT_SCALED if parent else SCALED, gpus=c.FIR_GPU, on_exist="clear" if args.clear else "update")
     if args.materialise:
         c.host_sh('rm -rf /var/tmp/phyberos_apt.beth_port')
     return 0
