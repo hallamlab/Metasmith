@@ -144,11 +144,19 @@ PARENT_SCALED = {
 # Tasks that finished with exit 0 were read as "terminated by the external system" while Lustre lagged
 # under a neighbouring copy, and a failed resubmission after that wedged the run with nothing queued.
 # Nextflow's default wait for .exitcode is 270 s.
+#
+# The preset retries only on 125/137/140/143 and ignores any other failure, and an ignored chunk
+# lets its merge run on the rest. A container that failed to mount on a bad node took three of
+# shortspades_cpe3_parent's 187 DIAMOND chunks with exit 1, and the merge completed without them.
+# Here any failure retries until the last attempt.
 EXTRA_CONFIG = """
 executor {
     $slurm {
         exitReadTimeout = '30 min'
     }
+}
+process {
+    errorStrategy = { task.exitStatus != 0 && task.attempt < params.process.tries ? 'retry' : 'ignore' }
 }
 """
 
