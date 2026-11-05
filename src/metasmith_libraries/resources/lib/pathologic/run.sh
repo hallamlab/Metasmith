@@ -37,7 +37,8 @@ genes=$(grep -c '^UNIQUE-ID' "$pgdb/data/genes.dat" 2>/dev/null)
 pathways=$(grep -c '^UNIQUE-ID' "$pgdb/data/pathways.dat" 2>/dev/null)
 if [ "${genes:-0}" -eq 0 ] || [ "${pathways:-0}" -eq 0 ]; then
     echo "[pathologic] $org: PGDB holds ${genes:-0} genes and ${pathways:-0} pathways after ${SECONDS}s" >&2
-    tail -40 "$out.log" >&2
+    grep -inE "error|abort|unable|cannot" "$work"/ws/pathologic.log | head -40 >&2
+    tail -60 "$work"/ws/pathologic.log >&2
     exit 1
 fi
 mkdir -p "$(dirname "$out")"
