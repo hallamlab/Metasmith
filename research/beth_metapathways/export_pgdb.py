@@ -16,7 +16,8 @@ matches no bin is the community PGDB; two such PGDBs in one assembly is an error
 
 Writes pgdb_genes.parquet and pgdb_genes.tsv.gz (one row per ORF x reaction x pathway; an ORF
 with no reaction or no pathway keeps one row with those cells empty) and pgdb_manifest.tsv
-(one row per PGDB).
+(one row per PGDB, with status EMPTY when it holds no genes, plus a MISSING row for the
+community or any bin of --bins with no PGDB).
 """
 
 import argparse
@@ -258,6 +259,7 @@ def main():
         with_rxn = rows["reaction"] != ""
         manifest.append({
             "sample": args.sample, "pipeline": pipeline, "entity": entity, "entity_type": etype,
+            "status": "ok" if len(db["genes"]) else "EMPTY",
             "pgdb_id": pgdb_id, "kb_ocelot": ";".join(sorted(ocelot)), "organism_name": organism.get("NAME", ""),
             "source": str(path), "genes": len(db["genes"]), "proteins": len(db["proteins"]),
             "enzrxns": len(db["enzrxns"]), "reactions_in_pgdb": len(db["reactions"]), "pathways": len(db["pathways"]),
@@ -267,15 +269,22 @@ def main():
             "pathways_with_orf": rows.loc[rows["pathway"] != "", "pathway"].nunique(),
         })
         print(f"{entity}\t{pgdb_id}\t{len(db['pathways'])} pathways\t{len(rows)} rows", flush=True)
+        if not len(db["genes"]):
+            print(f"EMPTY\t{entity}\t{path} holds no genes", file=sys.stderr, flush=True)
     if len(communities) > 1:
         sys.exit(f"{len(communities)} PGDBs match no bin: {[str(p) for p in communities]}")
+    missing = ([] if communities else ["community"]) + sorted(bins - {m["entity"] for m in manifest})
+    for entity in missing:
+        manifest.append({"sample": args.sample, "pipeline": pipeline, "entity": entity,
+                         "entity_type": "community" if entity == "community" else "mag", "status": "MISSING"})
+        print(f"MISSING\t{entity}\tno PGDB", file=sys.stderr, flush=True)
 
     table = pd.concat(frames, ignore_index=True)[COLUMNS]
     table.to_parquet(out / "pgdb_genes.parquet", index=False)
     tsv = table.apply(lambda c: c.str.replace(r"[\t\r\n]", " ", regex=True) if c.dtype == object else c)
     tsv.to_csv(out / "pgdb_genes.tsv.gz", sep="\t", index=False, compression="gzip", quoting=csv.QUOTE_NONE, quotechar="\x01")
     pd.DataFrame(manifest).to_csv(out / "pgdb_manifest.tsv", sep="\t", index=False)
-    print(f"{len(frames)} PGDBs, {len(table)} rows -> {out}")
+    print(f"{len(frames)} PGDBs, {len(missing)} missing, {len(table)} rows -> {out}")
 
 
 if __name__ == "__main__":

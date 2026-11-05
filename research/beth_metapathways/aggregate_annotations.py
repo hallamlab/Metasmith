@@ -21,7 +21,12 @@ Writes annotations_wide.{parquet,tsv.gz} (one row per feature; <lane>_id, <lane>
 and element lanes onto every feature an element contains, which `elements` also lists),
 annotations_long.{parquet,tsv.gz} (every hit: feature, lane, rank, id, desc, conf and the
 source row's remaining columns as JSON in `extras`), cds_coordinate_mismatches.tsv,
-lane_legend.tsv and summary.tsv.
+lane_legend.tsv, summary.tsv and lane_presence.tsv.
+
+lane_presence.tsv gives every lane of each pipeline given a status: ok, partial (a MAG lane
+missing some bins' PGDBs), EMPTY (source files present, no hits), not_applicable, MISSING (no
+source file) or UNMAPPED (hits that match no feature). The tables are written regardless, but
+a MISSING or UNMAPPED lane makes the exit status nonzero.
 """
 
 import argparse
@@ -95,6 +100,47 @@ MP_DBS = ("swissprot", "uniref50", "uniref90", "cazy", "eggnog", "metacyc")
 ELEMENT_LANES = ("genomad", "virsorter2", "integronfinder", "mobileelementfinder", "antismash")
 CONTIG_LANES = ("contig_lcastar", "metabuli")
 JOINED_LANES = ("mp_pathologic", "mp_pathologic_mag", "port_pathologic", "port_pathologic_mag")
+SOURCES = {
+    **{db: [f"blast_results/{{s}}.{db}.FASTout.parsed.txt", f"blast_results/{{s}}.{db}.BLASTout.parsed.txt"] for db in MP_DBS},
+    "mp_product": ["results/annotation_table/{s}.functional_and_taxonomic_table.txt"],
+    "mp_lca": ["results/annotation_table/{s}.annotation_taxonomy.tsv", "results/annotation_table/{s}.functional_and_taxonomic_table.txt"],
+    "silva": ["results/rRNA/{s}.*.rRNA.stats.txt"],
+    "mp_trna": ["results/tRNA/{s}.tRNA.results.txt"],
+    "mp_pathologic": ["results/pgdb/community/*cyc.tar.bz2"],
+    "mp_pathologic_mag": ["results/pgdb/MAGs/*/*cyc.tar.bz2"],
+    "diamond_uniref50": ["annotation::diamond_uniref50_results"],
+    "kofam": ["annotation::kofamscan_results"],
+    "clean": ["annotation::clean_predictions"],
+    "deepec": ["annotation::deepec_predictions", "annotation::deepec_predictions_chunk"],
+    "ezpred": ["annotation::ezpred_predictions"],
+    "proteinbert": ["annotation::gpr_table_7lane", "annotation::gpr_table"],
+    "esm_c": ["annotation::gpr_table_7lane"],
+    "gpr": ["annotation::gpr_table"],
+    "gpr7": ["annotation::gpr_table_7lane"],
+    "port_pathologic": ["annotation::pgdb_archive"],
+    "port_pathologic_mag": ["annotation::bin_pgdb_archive"],
+    "contig_lcastar": ["taxonomy::contig_lcastar"],
+    "metabuli": ["taxonomy::metabuli"],
+    "rrna_gtdb": ["taxonomy::rrna_gtdb"],
+    "aragorn": ["annotation::trna_gff"],
+    "genomad": ["taxonomy::genomad_virus_summary", "taxonomy::genomad_plasmid_summary"],
+    "virsorter2": ["annotation::virsorter2_boundary"],
+    "integronfinder": ["annotation::integronfinder_integrons"],
+    "mobileelementfinder": ["annotation::mobileelementfinder_results"],
+    "bakta_ncrna": ["annotation::bakta_gff"],
+    "promotech": ["annotation::promotech_predictions"],
+    "deeptfactor": ["annotation::deeptfactor_results"],
+    "amrfinderplus": ["annotation::amrfinderplus_results"],
+    "bacmet": ["annotation::bacmet_diamond_results"],
+    "megares": ["annotation::megares_diamond_results"],
+    "vfdb": ["annotation::vfdb_diamond_results"],
+    "tcdb": ["annotation::diamond_tcdb_results"],
+    "pathofact": ["annotation::pathofact_amr"],
+    "antismash": ["annotation::antismash_json"],
+    "eggnog_mapper": ["annotation::eggnog_results"],
+    "interproscan": ["annotation::interproscan_results"],
+}
+FAILING = ("MISSING", "UNMAPPED")
 STD = ["ns", "key", "id", "desc", "conf"]
 FEATURE_COLS = ["ns", "key", "feature_type", "feature_name", "contig", "start", "end", "strand"]
 LONG_SCHEMA = pa.schema([("sample", pa.string()), ("feature_id", pa.string()), ("feature_type", pa.string()),
@@ -543,15 +589,14 @@ class Features:
                     status[m["feature_id"]] = "same_stop_diff_start"
                     partner[m["feature_id"]] = m["feature_id_p"].values
                 rest = q[status.loc[q["feature_id"]].values == "unique"]
-                for (contig, strand), g in rest.groupby(["contig", "strand"]):
-                    o = other[(other["contig"] == contig) & (other["strand"] == strand)].sort_values("start")
-                    if not len(o):
-                        continue
-                    os_start, os_end, os_id = o["start"].values, o["end"].values, o["feature_id"].values
+                o = other.assign(k=other["contig"] + "\t" + other["strand"]).sort_values(["k", "start"], kind="stable")
+                ok, os_start, os_end, os_id = o["k"].values, o["start"].values, o["end"].values, o["feature_id"].values
+                for k, g in rest.groupby(rest["contig"] + "\t" + rest["strand"]):
+                    lo, hi = np.searchsorted(ok, k, "left"), np.searchsorted(ok, k, "right")
                     for fid, s, e in zip(g["feature_id"], g["start"], g["end"]):
-                        i = np.searchsorted(os_start, e, side="right")
+                        i = lo + np.searchsorted(os_start[lo:hi], e, side="right")
                         best, bo = 0, None
-                        for j in range(max(0, i - 8), i):
+                        for j in range(max(lo, i - 8), i):
                             ov = min(e, os_end[j]) - max(s, os_start[j]) + 1
                             if ov > best:
                                 best, bo = ov, j
@@ -573,15 +618,16 @@ class Features:
         return concat(report)
 
     def contained(self, elements):
-        b = self.base
-        by_contig = {c: g for c, g in b[b["feature_type"] != "element"].groupby("contig")}
+        if not hasattr(self, "_by_position"):
+            b = self.base[self.base["feature_type"] != "element"].sort_values(["contig", "start"], kind="stable")
+            self._by_position = (b["contig"].values, b["start"].values, b["end"].values, b.index.values)
+        contigs, starts, ends, ids = self._by_position
         pairs = []
         for fid, contig, s, e in zip(elements["feature_id"], elements["contig"], elements["start"], elements["end"]):
-            g = by_contig.get(contig)
-            if g is None:
-                continue
-            inside = g.index[(g["start"].values >= s) & (g["end"].values <= e)]
-            pairs.extend((f, fid) for f in inside)
+            lo, hi = np.searchsorted(contigs, contig, "left"), np.searchsorted(contigs, contig, "right")
+            window = starts[lo:hi]
+            a, z = lo + np.searchsorted(window, s, "left"), lo + np.searchsorted(window, e, "right")
+            pairs.extend((ids[i], fid) for i in a + np.flatnonzero(ends[a:z] <= e))
         return pd.DataFrame(pairs, columns=["feature_id", "element_id"])
 
 
@@ -847,6 +893,50 @@ def contig_lanes(pf):
         yield "metabuli", df.rename(columns={"name": "key", "lineage": "desc", "score": "conf"})
 
 
+def lane_presence(pf, mp, bins, pgdb_tables, counts):
+    pgdb = defaultdict(set)
+    for path in pgdb_tables:
+        t = pd.read_parquet(path, columns=["pipeline", "entity_type", "entity"]).drop_duplicates()
+        for pipeline, etype, entity in t.itertuples(index=False):
+            pgdb[(pipeline, etype)].add(entity)
+    rows, missing_bins = [], []
+    for lane, info in LANES.items():
+        pipeline = "port" if info[0] == "port" else "mp"
+        hits, features = counts.get(lane, (0, 0))
+        pathologic = lane.startswith(f"{pipeline}_pathologic")
+        mag = lane.endswith("_mag")
+        if (pf if pipeline == "port" else mp) is None:
+            files, detail = [], f"no {'--port-run' if pipeline == 'port' else '--mp-out'} given"
+        elif pipeline == "port":
+            files = [p for d in SOURCES[lane] for p in pf.files.get(d, ()) if p.is_file()]
+            detail = " or ".join(SOURCES[lane])
+        else:
+            files = [p for pattern in SOURCES[lane] for p in mp.glob(pattern)]
+            detail = " or ".join(SOURCES[lane])
+        files = list({(f.stat().st_dev, f.stat().st_ino): f for f in files}.values())
+        etype = "mag" if mag else "community"
+        have = pgdb.get((pipeline, etype), set())
+        if mag and not bins:
+            status, detail = "not_applicable", "no bins in --mag-map"
+        elif hits and not features:
+            status, detail = "UNMAPPED", f"{hits} hits, none matched a feature"
+        elif hits:
+            status = "ok"
+            if mag and bins - have:
+                gone = sorted(bins - have)
+                missing_bins += [(pipeline, b) for b in gone]
+                status, detail = "partial", f"{len(have & bins)} of {len(bins)} bins have a PGDB; missing {';'.join(gone)}"
+        elif pathologic and files and not have:
+            status, detail = "MISSING", f"{len(files)} archives, but no {pipeline} {etype} rows in --pgdb-table (empty PGDB, or no table)"
+        elif files:
+            status, detail = "EMPTY", f"{len(files)} source files hold no hits"
+        else:
+            status, detail = "MISSING", f"no file for {detail}"
+        rows.append({"lane": lane, "pipeline": pipeline, "status": status, "hits": hits, "features": features,
+                     "source_files": len(files), "detail": detail})
+    return pd.DataFrame(rows), missing_bins
+
+
 def wide_of(lane, hits, override=None):
     if override is not None:
         w = override.merge(hits[["key", "feature_id"]].drop_duplicates("key"), on="key")
@@ -1023,11 +1113,22 @@ def main():
     rows += [("element_class", c, n) for c, n in wide.loc[wide["element_class"] != "", "element_class"].value_counts().items()]
     for lane, n, covered, miss in summary:
         rows += [("lane_hits", lane, n), ("lane_features", lane, covered), ("lane_unmapped_hits", lane, miss)]
+    presence, missing_bins = lane_presence(pf, mp, set(mags.values()), args.pgdb_table,
+                                           {lane: (n, covered) for lane, n, covered, _ in summary})
+    presence.insert(0, "sample", args.sample)
+    write_tsv(presence, out / "lane_presence.tsv")
+    rows += [("lane_status", r.lane, f"{r.status}: {r.detail}" if r.status != "ok" else "ok") for r in presence.itertuples()]
+    rows += [("pgdb_missing_bin", f"{p}|{b}", "") for p, b in missing_bins]
     rows += [("note", n, "") for n in notes]
     pd.DataFrame(rows, columns=["metric", "item", "value"]).to_csv(out / "summary.tsv", sep="\t", index=False)
     print(f"{len(wide)} features, {sum(writer.rows.values())} hits, {len(lane_order)} lanes -> {out}")
     for n in notes:
         print(f"NOTE {n}")
+    for r in presence[presence["status"] != "ok"].itertuples():
+        print(f"{r.status}\t{r.lane}\t{r.detail}", file=sys.stderr)
+    failing = presence.loc[presence["status"].isin(FAILING), "lane"].tolist()
+    if failing:
+        sys.exit(f"{args.sample}: tables written, but lanes {', '.join(failing)} are missing or unmapped (lane_presence.tsv)")
 
 
 if __name__ == "__main__":
