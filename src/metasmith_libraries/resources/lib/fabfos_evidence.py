@@ -395,14 +395,10 @@ PBERT_FLOOR = 0.00
 EMBED_ARCHIVE_FLOOR = 0.20
 
 # --- ESM-C kNN label transfer ----------------------------------------------
-# The same lane against a different backbone, and cosine is not comparable between two
-# embedding spaces -- so pbert's tuned numbers are not transferable here, and are not
-# copied. 0.0 for both quota knobs is the pre-quota behaviour stated explicitly:
-# retrieve K_MAX, admit all of them, refuse no ORF. The seven-lane reproduction has
-# not been measured, and an unmeasured cut-off would refuse ORFs on a number nobody
-# checked. Tune these on an ESM-C cohort before quoting an ESM-C precision.
-ESMC_NN_MIN = 0.0
-ESMC_TAU = 0.0
+# Calibrated on two CPE3 assemblies, top-1 MNXR against kofam/UniRef50: at 0.985 precision 0.91 (hybrid
+# cu7_8) and 0.88 (OPERA-MS cu6) at 7% coverage; ungated it was 0.43 and 0.39. ESM-C cosines crowd near 1.
+ESMC_NN_MIN = 0.985
+ESMC_TAU = 0.999
 ESMC_K_MAX = 30
 ESMC_FLOOR = 0.10
 
