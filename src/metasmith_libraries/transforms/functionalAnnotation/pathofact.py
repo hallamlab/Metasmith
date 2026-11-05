@@ -1,4 +1,5 @@
 import glob
+import re
 from pathlib import Path
 from metasmith.python_api import *
 
@@ -14,6 +15,23 @@ out_tox = model.AddProduct(lib.GetType("annotation::pathofact_tox"))
 out_mge = model.AddProduct(lib.GetType("annotation::pathofact_mge"))
 
 
+# PathoFact's virulence classifier encodes the 20 standard residues only and fails on the X that
+# prodigal emits for an N codon; OPERA-MS scaffolds carry N gaps. A C in place of each ambiguous base
+# cannot make a start or stop codon, since all six contain only A, G and T, so the gene calls stand.
+# The file keeps its name, which PathoFact uses as the sample name.
+def _fill_ambiguous_bases(src: Path, outdir: Path):
+    ambiguous = re.compile(r"[^ACGTacgt]")
+    with open(src) as f:
+        if not any(not line.startswith(">") and ambiguous.search(line.rstrip("\n")) for line in f):
+            return None
+    outdir.mkdir(parents=True, exist_ok=True)
+    dst = outdir / src.name
+    with open(src) as f, open(dst, "w") as out:
+        for line in f:
+            out.write(line if line.startswith(">") else ambiguous.sub("C", line.rstrip("\n")) + "\n")
+    return dst
+
+
 def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     idb = context.Input(db)
@@ -23,13 +41,14 @@ def protocol(context: ExecutionContext):
     omge = context.Output(out_mge)
 
     threads = context.params.get("cpus", 16)
+    contigs = _fill_ambiguous_bases(Path(iasm.local), Path("pf_in")) or iasm.container
 
     context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/pathofact_db")],
         cmd=f"""
             pathofact \
-                --input {iasm.container} \
+                --input {contigs} \
                 --db /pathofact_db \
                 --outdir pf_out \
                 --threads {threads}

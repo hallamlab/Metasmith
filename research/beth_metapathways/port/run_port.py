@@ -139,6 +139,17 @@ PARENT_SCALED = {
                                "merge_eggnog_mapper", "merge_deepec", "merge_kofamscan", "merge_deeptfactor")},
 }
 
+# Tasks that finished with exit 0 were read as "terminated by the external system" while Lustre lagged
+# under a neighbouring copy, and a failed resubmission after that wedged the run with nothing queued.
+# Nextflow's default wait for .exitcode is 270 s.
+EXTRA_CONFIG = """
+executor {
+    $slurm {
+        exitReadTimeout = '30 min'
+    }
+}
+"""
+
 
 def home_source():
     return Source.FromLocal(HOME) if c.ON_HOST else SshSource(host=c.HPC_HOST, path=HOME).AsSource()
@@ -287,6 +298,8 @@ def cmd_run(args):
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
         return 0
     parent = args.sample.endswith("_parent")
+    extra_config = CACHE_DIR / "port_extra.config"
+    extra_config.write_text(EXTRA_CONFIG)
     # The home stages one workflow at a time and refuses a second rather than queueing it.
     for attempt in range(40):
         try:
@@ -294,7 +307,7 @@ def cmd_run(args):
                             stage_only=args.stage_only, materialise=args.materialise,
                             params=dict(executor=dict(queueSize=120 if parent else 200), process=dict(tries=3)),
                             scaled=PARENT_SCALED if parent else SCALED, gpus=c.FIR_GPU,
-                            on_exist="clear" if args.clear else "update")
+                            on_exist="clear" if args.clear else "update", extra_config=extra_config)
             break
         except AgentBusyError as e:
             print(f"retrying in 60 s: {e}", flush=True)
