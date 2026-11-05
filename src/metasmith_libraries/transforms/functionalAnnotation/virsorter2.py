@@ -18,6 +18,32 @@ out_calls   = model.AddProduct(lib.GetType("viromics::virsorter2_candidate_virus
 # `<contig>||partial`). The boundary table is the one that carries coordinates,
 # so the adapter reads it -- by column name, since the column set has moved
 # between 2.2.x releases and an index would read the wrong field in silence.
+MIN_LENGTH = 5000
+
+
+def _any_contig_at_least(fasta: Path, n: int) -> bool:
+    length = 0
+    with open(fasta) as f:
+        for line in f:
+            if line.startswith(">"):
+                if length >= n:
+                    return True
+                length = 0
+            else:
+                length += len(line.strip())
+    return length >= n
+
+
+# The headers a completed 2.2.4 run writes, for a batch that completed with nothing to report.
+EMPTY_BOUNDARY_COLUMNS = (
+    "seqname trim_orf_index_start trim_orf_index_end trim_bp_start trim_bp_end trim_pr trim_pr_max "
+    "prox_orf_index_start prox_orf_index_end prox_bp_start prox_bp_end prox_pr prox_pr_max partial "
+    "full_orf_index_start full_orf_index_end full_bp_start full_bp_end pr_full arc bac euk vir mix "
+    "unaligned hallmark_cnt group shape seqname_new final_max_score final_max_score_group").split()
+EMPTY_SCORE_COLUMNS = (
+    "seqname dsDNAphage NCLDV RNA ssDNA lavidaviridae max_score max_score_group length hallmark "
+    "viral cellular").split()
+
 _SEQ   = ("seqname", "seqname_new")
 _START = ("trim_bp_start", "full_bp_start")
 _END   = ("trim_bp_end", "full_bp_end")
@@ -76,6 +102,19 @@ def protocol(context: ExecutionContext):
     # under $HOME/.virsorter, and on a host whose /tmp is a small shared tmpfs that is
     # the wrong place for it.
 
+    if not _any_contig_at_least(Path(iasm.local), MIN_LENGTH):
+        print(f"NOTICE: no contig in this batch reaches {MIN_LENGTH} bp; writing empty tables", flush=True)
+        iboundary.local.write_text("\t".join(EMPTY_BOUNDARY_COLUMNS) + "\n")
+        iscores.local.write_text("\t".join(EMPTY_SCORE_COLUMNS) + "\n")
+        for o in (iseqs, iaffi):
+            o.local.touch()
+        _write_calls(iboundary.local, icalls.local)
+        return ExecutionResult(
+            manifest=[{out_seqs: iseqs.local, out_scores: iscores.local, out_affi: iaffi.local,
+                       out_boundary: iboundary.local, out_calls: icalls.local}],
+            success=True,
+        )
+
     context.ExecWithEnv(
         env=image,
         binds=[(idb.external, "/db")],
@@ -88,7 +127,7 @@ def protocol(context: ExecutionContext):
                 --working-dir {workdir} \
                 --jobs {threads} \
                 --include-groups dsDNAphage,NCLDV,RNA,ssDNA,lavidaviridae \
-                --min-length 5000 \
+                --min-length {MIN_LENGTH} \
                 --min-score 0.5 \
                 --keep-original-seq \
                 --prep-for-dramv \
@@ -110,6 +149,12 @@ def protocol(context: ExecutionContext):
         f"cp {workdir}/final-viral-boundary.tsv {iboundary.local} 2>/dev/null || touch {iboundary.local}"
     )
 
+    # A batch of short contigs leaves nothing past VirSorter2's own length filter, and it stops at
+    # combine_linear_circular with an error rather than reporting no viruses.
+    if Path(workdir, "EARLY-EXIT").exists() and iboundary.local.stat().st_size == 0:
+        print("NOTICE: no contig in this batch passed VirSorter2's preprocessing; writing empty tables", flush=True)
+        iboundary.local.write_text("\t".join(EMPTY_BOUNDARY_COLUMNS) + "\n")
+        iscores.local.write_text("\t".join(EMPTY_SCORE_COLUMNS) + "\n")
     context.LocalShell(f"rm -rf {workdir} 2>/dev/null || true")
 
     # Every copy above falls back to `touch`, so a run that died still leaves five files
