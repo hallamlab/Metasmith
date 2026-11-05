@@ -132,6 +132,8 @@ PARENT_SCALED = {
     "genomad": (16, 96, 12),
     "pathofact": (8, 96, 12),
     "mobileelementfinder": (4, 32, 6),
+    # Measured, not scaled: shortspades_cpe3_parent's single ORF batch ran out of memory at 8 GB.
+    "amrfinderplus": (8, 64, 6),
     "ptools_annotation_gather": (1, 64, 2),
     "pathologic": (2, 64, 24),
     "prodigal": (4, 64, 6),
