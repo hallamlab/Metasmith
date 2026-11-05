@@ -20,21 +20,26 @@ B = Path("/scratch/phyberos/beth_mp")
 MNXR_LOOKUP = Path("/scratch/phyberos/fabfos_refs/processed/mnxr_lookup/mnxr_lookup.parquet")
 CLEAN_PGDB_FLOOR = 0.02
 EZPRED_FLOOR = 0.5
+ESMC_TRANSFER_STRICT = 0.985
+ESMC_PRECISION_097 = "51 to 75%"
+ESMC_PRECISION_0985 = "88 to 96%"
 MP_MIN_AA = 60
 MP_LANES = ["swissprot", "uniref50", "uniref90", "cazy", "eggnog", "metacyc"]
 PORT_HOMOLOGY = ["diamond_uniref50", "kofam", "eggnog_mapper", "interproscan"]
 UNINFORMATIVE = re.compile(r"hypothetical|uncharacteri[sz]ed|unknown function|unannotated|^\s*<|^\s*$", re.I)
 EC4 = re.compile(r"^\d+\.\d+\.\d+\.n?\d+$")
 
-EC_LANES = ["clean", "deepec", "ezpred", "kofam", "proteinbert", "esm_c", "gpr7", "gpr7_2plus", "port_pgdb"]
-RXN_LANES = ["gpr7", "gpr7_2plus", "proteinbert", "esm_c", "kofam", "clean", "port_pgdb"]
+EC_LANES = ["clean", "deepec", "ezpred", "kofam", "proteinbert", "esm_c", "gpr7", "gpr7_2plus", "esmc_transfer", "esmc_transfer_0985", "port_pgdb"]
+RXN_LANES = ["gpr7", "gpr7_2plus", "proteinbert", "esm_c", "esmc_transfer", "esmc_transfer_0985", "kofam", "clean", "port_pgdb"]
 CAUSE = {
     "clean": "method: ML EC predictor (CLEAN, score >= 0.02, the new pipeline's Pathway Tools input) vs homology + name matching",
     "deepec": "method: ML EC predictor (DeepEC) vs homology + name matching",
     "ezpred": "method: ML EC predictor (EZpred, full EC, p >= 0.5) vs homology + name matching",
     "kofam": "method and reference: KEGG HMM profiles (KofamScan) vs FAST homology to Swiss-Prot/UniRef/MetaCyc",
     "proteinbert": "method: protein language model transfer from Swiss-Prot 2026_02 vs FAST homology to 2025_04 references",
-    "esm_c": "method: protein language model transfer from Swiss-Prot 2026_02 vs FAST homology to 2025_04 references",
+    "esm_c": "method: protein language model transfer (ESM-C, consensus vote, only at cosine >= 0.985) from Swiss-Prot 2026_02 vs FAST homology to 2025_04 references",
+    "esmc_transfer": "second opinion, not a consensus vote: ESM-C transfer from the nearest Swiss-Prot 2026_02 protein, top hit at cosine >= 0.97, vs FAST homology",
+    "esmc_transfer_0985": "second opinion, not a consensus vote: as esmc_transfer, top hit at cosine >= 0.985",
     "gpr7": "method: 7-method consensus (top reaction) vs homology + name matching",
     "gpr7_2plus": "method: 7-method consensus, top reaction backed by 2 or more methods, vs homology + name matching",
     "port_pgdb": "PGDB inputs: new pipeline gives Pathway Tools CLEAN EC numbers only; original gives product names + EC from homology",
@@ -201,6 +206,16 @@ def per_assembly(sample, tables_root, out, lookup_path):
         for f, g in t.groupby("feature_id")["id"]:
             put(port_rx[lane], f, set(g))
             put(port_ec[lane], f, lk.mnxr_ec(set(g)))
+    t = read_long(long_path, ["esmc_transfer"], columns=("feature_id", "rank", "id", "desc", "conf"))
+    top = t[t["rank"] == 1].set_index("feature_id")["conf"]
+    t = t[t.conf.values == top.reindex(t.feature_id).values]
+    for f, g in t.groupby("feature_id"):
+        rx = set(g["id"])
+        ec_ = set().union(*map(ecs, g["desc"])) | lk.mnxr_ec(rx)
+        lanes = ("esmc_transfer", "esmc_transfer_0985") if g.conf.iloc[0] >= ESMC_TRANSFER_STRICT else ("esmc_transfer",)
+        for lane in lanes:
+            put(port_rx[lane], f, rx)
+            put(port_ec[lane], f, ec_)
     t = read_long(long_path, ["gpr7"], columns=("feature_id", "id", "extras"), rank1=True)
     t["n"] = t.extras.map(lambda s: json.loads(s or "{}").get("n", 1))
     for lane, sub in (("gpr7", t), ("gpr7_2plus", t[t.n >= 2])):
@@ -328,14 +343,15 @@ def fmt(v, f="{:.0f}"):
 
 def report(met, ec, pw):
     n = len(met)
-    tot = lambda c: int(met[c].sum())
     eca = ec[ec.level == "ec"].groupby("port_lane")[["agree", "partial", "disagree", "mp_only", "port_only", "neither"]].sum()
     both = eca[["agree", "partial", "disagree"]].sum(axis=1)
     agree_pct = (100 * eca.agree / both).round(0)
     com = pw[pw.entity == "community"]
     mags = pw[(pw.entity_type == "mag") & (pw.mp_status == "ok") & (pw.port_status == "ok")]
     label = {"clean": "CLEAN", "deepec": "DeepEC", "ezpred": "EZpred", "kofam": "KofamScan", "proteinbert": "ProteinBERT",
-             "esm_c": "ESM-C", "gpr7": "7-method consensus", "gpr7_2plus": "7-method consensus, 2+ methods agree", "port_pgdb": "Pathway Tools input"}
+             "esm_c": "ESM-C (consensus vote)", "gpr7": "7-method consensus", "gpr7_2plus": "7-method consensus, 2+ methods agree",
+             "esmc_transfer": "ESM-C second opinion (not in the consensus)", "esmc_transfer_0985": "ESM-C second opinion, strict cut-off",
+             "port_pgdb": "Pathway Tools input"}
     rows = "\n".join(
         f"| {r.sample} | {r.cds_mp:,} / {r.cds_port:,} | {fmt(r.pct_exact_of_mp, '{:.1f}%')} | {fmt(r.pct_mp_named, '{:.0f}%')} / {fmt(r.pct_port_named, '{:.0f}%')} "
         f"| {fmt(r.pct_mp_with_ec, '{:.0f}%')} / {fmt(r.pct_port_with_ec_pgdb, '{:.0f}%')} | {fmt(r.community_mp_pathways)} / {fmt(r.community_port_pathways)} "
@@ -369,10 +385,14 @@ the new pipeline. Numbers below are ranges across the assemblies.
   to {rng(met.pct_port_with_ec_pgdb)}%. The new pipeline predicts enzymes with machine-learning
   models rather than only by similarity to known proteins. Where both pipelines give the same
   gene an EC number and at least two of the new pipeline's seven methods agree, it matches the
-  original for {agree_pct.get('gpr7_2plus', float('nan')):.0f}% of genes. Calls that rest on a single method are much less
-  reliable: the overall agreement falls to {agree_pct.get('gpr7', float('nan')):.0f}%, and one method (ESM-C) agrees
-  only {agree_pct.get('esm_c', float('nan')):.0f}% of the time while giving an EC number to nearly every gene. **Use the
-  calls that two or more methods agree on.**
+  original for {agree_pct.get('gpr7_2plus', float('nan')):.0f}% of genes. Counting calls that rest on a single method, the
+  agreement is {agree_pct.get('gpr7', float('nan')):.0f}%. **Use the calls that two or more methods agree on.**
+- **The ESM-C second opinion is a separate column, not part of the consensus.** It transfers
+  reactions from the most similar reviewed protein. At its default cut-off (similarity 0.97) it
+  matches the original for {agree_pct.get('esmc_transfer', float('nan')):.0f}% of genes; at 0.985 it matches {agree_pct.get('esmc_transfer_0985', float('nan')):.0f}%. Checked
+  against KofamScan and UniRef50, its calls are right {ESMC_PRECISION_097} of the time at 0.97 (lowest in
+  the cu6 and cu9_11 assemblies) and {ESMC_PRECISION_0985} at 0.985. Filter it at 0.985 unless you
+  need the extra calls.
 - **Pathway lists overlap but are not the same.** The community databases hold
   {rng(com.mp_pathways)} pathways (original) and {rng(com.port_pathways)} (new); the share of
   pathways in common (shared / either) is {rng(com.pathway_jaccard, "{:.2f}")}. Per MAG it is
@@ -401,6 +421,10 @@ Pairs are original / new. "Exact" is the share of the original's genes called id
 | New-pipeline method | Genes with EC on both sides | Agree | Close | Original only | New only |
 |---|---|---|---|---|---|
 {lanes}
+
+Two methods were corrected before this comparison. DeepEC had been dropping every protein whose
+sequence ends in a stop-codon mark, and ESM-C voted in the consensus without a similarity
+cut-off; it now votes only above 0.985.
 
 ## Why they differ
 

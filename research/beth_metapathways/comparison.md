@@ -23,10 +23,14 @@ the new pipeline. Numbers below are ranges across the assemblies.
   to 23 to 30%. The new pipeline predicts enzymes with machine-learning
   models rather than only by similarity to known proteins. Where both pipelines give the same
   gene an EC number and at least two of the new pipeline's seven methods agree, it matches the
-  original for 89% of genes. Calls that rest on a single method are much less
-  reliable: the overall agreement falls to 69%, and one method (ESM-C) agrees
-  only 31% of the time while giving an EC number to nearly every gene. **Use the
-  calls that two or more methods agree on.**
+  original for 90% of genes. Counting calls that rest on a single method, the
+  agreement is 79%. **Use the calls that two or more methods agree on.**
+- **The ESM-C second opinion is a separate column, not part of the consensus.** It transfers
+  reactions from the most similar reviewed protein. At its default cut-off (similarity 0.97) it
+  matches the original for 61% of genes; at 0.985 it matches 96%. Checked
+  against KofamScan and UniRef50, its calls are right 51 to 75% of the time at 0.97 (lowest in
+  the cu6 and cu9_11 assemblies) and 88 to 96% at 0.985. Filter it at 0.985 unless you
+  need the extra calls.
 - **Pathway lists overlap but are not the same.** The community databases hold
   836 to 1044 pathways (original) and 931 to 1127 (new); the share of
   pathways in common (shared / either) is 0.52 to 0.57. Per MAG it is
@@ -69,14 +73,20 @@ Pairs are original / new. "Exact" is the share of the original's genes called id
 | New-pipeline method | Genes with EC on both sides | Agree | Close | Original only | New only |
 |---|---|---|---|---|---|
 | CLEAN | 98,536 | 81% | 9% | 45,455 | 101,310 |
-| DeepEC | 1,703 | 71% | 11% | 142,288 | 826 |
+| DeepEC | 54,831 | 82% | 6% | 89,160 | 10,483 |
 | EZpred | 42,023 | 87% | 5% | 101,968 | 32,788 |
 | KofamScan | 85,162 | 93% | 4% | 58,829 | 26,725 |
 | ProteinBERT | 98,610 | 78% | 7% | 45,381 | 224,890 |
-| ESM-C | 138,446 | 31% | 7% | 5,545 | 522,383 |
-| 7-method consensus | 137,909 | 69% | 6% | 6,082 | 495,143 |
-| 7-method consensus, 2+ methods agree | 95,109 | 89% | 5% | 48,882 | 84,600 |
+| ESM-C (consensus vote) | 36,592 | 96% | 1% | 107,399 | 18,910 |
+| 7-method consensus | 123,722 | 79% | 7% | 20,269 | 280,657 |
+| 7-method consensus, 2+ methods agree | 95,741 | 90% | 4% | 48,250 | 57,042 |
+| ESM-C second opinion (not in the consensus) | 81,308 | 61% | 5% | 62,683 | 161,400 |
+| ESM-C second opinion, strict cut-off | 36,565 | 96% | 1% | 107,426 | 18,610 |
 | Pathway Tools input | 96,346 | 82% | 8% | 47,645 | 94,011 |
+
+Two methods were corrected before this comparison. DeepEC had been dropping every protein whose
+sequence ends in a stop-codon mark, and ESM-C voted in the consensus without a similarity
+cut-off; it now votes only above 0.985.
 
 ## Why they differ
 
