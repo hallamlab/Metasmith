@@ -114,7 +114,9 @@ bitscore divided by the ORF's bitscore against itself. It runs from 0 to 1.
 | `clean` | CLEAN enzyme prediction | EC number | Empty | 0 to 1, higher is better |
 | `deepec` | DeepEC enzyme prediction | EC number | Empty | None |
 | `ezpred` | EZpred enzyme prediction at every EC level. Only scores of 0.1 or more. | EC number, at any level | The EZpred head that made the call | Probability, higher is better |
-| `proteinbert`, `esm_c` | Reaction transfer from similar reference proteins, by protein language model | MetaNetX reaction | The reference protein | Vote share 0 to 1, higher is better |
+| `proteinbert` | Reaction transfer from similar reference proteins, by the ProteinBERT language model | MetaNetX reaction | The reference protein | Vote share 0 to 1, higher is better |
+| `esm_c` | As `proteinbert`, by the ESM-C language model, inside `gpr7`. Only ORFs with a reference protein at cosine 0.985 or more. | MetaNetX reaction | The reference protein | Vote share 0 to 1, higher is better |
+| `esmc_transfer` | ESM-C second opinion, outside the `gpr` consensus (see below) | MetaNetX reaction | Its EC numbers | Cosine to the nearest reference protein, higher is better |
 | `gpr` | Reaction calls merged from kofam, CLEAN, UniRef50 and ProteinBERT | MetaNetX reaction | The methods that agree | Number of methods that agree, of 4 |
 | `gpr7` | As `gpr`, plus DeepEC, EZpred and ESM-C | MetaNetX reaction | The methods that agree | Number of methods that agree, of 7 |
 | `deeptfactor` | DeepTFactor. Only predicted transcription factors. | `TF` | Empty | Probability, higher is better |
@@ -123,6 +125,28 @@ bitscore divided by the ORF's bitscore against itself. It runs from 0 to 1.
 | `pathofact` | PathoFact antimicrobial resistance prediction | Resistance gene | Resistance category | None |
 | `eggnog_mapper` | eggNOG-mapper best ortholog | Seed ortholog | Gene name and description | Bitscore, higher is better |
 | `interproscan` | InterProScan domains and families | Signature | Its description and InterPro entry | E-value, lower is better |
+
+### ESM-C second opinion
+
+`esmc_transfer` gives an ORF the reactions of the reference proteins nearest to it in ESM-C
+embedding space. The references are 222,019 Swiss-Prot 2026_02 proteins. The lane takes the 30
+nearest and keeps those at cosine 0.97 or more. The `gpr` consensus does not use this lane.
+
+ESM-C cosines crowd near 1, so the cut-off decides how far to trust a call. The table gives the
+precision of the top hit against KofamScan and UniRef50, measured on `hybridspades_cpe3_r2a_cu7_8`.
+Filter `esmc_transfer_conf` at the cut-off you need.
+
+| Top-hit cosine at least | Precision | ORFs with a call |
+|---|---|---|
+| 0.95 | 0.44 | 70% (below the floor, so not in the tables) |
+| 0.97 | 0.55 | 31% |
+| 0.975 | 0.68 | 19% |
+| 0.98 | 0.85 | 10.7% |
+| 0.985 | 0.91 | 6.7% |
+| 0.99 | 0.94 | 4.1% |
+
+In the long table, `extras` names the reference protein (`landmark`), its rank among the 30
+nearest (`neighbour`) and how many of the 30 carry the reaction (`landmarks`).
 
 ### Pathway lanes
 
@@ -229,3 +253,33 @@ as `hybridspades_cpe3_r2a_cu6`.
   `/scratch/phyberos/beth_mp/jobs/tables/run_keys.tsv` lists each assembly's run keys.
 - Scripts: `/scratch/phyberos/beth_mp/jobs/tables/`. `tables.sbatch` rebuilds one assembly's
   folder.
+
+### ESM-C embeddings
+
+The raw ESM-C embeddings are kept as raw data. Each assembly's folder is
+`/scratch/phyberos/beth_mp/port/metasmith/task_cache/1e/<folder>/out/` and holds three files:
+
+- `*-UnN4blDx.parquet`: one row per ORF, the mean over its residues of the final ESM-C layer, in
+  columns `dim_0` to `dim_1151`.
+- `*-GbXmuFYU.csv`: the ORF name of each row, in the same order.
+- `*-x1S1kK8l.npy`: the means of layers 34, 35 and 36, which EZpred reads.
+
+| Assembly | Folder |
+|---|---|
+| `hybridspades_cpe3_r2a` | `20b7275ec52b8bb1b95972fc426965d892e581748c17d27e6b25d9d5543354e7d8` |
+| `hybridspades_cpe3_r2a_cu1_5` | `20a41eba81430368f83144c3e6e8573724f71f73f785332eb729ddefda95a78c45` |
+| `hybridspades_cpe3_r2a_cu6` | `20c014cc1cb2c03fc942a680193480cb392a3831a2e4aeba7fa180dddc2b7276c2` |
+| `hybridspades_cpe3_r2a_cu7_8` | `20b5933b71e08a5a2f9778ac96d5760d8a8ba1be7ca1b0ad6060303e1c2bd684d0` |
+| `hybridspades_cpe3_r2a_cu9_11` | `20db8d589ea35ae3b78cae54dff95d651d0f87b48e80ea5a1119b5c78d42acbf74` |
+| `operams_cpe3_r2a` | `20cb9cfdf64bffb64096d840ef754520ea2b7f390db879cb2263e05230f68fbbd9` |
+| `operams_cpe3_r2a_cu1_5` | `20ce6a70feb0f58598bd7a6996b748bec4177495df0fff34d9952610e26746dd8a` |
+| `operams_cpe3_r2a_cu6` | `2069c600453a0d9082e0e8ccd5cf0f6dd50ab2477b5d9f13ffb2a6b7d239e87e32` |
+| `operams_cpe3_r2a_cu7_8` | `209f952d1e911a413f5ee532f260510c43d85297746c162689b6651fce41efd230` |
+| `operams_cpe3_r2a_cu9_11` | `207b96c444b67857829086be48971c74d55e6fb57b83ebc59e87f48e02f86f183f` |
+| `shortspades_cpe3_r2a` | `20d54284386b8cadf53a43b029daba74031ba8df5e7d902459cc86b17cc4056005` |
+| `shortspades_cpe3_r2a_cu1_5` | `203be897aa77f5ea123f73042c1e6f7c4f7f11b2236cae66f46573babbde1ae105` |
+| `shortspades_cpe3_r2a_cu6` | `20d2083417f99b11cfe8aac40d1a9e28aa6a9f54f42902a07fdcfa23783d142494` |
+| `shortspades_cpe3_r2a_cu7_8` | `2060b7e4b1412761988346b998ea640c9092a7675076a58d0a73cd683367513b9e` |
+| `shortspades_cpe3_r2a_cu9_11` | `20b9f5f24add10339123ac5f620d801b3c52c499aa11cf4b563abdfa3bedd303ee` |
+
+The two parent assemblies get their folders when their runs finish.
