@@ -69,7 +69,8 @@ LANES = {
     "deepec": ("port", "DeepEC", "DeepEC model", "CDS", "EC number", "", "none (DeepEC reports no score)", "", NONE, "annotation::deepec_predictions"),
     "ezpred": ("port", "EZpred", "EZpred model on ESM-C 600M", "CDS", "EC term at any level", "head kind", "EZpred probability", "0-1", HIGH, "annotation::ezpred_predictions; rows scoring >= 0.1 only, the raw CSV keeps every term"),
     "proteinbert": ("port", "ProteinBERT label transfer", "label-transfer landmarks", "CDS", "MetaNetX reaction", "landmark", "transfer vote share", "0-1", HIGH, "channel pbert of annotation::gpr_table_7lane, else annotation::gpr_table"),
-    "esm_c": ("port", "ESM-C 600M label transfer", "ESM-C landmarks", "CDS", "MetaNetX reaction", "landmark", "transfer vote share", "0-1", HIGH, "channel esmc of annotation::gpr_table_7lane"),
+    "esm_c": ("port", "ESM-C 600M label transfer inside the 7-lane GPR, nearest landmark at cosine >= 0.985", "ESM-C landmarks", "CDS", "MetaNetX reaction", "landmark", "transfer vote share", "0-1", HIGH, "channel esmc of annotation::gpr_table_7lane"),
+    "esmc_transfer": ("port", "ESM-C 600M nearest-landmark label transfer; a second opinion, not part of the gpr consensus", "222,019 Swiss-Prot 2026_02 landmarks, labels via fabfos mnxr_lookup", "CDS", "MetaNetX reaction of a landmark among the 30 nearest", "EC numbers of the reaction (mnxr_lookup)", "cosine to the nearest landmark carrying the reaction", "0-1, rows >= 0.97 only; README gives precision by cut-off", HIGH, "annotation::esm_c_embeddings + annotation::esm_c_index against ref::label_transfer_landmarks_esmc"),
     "gpr": ("port", "4-lane GPR merge (kofam, CLEAN, UniRef50, ProteinBERT)", "MetaNetX lookup", "CDS", "MetaNetX reaction with the most supporting channels", "supporting channels", "supporting channels", "count of 4", HIGH, "annotation::gpr_table; the long table keeps every channel row with its raw_score"),
     "gpr7": ("port", "7-lane GPR merge (adds DeepEC, EZpred, ESM-C)", "MetaNetX lookup", "CDS", "MetaNetX reaction with the most supporting channels", "supporting channels", "supporting channels", "count of 7", HIGH, "annotation::gpr_table_7lane; the long table keeps every channel row with its raw_score"),
     "port_pathologic": ("port", "Pathway Tools PathoLogic", "MetaCyc", "CDS", "MetaCyc reactions (all, ;-joined in the wide table)", "MetaCyc pathways (all, ;-joined)", "none", "", NONE, "export_pgdb.py on annotation::pgdb_archive"),
@@ -96,6 +97,9 @@ LANES = {
     "interproscan": ("port", "InterProScan", "InterProScan data", "CDS", "signature accession", "signature description and InterPro accession", "match score (e-value for most member databases)", "e-value", LOW, "annotation::interproscan_results + annotation::interproscan_descriptions"),
 }
 EZPRED_FLOOR = 0.1
+ESMC_TRANSFER_FLOOR = 0.97
+ESMC_TRANSFER_K = 30
+EC4 = re.compile(r"^\d+\.\d+\.\d+\.n?\d+$")
 MP_DBS = ("swissprot", "uniref50", "uniref90", "cazy", "eggnog", "metacyc")
 ELEMENT_LANES = ("genomad", "virsorter2", "integronfinder", "mobileelementfinder", "antismash")
 CONTIG_LANES = ("contig_lcastar", "metabuli")
@@ -115,6 +119,7 @@ SOURCES = {
     "ezpred": ["annotation::ezpred_predictions"],
     "proteinbert": ["annotation::gpr_table_7lane", "annotation::gpr_table"],
     "esm_c": ["annotation::gpr_table_7lane"],
+    "esmc_transfer": ["annotation::esm_c_embeddings"],
     "gpr": ["annotation::gpr_table"],
     "gpr7": ["annotation::gpr_table_7lane"],
     "port_pathologic": ["annotation::pgdb_archive"],
@@ -741,6 +746,13 @@ def cds_lanes(pf, mp, pgdb_tables, gpr_cache):
                     df = ch.rename(columns={"orf": "key", "mnxr": "id", "raw_score": "conf"}).astype({"id": str})
                     df["desc"] = (df["intermediate_id"].astype(str) + " " + df["intermediate_name"].astype(str)).str.strip()
                     yield lane, df.assign(ns="port_cds")
+        pairs = embedding_pairs(pf)
+        landmarks = next((p for p in pf.files.get("ref::label_transfer_landmarks_esmc", ()) if (p / "landmarks.parquet").is_file()), None)
+        lookup = next((p for p in pf.files.get("ref::mnxr_lookup", ()) if p.is_file()), None)
+        if pairs and (landmarks is None or lookup is None):
+            print(f"esmc_transfer: embeddings found but no landmark set ({landmarks}) or mnxr_lookup ({lookup})", file=sys.stderr)
+        elif pairs:
+            yield "esmc_transfer", esmc_transfer(pairs, landmarks, lookup)
         p = pf.get("annotation::deeptfactor_results")
         if p:
             df = concat(read_tsv(x) for x in p)
@@ -830,6 +842,90 @@ def cds_lanes(pf, mp, pgdb_tables, gpr_cache):
                                "entity": g["entity"].values, "pgdb_id": g["pgdb_id"].values,
                                "represented_by": g["represented_by"].values})
             yield lane, df
+
+
+def dim_columns(names, path):
+    dims = sorted((c for c in names if c.startswith("dim_")), key=lambda c: int(c[4:]))
+    if dims != [f"dim_{i}" for i in range(len(dims))]:
+        sys.exit(f"{path} does not carry dim_0..dim_{len(dims) - 1} contiguously")
+    return dims
+
+
+def unit_rows(x):
+    return x / np.clip(np.linalg.norm(x, axis=1, keepdims=True), 1e-9, None)
+
+
+def embedding_pairs(pf):
+    index = defaultdict(list)
+    for p in pf.get("annotation::esm_c_index"):
+        index[p.parent].append(p)
+        index[p.name.rsplit("-", 1)[0]].append(p)
+    pairs = []
+    for emb in pf.get("annotation::esm_c_embeddings"):
+        match = index.get(emb.parent) or index.get(emb.name.rsplit("-", 1)[0]) or []
+        if len(match) != 1:
+            sys.exit(f"{emb}: {len(match)} candidate ESM-C index files, cannot pair it by row")
+        pairs.append((emb, match[0]))
+    return pairs
+
+
+def esmc_transfer(pairs, landmark_dir, lookup_path):
+    table = Path(landmark_dir) / "landmarks.parquet"
+    dims = dim_columns(pq.ParquetFile(table).schema_arrow.names, table)
+    lm = pq.read_table(table, columns=["accession", "mnxr_list"] + dims).to_pandas()
+    ref = unit_rows(lm[dims].to_numpy(dtype=np.float32))
+    accession = lm["accession"].to_numpy()
+    label_lists = [sorted(set(m for m in s.split(";") if m)) for s in lm["mnxr_list"].fillna("")]
+    del lm
+    vocab = np.asarray(sorted({m for ls in label_lists for m in ls}), dtype=object)
+    vidx = {m: i for i, m in enumerate(vocab)}
+    lab_ptr = np.zeros(len(label_lists) + 1, dtype=np.int64)
+    np.cumsum([len(ls) for ls in label_lists], out=lab_ptr[1:])
+    lab_idx = np.fromiter((vidx[m] for ls in label_lists for m in ls), dtype=np.int64, count=int(lab_ptr[-1]))
+    ec = pq.read_table(lookup_path, columns=["id", "id_source", "mnxr"], filters=[("id_source", "==", "ec")]).to_pandas()
+    ec = ec[ec["id"].str.match(EC4)]
+    ec_of = ec.groupby("mnxr")["id"].agg(lambda s: ",".join(sorted(set(s)))).to_dict()
+
+    k = min(ESMC_TRANSFER_K, len(ref) - 1)
+    ids, frames, offset = [], [], 0
+    for emb_path, idx_path in pairs:
+        idx = pd.read_csv(idx_path, dtype=str, keep_default_na=False)
+        orfs = idx["sequence_id" if "sequence_id" in idx.columns else "id"].to_numpy()
+        source = pq.ParquetFile(emb_path)
+        if source.metadata.num_rows != len(orfs):
+            sys.exit(f"{idx_path} has {len(orfs)} rows and {emb_path} has {source.metadata.num_rows}; they pair by row")
+        cols = dim_columns(source.schema_arrow.names, emb_path)
+        if len(cols) != ref.shape[1]:
+            sys.exit(f"{emb_path} is {len(cols)} dims and the ESM-C landmarks are {ref.shape[1]}")
+        ids.append(orfs)
+        start = offset
+        for batch in source.iter_batches(batch_size=512, columns=cols):
+            q = unit_rows(np.column_stack([c.to_numpy(zero_copy_only=False) for c in batch.columns]).astype(np.float32))
+            sim = q @ ref.T
+            top = np.argpartition(-sim, k, axis=1)[:, :k]
+            cos = np.take_along_axis(sim, top, axis=1)
+            order = np.argsort(-cos, axis=1, kind="stable")
+            top, cos = np.take_along_axis(top, order, axis=1), np.take_along_axis(cos, order, axis=1)
+            qi, nb = np.nonzero(cos >= ESMC_TRANSFER_FLOOR)
+            li = top[qi, nb]
+            cnt = lab_ptr[li + 1] - lab_ptr[li]
+            rep = np.repeat(np.arange(len(li)), cnt)
+            within = np.arange(int(cnt.sum())) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+            frames.append(pd.DataFrame({"q": start + qi[rep], "m": lab_idx[lab_ptr[li][rep] + within],
+                                        "l": li[rep], "cos": cos[qi, nb][rep], "nb": nb[rep] + 1}))
+            start += len(q)
+        offset = start
+    ids = np.concatenate(ids) if ids else np.array([], dtype=object)
+    hits = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["q", "m", "l", "cos", "nb"])
+    hits = hits.sort_values(["q", "m", "cos"], ascending=[True, True, False], kind="stable")
+    support = hits.groupby(["q", "m"], sort=False).size().to_numpy()
+    hits = hits.drop_duplicates(["q", "m"])
+    mnxr = vocab[hits["m"].to_numpy()]
+    print(f"esmc_transfer: {len(ids)} ORFs, {hits['q'].nunique()} with a landmark at cosine >= {ESMC_TRANSFER_FLOOR}", flush=True)
+    return pd.DataFrame({"ns": "port_cds", "key": ids[hits["q"].to_numpy()], "id": mnxr,
+                         "desc": pd.Series(mnxr).map(ec_of).fillna("").to_numpy(), "conf": hits["cos"].to_numpy(np.float64),
+                         "landmark": accession[hits["l"].to_numpy()], "neighbour": hits["nb"].to_numpy(),
+                         "landmarks": support})
 
 
 def gpr_hits(df):

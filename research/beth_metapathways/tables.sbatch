@@ -11,6 +11,7 @@ set -euo pipefail
 B=/scratch/phyberos/beth_mp
 J=$B/jobs/tables
 SIF=$B/port/metasmith/container_images/docker..quay.io_hallamlab_metasmith..0.24.2.sif
+REFS=/scratch/phyberos/fabfos_refs
 MIN_FREE_INODES=60000
 LABEL=$1 S=$2
 shift 2
@@ -18,7 +19,7 @@ O=$B/tables/$LABEL/$S
 MAGS=$B/mp4/mag_maps/$S.tsv
 MP=$B/mp4/runs/$S/$S
 [ -d $MP ] || MP=$B/mp4/out/$S
-py() { apptainer exec --cleanenv -B $B $SIF python3 "$@"; }
+py() { apptainer exec --cleanenv -B $B -B $REFS:$REFS:ro $SIF python3 "$@"; }
 
 free=$(diskusage_report 2>/dev/null | awk 'function n(x) { return (x ~ /K$/ ? 1e3 : x ~ /M$/ ? 1e6 : 1) * (x + 0) }
     /\/scratch \(user/ { split($NF, a, "/"); print n(a[2]) - n(a[1]) }' || true)
