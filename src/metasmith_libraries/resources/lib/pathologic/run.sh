@@ -24,12 +24,22 @@ options="-no-taxonomic-pruning -no-web-cel-overview -tip -no-patch-download -no-
 dump="(handler-case(progn(with-organism(:org-id'$org)(dump-frames-to-attribute-value-files(org-data-dir)))(exit))(error(c)(exit)))"
 SECONDS=0
 PTOOLS_LOCAL_PATH=$work HOME=$work/home "$launcher" $options -patho "$work"/ws > "$out.log" 2>&1 < /dev/null
+# -patho redirects its own output into the input directory, which is not kept.
+[ -f "$work"/ws/pathologic.log ] && cat "$work"/ws/pathologic.log >> "$out.log"
 PTOOLS_LOCAL_PATH=$work HOME=$work/home "$launcher" $options -eval "$dump" >> "$out.log" 2>&1 < /dev/null
 pgdb=$(ls -d "$work"/ptools-local/pgdbs/user/*cyc/1.0 2>/dev/null | head -1)
 if [ -z "$pgdb" ] || [ ! -s "$pgdb/data/reactions.dat" ]; then
     echo "[pathologic] $org: no PGDB after ${SECONDS}s, see $out.log" >&2
     exit 1
 fi
+# A build that dies part way still dumps every flat file, header-only, and exits 0.
+genes=$(grep -c '^UNIQUE-ID' "$pgdb/data/genes.dat" 2>/dev/null)
+pathways=$(grep -c '^UNIQUE-ID' "$pgdb/data/pathways.dat" 2>/dev/null)
+if [ "${genes:-0}" -eq 0 ] || [ "${pathways:-0}" -eq 0 ]; then
+    echo "[pathologic] $org: PGDB holds ${genes:-0} genes and ${pathways:-0} pathways after ${SECONDS}s" >&2
+    tail -40 "$out.log" >&2
+    exit 1
+fi
 mkdir -p "$(dirname "$out")"
 cp -r "$pgdb" "$out"
-echo "[pathologic] $org: PGDB in ${SECONDS}s"
+echo "[pathologic] $org: PGDB with $genes genes and $pathways pathways in ${SECONDS}s"
