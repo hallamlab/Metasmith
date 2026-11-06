@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "data/engcyc/sources/reads"
 OUT = ROOT / "data/engcyc/reads"
 
-SHARKNADO_BACKUP = "worker-01:/mnt/sharknado_backup/Shamwow_Home/"
+SHARKNADO_BACKUP = "worker-01:/mnt/sharknado_backup/Sharknado_NFS/LimsData/"
 CHINOOK_LAB = "globus:bae74145-f2ef-41e6-ae73-38d06110819d:"
 TREES = {
     "saanich_metagenome": ["OMZs/Saanich/RawData/Joint_Genome_Institute/Illumina_metagenomes/"],
