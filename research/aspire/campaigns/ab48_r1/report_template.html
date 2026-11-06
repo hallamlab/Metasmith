@@ -10,6 +10,7 @@
   --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a; --s3: #eda100; --s4: #e87ba4; --s5: #008300; --s6: #4a3aa7; --s7: #e34948;
   --other: #c4c9c6; --line: #2a78d6; --setpoint: #a2a8a5; --nolog: rgba(20,25,24,.045);
   --src-lab: #34444c; --src-pbr: #c99a5b; --shared: #0d6a5b;
+  --pc0: #6fa8e6; --pc1: #2457a6; --pc2: #0c2a57; --pc3: #061633;
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -21,6 +22,7 @@
     --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
     --other: #4b5350; --line: #5598e7; --setpoint: #69716e; --nolog: rgba(255,255,255,.04);
     --src-lab: #a7b7c0; --src-pbr: #b98a4c; --shared: #3fb39a;
+    --pc0: #4f95db; --pc1: #a6cdf2; --pc2: #eef5fd; --pc3: #ffffff;
     color-scheme: dark;
   }
 }
@@ -30,6 +32,7 @@
   --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
   --other: #4b5350; --line: #5598e7; --setpoint: #69716e; --nolog: rgba(255,255,255,.04);
   --src-lab: #a7b7c0; --src-pbr: #b98a4c; --shared: #3fb39a;
+    --pc0: #4f95db; --pc1: #a6cdf2; --pc2: #eef5fd; --pc3: #ffffff;
   color-scheme: dark;
 }
 * { box-sizing: border-box }
@@ -82,6 +85,7 @@ svg .mag { font-size: 10.5px; fill: var(--ink-2) }
 .f0 { fill: var(--s0) } .f1 { fill: var(--s1) } .f2 { fill: var(--s2) } .f3 { fill: var(--s3) }
 .f4 { fill: var(--s4) } .f5 { fill: var(--s5) } .f6 { fill: var(--s6) } .f7 { fill: var(--s7) }
 .fo { fill: var(--other) } .fm { fill: var(--muted) }
+.pc0 { fill: var(--pc0) } .pc1 { fill: var(--pc1) } .pc2 { fill: var(--pc2) } .pc3 { fill: var(--pc3) }
 .src-lab { fill: var(--src-lab) } .src-pbr { fill: var(--src-pbr) } .src-unconfirmed { fill: var(--surface); stroke: var(--muted); stroke-dasharray: 2 2 }
 .c-shared { fill: var(--shared) } .c-lab { fill: var(--src-lab) } .c-pbr { fill: var(--src-pbr) } .c-neither { fill: var(--other) }
 .undated { stroke: var(--axis); stroke-dasharray: 3 3 }
@@ -341,6 +345,52 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
 
   const SOURCE = { lab: "UBC lab culture", pbr: "Purify PBR", unconfirmed: "Source not recorded" };
 
+  // One bar per measurement on the figure's time axis, coloured by grade.
+  function phycoPanel(svg, pc, x, top, L, XR) {
+    const h = 96, bw = 7, g = el(svg, "g");
+    el(g, "text", { x: 26, y: top - 4, class: "punit" }, "PHYCOCYANIN");
+    const y0 = top + 8, yb = y0 + h;
+    el(g, "text", { x: 26, y: y0 + 12, class: "ptitle" }, pc.title);
+    el(g, "text", { x: 26, y: y0 + 25, class: "punit" }, pc.unit);
+    pc.grades.forEach((gr, k) => {
+      const ly = y0 + 42 + k * 14;
+      el(g, "rect", { x: 26, y: ly - 8, width: 9, height: 9, rx: 2, class: "pc" + k });
+      el(g, "text", { x: 40, y: ly, class: "punit" }, gr);
+    });
+    const hi = Math.max(...pc.points.map(p => p.value)) * 1.08;
+    const step = [1, 2, 2.5, 5, 10].map(m => m * 10 ** Math.floor(Math.log10(hi / 4))).find(v => hi / v <= 5);
+    for (let v = 0; v <= hi; v += step) {
+      const yy = yb - v / hi * h;
+      el(g, "line", { x1: L, x2: XR, y1: yy, y2: yy, class: v ? "hair" : "axisline" });
+      el(g, "text", { x: L - 10, y: yy + 3.5, class: "tick", "text-anchor": "end" }, step >= 1 ? v.toFixed(0) : num(v));
+    }
+    // Measurements a day or two apart would overlap at this scale: each run of touching bars is
+    // packed edge to edge and centred on the mean of its dates.
+    const pts = pc.points.map(p => ({ ...p, want: x(utc(p.date)) }))
+      .sort((a, b) => a.want - b.want || pc.grades.indexOf(a.grade) - pc.grades.indexOf(b.grade));
+    const pitch = bw + 1;
+    let runs = pts.map(p => ({ members: [p], centre: p.want }));
+    for (let merged = true; merged;) {
+      merged = false;
+      for (let k = 1; k < runs.length; k++) {
+        const a = runs[k - 1], b = runs[k];
+        if (b.centre - b.members.length * pitch / 2 < a.centre + a.members.length * pitch / 2) {
+          const members = [...a.members, ...b.members];
+          runs.splice(k - 1, 2, { members, centre: members.reduce((t, p) => t + p.want, 0) / members.length });
+          merged = true;
+          break;
+        }
+      }
+    }
+    runs.forEach(r => r.members.forEach((p, k) => {
+      const bh = p.value / hi * h, xx = r.centre + (k - (r.members.length - 1) / 2) * pitch - bw / 2;
+      el(g, "rect", { x: xx, y: yb - Math.max(bh, 2), width: bw, height: Math.max(bh, 2), rx: 1.5, tabindex: 0,
+        class: "pc" + pc.grades.indexOf(p.grade),
+        "data-tip": `<b>${esc(p.grade)}</b><br>${fmtDate(utc(p.date))} · ${num(p.value)} ${esc(pc.unit)}${p.note ? "<br>" + esc(p.note) : ""}` });
+    }));
+    return yb + 6;
+  }
+
   function purifyFigure() {
     const sec = DATA.purify, logs = DATA.logs;
     const svg = document.getElementById("svg-purify");
@@ -386,7 +436,8 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
     const comm = community(svg, view, cols, xs, top, { L, R, W, rowH: 17, rMax: 10, barH: 120, barW, labelBand: 84, strip, panels });
     if (undW) el(svg, "line", { x1: XR + 16, x2: XR + 16, y1: top, y2: comm.bottom - 20, class: "undated" });
 
-    const logTop = comm.bottom + 18, panelH = 50, panelGap = 14;
+    const pcBottom = DATA.phyco ? phycoPanel(svg, DATA.phyco, x, comm.bottom + 18, L, XR) : comm.bottom;
+    const logTop = pcBottom + 18, panelH = 50, panelGap = 14;
     const lt0 = utc(logs.t0), step = logs.step_hours * 36e5;
     const firstLog = utc(logs.first), lastLog = utc(logs.last);
     const logPanels = logs.panels;
@@ -494,6 +545,7 @@ footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair);
       `${sec.repeats.map(([a, b]) => `${esc(a)} is the same library as ${esc(b)}, delivered again with a later run, so it is drawn once. `).join("")}` +
       `Top: dot area is a taxon's share of a sample's curated reads, for the ${sec.rows.length} taxa that reach the largest shares. ` +
       `Middle: the source strip, then the same shares stacked, one panel per source, with the ${sec.bars.length} leading taxa coloured and the rest grey. ${undated.length ? `The ${undated.length} libraries right of the dashed rule have no recorded sampling date. ` : ""}` +
+      `${DATA.phyco ? `Below them: phycocyanin content, ${DATA.phyco.points.length} measurements, one bar each, coloured by grade; measurements on one day sit side by side. Hover a bar for its growth condition. ` : ""}` +
       `Bottom: every logged sensor, ${logs.rows.toLocaleString()} rows binned to 3 hours. Grey hairlines mark sampling dates, and the shaded margins have no log. ` +
       `Four flow columns (${logs.dropped.join(", ")}) read zero throughout and are left out. Hover a panel to read every sensor at one time.`;
   }

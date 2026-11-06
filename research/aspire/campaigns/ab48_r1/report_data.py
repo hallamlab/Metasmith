@@ -194,6 +194,28 @@ def ab48_section(study: str, counts, asv_taxon, by_taxon):
     return groups, grouped, mags, stats
 
 
+# Kalen's phycocyanin sheet. Its rows are taken as sent except where a date cannot be placed:
+# row 7 reads 2024 between two 2026 rows of the same series, and "Apr-26" names a month only.
+PHYCO_GRADES = ["Food", "Pharmaceutical", "Analytical"]
+PHYCO_DATE_FIXES = {
+    "2024-02-27": ("2026-02-27", "Sheet reads 2024-02-27; drawn as 2026-02-27, beside its series"),
+    "Apr-26": ("2026-04-15", "Sheet reads Apr-26, no day; drawn mid-April 2026"),
+}
+
+
+def phyco_section():
+    d = pd.read_csv(SHEETS / "phycocyanin.csv", dtype=str).apply(lambda c: c.str.strip())
+    points = []
+    for r in d.itertuples(index=False):
+        date, fix = PHYCO_DATE_FIXES.get(r.Date, (r.Date, ""))
+        grade = r.Grade.capitalize()
+        assert grade in PHYCO_GRADES, grade
+        pd.Timestamp(date)
+        points.append({"date": date, "grade": grade, "value": float(r[2]),
+                       "note": "; ".join(x for x in (r.Condition, fix) if x)})
+    return {"title": "Phycocyanin", "unit": "%", "grades": PHYCO_GRADES, "points": points}
+
+
 def log_section():
     d = pd.read_csv(SHEETS / "pbr_logs_merged.csv", parse_dates=["Date"])
     cols = [c for _, _, cs in LOG_PANELS for c in cs]
@@ -277,6 +299,7 @@ def main():
                  "rel": frame_json(a_frame, sorted(set(a_rows + a_bars)))},
         "shared": shared,
         "logs": log_section(),
+        "phyco": phyco_section(),
     }
     html = (HERE / "report_template.html").read_text().replace("/*DATA*/null", json.dumps(data, ensure_ascii=False))
     args.out.parent.mkdir(parents=True, exist_ok=True)
