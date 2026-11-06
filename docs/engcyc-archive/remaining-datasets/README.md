@@ -49,6 +49,25 @@ The backup volume has a read-only Globus endpoint. It needs no admin window and 
 
 Altair has 7.1 TB free, which holds the uncompressed part of any one batch.
 
+## Decisions
+
+Tony, 2026-11-06:
+
+> For the existing ones, you don't have to touch them at all, except for to add a CSV manifest in addition to the existing YAML ones
+
+> For the new updates, it would be good if we kept most of this together and updated rather than adding more and more, since we have the ability to do so. So for instance, we could combine the three biofactorial ones and maybe the FabFos and SCADC. Those could be like some FOSMID project.
+
+> We do want to keep external data sets that we did not generate separate.
+
+> let's just do the raw inputs for these and skip the blast tab and stuff.
+
+The design that follows:
+
+1. Leave every dataset already on chinook where it is. Add a `manifest.csv` beside it. Keep any `manifest.yml`.
+2. Upload a dataset that is not on chinook into a project entry, not one entry per dataset. Add later deliveries of the same project to that entry and extend its `manifest.csv`. The fosmid sets (biofactorial, fabfos, ScaDC) form one fosmid project entry.
+3. Move only the raw inputs from the backup volume: reads as delivered and the centre's small QC reports. Leave annotation tables, alignments, assemblies and analysis work folders on the backup volume. The `derived-archive` topic decides their home.
+4. Keep each external dataset apart from the lab's own data, even when the lab manifest marks it internal. HOT is external.
+
 ## Open questions
 
 The open questions are queued in `STACK.md` under this topic.

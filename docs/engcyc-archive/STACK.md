@@ -29,11 +29,14 @@ Procedure, from dfs-interview § Work the stack:
 
 - **remaining-datasets** (2026-11-06): status on the rest of the files to archive?
   - [ ] route-and-room: Move the backup-volume batches by Globus straight from its read-only endpoint, gzip only the uncompressed reads on altair, smallest batch first? Does chinook have room for about 36 TB more?
-  - [ ] centre-extras: Keep the centres' annotation, alignment and assembly output beside the reads (about 5 TB), or move raw reads only?
-  - [ ] chinook-elsewhere: Rename the 8 sets in personal or project folders on chinook into received-data entries, or write their manifest.csv in place?
-  - [ ] off-chinook: Upload the 14 sets that live only on fir, Sockeye or altair as received-data entries?
+  - [x] centre-extras: Keep the centres' annotation, alignment and assembly output beside the reads (about 5 TB), or move raw reads only? (answered 2026-11-06)
+  - [x] chinook-elsewhere: Rename the 8 sets in personal or project folders on chinook into received-data entries, or write their manifest.csv in place? (answered 2026-11-06)
+  - [x] off-chinook: Upload the 14 sets that live only on fir, Sockeye or altair as received-data entries? (answered 2026-11-06)
+  - [ ] legacy-grouping: Group the backup-volume datasets into one entry per project too, such as one Saanich entry for its metagenomes, iTags and 16S time series, or keep one entry per dataset for these?
 - **external-home** (2026-11-06): and we need to decide where to place the the external datasets like CAMI, tara oceans, etc
 - **duplicates** (2026-11-06): and we should scan for duplicates and propose old locations to remove (do this now)
+- **derived-archive** (2026-11-06): For those, we will want to do a separate archive, like how Cyanoverse is working right now. And that has like a structured file tree that we would want to adopt as a paradigm. We don't have to do exactly because the tools don't match, but you know, the idea needs to flow.
+  - [ ] jgi-verify: Do the annotations IMG serves today match the copies on the backup volume? Measure the compressed size of the derived output. Keep it, or write a README that points to the download?
 
 ## Parked
 
