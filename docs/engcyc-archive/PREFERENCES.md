@@ -6,3 +6,4 @@ This file holds the preferences the user set for this discussion, each with its 
 
 ## Preferences
 
+- (2026-11-06) Spell out names in entry and folder names; no acronyms (Tony: 'LSTP -> please refrain from acronyms').
