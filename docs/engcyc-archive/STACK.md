@@ -28,7 +28,7 @@ Procedure, from dfs-interview § Work the stack:
 ## Stack
 
 - **external-home** (2026-11-06): and we need to decide where to place the the external datasets like CAMI, tara oceans, etc
-  - [ ] home: one folder per external dataset under the chinook external-data folder, as CAMI is now?
+  - [x] home: one folder per external dataset under the chinook external-data folder, as CAMI is now? (answered 2026-11-06)
   - [ ] keep-or-point: keep a copy of public reads, or keep an accession manifest only?
   - [ ] lost-sets: the ocean sets and the earlier Engcyc build are not on the backup volume; is sharknado itself still readable?
 - **duplicates** (2026-11-06): and we should scan for duplicates and propose old locations to remove (do this now)

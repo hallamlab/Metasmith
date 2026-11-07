@@ -27,7 +27,7 @@ The manifest has one row per dataset. Every column is a string. An empty cell me
 | `dataset_id` | Short stable key in snake case. It is also the metadata table's file stem. |
 | `name` | Human-readable name. |
 | `collection` | Grouping above the dataset. |
-| `modal` | `metagenome`, `genome`, `fosmid` or `amplicon`. |
+| `modal` | `metagenome`, `metatranscriptome`, `genome`, `fosmid` or `amplicon`. |
 | `description` | One or two sentences: environment, design and what was sequenced. |
 | `origin` | `internal`, `external` or `collaborator`. |
 | `accession` | Public IDs, such as a BioProject, ENA study, Zenodo record or JGI proposal. Empty when the data is not public. |

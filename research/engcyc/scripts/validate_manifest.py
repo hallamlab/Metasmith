@@ -16,7 +16,7 @@ COLUMNS = ["dataset_id", "name", "collection", "modal", "description", "origin",
            "locations", "n_samples", "size_bytes", "size_source", "status", "metadata_table",
            "existing_results", "notes"]
 ENUMS = {
-    "modal": {"metagenome", "genome", "fosmid", "amplicon"},
+    "modal": {"metagenome", "metatranscriptome", "genome", "fosmid", "amplicon"},
     "origin": {"internal", "external", "collaborator"},
     "size_source": {"measured", "recorded", ""},
     "status": {"available", "archived", "missing", "candidate"},

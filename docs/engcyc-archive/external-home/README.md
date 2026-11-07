@@ -24,6 +24,14 @@ It holds where the external datasets sit now and the home decided for them. An e
 
 The external-data folder on chinook also holds reference databases and tool folders beside CAMI.
 
+## Home
+
+Each external dataset gets one folder, `Resources/external_data/<Collection>/<dataset_id>/`, in the chinook Projects collection. The folder holds the files as published and one `manifest.csv` in the received-data schema. CAMI already sits in this shape and needs only its `manifest.csv`. Move the read files of a set that sits in a workspace backup into its folder by per-file rename. Leave the fetch scripts and run outputs in the backup.
+
+Tony, 2026-11-07, on "one folder per external dataset under the chinook external-data folder, as CAMI is now?":
+
+> external-home q1, yes
+
 ## Open questions
 
 The queue is in `STACK.md`.
