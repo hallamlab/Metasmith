@@ -29,6 +29,7 @@ Procedure, from dfs-interview § Work the stack:
 
 - **derived-archive** (2026-11-06): For those, we will want to do a separate archive, like how Cyanoverse is working right now. And that has like a structured file tree that we would want to adopt as a paradigm. We don't have to do exactly because the tools don't match, but you know, the idea needs to flow.
   - [ ] jgi-verify: Do the annotations IMG serves today match the copies on the backup volume? Measure the compressed size of the derived output. Keep it, or write a README that points to the download?
+  - [ ] tree: reuse the LAYOUT.md tree, each old tool output its own product?
 
 ## Parked
 
