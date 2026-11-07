@@ -23,12 +23,10 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**duplicates**. Its result: `duplicates/README.md`.
+**derived-archive**. Its result: `derived-archive/README.md`.
 
 ## Stack
 
-- **duplicates** (2026-11-06): and we should scan for duplicates and propose old locations to remove (do this now)
-  - [ ] scope: is the proposal the end of this topic, with each cleanup left until an owner or Tony wants the space?
 - **derived-archive** (2026-11-06): For those, we will want to do a separate archive, like how Cyanoverse is working right now. And that has like a structured file tree that we would want to adopt as a paradigm. We don't have to do exactly because the tools don't match, but you know, the idea needs to flow.
   - [ ] jgi-verify: Do the annotations IMG serves today match the copies on the backup volume? Measure the compressed size of the derived output. Keep it, or write a README that points to the download?
 
@@ -38,3 +36,4 @@ Procedure, from dfs-interview § Work the stack:
 
 - **remaining-datasets** (closed 2026-11-06): `remaining-datasets/README.md`
 - **external-home** (closed 2026-11-06): `external-home/README.md`
+- **duplicates** (closed 2026-11-06): `duplicates/README.md`
