@@ -40,6 +40,14 @@ Tony, 2026-11-07, on "keep a copy of public reads, or keep an accession manifest
 
 > we have the public reads and tehy are zipped, we can keep our copies
 
+## Sets outside the backup
+
+The ocean time series, the ocean recruitment runs and the earlier Engcyc build sat at the sharknado root, outside the lab data folder. The sharknado index lists their names. The backup volume does not hold them, and no other copy is known. Mark the three `missing` in the manifest. Their public runs can be fetched again by accession, and the IMG assemblies by taxon ID. Their old annotation output is lost.
+
+Tony, 2026-11-07:
+
+> we also have the sharknado index sqlite db on chinook. if you cant find what you are looking for there, then it is gone.
+
 ## Open questions
 
-The queue is in `STACK.md`.
+None. The topic is closed.
