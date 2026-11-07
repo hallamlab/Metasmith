@@ -9,6 +9,9 @@ Profiles:
   jgi_itags  JGI iTag runs, files named by sequencing unit, mapped to samples by <run>.txt sheets
   gq_sag     Genome Quebec single cells, HI.<run>.<lane>.<sample>_R<mate>.fastq.gz
   ont_tar    Nanopore runs, one uncompressed tar of fast5 files per run
+  gq_454     Genome Quebec 454 deliveries: <region>.<run>.<MID|RL>.<label>.<key>.454Reads.{fna,qual} and sff
+  jgi_pyrotags  One multiplexed JGI 454 pyrotag run, samples named in its .primers sheet
+  sra_sag    Single cells fetched from SRA as <run>_<mate>.fastq.gz, named from an ENA run table (--runinfo)
 """
 import argparse
 import csv
@@ -220,14 +223,139 @@ def ont_tar_rows(listing, dataset_id, centre):
             **{**file_fields(size, md5, rel), "content": "fast5"})
 
 
+READS_454 = re.compile(r"^(\d+)\.(\d+)\.((?:MID|RL)\d+)\.(.+?)\.(?:GAC|TCA|TCAG)\.454Reads\.(fna|qual)\.gz$")
+SFF_454 = re.compile(r"^([A-Z0-9]{9})(?:\d{2})?\.((?:MID|RL)\d+)\.(.+?)\.sff\.gz$")
+BARE_454 = re.compile(r"^([A-Z]{4})?((?:sak|pl)_\d{4}_\d{1,2}_\d{1,2}_\d+m?)(?:\.?(?:GAC|TCA))?(?:\.454Reads)?\.(?:fna|fa|qual)\.gz$", re.I)
+LAKE_LABEL = re.compile(r"^(sak|pl)_(\d{4})_(\d{1,2})_(\d{1,2})_(\d+)m?_?$", re.I)
+LAKES = {"sak": SAKINAW, "pl": "Powell Lake, British Columbia, Canada"}
+
+
+def lake_sample(label):
+    m = LAKE_LABEL.match(label)
+    if not m:
+        return sanitize(label), "", "", ""
+    lake, y, mo, d, depth = m.groups()
+    date = f"{y}-{int(mo):02d}-{int(d):02d}"
+    return f"{lake.lower()}_{date.replace('-', '_')}_{depth}m", date, depth, LAKES[lake.lower()]
+
+
+def format_454(name):
+    for ext in ("454Reads.fna.gz", "454Reads.qual.gz", "fa.qual.gz", "qual.gz", "fa.gz", "fna.gz", "fasta.gz",
+                "sff.gz", "xls.gz", "txt.gz"):
+        if name.endswith("." + ext):
+            fmt = ext.removeprefix("454Reads.").replace("fa.qual", "qual")
+            return fmt, {"fna.gz": "fasta", "fa.gz": "fasta", "fasta.gz": "fasta", "qual.gz": "qual",
+                         "sff.gz": "sff"}.get(fmt, "")
+    return file_format(name), ""
+
+
+def gq_454_rows(listing, dataset_id, centre, sample_type):
+    by_name = {}
+    for size, md5, rel in listing:
+        by_name.setdefault(rel.rsplit("/", 1)[-1], []).append(rel)
+    for size, md5, rel in listing:
+        if rel == "manifest.csv":
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        fmt, content = format_454(name)
+        fields = {"file": rel, "bytes": size, "md5": md5, "format": fmt, "content": content}
+        notes = [MD5_NOTE] if md5 else []
+        if len(by_name[name]) > 1:
+            notes.append("same name also at " + ", ".join(r for r in by_name[name] if r != rel))
+        m, s, b = READS_454.match(name), SFF_454.match(name), BARE_454.match(name)
+        if m or s or b:
+            if m:
+                region, run, barcode, label = m.group(1), m.group(2), m.group(3), m.group(4)
+            elif s:
+                region, run, barcode, label = "", s.group(1), s.group(2), s.group(3)
+            else:
+                region, run, barcode, label = "", "", b.group(1) or "", b.group(2)
+                if b.group(1):
+                    notes.append(f"{b.group(1)} reads as the JGI library code")
+            sample_id, date, depth, site = lake_sample(label)
+            if not site:
+                notes.append("not a Sakinaw or Powell sample by name")
+            if content == "sff":
+                notes.append("454 flowgrams; no metasmith type for sff")
+            elif content == "fasta":
+                notes.append("454 reads as fasta, quality scores in the .qual beside it")
+            yield base_row(
+                dataset_id, centre, sample_id=sample_id, source_name=label, mate="single", lane=region,
+                platform="454", role="raw", run_id=run, library_id=barcode,
+                sample_type=sample_type, site=site, depth_m=depth, sampling_date=date,
+                notes="; ".join(notes), **fields)
+        else:
+            yield base_row(dataset_id, centre, sample_id="all_samples", platform="454", role="report",
+                           sample_type=sample_type, notes="; ".join(["covers every sample of the entry", *notes]),
+                           **fields)
+
+
+PRIMER_LABEL = re.compile(r"^Sak(\d{2})(\d{2})(\d{2})-(\d+)m")
+
+
+def jgi_pyrotag_rows(listing, meta, dataset_id, centre):
+    samples = []
+    for primers in meta.rglob("*.primers"):
+        for line in primers.read_text().splitlines():
+            m = PRIMER_LABEL.match(line)
+            if m:
+                d, mo, y, depth = m.groups()
+                samples.append(f"sak_20{y}_{mo}_{d}_{depth}m")
+    for size, md5, rel in listing:
+        if rel == "manifest.csv":
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        fmt, content = format_454(name)
+        unit = re.search(r"\.(\d{5})\.(\d)\.", name)
+        is_reads = content in ("sff", "fasta", "qual") and name.startswith("GWNO.")
+        notes = [MD5_NOTE] if md5 else []
+        if is_reads:
+            notes.insert(0, f"multiplexed by barcode, {len(samples)} samples in the .primers sheet: " + " ".join(samples))
+            if content == "sff":
+                notes.append("no metasmith type for sff")
+        yield base_row(
+            dataset_id, centre, sample_id=f"run_{unit.group(1)}" if unit else "run_12063", platform="454",
+            mate="single" if is_reads else "", lane=unit.group(2) if unit else "",
+            role="raw" if is_reads else ("report" if fmt in ("primers", "") or name == "README" else "derived"),
+            run_id=unit.group(1) if unit else "12063", library_id="GWNO", sample_type="amplicon_16S",
+            notes="; ".join(notes if is_reads else [("JGI pyrotag analysis, 97% OTUs" if fmt not in ("primers", "")
+                                                    else "run README and barcode sheet"), *notes]),
+            file=rel, bytes=size, md5=md5, format=fmt, content=content)
+
+
+def sra_sag_rows(listing, runinfo, dataset_id, centre):
+    with open(runinfo) as fh:
+        runs = {r["run_accession"]: r for r in csv.DictReader(fh, delimiter="\t")}
+    for size, md5, rel in listing:
+        if rel == "manifest.csv":
+            continue
+        m = re.match(r"^(SRR\d+)_([12])\.fastq\.gz$", rel.rsplit("/", 1)[-1])
+        r = runs.get(m.group(1), {}) if m else {}
+        if not r:
+            print(f"NO RUN FOR {rel}", file=sys.stderr)
+        cell = re.search(r"SCGC \S+", r.get("scientific_name", ""))
+        yield base_row(
+            dataset_id, centre, sample_id=sanitize(cell.group(0)) if cell else sanitize(r.get("sample_accession", rel)),
+            source_name=r.get("scientific_name", ""), mate=f"R{m.group(2)}" if m else "", platform="illumina",
+            role="raw", run_id=m.group(1) if m else "", library_id=r.get("library_name", ""),
+            accession="; ".join(f"{k}:{r[f]}" for k, f in (("SRA_run", "run_accession"), ("BioProject", "study_accession"),
+                                                         ("BioSample", "sample_accession")) if r.get(f)),
+            sample_type="SAG", sampling_date=r.get("collection_date", ""),
+            msm_type="zipped_forward_short_reads" if m and m.group(2) == "1" else "zipped_reverse_short_reads",
+            notes="; ".join(n for n in ("fetched from SRA and gzipped by the lab, so md5 differs from SRA's",
+                                        r.get("instrument_model", ""), MD5_NOTE if md5 else "") if n),
+            **file_fields(size, md5, rel))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("profile", choices=("jgi", "jgi_itags", "gq_sag", "ont_tar"))
+    ap.add_argument("profile", choices=("jgi", "jgi_itags", "gq_sag", "ont_tar", "gq_454", "jgi_pyrotags", "sra_sag"))
     ap.add_argument("listing", type=Path)
     ap.add_argument("dataset_id")
     ap.add_argument("--meta", type=Path, help="the entry's small text files, at their entry paths")
     ap.add_argument("--centre", default="JGI")
     ap.add_argument("--sample-type", default="metagenome")
+    ap.add_argument("--runinfo", type=Path, help="ENA read_run table, for sra_sag")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     listing = read_listing(args.listing)
@@ -235,6 +363,12 @@ def main():
         rows = jgi_rows(listing, args.meta, args.dataset_id, args.centre, args.sample_type)
     elif args.profile == "jgi_itags":
         rows = itag_rows(listing, args.meta, args.dataset_id, args.centre)
+    elif args.profile == "gq_454":
+        rows = gq_454_rows(listing, args.dataset_id, args.centre, args.sample_type)
+    elif args.profile == "jgi_pyrotags":
+        rows = jgi_pyrotag_rows(listing, args.meta, args.dataset_id, args.centre)
+    elif args.profile == "sra_sag":
+        rows = sra_sag_rows(listing, args.runinfo, args.dataset_id, args.centre)
     elif args.profile == "ont_tar":
         rows = ont_tar_rows(listing, args.dataset_id, args.centre)
     else:

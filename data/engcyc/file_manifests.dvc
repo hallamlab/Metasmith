@@ -1,6 +1,6 @@
 outs:
-- md5: 2470cfe78a6e9c5699cd2351342f426b.dir
-  size: 361252
-  nfiles: 6
+- md5: 5d66624c15f96599b31a6f2ba9ac2894.dir
+  size: 1357873
+  nfiles: 13
   hash: md5
   path: file_manifests
