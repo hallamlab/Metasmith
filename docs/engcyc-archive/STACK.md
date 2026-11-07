@@ -29,7 +29,7 @@ Procedure, from dfs-interview § Work the stack:
 
 - **external-home** (2026-11-06): and we need to decide where to place the the external datasets like CAMI, tara oceans, etc
   - [x] home: one folder per external dataset under the chinook external-data folder, as CAMI is now? (answered 2026-11-06)
-  - [ ] keep-or-point: keep a copy of public reads, or keep an accession manifest only?
+  - [x] keep-or-point: keep a copy of public reads, or keep an accession manifest only? (answered 2026-11-06)
   - [ ] lost-sets: the ocean sets and the earlier Engcyc build are not on the backup volume; is sharknado itself still readable?
 - **duplicates** (2026-11-06): and we should scan for duplicates and propose old locations to remove (do this now)
 - **derived-archive** (2026-11-06): For those, we will want to do a separate archive, like how Cyanoverse is working right now. And that has like a structured file tree that we would want to adopt as a paradigm. We don't have to do exactly because the tools don't match, but you know, the idea needs to flow.

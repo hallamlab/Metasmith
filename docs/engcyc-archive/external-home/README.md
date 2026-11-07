@@ -32,6 +32,14 @@ Tony, 2026-11-07, on "one folder per external dataset under the chinook external
 
 > external-home q1, yes
 
+## Copies of public reads
+
+Keep the lab's copy of every public read set it already holds, gzipped as it is. Give each a `manifest.csv` with the accession of every file, so a lost copy can be fetched again. Fetch no set only to complete the archive.
+
+Tony, 2026-11-07, on "keep a copy of public reads, or keep an accession manifest only?":
+
+> we have the public reads and tehy are zipped, we can keep our copies
+
 ## Open questions
 
 The queue is in `STACK.md`.
