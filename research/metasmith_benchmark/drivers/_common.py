@@ -40,8 +40,10 @@ CHECKM2_DB = Path(os.environ.get(
     "CHECKM2_DB", "/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"))
 # Nodes whose Lustre client failed our tasks with Errno 108, EIO or 0-second starts in R1.
 # A driver job's own --exclude does not reach the grid tasks nextflow submits.
-FIR_BAD_NODES = ("fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30568,fc30570,fc30604,"
-                 "fc30608,fc30609,fc30622,fc30623,fc30628,fc30640")
+# Another cluster has none of these names and sbatch refuses an unknown one, so MSM_EXCLUDE_NODES="" drops the flag.
+FIR_BAD_NODES = os.environ.get("MSM_EXCLUDE_NODES", "fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30568,"
+                               "fc30570,fc30604,fc30608,fc30609,fc30622,fc30623,fc30628,fc30640")
+EXCLUDE = f" --exclude={FIR_BAD_NODES}" if FIR_BAD_NODES else ""
 
 # E2's two arms and E5's CAMI pilot share the CAMI home, E3 and E5's Pratama pilot share
 # Pratama's. Each home pays its own reference staging and needs its own dev overlay push.
@@ -399,14 +401,14 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
         "", "process {",
-        f'    clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
+        f'    clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}{EXCLUDE}"',
         "}", "",
         "process {", "    withName: '.*__comebin' {",
         f"        cpus = {comebin_cpus}",
         f"        memory = '{mem_gb} GB'",
         comebin_time_line,
         *comebin_before,
-        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account} --exclude={FIR_BAD_NODES}{comebin_gres}"',
+        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account}{EXCLUDE}{comebin_gres}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
     for name in IN_PLACE_STEPS:
