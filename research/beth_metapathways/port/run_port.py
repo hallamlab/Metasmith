@@ -298,7 +298,8 @@ def cmd_run(args):
         return 0
 
     targets, transforms, with_bins = GROUPS[args.group]
-    expected = {"sequences::assembly": 1}
+    # The DRAM database reads no sample input; the sample only names the run.
+    expected = {} if args.group == "dram_db" else {"sequences::assembly": 1}
     if with_bins:
         expected["binning_local::quality_bin_fasta"] = len(SAMPLES[args.sample][1])
 

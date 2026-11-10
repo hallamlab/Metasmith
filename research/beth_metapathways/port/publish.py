@@ -160,8 +160,15 @@ def publish_files(tree, S, keys):
         if src.exists():
             tree.place(f"{subject}/{product}/{S}{suffix}", src, S, product, "metapathways")
     tree.place(f"assembly/contigs/{S}.fna", B / f"inputs/{S}.fasta", S, "contigs", "input")
+    publish_exports(tree, S)
     publish_pgdbs(tree, S)
     publish_bins(tree, S)
+
+
+def publish_exports(tree, S):
+    """Per-assembly wide table as TSV, for readers without a parquet reader."""
+    tree.place(f"integrated_annotations/annotations_wide/{S}.tsv.gz", TABLES / S / "annotations_wide.tsv.gz",
+               S, "annotations_wide", "tables_v1")
 
 
 def publish_pgdbs(tree, S):
@@ -282,7 +289,65 @@ def sha256(path):
     return h.hexdigest()
 
 
+README = """# copper_enrichments: functional annotation of the cpe3 copper enrichment assemblies
+
+Seventeen assemblies of the cpe3 mine-community enrichment series, annotated twice: by the
+original MetaPathways pipeline and by its metasmith port. The five enrichment samples
+(cpe3_r2a, cu1_5, cu6, cu7_8, cu9_11) were each assembled with metaSPAdes, hybridSPAdes and
+OPERA-MS, and the pooled parent with metaSPAdes and OPERA-MS. `samples.tsv` lists them.
+
+## Where to start
+
+- `integrated_annotations/annotations_wide/<assembly>.tsv.gz`: one row per gene or feature,
+  with every annotation source as columns. `annotation_sources.tsv` names the tool and
+  reference database behind each column group; `annotation_coverage.tsv` counts hits per
+  source per assembly. `annotations_wide.parquet` and `annotations_long.parquet` (one row
+  per hit) pool all seventeen assemblies with a `sample` column.
+- `models/pgdb_genes.parquet`: gene to reaction to pathway for every community and MAG
+  pathway database, `pipeline` = mp (original) or port. The `*_pgdb` archives open in
+  Pathway Tools; `*_pathways` hold each database's pathway list.
+- The other folders hold each tool's own output, one file per assembly or bin.
+
+## Layout
+
+- `<subject>/<product>/<stem>.<ext>`: one tool output per assembly or bin. Subjects group
+  outputs by what they describe: `assembly`, `taxonomy_contigs`, `annotation_orfs` (run on
+  protein sequences), `annotation_contigs` (run on contig sequences), `amr` (resistance,
+  virulence, toxins), `mge` (plasmids, integrons, insertion sequences, mobile genes),
+  `viral`, `binning` and `models` (pathway databases).
+- `<subject>/<table>.<ext>`: a table pooled over all assemblies.
+- An assembly stem is `<assembler>_<sample>`. A bin stem is `<assembly>.<binner>.<NNN>`;
+  `binning/mags.tsv` maps each to its original bin name.
+- Contig IDs are the assembler's. Port ORF IDs are Prodigal's `<contig>_<n>`. Products
+  named `metapathways_*` come from the original pipeline and use its own ORF IDs.
+- `annotation_orfs/tcdb`, `amr/bacmet`, `amr/megares` and `amr/vfdb` are headerless BLAST6
+  tables with columns qseqid, sseqid, pident, length, mismatch, gapopen, qstart, qend,
+  sstart, send, evalue, bitscore, stitle.
+- `_logs/ledger.tsv` lists every file with its size, sha256 and the run it came from;
+  `_logs/runs/` holds each run's metadata, including tool container versions;
+  `_logs/gaps.tsv` lists any assembly a product is missing for.
+
+## Not yet included
+
+DRAM, DRAM-v and mobileOG-db annotations will be added to `annotation_orfs/dram`,
+`viral/dramv` and `mge/mobileog`. No metabolic models (CarveMe) were built. `mags.tsv` has
+no completeness or contamination columns.
+
+## Products
+
+| Folder | Files |
+|---|---|
+"""
+
+
+def write_readme(out):
+    rows = [f"| `{d.relative_to(out)}` | {sum(1 for _ in d.iterdir())} |"
+            for d in sorted(out.glob("*/*")) if d.is_dir() and not d.parts[-2].startswith("_")]
+    (out / "README.md").write_text(README + "\n".join(rows) + "\n")
+
+
 def publish_logs(out, keys, samples, ledger_rows):
+    write_readme(out)
     logs = out / "_logs"
     (logs / "runs").mkdir(parents=True, exist_ok=True)
     for S in samples:
@@ -313,7 +378,7 @@ def publish_logs(out, keys, samples, ledger_rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--part", action="append", choices=["files", "tables", "logs"])
+    ap.add_argument("--part", action="append", choices=["files", "exports", "tables", "logs"])
     ap.add_argument("--sample", action="append")
     args = ap.parse_args()
     keys = run_keys()
@@ -330,6 +395,13 @@ def main():
         new = pd.DataFrame(tree.ledger, columns=["path", "stem", "product", "run", "source"])
         (pd.concat([old, new]).drop_duplicates("path", keep="last") if old is not None else new).to_csv(
             ledger_tmp, sep="\t", index=False)
+    if "exports" in parts:
+        for S in samples:
+            publish_exports(tree, S)
+        ledger_tmp.parent.mkdir(parents=True, exist_ok=True)
+        old = pd.read_csv(ledger_tmp, sep="\t")
+        new = pd.DataFrame(tree.ledger, columns=["path", "stem", "product", "run", "source"])
+        pd.concat([old, new]).drop_duplicates("path", keep="last").to_csv(ledger_tmp, sep="\t", index=False)
     if "tables" in parts:
         print("tables", flush=True)
         publish_tables(args.out, samples)
