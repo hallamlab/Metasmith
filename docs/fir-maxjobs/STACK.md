@@ -23,12 +23,10 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**mechanism**. Its result: `mechanism/README.md`.
+**reply-to-wade**. Its result: `reply-to-wade/README.md`.
 
 ## Stack
 
-- **mechanism** (2026-11-10): no need for fix, we just need to confirm and locate issue for now.
-  - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
 - **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
 
 ## Parked
@@ -44,3 +42,4 @@ Procedure, from dfs-interview § Work the stack:
 - **nibi-exposure** (closed 2026-11-10): `nibi-exposure/README.md`
 - **scratch-contracts** (closed 2026-11-10): `scratch-contracts/README.md`
 - **fix-brief** (closed 2026-11-10): `fix-brief/README.md`
+- **mechanism** (closed 2026-11-10): `mechanism/README.md`
