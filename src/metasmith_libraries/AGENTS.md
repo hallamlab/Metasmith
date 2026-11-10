@@ -102,6 +102,19 @@ product. Unpack, index and check content in a second transform that runs on a co
 runs on a shared login node, and a retry of it fetches everything again. The reasons are in
 `docs/metasmith_libraries/architecture.md`.
 
+## A task reads a copy of its inputs
+
+A task that runs in node-local scratch reads a private copy of every input, which the engine
+makes before the protocol starts. `context.Input(...)` returns the copy. Do not copy an input
+inside a protocol.
+
+Set `stage: link` on a data type that is too big to copy for every task. Its inputs are read in
+place at their source path, and a child type inherits the flag through `extends`. The flag does
+not change the type key. `ref::metabuli_ref` in `data_types/ref.yml` is the reference.
+
+**CAUTION** Never set `stage: link` on a type that holds a SQLite database. The reason is in
+`docs/metasmith/source/usage/nextflow.rst` under Troubleshooting.
+
 ## Two rules that fail quietly
 
 **A collecting transform must not pair two grouped slots by position.**
