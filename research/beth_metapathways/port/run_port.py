@@ -126,7 +126,8 @@ PARENT_SCALED = {
     "antismash": (32, 160, 12),
     "clean": (4, 64, 20),
     "promotech": (8, 192, 12),
-    "esm_c": (4, 32, 12),
+    # 932k parent proteins: per-protein accumulators hold ~18 GB, and the final stack doubles them.
+    "esm_c": (4, 80, 12),
     "ezpred": (4, 64, 6),
     "gpr_4lane": (4, 128, 6),
     "gpr_7lane": (4, 192, 6),
