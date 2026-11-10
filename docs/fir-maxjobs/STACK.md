@@ -44,3 +44,4 @@ Procedure, from dfs-interview § Work the stack:
 - **dbmem** (closed 2026-11-10): `db-handling/dbmem/README.md`
 - **metapathways** (closed 2026-11-10): `db-handling/metapathways/README.md`
 - **db-handling** (closed 2026-11-10): `db-handling/README.md`
+- **job-specs** (closed 2026-11-10): `job-specs/README.md`
