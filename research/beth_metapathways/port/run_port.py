@@ -130,7 +130,7 @@ PARENT_SCALED = {
     "ezpred": (4, 64, 6),
     "gpr_4lane": (4, 128, 6),
     "gpr_7lane": (4, 192, 6),
-    "bakta_noncoding": (8, 64, 16),
+    "bakta_noncoding": (32, 96, 12),
     "virsorter2": (8, 32, 16),
     "genomad": (16, 96, 12),
     "pathofact": (8, 96, 12),
