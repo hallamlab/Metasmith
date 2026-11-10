@@ -95,3 +95,34 @@ def test_pruning_types_does_not_move_the_library_key(tmp_path, types_dir):
     lib.PruneTypes(save=True)
 
     assert DataInstanceLibrary.Load(lib.location).GetKey() == before
+
+
+def test_stage_link_survives_compile_and_prune_and_is_inherited(tmp_path):
+    src = tmp_path/"ref.yml"
+    src.write_text(
+        "types:\n"
+        "  big_db: {properties: [big_db], stage: link}\n"
+        "  bigger_db: {properties: [bigger_db], extends: big_db}\n"
+        "  small_db: {properties: [small_db]}\n"
+    )
+    plain = DataTypeLibrary.Unpack({"types": {"big_db": {"properties": ["big_db"]}}})
+
+    lib = DataInstanceLibrary(tmp_path/"lib")
+    lib.AddTypeLibrary(src, namespace="ref")
+    for name in ["bigger_db", "small_db"]:
+        (lib.location/name).write_text("")
+        lib.AddItem(Path(name), f"ref::{name}")
+    lib.Save()
+    lib.PruneTypes(save=True, whitelist={"ref::big_db"})
+    lib = DataInstanceLibrary.Load(lib.location)
+
+    assert lib.IsLinked("ref::big_db")
+    assert lib.IsLinked("ref::bigger_db")
+    assert not lib.IsLinked("ref::small_db")
+    assert not lib.IsLinked("missing::big_db")
+    assert lib.GetType("ref::big_db").key == plain["big_db"].key
+
+
+def test_stage_accepts_only_link():
+    with pytest.raises(AssertionError):
+        DataTypeLibrary.Unpack({"types": {"t": {"properties": ["t"], "stage": "copy"}}})

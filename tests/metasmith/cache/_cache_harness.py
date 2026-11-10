@@ -40,8 +40,10 @@ class RunSnapshot:
     workspace: Path = field(default=Path("."))
 
 
-def build_types_library(tmp_path: Path, type_names: Iterable[str]) -> Path:
-    types = DataTypeLibrary()
+def build_types_library(
+    tmp_path: Path, type_names: Iterable[str], linked: Iterable[str] = (),
+) -> Path:
+    types = DataTypeLibrary(linked=set(linked))
     for n in type_names:
         types[n] = Endpoint(properties={n})
     tmp_path.mkdir(parents=True, exist_ok=True)

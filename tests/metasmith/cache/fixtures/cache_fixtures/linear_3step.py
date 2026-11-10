@@ -16,10 +16,14 @@ from tests.metasmith.cache._cache_harness import (
 TYPE_NAMES = ("seed", "step_a", "step_b", "step_c")
 
 
-def build_task(tmp_path: Path, n_samples: int = 1) -> WorkflowTask:
-    types_path = build_types_library(tmp_path, TYPE_NAMES)
+def build_task(
+    tmp_path: Path, n_samples: int = 1, linked: tuple[str, ...] = (),
+) -> WorkflowTask:
+    types_path = build_types_library(tmp_path, TYPE_NAMES, linked)
+    # The samples carry a type file compiled before any `stage: link` existed.
+    samples_types = build_types_library(tmp_path/"samples_types", TYPE_NAMES)
     samples = build_samples_library(
-        tmp_path, types_path, count=n_samples, input_type="seed"
+        tmp_path, samples_types, count=n_samples, input_type="seed"
     )
     transforms = {
         "trA": identity_transform_code("trA", "seed", "step_a"),

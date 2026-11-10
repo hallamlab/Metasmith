@@ -313,6 +313,7 @@ class ExecutionContext:
             for _, v in list(batch_item.items()):
                 for p in v.input_group:
                     if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
+                    if p.container.is_relative_to(AgentPaths.WORK_ROOT): continue
                     src = p.external.parent
                     if not p.container.is_absolute():
                         dest = src

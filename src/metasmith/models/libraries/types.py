@@ -57,11 +57,17 @@ class DataTypeOntologies:
     )
 
 
+STAGE_FIELD = "stage"
+STAGE_LINK = "link"
+
 @dataclass
 class DataTypeLibrary:
     schema: str = "v1"
     ontology: DataTypeOntology = field(default_factory=lambda: DataTypeOntologies.EDAM)
     types: dict[str, Endpoint] = field(default_factory=dict)
+    # Names of types whose instances a task reads in place instead of copying
+    # into its work dir. Kept off the Endpoint so it does not move the type key.
+    linked: set[str] = field(default_factory=set)
 
 
     def __getitem__(self, key: str) -> Endpoint:
@@ -85,6 +91,7 @@ class DataTypeLibrary:
     @classmethod
     def Unpack(cls, d: dict):
         raw_types = {}
+        linked = set()
         def pluralize(vv):
             def _fix(_v):
                 if isinstance(_v, set): return _v
@@ -94,6 +101,10 @@ class DataTypeLibrary:
         for type_name, type_raw in d["types"].items():
             extends = type_raw.get("extends", [])
             if isinstance(extends, str): extends = [extends]
+            stage = type_raw.get(STAGE_FIELD)
+            assert stage in (None, STAGE_LINK), f"[{type_name}] has [{STAGE_FIELD}: {stage}]; the only value is [{STAGE_LINK}]"
+            if stage == STAGE_LINK or any(pk in linked for pk in extends):
+                linked.add(type_name)
             assert Endpoint.PROPERTY_FIELD in type_raw, f"[{type_name}] is missing [{Endpoint.PROPERTY_FIELD}]"
             props = type_raw[Endpoint.PROPERTY_FIELD]
             if isinstance(props, list) or isinstance(props, set):
@@ -115,6 +126,7 @@ class DataTypeLibrary:
             raw_types[type_name] = {Endpoint.PROPERTY_FIELD:props}
         params: dict = dict(
             types={k: Endpoint.Unpack(v) for k, v in raw_types.items()},
+            linked=linked,
         )
         if "schema" in d:
             params["schema"] = str(d["schema"])
@@ -148,8 +160,14 @@ class DataTypeLibrary:
         return dict(
             schema=self.schema,
             ontology=self.ontology.Pack(),
-            types={k: v.Pack() for k, v in self.types.items()},
+            types={k: self._pack_type(k, v) for k, v in self.types.items()},
         )
+
+    def _pack_type(self, name: str, dtype: Endpoint) -> dict:
+        d = dtype.Pack()
+        if name in self.linked:
+            d[STAGE_FIELD] = STAGE_LINK
+        return d
 
     def Save(self, path: Path):
         # os.replace, not a truncating write: it is atomic for a concurrent
