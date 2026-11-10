@@ -6,3 +6,4 @@ This file holds the preferences the user set for this discussion, each with its 
 
 ## Preferences
 
+- (2026-11-10) Keep Lustre technicalities out of metasmith code; put them in dev notes.

@@ -10,3 +10,15 @@
 - The eggnog files: `eggnog.db` 41 GB (random access), `eggnog_proteins.dmnd` 9.3 GB (streamed), `eggnog.taxa.db` 278 MB.
 
 Children: `lustre-reads/`, `dbmem/`.
+
+## Decision (2026-11-10)
+
+> lets go for local copy and make a similar change to other tools when we make a pass. I think diamond calls in general should be local copy.
+
+> I reject all but 3 as being too eager. local copy and the pass should fix it. lustre technicalities dont belong in metasmith, but we can make a note in dev notes
+
+- Copy reference DBs to node-local disk at task start, starting with eggnog. The scratch-contracts pass applies the same change to the other tools.
+- Copy every diamond DB locally.
+- Drop `--dbmem`. This reverts that part of `71cd5453`; the memory goes back down with it.
+- Not adopted: chmod read-only, per-transform access labels, and batching more chunks per job.
+- Keep Lustre detail out of metasmith code. Write it in the dev notes.
