@@ -23,18 +23,24 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**mechanism**. Its result: `mechanism/README.md`.
+**db-handling**. Its result: `db-handling/README.md`.
 
 ## Stack
 
+- **db-handling** (2026-11-10): we should talk about how reference databases are handled. we'd want to do read-only and local copy if possible.
+  - [ ] Adopt this design: reference DBs are read-only on Lustre (chmod a-w), declared per transform as 'random' (copied to $SLURM_TMPDIR at task start) or 'stream' (read in place); drop --dbmem; batch more chunks per job so one copy serves many?
 - **mechanism** (2026-11-10): no need for fix, we just need to confirm and locate issue for now.
   - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
 - **nibi-exposure** (2026-11-10): we just need to confirm and locate issue for now.
   - [ ] Check whether a nibi eggnog run without --dbmem is live now, which risks the same cap on nibi?
 - **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
+- **scratch-contracts** (2026-11-10): as part of the next task, we shuold also make a pass at metasmith contracts so that scratch work is done locally. this is implied by design, but some may still be writing to lustre scratch. jobs should only ideally write once at the end, and read once in the beginning.
+- **fix-brief** (2026-11-10): we should create journal brief as deliverable for next task to fix all of this.
 
 ## Parked
 
 ## Closed
 
 - **culprit** (closed 2026-11-10): `culprit/README.md`
+- **lustre-reads** (closed 2026-11-10): `db-handling/lustre-reads/README.md`
+- **dbmem** (closed 2026-11-10): `db-handling/dbmem/README.md`
