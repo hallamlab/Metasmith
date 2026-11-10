@@ -24,6 +24,8 @@ out_txt  = model.AddProduct(lib.GetType("annotation::bakta_summary"))
 # 23 h in one process at 8 cores. Past SHARD_BP the contigs are dealt into shards run side by side.
 SHARD_BP = 60_000_000
 THREADS_PER_SHARD = 4
+# pilercr aborts with "Failed to find filter parameters" on a ~1 Gbp input, so it runs on pieces this big.
+CRISPR_CHUNK_BP = 10_000_000
 OUTPUTS = ("gff3", "tsv", "gbff", "ffn", "txt")
 
 
@@ -56,8 +58,8 @@ def _shard_fasta(path: Path, n: int, outdir: Path) -> list:
     return [s for s, bp in zip(shards, filled) if bp > 0]
 
 
-def _merge(parts: list, out: Path, ext: str):
-    """Header comes from the first shard; a gff3 keeps one ##FASTA section after every shard's features."""
+def _merge(parts: list, out: Path, ext: str, extra: list = ()):
+    """Header comes from the first shard; a gff3 keeps one ##FASTA section, after every shard's features and `extra`."""
     with open(out, "w") as fo:
         if ext in ("gbff", "ffn", "txt"):
             for p in parts:
@@ -71,6 +73,7 @@ def _merge(parts: list, out: Path, ext: str):
                 if line.startswith("#") and k > 0 and not line.startswith("##sequence-region"):
                     continue
                 fo.write(line)
+        fo.writelines(extra)
         if ext == "gff3" and any(fasta):
             fo.write("##FASTA\n" + "".join(fasta))
 
@@ -105,20 +108,22 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    Path("bakta_out").mkdir(exist_ok=True)
-    for ext in OUTPUTS:
-        _merge([o / f"bakta_noncoding.{ext}" for o in outdirs], Path(f"bakta_out/bakta_noncoding.{ext}"), ext)
-
+    pieces = _shard_fasta(Path(iasm.local), max(1, -(-total_bp // CRISPR_CHUNK_BP)), Path("crispr_chunks"))
     context.ExecWithEnv(
         env=image,
         cmd=f"""
-            pilercr -in {iasm.container} -out crispr_raw.txt -noinfo -quiet || true
-
-            if [ -s crispr_raw.txt ]; then
-                python3 {igff3.container} crispr_raw.txt bakta_out/bakta_noncoding.gff3
-            fi
+            set -e
+            ls crispr_chunks/*.fasta | xargs -P {cpus} -I{{}} sh -c \
+                'pilercr -in {{}} -out {{}}.txt -noinfo -quiet && touch {{}}.gff3 && python3 {igff3.container} {{}}.txt {{}}.gff3'
         """,
     )
+    crispr = [l for p in pieces for l in Path(f"{p}.gff3").read_text().splitlines(keepends=True) if l.strip()]
+    print(f"pilercr on {len(pieces)} piece(s): {sum(l.split(chr(9))[2] == 'CRISPR' for l in crispr)} CRISPR array(s)", flush=True)
+
+    Path("bakta_out").mkdir(exist_ok=True)
+    for ext in OUTPUTS:
+        _merge([o / f"bakta_noncoding.{ext}" for o in outdirs], Path(f"bakta_out/bakta_noncoding.{ext}"), ext,
+               crispr if ext == "gff3" else ())
 
     for ext, o in outs.items():
         context.LocalShell(f"cp bakta_out/bakta_noncoding.{ext} {o.local}")
