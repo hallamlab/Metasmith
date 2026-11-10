@@ -29,3 +29,9 @@ This is the draft of the journal post that hands the fix to the next task. The f
 **Mechanism evidence:** see `docs/fir-maxjobs/mechanism/` (strace on fir, pending).
 
 **Also owed:** the reply to Wade (Alliance support) asking to lift the limit, once the fix lands. See `docs/fir-maxjobs/reply-to-wade/`.
+
+## Posted (2026-11-10)
+
+> post where the work will happen.
+
+Created scope `metasmith/engine/local-staging` (branch `feat/engine/local-staging` from `feat/dev`) and set its brief. The brief above is posted as its journal `a6851a3c`. When the strace evidence lands, it gets an addendum there.

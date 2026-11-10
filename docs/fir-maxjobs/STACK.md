@@ -23,15 +23,13 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**fix-brief**. Its result: `fix-brief/README.md`.
+**mechanism**. Its result: `mechanism/README.md`.
 
 ## Stack
 
 - **mechanism** (2026-11-10): no need for fix, we just need to confirm and locate issue for now.
   - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
 - **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
-- **fix-brief** (2026-11-10): we should create journal brief as deliverable for next task to fix all of this.
-  - [ ] Post the brief to a new scope metasmith/engine/local-staging (branched from feat/dev, the fix spans engine + libraries), rather than engine/dev?
 
 ## Parked
 
@@ -45,3 +43,4 @@ Procedure, from dfs-interview § Work the stack:
 - **job-specs** (closed 2026-11-10): `job-specs/README.md`
 - **nibi-exposure** (closed 2026-11-10): `nibi-exposure/README.md`
 - **scratch-contracts** (closed 2026-11-10): `scratch-contracts/README.md`
+- **fix-brief** (closed 2026-11-10): `fix-brief/README.md`
