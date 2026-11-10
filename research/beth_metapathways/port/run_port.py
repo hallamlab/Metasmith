@@ -89,6 +89,9 @@ EXTRA_REFS = {
     "ref::label_transfer_landmarks_esmc": PORT / "refs" / "label_transfer_landmarks_esmc" / "landmarks_esmc",
     "ref::ezpred_model": PORT / "refs" / "ezpred_model" / "EZpred",
 }
+DRAM_DB = Path("/scratch/phyberos/databases/dram")
+if DRAM_DB.exists():
+    EXTRA_REFS["annotation::dram_db"] = DRAM_DB
 
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
     "sequences.yml", "ref.yml", "annotation.yml", "taxonomy.yml", "binning.yml", "binning_local.yml",
@@ -262,6 +265,11 @@ GROUPS = {
                            "annotation::pathofact_amr"), annotation_transforms, False),
     "bgc_func": (flat_targets("annotation::antismash_json", "annotation::eggnog_results",
                               "annotation::interproscan_results"), annotation_transforms, False),
+    # Built once in one run, then hardlinked to DRAM_DB and imported by every "dram" run.
+    "dram_db": (flat_targets("annotation::dram_db"),
+                lambda: [load_lib("logistics", keep={"downloadDramDB.py", "buildDramDB.py"})], False),
+    "dram": (flat_targets("annotation::dram_annotations", "annotation::dramv_annotations",
+                          "annotation::dramv_distill"), annotation_transforms, False),
 }
 
 
