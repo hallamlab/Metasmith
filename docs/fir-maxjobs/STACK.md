@@ -23,17 +23,13 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**scratch-contracts**. Its result: `scratch-contracts/README.md`.
+**mechanism**. Its result: `mechanism/README.md`.
 
 ## Stack
 
 - **mechanism** (2026-11-10): no need for fix, we just need to confirm and locate issue for now.
   - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
 - **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
-- **scratch-contracts** (2026-11-10): as part of the next task, we shuold also make a pass at metasmith contracts so that scratch work is done locally. this is implied by design, but some may still be writing to lustre scratch. jobs should only ideally write once at the end, and read once in the beginning.
-  - [x] Default every input to copy into scratch (true read-once), with an explicit opt-out for inputs too big to copy (uniref90, MPDB-scale), rather than copying only named DBs? (answered 2026-11-10)
-  - [ ] Adopt: products copy by default; refs take stage from the data type (reference_data base = link, eggnog + diamond = copy); launch fails when a copy input exceeds a size cap?
-  - [ ] Confirm doc homes: libraries AGENTS.md (authoring rule), docs/metasmith/architecture.md § Execution (mechanism), usage/nextflow.rst (Lustre dev note)?
 - **fix-brief** (2026-11-10): we should create journal brief as deliverable for next task to fix all of this.
 
 ## Parked
@@ -47,3 +43,4 @@ Procedure, from dfs-interview § Work the stack:
 - **db-handling** (closed 2026-11-10): `db-handling/README.md`
 - **job-specs** (closed 2026-11-10): `job-specs/README.md`
 - **nibi-exposure** (closed 2026-11-10): `nibi-exposure/README.md`
+- **scratch-contracts** (closed 2026-11-10): `scratch-contracts/README.md`
