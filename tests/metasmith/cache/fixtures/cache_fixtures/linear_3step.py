@@ -21,7 +21,7 @@ def build_task(
 ) -> WorkflowTask:
     types_path = build_types_library(tmp_path, TYPE_NAMES, linked)
     # The samples carry a type file compiled before any `stage: link` existed.
-    samples_types = build_types_library(tmp_path/"samples_types", TYPE_NAMES)
+    samples_types = build_types_library(tmp_path/"samples_types", TYPE_NAMES) if linked else types_path
     samples = build_samples_library(
         tmp_path, samples_types, count=n_samples, input_type="seed"
     )

@@ -172,6 +172,13 @@ def DownloadSteps(plan) -> list:
     return found
 
 
+_SCRATCH_ONLY = '[ "\\$__msm_wd" = "\\$PWD" ] ||'
+
+
+def _slot(i: int) -> str:
+    return f"_{i+1:02}"
+
+
 def _copy_inputs_line(step, used_archetypes) -> list[str]:
     # In scratch, replace each staged symlink with a real copy so the tool reads
     # node-local disk. Bootstrap sees a real file under the staged name and
@@ -184,12 +191,12 @@ def _copy_inputs_line(step, used_archetypes) -> list[str]:
             for lib in (step.transform_library, x.parent_lib)
         )
     slots = [
-        f"${{_{i+1:02}}}" for i, x in enumerate(used_archetypes) if not _linked(x)
+        f"${{{_slot(i)}}}" for i, x in enumerate(used_archetypes) if not _linked(x)
     ]
     if not slots:
         return []
     return [
-        f'[ "\\$__msm_wd" = "\\$PWD" ] || for f in {" ".join(slots)}; do'
+        f'{_SCRATCH_ONLY} for f in {" ".join(slots)}; do'
         ' [ ! -L "\\$f" ] || { cp -rL "\\$f" "\\$f.msm_copy" && rm "\\$f" && mv "\\$f.msm_copy" "\\$f"; } || exit 1;'
         ' done'
     ]
@@ -449,7 +456,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             optional = ""
         src += [
             "input:",
-            TAB+f'tuple '+','.join(['val(index)']+[f'path(_{i+1:02})' for i, x in enumerate(used_archetypes)])
+            TAB+f'tuple '+','.join(['val(index)']+[f'path({_slot(i)})' for i in range(len(used_archetypes))])
         ] + [
             "output:",
         ] + [
@@ -467,7 +474,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
             f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             f'__msm_wd="\\$(cd "\\$(dirname "\\$0")" && pwd)"',
-            f'[ "\\$__msm_wd" = "\\$PWD" ] || cp -f {METADATA_FILE} "\\$__msm_wd/" || true',
+            f'{_SCRATCH_ONLY} cp -f {METADATA_FILE} "\\$__msm_wd/" || true',
         ] + _copy_inputs_line(step, used_archetypes) + [
             f'{_make_bind_var(i, is_assignment=True)}="{p}"'
             for i, p in enumerate(external_binds)
@@ -477,7 +484,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'bootstrap "{context.external_work_var}" "{step.order}" ${{params.hostName}}',
             # A record lost on the way out of scratch leaves an exit-0 task the
             # trace never sees, so a failed copy fails the task and it retries.
-            f'[ "\\$__msm_wd" = "\\$PWD" ] || [ ! -e {CACHE_RECORD_FILE} ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" || exit 1',
+            f'{_SCRATCH_ONLY} [ ! -e {CACHE_RECORD_FILE} ] || cp -f {CACHE_RECORD_FILE} "\\$__msm_wd/" || exit 1',
             f'[ -e .command.success ] && exit 0 || exit 1',
             '"""',
             'stub:',
