@@ -33,6 +33,7 @@ Procedure, from dfs-interview § Work the stack:
 - **scratch-contracts** (2026-11-10): as part of the next task, we shuold also make a pass at metasmith contracts so that scratch work is done locally. this is implied by design, but some may still be writing to lustre scratch. jobs should only ideally write once at the end, and read once in the beginning.
   - [x] Default every input to copy into scratch (true read-once), with an explicit opt-out for inputs too big to copy (uniref90, MPDB-scale), rather than copying only named DBs? (answered 2026-11-10)
   - [ ] Adopt: products copy by default; refs take stage from the data type (reference_data base = link, eggnog + diamond = copy); launch fails when a copy input exceeds a size cap?
+  - [ ] Confirm doc homes: libraries AGENTS.md (authoring rule), docs/metasmith/architecture.md § Execution (mechanism), usage/nextflow.rst (Lustre dev note)?
 - **fix-brief** (2026-11-10): we should create journal brief as deliverable for next task to fix all of this.
 
 ## Parked

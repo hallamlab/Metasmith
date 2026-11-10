@@ -27,3 +27,16 @@ Proposed instead:
 - **Reference DBs** take their staging from the data type. The types in `data_types/ref.yml` all extend `reference_data`. Give that base type a property `stage: link`, so a new reference type inherits the safe choice and never copies 600 GB by accident. eggnog and the diamond DB types override it with `stage: copy`.
 - **A guard instead of a warning.** At launch the driver stats each copy-staged input once. Above a cap, the launch fails with an error that names the type and the `stage: link` override. An agent cannot skip a failed launch the way it can skip a warning.
 - **Docs.** Add one paragraph in the transform and type authoring guide (when to choose `copy` or `link`) and the Lustre detail in the dev notes.
+
+## Decision (2026-11-10)
+
+> just copy and opt out without failure on size threshold. where in docs?
+
+- Every input copies into scratch by default, reference DBs included. This replaces the global `stageInMode = 'symlink'`.
+- An input opts out with `stage: link` on its data type. The pass marks the types too big to copy, such as uniref90 and MPDB-scale DBs.
+- No size check and no launch failure. This supersedes the proposal above.
+
+Docs (proposed homes):
+- `src/metasmith_libraries/AGENTS.md` carries the warning to agents. It resolves by directory, so an agent editing a transform or type reads it. Add one rule: inputs copy into local scratch; set `stage: link` on a type whose files are too big to copy per task.
+- `docs/metasmith/architecture.md` § Execution: how staging works and why copy is the default. It sits beside the existing `noscratch` paragraph.
+- `docs/metasmith/source/usage/nextflow.rst`, which already has "Network filesystem detected": the Lustre detail, as the dev notes. Metadata lookups and failed lookups go to one server, and the fir cap (Ticket#0331813) is the example.
