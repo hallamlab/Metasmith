@@ -23,7 +23,7 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**mechanism**. Its result: `mechanism/README.md`.
+**scratch-contracts**. Its result: `scratch-contracts/README.md`.
 
 ## Stack
 
@@ -31,6 +31,7 @@ Procedure, from dfs-interview § Work the stack:
   - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
 - **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
 - **scratch-contracts** (2026-11-10): as part of the next task, we shuold also make a pass at metasmith contracts so that scratch work is done locally. this is implied by design, but some may still be writing to lustre scratch. jobs should only ideally write once at the end, and read once in the beginning.
+  - [ ] Default every input to copy into scratch (true read-once), with an explicit opt-out for inputs too big to copy (uniref90, MPDB-scale), rather than copying only named DBs?
 - **fix-brief** (2026-11-10): we should create journal brief as deliverable for next task to fix all of this.
 
 ## Parked
