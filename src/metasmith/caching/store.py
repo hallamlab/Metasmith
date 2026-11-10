@@ -97,7 +97,12 @@ class CacheStore:
         cache_root.mkdir(parents=True, exist_ok=True)
         db = cache_root / "cache.sqlite"
         conn = sqlite3.connect(db)
-        conn.execute("PRAGMA journal_mode = WAL")
+        # WAL's shared-memory index is not coherent across hosts on NFS, where drivers on different
+        # nodes then fail with "locking protocol". A `journal_mode` file beside the store (e.g. DELETE)
+        # overrides it; a file and not an env var, because steps run in containers with a clean env.
+        marker = cache_root / "journal_mode"
+        mode = marker.read_text().strip() if marker.exists() else "WAL"
+        conn.execute(f"PRAGMA journal_mode = {mode}")
         for stmt in _CREATE_SQL:
             conn.execute(stmt)
         conn.execute(

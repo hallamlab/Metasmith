@@ -40,6 +40,9 @@ PORT = ROOT / "port"
 HOME = PORT / "metasmith"
 INPUTS = ROOT / "inputs"
 PILOT_REFS = Path("/scratch/phyberos/engcyc/mp_pilot/refs")
+# fir's /project/6004975 has no twin on another cluster. A ref's cache identity includes its path,
+# so moving it re-runs the steps that read it.
+FIR_PROJECT = Path(os.environ.get("BETH_FIR_PROJECT", "/project/6004975/phyberos"))
 MAGS_TSV = HERE / "mags.tsv"
 
 
@@ -70,10 +73,10 @@ EXTRA_REFS = {
     "ref::genomad": Path("/scratch/phyberos/databases/genomad"),
     # CAUTION built under a /db bind, which virsorter2.py also uses. VirSorter2 hashes its env path.
     "annotation::virsorter2_db": Path("/scratch/phyberos/refs/virsorter2_2.2.4"),
-    "annotation::bakta_db": Path("/project/6004975/phyberos/databases/bakta"),
-    "ref::antismash": Path("/project/6004975/phyberos/databases/antismash"),
+    "annotation::bakta_db": FIR_PROJECT / "databases" / "bakta",
+    "ref::antismash": FIR_PROJECT / "databases" / "antismash",
     "annotation::eggnog_data": Path("/scratch/phyberos/databases/eggnog"),
-    "ref::interproscan_data": Path("/project/6004975/phyberos/lib/interproscan/interproscan_data.tgz"),
+    "ref::interproscan_data": FIR_PROJECT / "lib" / "interproscan" / "interproscan_data.tgz",
     "annotation::amrfinderplus_db": Path("/scratch/phyberos/databases/amrfinderplus/2026-05-15.1"),
     "annotation::bacmet_diamond_db": Path("/scratch/phyberos/databases/bacmet/bacmet.dmnd"),
     "annotation::megares_diamond_db": Path("/scratch/phyberos/databases/megares/megares.dmnd"),
