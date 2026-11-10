@@ -15,3 +15,15 @@
 - Audit each transform for writes outside `$PWD`, such as absolute paths, `--tmpdir` or `-o` flags pointing at a reference dir, or tools that write next to their DB.
 - Check the three `noscratch` builds against the write-once rule.
 - Put Lustre detail in the dev notes, not in code (see `PREFERENCES.md`).
+
+## Copy-by-default safety (2026-11-10)
+
+> copy by default would make naive metasmith contract copy 600GB... is this safe? how can we give a warning to agents building new contracts?
+
+It is not safe. Copying 600 GB into each task takes hours and can fill `$SLURM_TMPDIR`: on fir, 12 tasks on one node would fill its 7.2 TB. At 100 tasks it reads 60 TB from Lustre, which is its own way to get capped.
+
+Proposed instead:
+- **Task products** (chunks and intermediate files between steps) copy into scratch by default. They are chunk-sized.
+- **Reference DBs** take their staging from the data type. The types in `data_types/ref.yml` all extend `reference_data`. Give that base type a property `stage: link`, so a new reference type inherits the safe choice and never copies 600 GB by accident. eggnog and the diamond DB types override it with `stage: copy`.
+- **A guard instead of a warning.** At launch the driver stats each copy-staged input once. Above a cap, the launch fails with an error that names the type and the `stage: link` override. An agent cannot skip a failed launch the way it can skip a warning.
+- **Docs.** Add one paragraph in the transform and type authoring guide (when to choose `copy` or `link`) and the Lustre detail in the dev notes.
