@@ -23,11 +23,9 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**reply-to-wade**. Its result: `reply-to-wade/README.md`.
+(none: the stack is empty)
 
 ## Stack
-
-- **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
 
 ## Parked
 
@@ -43,3 +41,4 @@ Procedure, from dfs-interview § Work the stack:
 - **scratch-contracts** (closed 2026-11-10): `scratch-contracts/README.md`
 - **fix-brief** (closed 2026-11-10): `fix-brief/README.md`
 - **mechanism** (closed 2026-11-10): `mechanism/README.md`
+- **reply-to-wade** (closed 2026-11-10): `reply-to-wade/README.md`
