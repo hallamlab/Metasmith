@@ -1,8 +1,11 @@
-"""Check data/engcyc/manifest.tsv against SCHEMAS.md. Exits non-zero on any error.
+"""Check data/engcyc/manifest.tsv against SCHEMAS.md, and any file tables (manifest.csv) given as
+arguments against the received-data schema. Exits non-zero on any error.
 
 Warnings (an n_samples that differs from its table's row count) do not fail the check,
 because a source table may count runs or plate copies rather than samples.
 """
+import csv
+import re
 import sys
 from pathlib import Path
 
@@ -71,9 +74,44 @@ def check(m):
     return errors, warnings
 
 
+ROLES = {"raw", "qc_filtered", "report", "derived", "assembly", "alignment"}
+MD5 = re.compile(r"^[0-9a-f]{32}$")
+SAMPLE_ID = re.compile(r"^[A-Za-z0-9_]*$")
+
+
+def check_files(path, dataset_ids):
+    from manifest_jgi import COLUMNS
+    errors = []
+    with open(path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        if reader.fieldnames != COLUMNS:
+            return [f"{path}: columns are {reader.fieldnames}, expected manifest_jgi.COLUMNS"]
+        seen = set()
+        for n, r in enumerate(reader, start=2):
+            where = f"{path.name}:{n}"
+            if r["dataset_id"] not in dataset_ids:
+                errors.append(f"{where}: dataset_id {r['dataset_id']!r} is not in manifest.tsv")
+            if r["file"] in seen:
+                errors.append(f"{where}: file {r['file']!r} is listed twice")
+            seen.add(r["file"])
+            if r["role"] not in ROLES:
+                errors.append(f"{where}: role {r['role']!r} is not one of {sorted(ROLES)}")
+            if not r["bytes"].isdigit():
+                errors.append(f"{where}: bytes {r['bytes']!r} is not an integer")
+            if r["md5"] and not MD5.match(r["md5"]):
+                errors.append(f"{where}: md5 {r['md5']!r} is not 32 lowercase hex digits")
+            if not SAMPLE_ID.match(r["sample_id"]):
+                errors.append(f"{where}: sample_id {r['sample_id']!r} has characters outside [A-Za-z0-9_]")
+            if r["role"] == "raw" and not r["sample_id"]:
+                errors.append(f"{where}: raw file has no sample_id")
+    return errors
+
+
 def main():
     m = pd.read_csv(MANIFEST, sep="\t", dtype=str, keep_default_na=False)
     errors, warnings = check(m)
+    for path in map(Path, sys.argv[1:]):
+        errors += check_files(path, set(m.dataset_id))
     for w in warnings:
         print("WARN ", w)
     for e in errors:
