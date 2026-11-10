@@ -32,8 +32,8 @@ TransformInstance(
     group_by=image,
     labels=["local"],
     resources=Resources(
-        cpus=2,
-        memory=Size.GB(8),
+        cpus=1,
+        memory=Size.GB(4),
         duration=Duration(hours=1),
     ),
 )
