@@ -26,7 +26,6 @@ def protocol(context: ExecutionContext):
                 -i ./proteins.clean.faa \
                 -o results \
                 -m diamond \
-                --dbmem \
                 --cpu {cpus}
         """,
     )
@@ -42,11 +41,9 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=orfs,
-    # --dbmem reads the 41 GB eggnog.db into memory once. Without it every annotation lookup is a random
-    # sqlite read, and on nibi's NFS scratch a parent's 150 concurrent chunks managed ~50 queries an hour each.
     resources=Resources(
         cpus=16,
-        memory=Size.GB(80),
+        memory=Size.GB(32),
         duration=Duration(hours=24),
     ),
 )
