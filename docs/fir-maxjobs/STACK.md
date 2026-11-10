@@ -29,8 +29,6 @@ Procedure, from dfs-interview § Work the stack:
 
 - **mechanism** (2026-11-10): no need for fix, we just need to confirm and locate issue for now.
   - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
-- **nibi-exposure** (2026-11-10): we just need to confirm and locate issue for now.
-  - [ ] Check whether a nibi eggnog run without --dbmem is live now, which risks the same cap on nibi?
 - **reply-to-wade** (2026-11-10): please read [Ticket#0331813] Account limited by number of parallel jobs = 1 email for context.
 - **scratch-contracts** (2026-11-10): as part of the next task, we shuold also make a pass at metasmith contracts so that scratch work is done locally. this is implied by design, but some may still be writing to lustre scratch. jobs should only ideally write once at the end, and read once in the beginning.
 - **fix-brief** (2026-11-10): we should create journal brief as deliverable for next task to fix all of this.
@@ -45,3 +43,4 @@ Procedure, from dfs-interview § Work the stack:
 - **metapathways** (closed 2026-11-10): `db-handling/metapathways/README.md`
 - **db-handling** (closed 2026-11-10): `db-handling/README.md`
 - **job-specs** (closed 2026-11-10): `job-specs/README.md`
+- **nibi-exposure** (closed 2026-11-10): `nibi-exposure/README.md`
