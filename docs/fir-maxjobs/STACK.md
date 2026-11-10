@@ -23,14 +23,10 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**metapathways**, under **db-handling**. Its result: `db-handling/metapathways/README.md`.
+**mechanism**. Its result: `mechanism/README.md`.
 
 ## Stack
 
-- **db-handling** (2026-11-10): we should talk about how reference databases are handled. we'd want to do read-only and local copy if possible.
-  - [x] Adopt this design: reference DBs are read-only on Lustre (chmod a-w), declared per transform as 'random' (copied to $SLURM_TMPDIR at task start) or 'stream' (read in place); drop --dbmem; batch more chunks per job so one copy serves many? (answered 2026-11-10)
-  - **metapathways** (2026-11-10): what about metapathways?
-    - [ ] Treat original MP4 as out of the pass (finished, not the cause) and add a brief note: if rerun, copy only the MPDB subsets it uses to SLURM_TMPDIR in the wrapper and write output locally?
 - **mechanism** (2026-11-10): no need for fix, we just need to confirm and locate issue for now.
   - [ ] Confirm with a one-off strace of emapper (with and without --dbmem) on a small query, or accept the sqlite reasoning as is?
 - **nibi-exposure** (2026-11-10): we just need to confirm and locate issue for now.
@@ -46,3 +42,5 @@ Procedure, from dfs-interview § Work the stack:
 - **culprit** (closed 2026-11-10): `culprit/README.md`
 - **lustre-reads** (closed 2026-11-10): `db-handling/lustre-reads/README.md`
 - **dbmem** (closed 2026-11-10): `db-handling/dbmem/README.md`
+- **metapathways** (closed 2026-11-10): `db-handling/metapathways/README.md`
+- **db-handling** (closed 2026-11-10): `db-handling/README.md`
