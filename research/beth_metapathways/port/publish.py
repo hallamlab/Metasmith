@@ -41,6 +41,7 @@ PORT = {
     "annotation-interproscan_results": ("annotation_orfs", "interproscan", None),
     "annotation-deeptfactor_results": ("annotation_orfs", "deeptfactor", None),
     "annotation-diamond_tcdb_results": ("annotation_orfs", "tcdb", None),
+    "annotation-dram_annotations": ("annotation_orfs", "dram", None),
     "annotation-rrna_gff": ("annotation_contigs", "barrnap_rrna", None),
     "annotation-trna_gff": ("annotation_contigs", "aragorn", None),
     "annotation-bakta_gff": ("annotation_contigs", "bakta_ncrna", "gff"),
@@ -48,12 +49,14 @@ PORT = {
     "annotation-antismash_json": ("annotation_contigs", "antismash", None),
     "annotation-amrfinderplus_results": ("amr", "amrfinderplus", None),
     "annotation-bacmet_diamond_results": ("amr", "bacmet", None),
+    "annotation-mobileog_diamond_results": ("mge", "mobileog", None),
     "annotation-megares_diamond_results": ("amr", "megares", None),
     "annotation-vfdb_diamond_results": ("amr", "vfdb", None),
     "annotation-pathofact_amr": ("amr", "pathofact_amr", None),
     "annotation-integronfinder_summary": ("mge", "integronfinder", None),
     "annotation-mobileelementfinder_results": ("mge", "mobileelementfinder", "tsv"),
     "annotation-virsorter2_scores": ("viral", "virsorter2_scores", None),
+    "annotation-dramv_annotations": ("viral", "dramv", None),
     "taxonomy-genomad_virus_summary": ("viral", "genomad_virus_summary", None),
     "annotation-pathway_table": ("models", "pathologic_pathways", None),
     "annotation-pgdb_archive": ("models", "pathologic_pgdb", None),
@@ -320,7 +323,7 @@ OPERA-MS, and the pooled parent with metaSPAdes and OPERA-MS. `samples.tsv` list
   `binning/mags.tsv` maps each to its original bin name.
 - Contig IDs are the assembler's. Port ORF IDs are Prodigal's `<contig>_<n>`. Products
   named `metapathways_*` come from the original pipeline and use its own ORF IDs.
-- `annotation_orfs/tcdb`, `amr/bacmet`, `amr/megares` and `amr/vfdb` are headerless BLAST6
+- `annotation_orfs/tcdb`, `amr/bacmet`, `amr/megares`, `amr/vfdb` and `mge/mobileog` are headerless BLAST6
   tables with columns qseqid, sseqid, pident, length, mismatch, gapopen, qstart, qend,
   sstart, send, evalue, bitscore, stitle.
 - `_logs/ledger.tsv` lists every file with its size, sha256 and the run it came from;

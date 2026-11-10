@@ -92,6 +92,9 @@ EXTRA_REFS = {
 DRAM_DB = Path("/scratch/phyberos/databases/dram")
 if DRAM_DB.exists():
     EXTRA_REFS["annotation::dram_db"] = DRAM_DB
+MOBILEOG_DB = Path("/scratch/phyberos/databases/mobileog/mobileog.dmnd")
+if MOBILEOG_DB.exists():
+    EXTRA_REFS["annotation::mobileog_diamond_db"] = MOBILEOG_DB
 
 TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
     "sequences.yml", "ref.yml", "annotation.yml", "taxonomy.yml", "binning.yml", "binning_local.yml",
@@ -270,6 +273,9 @@ GROUPS = {
                 lambda: [load_lib("logistics", keep={"downloadDramDB.py", "buildDramDB.py"})], False),
     "dram": (flat_targets("annotation::dram_annotations", "annotation::dramv_annotations",
                           "annotation::dramv_distill"), annotation_transforms, False),
+    "mobileog_db": (flat_targets("annotation::mobileog_diamond_db"),
+                    lambda: [load_lib("logistics", keep={"downloadMobileogDB.py"})], False),
+    "mobileog": (flat_targets("annotation::mobileog_diamond_results"), annotation_transforms, False),
 }
 
 
@@ -299,7 +305,7 @@ def cmd_run(args):
 
     targets, transforms, with_bins = GROUPS[args.group]
     # The DRAM database reads no sample input; the sample only names the run.
-    expected = {} if args.group == "dram_db" else {"sequences::assembly": 1}
+    expected = {} if args.group in ("dram_db", "mobileog_db") else {"sequences::assembly": 1}
     if with_bins:
         expected["binning_local::quality_bin_fasta"] = len(SAMPLES[args.sample][1])
 

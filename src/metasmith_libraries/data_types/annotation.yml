@@ -545,6 +545,23 @@ types:
       granularity: chunk
       ext: tsv
 
+  # --- Mobile genetic elements: mobileOG-db (DIAMOND) ---
+  mobileog_diamond_db:
+    properties:
+      _: DIAMOND-formatted mobileOG-db Beatrix 1.6 (MGE hallmark proteins; header carries major/minor category)
+      ext: dmnd
+  mobileog_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to mobileOG-db (mobileOG-pl thresholds)
+      Format: BLAST6
+      ext: tsv
+  mobileog_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND mobileOG-db BLAST6 (sibling of mobileog_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
   # --- Virulence: VFDB (DIAMOND) ---
   vfdb_diamond_db:
     properties:
