@@ -8,6 +8,7 @@ image   = model.AddRequirement(lib.GetType("env::dram.env"))
 sources = model.AddRequirement(lib.GetType("annotation::dram_sources"))
 db      = model.AddProduct(lib.GetType("annotation::dram_db"))
 
+DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec")
 SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
           "function_heatmap_form", "amg_database")
 
@@ -19,11 +20,15 @@ def protocol(context: ExecutionContext):
 
     rows = [line.rstrip("\n").split("\t") for line in open(isrc.local/"sources.tsv") if line.strip()]
     locs = []
+    described = {key: f"{isrc.container}/{name}" for key, name, _ in rows if key in DESCRIPTIONS}
     for key, name, _ in rows:
+        if key in DESCRIPTIONS:
+            continue
         # process_dbcan MOVES its input into --output_dir, and the input is a cached
         # product, so it is handed a copy. Every other database is only read.
         path = name if key == "dbcan" else f"{isrc.container}/{name}"
         locs.append(f"--{key}_loc {path} --select_db {key}")
+    described_in_db = {k: f"{idb.container}/{v.rsplit('/', 1)[1]}" for k, v in described.items()}
     dbcan = next(name for key, name, _ in rows if key == "dbcan")
 
     context.ExecWithEnv(
@@ -43,6 +48,12 @@ def protocol(context: ExecutionContext):
                 src=os.path.join(os.path.dirname(mag_annotator.__file__), 'CONFIG'); \
                 shutil.copyfile(src, '{idb.container}/DRAM.config')"
             cp {isrc.container}/{dbcan} {dbcan}
+            # prepare_databases takes no path for the dbCAN description files, and 1.5.0's
+            # set_database_locations dies on its own camper_tar_gz_loc flag, so they go
+            # straight into the config, where the description step reads them.
+            cp {' '.join(described.values())} {idb.container}/
+            python -c "import json; p='{idb.container}/DRAM.config'; c=json.load(open(p)); \
+                c['database_descriptions'].update({described_in_db!r}); json.dump(c, open(p, 'w'), indent=2)"
             # CAUTION the five sheets are NOT optional extras. prepare_databases narrows
             # its whole settings dict to `select_db`, and DRAM's distillation SHEETS are
             # members of that same dict -- so naming only the search databases drops
@@ -80,7 +91,7 @@ def protocol(context: ExecutionContext):
     descriptions = config.get("database_descriptions") or {}
     sheets = config.get("dram_sheets") or {}
     whole = all(located(search.get(k)) for k in ("kofam_hmm", "kofam_ko_list", "pfam", "dbcan")) \
-        and located(descriptions.get("pfam_hmm")) \
+        and all(located(descriptions.get(k)) for k in ("pfam_hmm", *DESCRIPTIONS)) \
         and all(located(sheets.get(k)) for k in SHEETS) \
         and located(config.get("description_db"))
     return ExecutionResult(

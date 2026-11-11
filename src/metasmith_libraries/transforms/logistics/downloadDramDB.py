@@ -7,6 +7,7 @@ out   = model.AddProduct(lib.GetType("annotation::dram_sources"))
 
 KOFAM  = "https://www.genome.jp/ftp/db/kofam"
 PFAM   = "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release"
+DBCAN  = "https://pro.unl.edu/dbCAN2/download/Databases/V11"
 SHEETS = "https://raw.githubusercontent.com/WrightonLabCSU/DRAM/master/data"
 
 # What DRAM-setup.py 1.5.0 fetches for the databases buildDramDB selects, keyed by its
@@ -20,6 +21,13 @@ SOURCES = {
     "pfam_hmm":              ("Pfam-A.hmm.dat.gz", f"{PFAM}/Pfam-A.hmm.dat.gz"),
     "dbcan":                 ("dbCAN-HMMdb-V11.txt",
                               "https://pro.unl.edu/dbCAN2/download/Databases/V11/dbCAN-HMMdb-V11.txt"),
+    # Read only by the description step. prepare_databases has no flag for either, so
+    # buildDramDB registers them with set_database_locations; without them DRAM dies at
+    # the very end of a 2 h build.
+    "dbcan_fam_activities":  ("CAZyDB.08062022.fam-activities.txt",
+                              f"{DBCAN}/CAZyDB.08062022.fam-activities.txt"),
+    "dbcan_subfam_ec":       ("CAZyDB.08062022.fam.subfam.ec.txt",
+                              f"{DBCAN}/CAZyDB.08062022.fam.subfam.ec.txt"),
     "genome_summary_form":   ("genome_summary_form.tsv", f"{SHEETS}/genome_summary_form.tsv"),
     "module_step_form":      ("module_step_form.tsv", f"{SHEETS}/module_step_form.tsv"),
     "etc_module_database":   ("etc_module_database.tsv", f"{SHEETS}/etc_module_database.tsv"),
@@ -49,6 +57,8 @@ def protocol(context: ExecutionContext):
     # A server that answers with a web page passes wget, so check what each file is.
     checks = [f"gzip -t {name}" for name in gz] + [
         f'[ "$(head -c 6 {dbcan})" = HMMER3 ] || {{ echo "{dbcan} is not an HMMER3 file" >&2; exit 1; }}',
+        *(f'[ "$(head -c 1 {sources[k][0]})" != "<" ] || {{ echo "{sources[k][0]} is a web page" >&2; exit 1; }}'
+          for k in ("dbcan_fam_activities", "dbcan_subfam_ec")),
         *(f"awk -F'\\t' 'NR==1 {{exit !(NF>1)}}' {name} || {{ echo \"{name} is not a TSV\" >&2; exit 1; }}"
           for name in tsv),
     ]
