@@ -94,6 +94,9 @@ DRAM_DB = Path("/scratch/phyberos/databases/dram")
 DRAM_LOCAL_SOURCES = {
     "dram_kofam_hmm_url": "/scratch/phyberos/fir_project_6004975/lib/kofamscan/profiles.tgz",
     "dram_kofam_ko_list_url": "/scratch/phyberos/fir_project_6004975/lib/kofamscan/ko_list.tsv",
+    # EBI serves Pfam-A.full (40 GB) at ~1 MB/s, so a resumable batch fetch stages it here first.
+    "dram_pfam_url": "/scratch/phyberos/databases/dram_sources/Pfam-A.full.gz",
+    "dram_pfam_hmm_url": "/scratch/phyberos/databases/dram_sources/Pfam-A.hmm.dat.gz",
 }
 if DRAM_DB.exists():
     EXTRA_REFS["annotation::dram_db"] = DRAM_DB
