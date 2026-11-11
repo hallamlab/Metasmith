@@ -90,6 +90,11 @@ EXTRA_REFS = {
     "ref::ezpred_model": PORT / "refs" / "ezpred_model" / "EZpred",
 }
 DRAM_DB = Path("/scratch/phyberos/databases/dram")
+# genome.jp serves KOfam at ~300 KB/s; the copy kofamscan already uses is the same release.
+DRAM_LOCAL_SOURCES = {
+    "dram_kofam_hmm_url": "/scratch/phyberos/fir_project_6004975/lib/kofamscan/profiles.tgz",
+    "dram_kofam_ko_list_url": "/scratch/phyberos/fir_project_6004975/lib/kofamscan/ko_list.tsv",
+}
 if DRAM_DB.exists():
     EXTRA_REFS["annotation::dram_db"] = DRAM_DB
 MOBILEOG_DB = Path("/scratch/phyberos/databases/mobileog/mobileog.dmnd")
@@ -334,7 +339,8 @@ def cmd_run(args):
         try:
             c.stage_and_run(smith, task, CACHE_DIR / args.sample, tag,
                             stage_only=args.stage_only, materialise=args.materialise,
-                            params=dict(executor=dict(queueSize=120 if parent else 200), process=dict(tries=3)),
+                            params=dict(executor=dict(queueSize=120 if parent else 200), process=dict(tries=3),
+                                        **(DRAM_LOCAL_SOURCES if args.group == "dram_db" else {})),
                             scaled=PARENT_SCALED if parent else SCALED, gpus=c.FIR_GPU,
                             on_exist="clear" if args.clear else "update", extra_config=extra_config)
             break

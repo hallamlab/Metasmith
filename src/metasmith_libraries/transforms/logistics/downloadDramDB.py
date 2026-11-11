@@ -28,6 +28,15 @@ SOURCES = {
 }
 
 
+def fetch(src, name, key):
+    """A source given as an absolute path is copied, gzipped when DRAM expects a .gz."""
+    if not src.startswith("/"):
+        return FetchCommand(src, name, label=f"DRAM {key}")
+    if name.endswith(".gz") and not src.endswith((".gz", ".tgz")):
+        return f"gzip -c {src} > {name}"
+    return f"cp {src} {name}"
+
+
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     # Run params, so a moved upstream file is fixed at launch rather than by a release.
@@ -45,7 +54,7 @@ def protocol(context: ExecutionContext):
     ]
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(url, name, label=f"DRAM {key}") for key, (name, url) in sources.items()),
+        *(fetch(url, name, key) for key, (name, url) in sources.items()),
         *checks,
         f"mkdir -p {iout.local}",
         f"mv {' '.join(name for name, _ in sources.values())} {iout.local}/",
