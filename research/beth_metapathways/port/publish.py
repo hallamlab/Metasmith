@@ -99,7 +99,7 @@ def run_keys():
         next(fh)
         for line in fh:
             S, k = line.rstrip("\n").split("\t")
-            keys[S] = k.split()
+            keys.setdefault(S, []).extend(k.split())
     return keys
 
 
@@ -326,14 +326,17 @@ OPERA-MS, and the pooled parent with metaSPAdes and OPERA-MS. `samples.tsv` list
 - `annotation_orfs/tcdb`, `amr/bacmet`, `amr/megares`, `amr/vfdb` and `mge/mobileog` are headerless BLAST6
   tables with columns qseqid, sseqid, pident, length, mismatch, gapopen, qstart, qend,
   sstart, send, evalue, bitscore, stitle.
+- `mge/mobileog` uses mobileOG-db Beatrix 1.6 with the mobileOG-pl cutoffs (e-value 1e-20,
+  90% identity, 90% query cover, up to 15 hits per ORF). Field 4 of the `|`-separated stitle
+  is the major category, such as `integration/excision` or `transfer`.
 - `_logs/ledger.tsv` lists every file with its size, sha256 and the run it came from;
   `_logs/runs/` holds each run's metadata, including tool container versions;
   `_logs/gaps.tsv` lists any assembly a product is missing for.
 
 ## Not yet included
 
-DRAM, DRAM-v and mobileOG-db annotations will be added to `annotation_orfs/dram`,
-`viral/dramv` and `mge/mobileog`. No metabolic models (CarveMe) were built. `mags.tsv` has
+DRAM and DRAM-v annotations will be added to `annotation_orfs/dram` and `viral/dramv`.
+No metabolic models (CarveMe) were built. `mags.tsv` has
 no completeness or contamination columns.
 
 ## Products
