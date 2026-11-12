@@ -220,7 +220,7 @@ class CacheStore:
             FROM entries
     """
 
-    def _row_to_entry(self, row) -> CacheEntry:
+    def _row_to_entry(self, row, tags=None) -> CacheEntry:
         return CacheEntry(
             key=row[0],
             transform_key=row[1],
@@ -233,7 +233,7 @@ class CacheStore:
             hit_count=row[8],
             tombstoned_at=row[9],
             run=row[10] or "",
-            tags=self.tags_of(row[0]),
+            tags=self.tags_of(row[0]) if tags is None else tags.get(row[0], ()),
         )
 
     def probe(self, key: bytes) -> CacheEntry | None:
@@ -314,8 +314,15 @@ class CacheStore:
         if not include_tombstoned:
             sql += " WHERE tombstoned_at IS NULL"
         sql += " ORDER BY last_hit_at DESC"
-        for row in self.conn.execute(sql).fetchall():
-            yield self._row_to_entry(row)
+        rows = self.conn.execute(sql).fetchall()
+        # One query for every tag: on Lustre each sqlite query costs ~45 ms, so a
+        # query per entry made one pool read take minutes.
+        tags: dict[bytes, list] = {}
+        for key, tag in self.conn.execute("SELECT key, tag FROM entry_tags ORDER BY tag"):
+            tags.setdefault(key, []).append(tag)
+        tags = {k: tuple(v) for k, v in tags.items()}
+        for row in rows:
+            yield self._row_to_entry(row, tags)
 
     def tags_of(self, key: bytes) -> tuple:
         return tuple(r[0] for r in self.conn.execute(
