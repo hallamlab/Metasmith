@@ -13,7 +13,8 @@ Profiles:
   jgi_pyrotags  One multiplexed JGI 454 pyrotag run, samples named in its .primers sheet
   sra_sag    Single cells fetched from SRA as <run>_<mate>.fastq.gz, named from an ENA run table (--runinfo)
   reads      Any other delivery: centre and sample type from the delivery folder name, samples and mates from
-             the read file names, md5 from the md5 lists the centre delivered (in --meta)
+             the read file names, md5 from the md5 lists the centre delivered (in --meta). In a FosmidEnds
+             delivery the sample is the library folder, and Sanger trace archives (.tgz) are the raw reads
 """
 import argparse
 import csv
@@ -357,9 +358,10 @@ def sra_sag_rows(listing, runinfo, dataset_id, centre):
 CENTRES = {"JGI": "JGI", "GenomeQuebec": "Genome Quebec", "GenomeSciencesCentre": "Genome Sciences Centre",
            "MicrobiomeInsights": "Microbiome Insights",
            "UCLAGenoSeq": "UCLA GenoSeq", "Hakai": "Hakai Institute",
-           "PharmaceuticalSciencesCentre": "UBC Pharmaceutical Sciences Sequencing Centre"}
+           "PharmaceuticalSciencesCentre": "UBC Pharmaceutical Sciences Sequencing Centre",
+           "SeqWell": "seqWell", "GeneWiz": "GENEWIZ", "LabCleaned": "Hallam Lab"}
 SAMPLE_TYPES = {"16S": "amplicon_16S", "18S": "amplicon_18S", "MetaG": "metagenome", "MetaT": "metatranscriptome",
-                "SAG": "SAG"}
+                "SAG": "SAG", "FosmidEnds": "fosmid", "FosmidFull": "fosmid", "FosmidPools": "fosmid"}
 READ_NAMES = (
     ("gq_illumina", re.compile(r"^((?:HI|MI)\.[^.]+)\.(\d+)\.(Index_\d+)\.(.+)_R([12])\.fastq\.gz$")),
     ("bcl2fastq", re.compile(r"^(.+?)_S\d+(?:_L(\d+))?_(R[12]|I[12])_001\.fastq\.gz$")),
@@ -426,6 +428,22 @@ def parse_read_name(rel):
     return fields
 
 
+def fosmid_end(rel, delivery):
+    name = rel.rsplit("/", 1)[-1]
+    if "FosmidEnds" not in delivery:
+        return None
+    if "LabCleaned" in delivery:
+        return "qc_filtered", re.sub(r"\.(fasta|fas|fa)(\.gz)?$", "", name), "ends cleaned by the lab"
+    library = rel.split("/", 1)[0] if "/" in rel else re.sub(r"\..*$", "", name)
+    if name.endswith(".tgz"):
+        return "raw", library, "Sanger traces (ab1) as delivered, listed in the filelist beside it"
+    if "trimmed" in name:
+        return ("raw" if "not_trimmed" in name else "qc_filtered"), library, "end sequences called by the centre"
+    if name.endswith((".fasta.gz", ".fasta")):
+        return "raw", library, "end sequences called by the centre"
+    return None
+
+
 def reads_rows(listing, meta, delivery, dataset_id, centre, sample_type, site, prefix, note):
     folder_centre, folder_type = delivery_fields(delivery)
     centre, sample_type = folder_centre or centre or "", folder_type or sample_type
@@ -435,9 +453,16 @@ def reads_rows(listing, meta, delivery, dataset_id, centre, sample_type, site, p
         if rel == "manifest.csv":
             continue
         name = rel.rsplit("/", 1)[-1]
+        md5_note = "md5 of the file as stored" if md5 else "md5 from the centre's md5 list" if name in md5s else "md5 not delivered"
         md5 = md5 or md5s.get(name, "")
         fields = file_fields(size, md5, rel)
-        notes = [n for n in (note, "md5 from the centre's md5 list" if md5 else "md5 not delivered") if n]
+        notes = [n for n in (note, md5_note) if n]
+        if end := fosmid_end(rel, delivery):
+            role, sample, what = end
+            yield base_row(dataset_id, centre, site, sample_id=sanitize(f"{prefix}_{sample}"), source_name=sample,
+                           library_id=sample, platform="sanger", role=role, sample_type=sample_type,
+                           notes="; ".join((what, *notes)), **fields)
+            continue
         if name.endswith(READ_EXT):
             p = parse_read_name(rel)
             filtered = re.search(r"\.anqd|\.filter-|\.filtered\.", name)
