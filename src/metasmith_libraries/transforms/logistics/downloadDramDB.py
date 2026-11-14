@@ -9,6 +9,7 @@ KOFAM  = "https://www.genome.jp/ftp/db/kofam"
 PFAM   = "https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release"
 DBCAN  = "https://pro.unl.edu/dbCAN2/download/Databases/V11"
 SHEETS = "https://raw.githubusercontent.com/WrightonLabCSU/DRAM/master/data"
+VOG    = "https://fileshare.lisc.univie.ac.at/vog/latest"
 
 # What DRAM-setup.py 1.5.0 fetches for the databases buildDramDB selects, keyed by its
 # --select_db names, over HTTPS. Its own dbCAN address, bcb.unl.edu/dbCAN2/download/,
@@ -21,9 +22,12 @@ SOURCES = {
     "pfam_hmm":              ("Pfam-A.hmm.dat.gz", f"{PFAM}/Pfam-A.hmm.dat.gz"),
     "dbcan":                 ("dbCAN-HMMdb-V11.txt",
                               "https://pro.unl.edu/dbCAN2/download/Databases/V11/dbCAN-HMMdb-V11.txt"),
-    # Read only by the description step. prepare_databases has no flag for either, so
-    # buildDramDB registers them with set_database_locations; without them DRAM dies at
-    # the very end of a 2 h build.
+    # DRAM-v distill reads vogdb_categories, so without VOGdb it fails after annotating.
+    "vogdb":                 ("vog.hmm.tar.gz", f"{VOG}/vog.hmm.tar.gz"),
+    # Read only by the description step, and prepare_databases has no working flag for
+    # these, so buildDramDB writes them into the config; without the dbCAN pair DRAM dies
+    # at the very end of a 2 h build.
+    "vog_annotations":       ("vog.annotations.tsv.gz", f"{VOG}/vog.annotations.tsv.gz"),
     "dbcan_fam_activities":  ("CAZyDB.08062022.fam-activities.txt",
                               f"{DBCAN}/CAZyDB.08062022.fam-activities.txt"),
     "dbcan_subfam_ec":       ("CAZyDB.08062022.fam.subfam.ec.txt",
@@ -54,6 +58,7 @@ def protocol(context: ExecutionContext):
     gz = [name for name, _ in sources.values() if name.endswith(".gz")]
     tsv = [name for name, _ in sources.values() if name.endswith(".tsv")]
     dbcan = sources["dbcan"][0]
+    vog = sources["vogdb"][0]
     # A server that answers with a web page passes wget, so check what each file is.
     checks = [f"gzip -t {name}" for name in gz] + [
         f'[ "$(head -c 6 {dbcan})" = HMMER3 ] || {{ echo "{dbcan} is not an HMMER3 file" >&2; exit 1; }}',
@@ -66,6 +71,10 @@ def protocol(context: ExecutionContext):
         "set -euo pipefail",
         *(fetch(url, name, key) for key, (name, url) in sources.items()),
         *checks,
+        # VOGdb now packs its HMMs under hmm/, and DRAM 1.5.0 globs VOG*.hmm at the top
+        # of the extracted tree, so it merges nothing and hmmpress fails on an empty file.
+        f"mkdir vog_flat && tar xzf {vog} --strip-components=1 -C vog_flat",
+        f"tar czf {vog} -C vog_flat . && rm -rf vog_flat",
         f"mkdir -p {iout.local}",
         f"mv {' '.join(name for name, _ in sources.values())} {iout.local}/",
     ])) != 0:

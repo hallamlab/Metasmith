@@ -8,7 +8,7 @@ image   = model.AddRequirement(lib.GetType("env::dram.env"))
 sources = model.AddRequirement(lib.GetType("annotation::dram_sources"))
 db      = model.AddProduct(lib.GetType("annotation::dram_db"))
 
-DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec")
+DESCRIPTIONS = ("dbcan_fam_activities", "dbcan_subfam_ec", "vog_annotations")
 SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
           "function_heatmap_form", "amg_database")
 
@@ -48,7 +48,8 @@ def protocol(context: ExecutionContext):
                 src=os.path.join(os.path.dirname(mag_annotator.__file__), 'CONFIG'); \
                 shutil.copyfile(src, '{idb.container}/DRAM.config')"
             cp {isrc.container}/{dbcan} {dbcan}
-            # prepare_databases takes no path for the dbCAN description files, and 1.5.0's
+            # prepare_databases takes no path for the description files (its --vog_annotations
+            # lacks the _loc suffix it keys inputs by, so it is dropped), and 1.5.0's
             # set_database_locations dies on its own camper_tar_gz_loc flag, so they go
             # straight into the config, where the description step reads them.
             cp {' '.join(described.values())} {idb.container}/
@@ -67,6 +68,8 @@ def protocol(context: ExecutionContext):
             # convertmsa's alignment database is only the way to pfam.mmspro, and it is
             # the bulk of the directory.
             rm -f {idb.container}/pfam.mmsmsa {idb.container}/pfam.mmsmsa.*
+            # process_vogdb merges these ~38k per-VOG files into one pressed HMM.
+            rm -rf {idb.container}/vogdb_hmms
             sed -i -e "s|\\"$(realpath {idb.container})/|\\"/db/|g" -e 's|"{idb.container}/|"/db/|g' \
                 {idb.container}/DRAM.config
         """,
@@ -90,7 +93,7 @@ def protocol(context: ExecutionContext):
     search = config.get("search_databases") or {}
     descriptions = config.get("database_descriptions") or {}
     sheets = config.get("dram_sheets") or {}
-    whole = all(located(search.get(k)) for k in ("kofam_hmm", "kofam_ko_list", "pfam", "dbcan")) \
+    whole = all(located(search.get(k)) for k in ("kofam_hmm", "kofam_ko_list", "pfam", "dbcan", "vogdb")) \
         and all(located(descriptions.get(k)) for k in ("pfam_hmm", *DESCRIPTIONS)) \
         and all(located(sheets.get(k)) for k in SHEETS) \
         and located(config.get("description_db"))
