@@ -12,6 +12,8 @@ Profiles:
   gq_454     Genome Quebec 454 deliveries: <region>.<run>.<MID|RL>.<label>.<key>.454Reads.{fna,qual} and sff
   jgi_pyrotags  One multiplexed JGI 454 pyrotag run, samples named in its .primers sheet
   sra_sag    Single cells fetched from SRA as <run>_<mate>.fastq.gz, named from an ENA run table (--runinfo)
+  reads      Any other delivery: centre and sample type from the delivery folder name, samples and mates from
+             the read file names, md5 from the md5 lists the centre delivered (in --meta)
 """
 import argparse
 import csv
@@ -51,9 +53,9 @@ def sak_sample_id(label, fallback):
     return f"sak_{date.replace('-', '_')}_{depth}m" if date else sanitize(fallback)
 
 
-def base_row(dataset_id, centre, **kw):
+def base_row(dataset_id, centre, site=SAKINAW, **kw):
     row = dict.fromkeys(COLUMNS, "")
-    row.update(dataset_id=dataset_id, centre=centre, site=SAKINAW)
+    row.update(dataset_id=dataset_id, centre=centre, site=site)
     row.update(kw)
     return row
 
@@ -152,14 +154,19 @@ def jgi_rows(listing, meta, dataset_id, centre, sample_type):
                 notes="; ".join(notes), **fields)
 
 
-def itag_rows(listing, meta, dataset_id, centre):
+def itag_sheet(meta):
+    """JGI iTag run sheets <run>.txt: sample name, tab, sequence-unit file path."""
     sheet = {}
-    for path in sorted(meta.glob("*.txt")):
-        run = path.stem
-        for line in path.read_text().splitlines():
+    for path in sorted(meta.glob("*.txt")) if meta else ():
+        for line in path.read_text(errors="replace").splitlines():
             if "\t" in line:
                 name, src = line.split("\t", 1)
-                sheet[src.rsplit("/", 1)[-1].removesuffix(".fastq.gz")] = (name.strip(), run)
+                sheet[src.strip().rsplit("/", 1)[-1].removesuffix(".fastq.gz")] = (name.strip(), path.stem)
+    return sheet
+
+
+def itag_rows(listing, meta, dataset_id, centre):
+    sheet = itag_sheet(meta)
     for size, md5, rel in listing:
         if rel == "manifest.csv":
             continue
@@ -347,18 +354,148 @@ def sra_sag_rows(listing, runinfo, dataset_id, centre):
             **file_fields(size, md5, rel))
 
 
+CENTRES = {"JGI": "JGI", "GenomeQuebec": "Genome Quebec", "GenomeSciencesCentre": "Genome Sciences Centre",
+           "MicrobiomeInsights": "Microbiome Insights",
+           "UCLAGenoSeq": "UCLA GenoSeq", "Hakai": "Hakai Institute",
+           "PharmaceuticalSciencesCentre": "UBC Pharmaceutical Sciences Sequencing Centre"}
+SAMPLE_TYPES = {"16S": "amplicon_16S", "18S": "amplicon_18S", "MetaG": "metagenome", "MetaT": "metatranscriptome",
+                "SAG": "SAG"}
+READ_NAMES = (
+    ("gq_illumina", re.compile(r"^((?:HI|MI)\.[^.]+)\.(\d+)\.(Index_\d+)\.(.+)_R([12])\.fastq\.gz$")),
+    ("bcl2fastq", re.compile(r"^(.+?)_S\d+(?:_L(\d+))?_(R[12]|I[12])_001\.fastq\.gz$")),
+    ("sra", re.compile(r"^((?:SRR|ERR|DRR)\d+)(?:_([12]))?\.fastq\.gz$")),
+    ("gsc_bam", re.compile(r"^(?:([A-Z]+\d+)_)?([A-Z0-9]{9})_(\d)(?:_([ACGTN]+))?\.bam$")),
+    ("mate", re.compile(r"^(.+?)[._]R?([12])(?:_001)?\.f(?:ast)?q(?:\.gz)?$")),
+)
+READ_EXT = (".fastq.gz", ".fq.gz", ".fastq", ".bam", ".sff", ".sff.gz", "454Reads.fna", "454Reads.qual",
+            "454Reads.fna.gz", "454Reads.qual.gz", "454Reads.fna.txt", "454Reads.qual.txt", "454RawData.tar.gz")
+JGI_ANALYSIS = re.compile(r"^[A-Z]{4}/")
+
+
+def delivery_fields(delivery):
+    parts = delivery.split("_")
+    centre = next((CENTRES[p] for p in parts if p in CENTRES), "")
+    return centre, next((SAMPLE_TYPES[p] for p in parts if p in SAMPLE_TYPES), "")
+
+
+def delivered_md5(meta):
+    found = {}
+    for path in (meta.rglob("*") if meta else ()):
+        if path.is_file() and (path.name.endswith(".md5") or "md5sum" in path.name):
+            for line in path.read_text(errors="replace").splitlines():
+                m = re.match(r"^([0-9a-f]{32})\s+\*?(\S.*)$", line.strip())
+                if m:
+                    found[m.group(2).rsplit("/", 1)[-1]] = m.group(1)
+    return found
+
+
+def parse_read_name(rel):
+    name = rel.rsplit("/", 1)[-1]
+    fields = {}
+    if m := READS_454.match(name + ("" if name.endswith(".gz") else ".gz")) or re.match(
+            r"^(\d+)\.(\d+)\.((?:MID|RL)\d+)\.(.+?)\.(?:GAC|TCA|TCAG)\.454Reads\.(fna|qual)\.txt$", name):
+        region, run, barcode, label = m.groups()[:4]
+        return dict(source=label, lane=region, run_id=run, library_id=barcode, platform="454", mate="single")
+    if m := SFF_454.match(name + ("" if name.endswith(".gz") else ".gz")):
+        return dict(source=m.group(3), run_id=m.group(1), library_id=m.group(2), platform="454", mate="single")
+    if name.endswith((".sff", ".sff.gz", "454RawData.tar.gz")):
+        return dict(source="", platform="454", mate="single")
+    for kind, pattern in READ_NAMES:
+        m = pattern.match(name)
+        if not m:
+            continue
+        if kind == "gq_illumina":
+            fields = dict(source=m.group(4), run_id=m.group(1), lane=m.group(2), library_id=m.group(3),
+                          mate=f"R{m.group(5)}")
+        elif kind == "bcl2fastq":
+            fields = dict(source=m.group(1), lane=m.group(2) or "", mate=m.group(3))
+        elif kind == "sra":
+            fields = dict(source=m.group(1), accession=f"SRA_run:{m.group(1)}", mate=f"R{m.group(2)}" if m.group(2) else "")
+        elif kind == "gsc_bam":
+            library = m.group(1) or next((p for p in rel.split("/")[:-1] if re.fullmatch(r"[A-Z]+\d+", p)), "")
+            fields = dict(source="_".join(p for p in (library, m.group(4)) if p), run_id=m.group(2), lane=m.group(3),
+                          library_id=library)
+        else:
+            fields = dict(source=m.group(1), mate=f"R{m.group(2)}")
+        break
+    if unit := SEQ_UNIT.search(name):
+        fields.setdefault("source", unit.group(0))
+        fields.update(seq_unit=unit.group(0), run_id=unit.group(1), lane=unit.group(2), mate="interleaved")
+    fields.setdefault("source", re.sub(r"\.(fastq|fq|bam)(\.gz)?$", "", name))
+    fields.setdefault("platform", "illumina")
+    return fields
+
+
+def reads_rows(listing, meta, delivery, dataset_id, centre, sample_type, site, prefix, note):
+    folder_centre, folder_type = delivery_fields(delivery)
+    centre, sample_type = folder_centre or centre or "", folder_type or sample_type
+    md5s = delivered_md5(meta)
+    sheet = itag_sheet(meta)
+    for size, md5, rel in listing:
+        if rel == "manifest.csv":
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        md5 = md5 or md5s.get(name, "")
+        fields = file_fields(size, md5, rel)
+        notes = [n for n in (note, "md5 from the centre's md5 list" if md5 else "md5 not delivered") if n]
+        if name.endswith(READ_EXT):
+            p = parse_read_name(rel)
+            filtered = re.search(r"\.anqd|\.filter-|\.filtered\.", name)
+            role = "qc_filtered" if filtered else "raw"
+            if "454Reads" in name:
+                fields["content"] = "qual" if ".qual" in name else "fasta"
+                fields["format"] = name.split("454Reads.", 1)[1]
+            elif name.endswith(".bam"):
+                fields["content"] = "bam"
+                notes.append("unaligned reads as delivered in BAM")
+            elif name.endswith("454RawData.tar.gz"):
+                notes.append("the centre's 454 delivery as one tarball")
+            mate = p.get("mate", "")
+            gz = name.endswith((".fastq.gz", ".fq.gz"))
+            msm = {"R1": "zipped_forward_short_reads", "R2": "zipped_reverse_short_reads",
+                   "interleaved": "short_reads_pe"}.get(mate, "") if gz else ""
+            sample = p.get("source", "")
+            if p.get("seq_unit") in sheet:
+                sample, run_sheet = sheet[p["seq_unit"]]
+                notes.append(f"sample named in JGI iTag sheet {run_sheet}")
+            yield base_row(
+                dataset_id, centre, site, sample_id=sanitize(f"{prefix}_{sample}") if sample else sanitize(prefix),
+                source_name=sample, mate=mate, lane=p.get("lane", ""), platform=p["platform"], role=role,
+                run_id=p.get("run_id", ""), library_id=p.get("library_id", ""), seq_unit=p.get("seq_unit", ""),
+                accession=p.get("accession", ""), sample_type=sample_type,
+                depth_m=(re.search(r"_(\d+)m(?:_|$)", sample) or [None, ""])[1], msm_type=msm,
+                notes="; ".join(notes), **fields)
+            continue
+        if name.endswith(".chaff.tar"):
+            role, what = "derived", "reads removed by JGI QC"
+        elif JGI_ANALYSIS.match(rel) and not name.startswith("README"):
+            role, what = "derived", "JGI iTag analysis"
+        elif "fastqc" in name.lower():
+            role, what = "report", "the centre's FastQC report"
+        else:
+            role, what = "report", ""
+        yield base_row(dataset_id, centre, site, sample_type=sample_type, role=role,
+                       notes="; ".join(n for n in (what, *notes) if n), **fields)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("profile", choices=("jgi", "jgi_itags", "gq_sag", "ont_tar", "gq_454", "jgi_pyrotags", "sra_sag"))
+    ap.add_argument("profile", choices=("jgi", "jgi_itags", "gq_sag", "ont_tar", "gq_454", "jgi_pyrotags", "sra_sag",
+                                        "reads"))
     ap.add_argument("listing", type=Path)
     ap.add_argument("dataset_id")
     ap.add_argument("--meta", type=Path, help="the entry's small text files, at their entry paths")
-    ap.add_argument("--centre", default="JGI")
-    ap.add_argument("--sample-type", default="metagenome")
+    ap.add_argument("--centre", help="default JGI; for reads only where the delivery folder names no centre")
+    ap.add_argument("--sample-type", help="default metagenome; for reads only where the folder names no type")
     ap.add_argument("--runinfo", type=Path, help="ENA read_run table, for sra_sag")
+    ap.add_argument("--site", default="", help="for reads")
+    ap.add_argument("--prefix", help="dataset word that starts every sample_id, for reads")
+    ap.add_argument("--note", default="", help="a note for every row, for reads")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     listing = read_listing(args.listing)
+    if args.profile != "reads":
+        args.centre, args.sample_type = args.centre or "JGI", args.sample_type or "metagenome"
     if args.profile == "jgi":
         rows = jgi_rows(listing, args.meta, args.dataset_id, args.centre, args.sample_type)
     elif args.profile == "jgi_itags":
@@ -369,6 +506,9 @@ def main():
         rows = jgi_pyrotag_rows(listing, args.meta, args.dataset_id, args.centre)
     elif args.profile == "sra_sag":
         rows = sra_sag_rows(listing, args.runinfo, args.dataset_id, args.centre)
+    elif args.profile == "reads":
+        rows = reads_rows(listing, args.meta, args.listing.stem, args.dataset_id, args.centre, args.sample_type or "",
+                          args.site, args.prefix, args.note)
     elif args.profile == "ont_tar":
         rows = ont_tar_rows(listing, args.dataset_id, args.centre)
     else:
