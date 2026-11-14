@@ -468,7 +468,7 @@ def reads_rows(listing, meta, delivery, dataset_id, centre, sample_type, site, p
             continue
         if name.endswith(READ_EXT):
             p = parse_read_name(rel)
-            filtered = re.search(r"\.anqd|\.filter-|\.filtered\.", name)
+            filtered = re.search(r"\.anq|\.filter-|\.filtered\.", name)
             role = "qc_filtered" if filtered else "raw"
             if "454Reads" in name:
                 fields["content"] = "qual" if ".qual" in name else "fasta"
