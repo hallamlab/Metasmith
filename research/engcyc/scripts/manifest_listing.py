@@ -156,13 +156,16 @@ def jgi_rows(listing, meta, dataset_id, centre, sample_type):
 
 
 def itag_sheet(meta):
-    """JGI iTag run sheets <run>.txt: sample name, tab, sequence-unit file path."""
+    """JGI iTag run sheets <run>.txt (sample name, tab, sequence-unit file path) and JGI <plate>_sample_data.csv tables."""
     sheet = {}
     for path in sorted(meta.glob("*.txt")) if meta else ():
         for line in path.read_text(errors="replace").splitlines():
             if "\t" in line:
                 name, src = line.split("\t", 1)
                 sheet[src.strip().rsplit("/", 1)[-1].removesuffix(".fastq.gz")] = (name.strip(), path.stem)
+    for path in sorted(meta.glob("*sample_data.csv")) if meta else ():
+        for r in csv.DictReader(open(path, encoding="utf-8-sig")):
+            sheet[r["metadata__sequence_unit_name"].removesuffix(".fastq.gz")] = (r["metadata__sample_name"], path.stem)
     return sheet
 
 
@@ -488,7 +491,7 @@ def reads_rows(listing, meta, delivery, dataset_id, centre, sample_type, site, p
                 source_name=sample, mate=mate, lane=p.get("lane", ""), platform=p["platform"], role=role,
                 run_id=p.get("run_id", ""), library_id=p.get("library_id", ""), seq_unit=p.get("seq_unit", ""),
                 accession=p.get("accession", ""), sample_type=sample_type,
-                depth_m=(re.search(r"_(\d+)m(?:_|$)", sample) or [None, ""])[1], msm_type=msm,
+                depth_m=(re.search(r"_(\d+)m(?:_|$)", sanitize(sample)) or [None, ""])[1], msm_type=msm,
                 notes="; ".join(notes), **fields)
             continue
         if name.endswith(".chaff.tar"):
