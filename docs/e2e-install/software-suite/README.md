@@ -16,3 +16,5 @@ Open. No decisions yet.
 - comebin needs 48 cpus and 192 GB; semibin2 needs 64 GB, growing with the square of the contig count.
 - Sockeye lab scratch `/scratch/st-shallam-1/` holds 9.39 of 10 TB and 2.6M of 10M files (9 Nov). About 600 GB are free, which is less than Metabuli's peak.
 - No journal records a per-database file count. Rokaiya's fir run hit Errno 122 at CollectResults, and the cause was never measured.
+- Only `metagenomics_from_paired_reads` goes from raw metagenomic short reads to MAGs (asked 2026-11-17). Five more templates sit downstream of an assembly: `annotation_palette_from_assembly`, `annotation_trio_from_assembly`, `binning_and_gpr_from_assembly` (needs long reads), `gpr_table_from_assembly` and `viromics_survey_from_assembly`. `isolate_assembly_from_long_reads` handles isolates, and `amplicon_asv_study_from_short_reads` handles 16S.
+- The library also holds light read-based profilers that no template uses: sylph (4 cpu / 64 GB), metaphlan, kraken2, ganon2.
