@@ -23,14 +23,10 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**test-env**. Its result: `test-env/README.md`.
+**software-suite**. Its result: `software-suite/README.md`.
 
 ## Stack
 
-- **test-env** (2026-11-16): I actually want this to run on cloud agents, but I guess what I really want is an environment that can be set up and torn down for each test. So I don't know where we could set that up. On an HPC cluster like Sockeye.
-  - [ ] What does 'cloud agents' mean here: the tester agent runs as a Claude cloud session, or metasmith's own agent runs on cloud compute?
-  - [ ] Where does the per-test environment live: a fresh dir under sockeye scratch, a Sockeye job allocation, or a cloud VM?
-  - [ ] Are we mocking compute? (user asked 2026-11-16)
 - **software-suite** (2026-11-10): before this, we need to decide on the software suite. in the future we can test with a subset of that suite.
   - [ ] Is the suite metagenomics_from_paired_reads, and what happens to metabuli (~1.4 TB DB vs ~600 GB free on sockeye scratch)?
   - [ ] Keep all three binners (comebin 48 cpu/192 GB) or trim to metabat2 + semibin2?
@@ -38,7 +34,11 @@ Procedure, from dfs-interview § Work the stack:
   - [ ] Do the reference DBs live in one shared pre-staged location the test reuses, or does each test run download its own?
   - [ ] Earlier: 'we dont want auto clean up of ws'. Now: 'set up and torn down for each test'. Which parts are torn down per test, and which persist (e.g. reference DBs, user-visible workspace)?
 - **e2e-test** (2026-11-10): whats needed is an agentic E2E test that is siloed from additional context (maybe haiku?) that just isntalls and runs metasmith on sockeye on 1 sample E2E. reporting issues and guesses until there are none.
+  - **watch-list** (2026-11-17): Please watch for things like container pulls and correct cache allocation. Should also report with a series of steps take so that we can check for any ambiguities or strangeness that was required.
+  - **scratch-blowup** (2026-11-17): a beta tester reports that as is, metasmith just fills up the scratch space without finishing (millions of files) so this is the first error to check for
 
 ## Parked
 
 ## Closed
+
+- **test-env** (closed 2026-11-17): `test-env/README.md`

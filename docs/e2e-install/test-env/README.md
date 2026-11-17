@@ -4,18 +4,21 @@
 
 > Once we know that, then we'll know if we can run a full actual metagenomics workflow, or we may have to use something like pan-genome analysis, since it doesn't require heavy compute. Are we mocking compute?
 
-## Status
+> fir is down rn, but can we try on nibi?
 
-Open. This topic sits ahead of software-suite: the environment decides whether the full metagenomics template fits, or a light one such as `pangenome_heatmap_from_assembly`.
+> lets try from scratch setup then -> need clean env somewhere (altair?) that installs locally and tries a run on nibi. Watch another naive agent try from only docs.
 
-## Proposal on the table (not yet answered)
+## Design
 
-- The tester is an isolated local session on altair: Haiku, with restricted tools and no workspace memory or journals. Claude cloud sessions cannot reach Sockeye, which needs a CCDB key plus Duo, through the ssh-arbiter.
-- The client side is a fresh conda env, standing in for a user's laptop.
-- On Sockeye, each test gets a fresh directory under `/scratch/st-shallam-1/<user>/msm_e2e/<run-id>`. The harness creates it, refuses to start if it exists, and deletes it at teardown.
-- The reference databases are one shared, persistent, pre-staged copy.
+- **Client.** A fresh, empty conda env on altair stands in for a new user's machine. The naive agent installs metasmith into it, following only the user docs.
+- **Cluster.** nibi, as user `phyberos`, account `def-shallam_cpu`. fir is down.
+- **Compute is real, not mocked.** Every Rokaiya failure was in the real environment, and only a real run reaches them.
+- **Teardown.** The test owns one fresh directory on nibi scratch, plus the client conda env. The ws-bloat topic decides the details.
+- **The awm ssh master carries the ssh login.** Open it with `ssh(verb=connect, host=nibi)` before the test starts, which fires one Duo push. The naive agent's `ssh nibi` then rides the master. The test does not cover first-login Duo setup.
 
-## Survey facts
+## nibi facts (2026-11-17)
 
-- Metasmith already has a virtual runtime (`tests/metasmith/e2e/virtual/`) and mock transforms (`tests/metasmith/e2e/docker/test_direct_run.py`). Both test the engine, not an install.
-- Every Rokaiya failure was a real-environment failure: ssh key and Duo, a missing `module load apptainer`, a cold pull, Slurm presets, file quota.
+- `/scratch/phyberos`: 174 GiB of 1024 GiB, 57K of 1,000K files. The file cap is per user, so a run that floods it also blocks every other phyberos job on nibi.
+- `/home`: 50 GiB and 500K files. An apptainer cache left at its default `~/.apptainer` lands here.
+- `$SCRATCH` already holds `refs/`, `bench/` and others from earlier work. The naive run must not reuse them.
+- Metabuli's 1.4 TB peak does not fit the 1 TB scratch quota.
