@@ -52,6 +52,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--work", type=Path, default=Path.home() / "engcyc_meta")
     ap.add_argument("--data", type=Path, default=Path(__file__).resolve().parents[3] / "data/engcyc")
+    ap.add_argument("--in-flight", nargs="*", default=[], help="transfer folders whose files have not landed yet")
     args = ap.parse_args()
 
     index = manifest_index(args.data)
@@ -59,9 +60,9 @@ def main():
     rows = []
     for plan in sorted(args.work.rglob("plan_final.tsv")):
         rel = plan.relative_to(args.work).parts
-        if rel[0] == "survey":
-            continue
         transfer = plan.parent.name
+        if rel[0] == "survey" or transfer in args.in_flight:
+            continue
         for p in read_tsv(plan):
             hit = index.get(p["dest_path"], {})
             rows.append({
