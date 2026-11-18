@@ -4,7 +4,13 @@
 
 ## Status
 
-Open. No decisions yet.
+Decided 2026-11-18:
+
+> then just drop metabuli's output targets
+
+- The suite is `metagenomics_from_paired_reads` without its one metabuli target, `taxonomy::metabuli` (line 47 of `src/metasmith_libraries/metagenomics_from_paired_reads.py`). Everything else stays as shipped, all three binners included. That puts the reference databases at about 190 GB.
+- A later subset test takes fewer targets from this same template.
+- Open: does the drop land in the shipped template (which needs a release to reach a conda install), or only in what the test run selects?
 
 ## Survey (2026-11-10)
 
