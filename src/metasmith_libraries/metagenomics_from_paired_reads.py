@@ -8,7 +8,7 @@ NAME = "metagenomics_from_paired_reads"
 DESCRIPTION = """
 Full metagenomics workflow from paired short reads: QC, assembly, ORF calling,
 functional annotation, three binners with quality filtering and dereplication,
-and contig-, bin- and SSU-level taxonomy.
+and bin- and SSU-level taxonomy.
 """
 
 # The three binners fan out per-binner checkm and gtdbtk instances. Each entry
@@ -32,8 +32,7 @@ and contig-, bin- and SSU-level taxonomy.
 # target set is 4 min 6 s and 16.7 GB; pinned, 1.6 s and 0.11 GB. The earlier
 # ~190 s / 6 GB figure was the python solver and no longer holds. Measurements in
 # data/metasmith/plans/08-where-the-unpinned-solve-goes.md.
-_MB, _SB, _CB = 13, 14, 15
-TARGETS = [
+_BASE = [
     "sequences::megahit_assembly",
     "sequences::read_qc_stats",
     {"type": "sequences::orfs", "parents": [0]},
@@ -44,15 +43,17 @@ TARGETS = [
     {"type": "annotation::diamond_uniref50_descriptions", "parents": [0]},
     {"type": "annotation::kofamscan_results", "parents": [0]},
     {"type": "annotation::kofamscan_descriptions", "parents": [0]},
-    {"type": "taxonomy::metabuli", "parents": [0]},
     "taxonomy::phyloflash_summary",
     {"type": "binning_local::cluster_table", "parents": [0]},
     {"type": "sequences::metabat2_bin_fasta", "parents": [0]},
     {"type": "sequences::semibin2_bin_fasta", "parents": [0]},
     {"type": "sequences::comebin_bin_fasta", "parents": [0]},
-] + [
+]
+_BIN_FASTA = [i for i, t in enumerate(_BASE)
+              if isinstance(t, dict) and t["type"].endswith("_bin_fasta")]
+TARGETS = _BASE + [
     {"type": t, "parents": [b]}
-    for b in (_MB, _SB, _CB)
+    for b in _BIN_FASTA
     for t in ("taxonomy::checkm_stats", "taxonomy::gtdbtk")
 ] + [
     {"type": "binning::metabat2_contig_to_bin_table", "parents": [0]},
