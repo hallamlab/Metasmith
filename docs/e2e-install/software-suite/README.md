@@ -10,7 +10,8 @@ Decided 2026-11-18:
 
 - The suite is `metagenomics_from_paired_reads` without its one metabuli target, `taxonomy::metabuli` (line 47 of `src/metasmith_libraries/metagenomics_from_paired_reads.py`). Everything else stays as shipped, all three binners included. That puts the reference databases at about 190 GB.
 - A later subset test takes fewer targets from this same template.
-- Open: does the drop land in the shipped template (which needs a release to reach a conda install), or only in what the test run selects?
+- The drop lands in both places (2026-11-18, "ok both"). The shipped template lost the target in commit 17f0232a and reaches users with the next release; its plan goes from 34 to 31 steps. Run 1, on the published 0.25.1, has the naive agent deselect `taxonomy::metabuli`, which also tests whether the docs explain deselecting a target.
+- The template used to pin each per-binner checkm and gtdbtk target to its binner by hard-coded list position. Removing metabuli shifted those positions and the solve collapsed to 0 steps. The template now finds the binners by type.
 
 ## Survey (2026-11-10)
 

@@ -23,18 +23,16 @@ Procedure, from dfs-interview § Work the stack:
 
 ## Current topic
 
-**software-suite**. Its result: `software-suite/README.md`.
+**ws-bloat**. Its result: `ws-bloat/README.md`.
 
 ## Stack
 
-- **software-suite** (2026-11-10): before this, we need to decide on the software suite. in the future we can test with a subset of that suite.
-  - [x] Is the suite metagenomics_from_paired_reads, and what happens to metabuli (~1.4 TB DB vs ~600 GB free on sockeye scratch)? (answered 2026-11-18)
-  - [x] Keep all three binners (comebin 48 cpu/192 GB) or trim to metabat2 + semibin2? (answered 2026-11-18)
-  - [ ] Drop metabuli in the shipped template (needs a release before a conda install sees it), or only in the test run's target selection?
 - **ws-bloat** (2026-11-10): on sockeye, the fs should be limited somewhow as well .we dont want auto clean up of ws, but we do need some mechanism to prevent it getting bloated. error  on test start if ws exists?
   - [ ] Do the reference DBs live in one shared pre-staged location the test reuses, or does each test run download its own?
   - [ ] Earlier: 'we dont want auto clean up of ws'. Now: 'set up and torn down for each test'. Which parts are torn down per test, and which persist (e.g. reference DBs, user-visible workspace)?
+  - [ ] Test root $SCRATCH/msm_e2e/ on nibi: refuse to start if any run dir exists there; no auto-clean; watcher kills the run past 600K files or 600 GB, logging a per-directory breakdown. OK?
 - **e2e-test** (2026-11-10): whats needed is an agentic E2E test that is siloed from additional context (maybe haiku?) that just isntalls and runs metasmith on sockeye on 1 sample E2E. reporting issues and guesses until there are none.
+  - [ ] Which one sample: a user-supplied paired-end metagenome (e.g. the beta tester's), or a small public SRA metagenome given only as an accession?
   - **watch-list** (2026-11-17): Please watch for things like container pulls and correct cache allocation. Should also report with a series of steps take so that we can check for any ambiguities or strangeness that was required.
   - **scratch-blowup** (2026-11-17): a beta tester reports that as is, metasmith just fills up the scratch space without finishing (millions of files) so this is the first error to check for
 
@@ -43,3 +41,4 @@ Procedure, from dfs-interview § Work the stack:
 ## Closed
 
 - **test-env** (closed 2026-11-17): `test-env/README.md`
+- **software-suite** (closed 2026-11-18): `software-suite/README.md`
