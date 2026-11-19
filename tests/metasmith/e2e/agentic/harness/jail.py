@@ -75,9 +75,12 @@ def build_bwrap_argv(
     unshare_user: bool = False,
     chdir: str | None = None,
     tmp_bind: BindSpec | None = None,
+    keep_children: bool = False,
 ) -> list[str]:
-    argv = [bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
-            "--unshare-uts", "--unshare-cgroup-try"]
+    # keep_children shares the host pid namespace, so a process the agent detaches
+    # outlives the jail. The caller must then own cleanup, e.g. through a cgroup.
+    argv = [bwrap] + ([] if keep_children else ["--die-with-parent", "--unshare-pid"])
+    argv += ["--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try"]
     if unshare_user:
         argv.append("--unshare-user-try")
     argv += ["--proc", "/proc", "--dev", "/dev"]

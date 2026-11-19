@@ -5,8 +5,6 @@ import argparse
 import csv
 import datetime as dt
 import json
-import os
-import signal
 import subprocess
 import sys
 import time
@@ -68,26 +66,12 @@ def sample(remote_dir: str, min_dir_files: int) -> list[dict]:
     return rows
 
 
-def kill_local(pid: int) -> str:
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return f"harness {pid} already gone"
-    for _ in range(20):
-        time.sleep(0.5)
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return f"harness {pid} terminated"
-    os.kill(pid, signal.SIGKILL)
-    return f"harness {pid} killed"
-
-
 def stop_run(remote_dir: str, local_dir: Path, reason: str, total: dict) -> None:
     actions = ssh_script(STOP, remote_dir, timeout=120).splitlines()
-    pid_file = local_dir / "harness.pid"
-    if pid_file.exists():
-        actions.append(kill_local(int(pid_file.read_text())))
+    # The runner and every process its agent detached share one systemd scope.
+    unit = f"{local_dir.name.replace('run-', 'msm-e2e-run-')}.scope"
+    r = subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, text=True)
+    actions.append(f"systemctl stop {unit}: exit {r.returncode} {r.stderr.strip()}")
     record = dict(ts=dt.datetime.now().astimezone().isoformat(timespec="seconds"),
                   reason=reason, total=total, actions=actions)
     (local_dir / "STOP.json").write_text(json.dumps(record, indent=2))

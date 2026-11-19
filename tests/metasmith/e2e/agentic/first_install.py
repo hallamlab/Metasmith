@@ -21,8 +21,26 @@ HOST = "nibi"
 ACCOUNT = "def-shallam_cpu"
 REMOTE_ROOT = "/scratch/phyberos/msm_e2e"
 SAMPLE = "SRR9658108"
+PLAYWRIGHT_MCP = Path.home() / "msm_e2e" / "tools" / "playwright-mcp"
+CHROMIUM = Path.home() / ".cache" / "ms-playwright" / "chromium-1248" / "chrome-linux64" / "chrome"
 
 GOALS = {
+    "gui": (
+        "You are a new metasmith user. Using only the docs in ./docs, install metasmith and start its web GUI. "
+        "Then use the GUI the way a person would, through your browser tools, which drive a real browser. "
+        "Do not call the GUI's HTTP API with curl and do not write Python for these steps. "
+        "Through the GUI, deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
+        "with its home under {remote}. Run the metagenomics_from_paired_reads workflow "
+        "without its metabuli target on SRA run {sample}. Collect the results back to ./results."
+    ),
+    "api": (
+        "You are a new metasmith user. Using only the docs in ./docs, install metasmith and use its Python API "
+        "as the docs describe. Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
+        "with its home under {remote}. Run the metagenomics_from_paired_reads workflow "
+        "without its metabuli target on SRA run {sample}. Collect the results back to ./results. "
+        "For each API call you make, note in STEPS.md whether the docs made clear what it does, "
+        "and whether it did what the docs said."
+    ),
     "full": (
         "You are a new metasmith user. Install metasmith using only the docs in ./docs. "
         "Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
@@ -41,8 +59,8 @@ PROTOCOL = """
 - Your working directory is {sandbox}; it is your computer's home for this task. Conda already keeps its environments and package cache inside it. Do not read files outside it, apart from the cluster through `ssh {host}`.
 - You may be stopped and restarted. Each time you start, first read PROGRESS.md, STEPS.md and the tail of any log you left. Do not repeat a step that already failed the same way. Keep PROGRESS.md short and current: what is done, what is running (job IDs, PIDs), what you tried that failed, what is next.
 - Before each action, append to STEPS.md a numbered entry with: the command, and the doc file and section that told you to run it (or "no doc: guess"). After the action, append its outcome. If the docs were unclear, if you had to guess, or if you had to work around a problem, say so in that entry and label it AMBIGUITY, GUESS or WORKAROUND. Label a failure ERROR.
-- Your session ends when your turn ends, and every process you started on this machine ends with it. Run a long local command in the foreground; it may take up to 10 minutes per call.
-- When a cluster job is still running, check it, then `sleep 600` and check again rather than ending your turn early.
+- One shell command may run for up to 10 minutes. Start anything longer, and any server, detached: `nohup setsid <command> > <log> 2>&1 &`. A detached process keeps running after your session ends. Write its PID and log path in PROGRESS.md.
+- While something long runs, check it, then `sleep 540` and check again rather than ending your turn early.
 - When you are done or stuck, write REPORT.md: what you achieved, then one line per issue, each labelled ERROR, AMBIGUITY, GUESS or WORKAROUND, naming the doc section involved.
 - Then write CONTROL.json: `{{"action": "done"}}` if the goal is met, or `{{"action": "give_up", "reason": "<one line>"}}` if you cannot go further.
 """
@@ -61,6 +79,8 @@ def remote_exists(path: str) -> bool:
 
 
 def ssh_config_text(sandbox: Path) -> tuple[str, str]:
+    # The block lands in the sandbox's ~/.ssh/config, which the GUI edits. ssh itself
+    # reads the passwd home, so the real path holds only an Include of that file.
     resolved = subprocess.run(["ssh", "-G", HOST], capture_output=True, text=True, check=True).stdout
     opts = dict(line.split(" ", 1) for line in resolved.splitlines() if " " in line)
     return (
@@ -89,15 +109,20 @@ def build_sandbox(sandbox: Path, docs: Path) -> tuple[list[jail.BindSpec], dict[
     guard.write_text("#!/bin/sh\necho 'ssh: no connection to the cluster; ask the operator to reconnect' >&2\nexit 1\n")
     guard.chmod(0o755)
     ssh_conf, control_path = ssh_config_text(sandbox)
-    (sandbox / ".ssh_config").write_text(ssh_conf)
+    user_ssh = home / ".ssh" / "config"
+    user_ssh.parent.mkdir(mode=0o700)
+    user_ssh.write_text(ssh_conf)
+    user_ssh.chmod(0o600)
+    (sandbox / ".ssh_include").write_text(f"Include {user_ssh}\n")
 
     boot = ensure_bootstrap_env()
     claude_dir = Path(shutil.which("claude")).resolve().parent
     real_home = Path(os.path.expanduser("~"))
-    binds = jail.default_binds(sandbox, home, extra_ro=[boot, claude_dir])
+    node_dir = Path(shutil.which("node", path=f"{real_home}/.local/bin:{os.environ['PATH']}")).resolve().parents[1]
+    binds = jail.default_binds(sandbox, home, extra_ro=[boot, claude_dir, node_dir, PLAYWRIGHT_MCP, CHROMIUM.parents[1]])
     binds += [
         # ssh reads the passwd home, not $HOME, so the config lands at the real path.
-        jail.BindSpec(str(sandbox / ".ssh_config"), str(real_home / ".ssh" / "config"), "ro"),
+        jail.BindSpec(str(sandbox / ".ssh_include"), str(real_home / ".ssh" / "config"), "ro"),
         jail.BindSpec(str(Path(control_path).parent), str(Path(control_path).parent), "ro"),
     ]
     env = {
@@ -113,11 +138,22 @@ def build_sandbox(sandbox: Path, docs: Path) -> tuple[list[jail.BindSpec], dict[
     return binds, env
 
 
+def write_browser_mcp(sandbox: Path, path: Path) -> None:
+    node = shutil.which("node", path=f"{Path.home()}/.local/bin:{os.environ['PATH']}")
+    server = {
+        "command": str(Path(node).resolve()),
+        "args": [str(PLAYWRIGHT_MCP / "node_modules" / "@playwright" / "mcp" / "cli.js"),
+                 "--headless", "--isolated", "--no-sandbox",
+                 "--executable-path", str(CHROMIUM), "--output-dir", str(sandbox / "browser")],
+    }
+    path.write_text(json.dumps({"mcpServers": {"browser": server}}, indent=2))
+
+
 def write_jailed_claude(sandbox: Path, wrapper: Path, binds, env) -> None:
     inner = ["env", "-i", *(f"{k}={v}" for k, v in env.items()), str(Path(shutil.which("claude")).resolve())]
     argv = jail.build_bwrap_argv(
         inner, binds=binds, bwrap=jail.require_bwrap(), chdir=str(sandbox),
-        tmp_bind=jail.BindSpec(str(sandbox / "tmp"), "/tmp", "rw"),
+        tmp_bind=jail.BindSpec(str(sandbox / "tmp"), "/tmp", "rw"), keep_children=True,
     )
     wrapper.write_text("#!/bin/sh\nexec " + shlex.join(argv) + ' "$@"\n')
     wrapper.chmod(0o755)
@@ -126,21 +162,30 @@ def write_jailed_claude(sandbox: Path, wrapper: Path, binds, env) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run", type=int, required=True, help="run number N; names run-N locally and on the cluster")
-    ap.add_argument("--goal", choices=sorted(GOALS), default="full")
+    ap.add_argument("--goal", choices=sorted(GOALS), default="gui")
     ap.add_argument("--local-root", type=Path, default=Path.home() / "msm_e2e")
     ap.add_argument("--docs", type=Path, default=DOCS)
     ap.add_argument("--model", default="haiku")
-    ap.add_argument("--max-iters", type=int, default=60)
-    ap.add_argument("--iter-timeout", type=float, default=2700.0)
+    ap.add_argument("--max-iters", type=int, default=20)
+    ap.add_argument("--iter-timeout", type=float, default=4 * 3600.0)
     ap.add_argument("--max-tokens", type=int, default=60_000_000)
-    ap.add_argument("--usd-per-iter", type=float, default=3.0)
+    ap.add_argument("--usd-per-iter", type=float, default=10.0)
     args = ap.parse_args(argv)
+
+    # The agent's detached processes outlive each pass, so the whole run lives in one
+    # systemd scope: stopping the scope is the only cleanup that reaches all of them.
+    unit = f"msm-e2e-run-{args.run}"
+    if os.environ.get("MSM_E2E_SCOPE") != unit:
+        os.environ["MSM_E2E_SCOPE"] = unit
+        os.execvp("systemd-run", ["systemd-run", "--user", "--scope", "-q", f"--unit={unit}",
+                                  sys.executable, "-m", "tests.metasmith.e2e.agentic.first_install",
+                                  *(argv if argv is not None else sys.argv[1:])])
 
     run_dir = args.local_root / f"run-{args.run}"
     remote = f"{REMOTE_ROOT}/run-{args.run}"
     if run_dir.exists():
         raise SystemExit(f"{run_dir} exists; read and delete it before starting run {args.run}")
-    if args.goal == "full" and remote_exists(remote):
+    if args.goal != "dry" and remote_exists(remote):
         raise SystemExit(f"{HOST}:{remote} exists; read and delete it before starting run {args.run}")
 
     sandbox = run_dir / "sandbox"
@@ -150,8 +195,12 @@ def main(argv: list[str] | None = None) -> int:
     (run_dir / "harness.pid").write_text(str(os.getpid()))
 
     # --strict-mcp-config with no --mcp-config drops the account's claude.ai connectors.
+    mcp = ["--strict-mcp-config"]
+    if args.goal == "gui":
+        write_browser_mcp(sandbox, sandbox / ".browser-mcp.json")
+        mcp += ["--mcp-config", str(sandbox / ".browser-mcp.json")]
     driver = ClaudeDriver(model=args.model, bin=str(wrapper), jail=False, timeout_s=args.iter_timeout,
-                          extra_argv=["--strict-mcp-config"])
+                          extra_argv=mcp)
     result = ralph_loop(
         driver=driver,
         prompt=build_prompt(args.goal, sandbox, remote),
@@ -168,7 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         "exit_codes": [r.exit_code for r in result.iter_results],
     }
     (run_dir / "result.json").write_text(json.dumps(summary, indent=2))
-    print(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2), flush=True)
+    subprocess.run(["systemctl", "--user", "stop", f"{unit}.scope"])
     return 0 if result.succeeded else 1
 
 

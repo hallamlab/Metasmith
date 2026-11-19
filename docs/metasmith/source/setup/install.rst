@@ -154,14 +154,17 @@ This gives you a *setuid* Apptainer, which metasmith deploys as a single ``.sif`
     - **Repoint Apptainer at a working** ``mksquashfs`` (admin): set
       ``mksquashfs path = /usr/bin/mksquashfs`` in ``/etc/apptainer/apptainer.conf`` when the
       system ``squashfs-tools`` predates 4.7, or downgrade Apptainer to the 1.4.x line.
-    - **Skip squashfs entirely**: deploy with :python:`smith.Deploy(rootfs="sandbox")`, which
+    - **Skip squashfs entirely**: only when a deploy fails with the ``malloc(): corrupted``
+      message above, deploy with :python:`smith.Deploy(rootfs="sandbox")`, which
       builds the unpacked rootfs straight from the registry and never calls ``mksquashfs``;
       or build the ``.sif`` on another host and copy it over.
 
     :python:`smith.Deploy()` builds the image on the target host and does not expose
     ``--mksquashfs-args`` directly, but it *does* retry a failed pull with ``-no-fragments``
     before falling back to the unpacked rootfs — so an affected host usually needs no
-    intervention at all. ``rootfs="sandbox"`` skips straight to the fallback when it does.
+    intervention at all. A slow or timed-out deploy is a different problem: see the
+    ``TMPDIR`` warning in :doc:`deployment`. A sandbox rootfs is many loose files on the
+    cluster filesystem, so it is slower to build and counts heavily against a file quota.
 
 .. button-link:: https://apptainer.org/docs/admin/main/installation.html
     :color: primary

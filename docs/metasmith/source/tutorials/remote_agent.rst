@@ -135,20 +135,12 @@ the SSH preflight confirms this). For install channels see the
     sandbox at run time. No action is required from you — this is just
     so the disk-usage figures are not a surprise.
 
-If the remote is space-constrained on :bash:`$HOME` (common on HPC
-logins), point Apptainer's cache and temp at scratch via
-:python:`setup_commands` — Metasmith will run these in the shell that
-hosts the agent on every invocation:
-
-.. code-block:: python
-    :linenos:
-
-    setup_commands=[
-        'export TMPDIR="/home/$USER/tmp"',
-        'mkdir -p $TMPDIR',
-        'export APPTAINER_CACHEDIR="$TMPDIR"',
-        'export APPTAINER_TMPDIR="$TMPDIR"',
-    ]
+Metasmith keeps the images and Apptainer's download cache under the agent
+home, in :bash:`container_images/`. Put the agent home on scratch, not on a
+space-constrained :bash:`$HOME`. On a cluster that uses environment modules,
+load Apptainer through :python:`setup_commands`. Metasmith runs these in the
+shell that hosts the agent on every invocation. Leave :bash:`TMPDIR` unset, so
+Apptainer unpacks images in the node's fast local :bash:`/tmp`.
 
 Write the deploy script
 ============================================================
@@ -165,17 +157,14 @@ Save the following as :bash:`deploy_remote.py` on your laptop. Adjust the
 
     agent_home = Source.FromSsh(
         host="my_remote",                # must match an SSH config Host entry
-        path="/home/myusername/msm_home",  # absolute path on the remote
+        path="/scratch/myusername/msm_home",  # absolute path on the remote, on scratch
     )
 
     smith = Agent(
         home=agent_home,
         runtime=Runtime.APPTAINER,
         setup_commands=[
-            'export TMPDIR="/home/$USER/tmp"',
-            'mkdir -p $TMPDIR',
-            'export APPTAINER_CACHEDIR="$TMPDIR"',
-            'export APPTAINER_TMPDIR="$TMPDIR"',
+            'module load apptainer',     # your cluster's module name may differ
         ],
     )
 

@@ -275,7 +275,10 @@ class Environment:
         done_sandbox = f'{{ [ -d {sandbox} ] && [ -e {sandbox_stamp} ]; }}'
         adopt_sif = f'{{ [ -e {sif} ] && {verify_sif}; }}'
         adopt_sandbox = f'{{ [ -d {sandbox} ] && {verify_sandbox}; }}'
-        prefix = f'mkdir -p "{sif.parent}"; ' + (
+        # apptainer keeps its own blob and OCI caches in ~/.apptainer unless told
+        # otherwise, which on a cluster is the small home quota. Pin them beside
+        # the images metasmith stores.
+        prefix = f'export APPTAINER_CACHEDIR="{sif.parent}"; mkdir -p "{sif.parent}"; ' + (
             f'rm -rf {sandbox} {sif} {sandbox_stamp} {sif_stamp}; ' if force else ''
         )
         match self.rootfs:
