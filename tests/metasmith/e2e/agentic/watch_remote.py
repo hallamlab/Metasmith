@@ -68,14 +68,14 @@ def sample(remote_dir: str, min_dir_files: int) -> list[dict]:
 
 def stop_run(remote_dir: str, local_dir: Path, reason: str, total: dict) -> None:
     actions = ssh_script(STOP, remote_dir, timeout=120).splitlines()
-    # The runner and every process its agent detached share one systemd scope.
+    # The runner, this watcher and every process the agent detached share one
+    # systemd scope, so the record is written before the stop that ends us.
     unit = f"{local_dir.name.replace('run-', 'msm-e2e-run-')}.scope"
-    r = subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, text=True)
-    actions.append(f"systemctl stop {unit}: exit {r.returncode} {r.stderr.strip()}")
     record = dict(ts=dt.datetime.now().astimezone().isoformat(timespec="seconds"),
-                  reason=reason, total=total, actions=actions)
+                  reason=reason, total=total, actions=actions + [f"systemctl stop {unit}"])
     (local_dir / "STOP.json").write_text(json.dumps(record, indent=2))
     print(json.dumps(record), flush=True)
+    subprocess.run(["systemctl", "--user", "stop", unit])
 
 
 def main(argv: list[str] | None = None) -> int:

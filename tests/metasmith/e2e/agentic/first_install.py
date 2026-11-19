@@ -20,7 +20,9 @@ DOCS = REPO / "docs" / "metasmith" / "source"
 HOST = "nibi"
 ACCOUNT = "def-shallam_cpu"
 REMOTE_ROOT = "/scratch/phyberos/msm_e2e"
-SAMPLE = "SRR9658108"
+# SRA input cannot plan the full template yet (run-2 issue 1), so the user is given ENA's FASTQ pair.
+_ENA = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR965/008/SRR9658108/SRR9658108"
+SAMPLE = f"the paired reads of SRA run SRR9658108, which ENA serves as {_ENA}_1.fastq.gz and {_ENA}_2.fastq.gz"
 PLAYWRIGHT_MCP = Path.home() / "msm_e2e" / "tools" / "playwright-mcp"
 CHROMIUM = Path.home() / ".cache" / "ms-playwright" / "chromium-1248" / "chrome-linux64" / "chrome"
 
@@ -31,13 +33,13 @@ GOALS = {
         "Do not call the GUI's HTTP API with curl and do not write Python for these steps. "
         "Through the GUI, deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
         "with its home under {remote}. Run the metagenomics_from_paired_reads workflow "
-        "without its metabuli target on SRA run {sample}. Collect the results back to ./results."
+        "without its metabuli target on {sample}. Collect the results back to ./results."
     ),
     "api": (
         "You are a new metasmith user. Using only the docs in ./docs, install metasmith and use its Python API "
         "as the docs describe. Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
         "with its home under {remote}. Run the metagenomics_from_paired_reads workflow "
-        "without its metabuli target on SRA run {sample}. Collect the results back to ./results. "
+        "without its metabuli target on {sample}. Collect the results back to ./results. "
         "For each API call you make, note in STEPS.md whether the docs made clear what it does, "
         "and whether it did what the docs said."
     ),
@@ -45,7 +47,7 @@ GOALS = {
         "You are a new metasmith user. Install metasmith using only the docs in ./docs. "
         "Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
         "with its home under {remote}. Run the metagenomics_from_paired_reads workflow "
-        "without its metabuli target on SRA run {sample}. Collect the results back to ./results."
+        "without its metabuli target on {sample}. Collect the results back to ./results."
     ),
     "dry": (
         "You are a new metasmith user. Using only the docs in ./docs, install metasmith "
@@ -193,12 +195,17 @@ def main(argv: list[str] | None = None) -> int:
     wrapper = run_dir / "jailed-claude"
     write_jailed_claude(sandbox, wrapper, binds, env)
     (run_dir / "harness.pid").write_text(str(os.getpid()))
+    if args.goal != "dry":
+        with (run_dir / "watch.out").open("w") as log:
+            subprocess.Popen([sys.executable, "-m", "tests.metasmith.e2e.agentic.watch_remote", "--run", str(args.run)],
+                             stdout=log, stderr=subprocess.STDOUT)
 
     # --strict-mcp-config with no --mcp-config drops the account's claude.ai connectors.
+    # --mcp-config is variadic, so a named flag must follow it before the prompt.
     mcp = ["--strict-mcp-config"]
     if args.goal == "gui":
         write_browser_mcp(sandbox, sandbox / ".browser-mcp.json")
-        mcp += ["--mcp-config", str(sandbox / ".browser-mcp.json")]
+        mcp = ["--mcp-config", str(sandbox / ".browser-mcp.json"), *mcp]
     driver = ClaudeDriver(model=args.model, bin=str(wrapper), jail=False, timeout_s=args.iter_timeout,
                           extra_argv=mcp)
     result = ralph_loop(
