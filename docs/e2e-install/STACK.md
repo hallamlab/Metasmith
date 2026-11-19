@@ -29,6 +29,8 @@ Procedure, from dfs-interview § Work the stack:
 
 - **e2e-test** (2026-11-10): whats needed is an agentic E2E test that is siloed from additional context (maybe haiku?) that just isntalls and runs metasmith on sockeye on 1 sample E2E. reporting issues and guesses until there are none.
   - [ ] Which one sample: a user-supplied paired-end metagenome (e.g. the beta tester's), or a small public SRA metagenome given only as an accession?
+  - [ ] How do code fixes reach a clean install between runs: RC conda label + quay tag, or local spoof channel + .sif copied to nibi?
+  - [ ] Approve the plan in e2e-test/README.md?
   - **watch-list** (2026-11-17): Please watch for things like container pulls and correct cache allocation. Should also report with a series of steps take so that we can check for any ambiguities or strangeness that was required.
   - **scratch-blowup** (2026-11-17): a beta tester reports that as is, metasmith just fills up the scratch space without finishing (millions of files) so this is the first error to check for
 
