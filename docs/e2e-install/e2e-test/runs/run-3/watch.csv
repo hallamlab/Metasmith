@@ -1,0 +1,724 @@
+ts,kind,path,inodes,bytes,note
+2026-11-19T14:36:54-07:00,total,/scratch/phyberos/msm_e2e/run-3,0,0,absent
+2026-11-19T14:36:54-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T14:36:54-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T14:36:54-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          60K/1000K
+2026-11-19T14:41:57-07:00,total,/scratch/phyberos/msm_e2e/run-3,7,978259171,
+2026-11-19T14:41:57-07:00,dir,msm,1,1121,
+2026-11-19T14:41:57-07:00,dir,lib,3,14466,
+2026-11-19T14:41:57-07:00,dir,container_images,3,978243584,
+2026-11-19T14:41:57-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T14:41:57-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T14:41:57-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T14:41:57-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T14:41:57-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          60K/1000K
+2026-11-19T14:47:02-07:00,total,/scratch/phyberos/msm_e2e/run-3,9,980106515,
+2026-11-19T14:47:02-07:00,dir,msm,1,1121,
+2026-11-19T14:47:02-07:00,dir,lib,3,14466,
+2026-11-19T14:47:02-07:00,dir,relay,2,1847344,
+2026-11-19T14:47:02-07:00,dir,container_images,3,978243584,
+2026-11-19T14:47:02-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T14:47:02-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T14:47:02-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T14:47:02-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T14:47:02-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          60K/1000K
+2026-11-19T14:52:05-07:00,total,/scratch/phyberos/msm_e2e/run-3,9,980106515,
+2026-11-19T14:52:05-07:00,dir,msm,1,1121,
+2026-11-19T14:52:05-07:00,dir,lib,3,14466,
+2026-11-19T14:52:05-07:00,dir,relay,2,1847344,
+2026-11-19T14:52:05-07:00,dir,container_images,3,978243584,
+2026-11-19T14:52:05-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T14:52:05-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T14:52:05-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T14:52:05-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T14:52:05-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          60K/1000K
+2026-11-19T14:57:08-07:00,total,/scratch/phyberos/msm_e2e/run-3,9,980106515,
+2026-11-19T14:57:08-07:00,dir,msm,1,1121,
+2026-11-19T14:57:08-07:00,dir,lib,3,14466,
+2026-11-19T14:57:08-07:00,dir,relay,2,1847344,
+2026-11-19T14:57:08-07:00,dir,container_images,3,978243584,
+2026-11-19T14:57:08-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T14:57:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T14:57:08-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T14:57:08-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T14:57:08-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          61K/1000K
+2026-11-19T15:02:11-07:00,total,/scratch/phyberos/msm_e2e/run-3,9,980106515,
+2026-11-19T15:02:11-07:00,dir,msm,1,1121,
+2026-11-19T15:02:11-07:00,dir,lib,3,14466,
+2026-11-19T15:02:11-07:00,dir,relay,2,1847344,
+2026-11-19T15:02:11-07:00,dir,container_images,3,978243584,
+2026-11-19T15:02:11-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:02:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:02:11-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T15:02:11-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T15:02:11-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          61K/1000K
+2026-11-19T15:07:19-07:00,total,/scratch/phyberos/msm_e2e/run-3,141,1627541903,
+2026-11-19T15:07:19-07:00,dir,runs,128,447751,
+2026-11-19T15:07:19-07:00,dir,msm,1,1121,
+2026-11-19T15:07:19-07:00,dir,lib,3,14466,
+2026-11-19T15:07:19-07:00,dir,relay,3,1847391,
+2026-11-19T15:07:19-07:00,dir,data,3,646987590,
+2026-11-19T15:07:19-07:00,dir,container_images,3,978243584,
+2026-11-19T15:07:19-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:07:19-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:07:19-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T15:07:19-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T15:07:19-07:00,quota,-,0,0,/scratch (user phyberos)       178GiB/1024GiB          61K/1000K
+2026-11-19T15:07:19-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:12:23-07:00,total,/scratch/phyberos/msm_e2e/run-3,141,1627541903,
+2026-11-19T15:12:23-07:00,dir,runs,128,447751,
+2026-11-19T15:12:23-07:00,dir,msm,1,1121,
+2026-11-19T15:12:23-07:00,dir,lib,3,14466,
+2026-11-19T15:12:23-07:00,dir,relay,3,1847391,
+2026-11-19T15:12:23-07:00,dir,data,3,646987590,
+2026-11-19T15:12:23-07:00,dir,container_images,3,978243584,
+2026-11-19T15:12:23-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:12:23-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:12:23-07:00,apptainer,/home/phyberos/.apptainer,38,2571131575,
+2026-11-19T15:12:23-07:00,quota,-,0,0,/home (user phyberos)      2626MiB/  50GiB          16K/ 500K
+2026-11-19T15:12:23-07:00,quota,-,0,0,/scratch (user phyberos)       178GiB/1024GiB          61K/1000K
+2026-11-19T15:12:23-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:17:26-07:00,total,/scratch/phyberos/msm_e2e/run-3,373,1628464824,
+2026-11-19T15:17:26-07:00,dir,container_images,3,978243584,
+2026-11-19T15:17:26-07:00,dir,relay,3,1847391,
+2026-11-19T15:17:26-07:00,dir,runs,360,1370672,
+2026-11-19T15:17:26-07:00,dir,msm,1,1121,
+2026-11-19T15:17:26-07:00,dir,data,3,646987590,
+2026-11-19T15:17:26-07:00,dir,lib,3,14466,
+2026-11-19T15:17:26-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:17:26-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:17:26-07:00,apptainer,/home/phyberos/.apptainer,42,2572227497,
+2026-11-19T15:17:26-07:00,quota,-,0,0,/home (user phyberos)      2627MiB/  50GiB          16K/ 500K
+2026-11-19T15:17:26-07:00,quota,-,0,0,/scratch (user phyberos)       178GiB/1024GiB          62K/1000K
+2026-11-19T15:17:26-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:17:26-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:17:26-07:00,proc,l2.nibi.sharcnet:3359007,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sandbox.loc
+2026-11-19T15:17:26-07:00,proc,l2.nibi.sharcnet:3359122,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:17:26-07:00,proc,l2.nibi.sharcnet:3359158,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:22:33-07:00,total,/scratch/phyberos/msm_e2e/run-3,389,2604291768,
+2026-11-19T15:22:33-07:00,dir,container_images,19,1954070528,
+2026-11-19T15:22:33-07:00,dir,relay,3,1847391,
+2026-11-19T15:22:33-07:00,dir,runs,360,1370672,
+2026-11-19T15:22:33-07:00,dir,msm,1,1121,
+2026-11-19T15:22:33-07:00,dir,data,3,646987590,
+2026-11-19T15:22:33-07:00,dir,lib,3,14466,
+2026-11-19T15:22:33-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:22:33-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:22:33-07:00,apptainer,/home/phyberos/.apptainer,100,5257448303,
+2026-11-19T15:22:33-07:00,quota,-,0,0,/home (user phyberos)      5108MiB/  50GiB          16K/ 500K
+2026-11-19T15:22:33-07:00,quota,-,0,0,/scratch (user phyberos)       179GiB/1024GiB          62K/1000K
+2026-11-19T15:22:33-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:22:33-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:22:33-07:00,proc,l2.nibi.sharcnet:3433099,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.s
+2026-11-19T15:22:33-07:00,proc,l2.nibi.sharcnet:3433101,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:22:33-07:00,proc,l2.nibi.sharcnet:3433169,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:27:44-07:00,total,/scratch/phyberos/msm_e2e/run-3,404,3637704376,
+2026-11-19T15:27:44-07:00,dir,container_images,34,2987483136,
+2026-11-19T15:27:44-07:00,dir,relay,3,1847391,
+2026-11-19T15:27:44-07:00,dir,runs,360,1370672,
+2026-11-19T15:27:44-07:00,dir,msm,1,1121,
+2026-11-19T15:27:44-07:00,dir,data,3,646987590,
+2026-11-19T15:27:44-07:00,dir,lib,3,14466,
+2026-11-19T15:27:44-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:27:44-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:27:44-07:00,apptainer,/home/phyberos/.apptainer,125,8048067452,
+2026-11-19T15:27:44-07:00,quota,-,0,0,/home (user phyberos)      7118MiB/  50GiB          16K/ 500K
+2026-11-19T15:27:44-07:00,quota,-,0,0,/scratch (user phyberos)       181GiB/1024GiB          62K/1000K
+2026-11-19T15:27:44-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:27:44-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:27:44-07:00,proc,l2.nibi.sharcnet:3497878,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sandbo
+2026-11-19T15:27:44-07:00,proc,l2.nibi.sharcnet:3497935,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:27:44-07:00,proc,l2.nibi.sharcnet:3498037,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:32:53-07:00,total,/scratch/phyberos/msm_e2e/run-3,407,4378928824,
+2026-11-19T15:32:53-07:00,dir,container_images,37,3728707584,
+2026-11-19T15:32:53-07:00,dir,relay,3,1847391,
+2026-11-19T15:32:53-07:00,dir,runs,360,1370672,
+2026-11-19T15:32:53-07:00,dir,msm,1,1121,
+2026-11-19T15:32:53-07:00,dir,data,3,646987590,
+2026-11-19T15:32:53-07:00,dir,lib,3,14466,
+2026-11-19T15:32:53-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T15:32:53-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:32:53-07:00,apptainer,/home/phyberos/.apptainer,138,12887362802,
+2026-11-19T15:32:53-07:00,quota,-,0,0,/home (user phyberos)        12GiB/  50GiB          16K/ 500K
+2026-11-19T15:32:53-07:00,quota,-,0,0,/scratch (user phyberos)       181GiB/1024GiB          62K/1000K
+2026-11-19T15:32:53-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:32:53-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:32:53-07:00,proc,l2.nibi.sharcnet:3531223,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sandbox.lock -c
+2026-11-19T15:32:53-07:00,proc,l2.nibi.sharcnet:3531230,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:32:53-07:00,proc,l2.nibi.sharcnet:3531299,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:37:59-07:00,total,/scratch/phyberos/msm_e2e/run-3,410,6789088952,
+2026-11-19T15:37:59-07:00,dir,container_images,40,6138867712,
+2026-11-19T15:37:59-07:00,dir,relay,3,1847391,
+2026-11-19T15:37:59-07:00,dir,runs,360,1370672,
+2026-11-19T15:37:59-07:00,dir,msm,1,1121,
+2026-11-19T15:37:59-07:00,dir,data,3,646987590,
+2026-11-19T15:37:59-07:00,dir,lib,3,14466,
+2026-11-19T15:37:59-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T15:37:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:37:59-07:00,apptainer,/home/phyberos/.apptainer,143,16321215644,
+2026-11-19T15:37:59-07:00,quota,-,0,0,/home (user phyberos)        15GiB/  50GiB          16K/ 500K
+2026-11-19T15:37:59-07:00,quota,-,0,0,/scratch (user phyberos)       184GiB/1024GiB          62K/1000K
+2026-11-19T15:37:59-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:37:59-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:37:59-07:00,proc,l2.nibi.sharcnet:3641695,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sandbox.loc
+2026-11-19T15:37:59-07:00,proc,l2.nibi.sharcnet:3641701,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:37:59-07:00,proc,l2.nibi.sharcnet:3641721,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:43:09-07:00,total,/scratch/phyberos/msm_e2e/run-3,410,6789088952,
+2026-11-19T15:43:09-07:00,dir,container_images,40,6138867712,
+2026-11-19T15:43:09-07:00,dir,relay,3,1847391,
+2026-11-19T15:43:09-07:00,dir,runs,360,1370672,
+2026-11-19T15:43:09-07:00,dir,msm,1,1121,
+2026-11-19T15:43:09-07:00,dir,data,3,646987590,
+2026-11-19T15:43:09-07:00,dir,lib,3,14466,
+2026-11-19T15:43:09-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T15:43:09-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:43:09-07:00,apptainer,/home/phyberos/.apptainer,145,19207151621,
+2026-11-19T15:43:09-07:00,quota,-,0,0,/home (user phyberos)        18GiB/  50GiB          16K/ 500K
+2026-11-19T15:43:09-07:00,quota,-,0,0,/scratch (user phyberos)       184GiB/1024GiB          62K/1000K
+2026-11-19T15:43:09-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:43:09-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:43:09-07:00,proc,l2.nibi.sharcnet:3641695,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sandbox.loc
+2026-11-19T15:43:09-07:00,proc,l2.nibi.sharcnet:3641701,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:43:09-07:00,proc,l2.nibi.sharcnet:3641721,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:48:17-07:00,total,/scratch/phyberos/msm_e2e/run-3,411,7546422968,
+2026-11-19T15:48:17-07:00,dir,container_images,41,6896201728,
+2026-11-19T15:48:17-07:00,dir,relay,3,1847391,
+2026-11-19T15:48:17-07:00,dir,runs,360,1370672,
+2026-11-19T15:48:17-07:00,dir,msm,1,1121,
+2026-11-19T15:48:17-07:00,dir,data,3,646987590,
+2026-11-19T15:48:17-07:00,dir,lib,3,14466,
+2026-11-19T15:48:17-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T15:48:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:48:17-07:00,apptainer,/home/phyberos/.apptainer,145,23110021125,
+2026-11-19T15:48:17-07:00,quota,-,0,0,/home (user phyberos)        22GiB/  50GiB          16K/ 500K
+2026-11-19T15:48:17-07:00,quota,-,0,0,/scratch (user phyberos)       184GiB/1024GiB          62K/1000K
+2026-11-19T15:48:17-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:48:17-07:00,proc,l2.nibi.sharcnet:3357643,0,0,-bash 
+2026-11-19T15:48:17-07:00,proc,l2.nibi.sharcnet:3641695,0,0,flock /scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sandbox.loc
+2026-11-19T15:48:17-07:00,proc,l2.nibi.sharcnet:3641701,0,0,"/bin/bash -c mkdir -p ""${APPTAINER_CACHEDIR:-/scratch/phyberos/msm_e2e/run-3/container_images}""; { [ -e ${APPTAINER_CACH"
+2026-11-19T15:48:17-07:00,proc,l2.nibi.sharcnet:3641721,0,0,/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/Core/apptainer/1.3.5/bin/apptainer.bin pull /scratch/phyb
+2026-11-19T15:53:24-07:00,total,/scratch/phyberos/msm_e2e/run-3,676,12641238549,
+2026-11-19T15:53:24-07:00,dir,container_images,54,10574004224,
+2026-11-19T15:53:24-07:00,dir,task_cache,15,1203933533,
+2026-11-19T15:53:24-07:00,dir,relay,3,1847391,
+2026-11-19T15:53:24-07:00,dir,runs,597,214450224,
+2026-11-19T15:53:24-07:00,dir,msm,1,1121,
+2026-11-19T15:53:24-07:00,dir,data,3,646987590,
+2026-11-19T15:53:24-07:00,dir,lib,3,14466,
+2026-11-19T15:53:24-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T15:53:24-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T15:53:24-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T15:53:24-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T15:53:24-07:00,quota,-,0,0,/scratch (user phyberos)       188GiB/1024GiB          62K/1000K
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861099,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/b1l3I4r7.running 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861235,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 4 l2.nibi.shar
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:53:24-07:00,proc,l2.nibi.sharcnet:3863970,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:58:35-07:00,total,/scratch/phyberos/msm_e2e/run-3,802,39830023432,
+2026-11-19T15:58:35-07:00,dir,container_images,54,10574004224,
+2026-11-19T15:58:35-07:00,dir,task_cache,22,27569638157,
+2026-11-19T15:58:35-07:00,dir,relay,3,1847391,
+2026-11-19T15:58:35-07:00,dir,runs,716,1037530483,
+2026-11-19T15:58:35-07:00,dir,msm,1,1121,
+2026-11-19T15:58:35-07:00,dir,data,3,646987590,
+2026-11-19T15:58:35-07:00,dir,lib,3,14466,
+2026-11-19T15:58:35-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T15:58:35-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T15:58:35-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T15:58:35-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T15:58:35-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T15:58:35-07:00,quota,-,0,0,/scratch (user phyberos)       213GiB/1024GiB          62K/1000K
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T15:58:35-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:04:07-07:00,total,/scratch/phyberos/msm_e2e/run-3,810,66093523234,
+2026-11-19T16:04:07-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:04:07-07:00,dir,task_cache,22,50120844527,
+2026-11-19T16:04:07-07:00,dir,relay,3,1847391,
+2026-11-19T16:04:07-07:00,dir,runs,724,4749823915,
+2026-11-19T16:04:07-07:00,dir,msm,1,1121,
+2026-11-19T16:04:07-07:00,dir,data,3,646987590,
+2026-11-19T16:04:07-07:00,dir,lib,3,14466,
+2026-11-19T16:04:07-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:04:07-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:04:07-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:04:07-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:04:07-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:04:07-07:00,quota,-,0,0,/scratch (user phyberos)       237GiB/1024GiB          62K/1000K
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:04:07-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:09:29-07:00,total,/scratch/phyberos/msm_e2e/run-3,811,89535471660,
+2026-11-19T16:09:29-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:09:29-07:00,dir,task_cache,23,73562704406,
+2026-11-19T16:09:29-07:00,dir,relay,3,1847391,
+2026-11-19T16:09:29-07:00,dir,runs,724,4749912462,
+2026-11-19T16:09:29-07:00,dir,msm,1,1121,
+2026-11-19T16:09:29-07:00,dir,data,3,646987590,
+2026-11-19T16:09:29-07:00,dir,lib,3,14466,
+2026-11-19T16:09:29-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:09:29-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:09:29-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:09:29-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:09:29-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:09:29-07:00,quota,-,0,0,/scratch (user phyberos)       260GiB/1024GiB          62K/1000K
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:09:29-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:14:59-07:00,total,/scratch/phyberos/msm_e2e/run-3,811,112480138465,
+2026-11-19T16:14:59-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:14:59-07:00,dir,task_cache,23,96507284035,
+2026-11-19T16:14:59-07:00,dir,relay,3,1847391,
+2026-11-19T16:14:59-07:00,dir,runs,724,4749999638,
+2026-11-19T16:14:59-07:00,dir,msm,1,1121,
+2026-11-19T16:14:59-07:00,dir,data,3,646987590,
+2026-11-19T16:14:59-07:00,dir,lib,3,14466,
+2026-11-19T16:14:59-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:14:59-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:14:59-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:14:59-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:14:59-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:14:59-07:00,quota,-,0,0,/scratch (user phyberos)       280GiB/1024GiB          62K/1000K
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:14:59-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:20:17-07:00,total,/scratch/phyberos/msm_e2e/run-3,812,137396959206,
+2026-11-19T16:20:17-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:20:17-07:00,dir,task_cache,24,121424012045,
+2026-11-19T16:20:17-07:00,dir,relay,3,1847391,
+2026-11-19T16:20:17-07:00,dir,runs,724,4750092369,
+2026-11-19T16:20:17-07:00,dir,msm,1,1121,
+2026-11-19T16:20:17-07:00,dir,data,3,646987590,
+2026-11-19T16:20:17-07:00,dir,lib,3,14466,
+2026-11-19T16:20:17-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:20:17-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:20:17-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:20:17-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:20:17-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:20:17-07:00,quota,-,0,0,/scratch (user phyberos)       305GiB/1024GiB          62K/1000K
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:20:17-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:25:54-07:00,total,/scratch/phyberos/msm_e2e/run-3,812,160689879657,
+2026-11-19T16:25:54-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:25:54-07:00,dir,task_cache,24,144716840855,
+2026-11-19T16:25:54-07:00,dir,relay,3,1847391,
+2026-11-19T16:25:54-07:00,dir,runs,724,4750184010,
+2026-11-19T16:25:54-07:00,dir,msm,1,1121,
+2026-11-19T16:25:54-07:00,dir,data,3,646987590,
+2026-11-19T16:25:54-07:00,dir,lib,3,14466,
+2026-11-19T16:25:54-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:25:54-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:25:54-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:25:54-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:25:54-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:25:54-07:00,quota,-,0,0,/scratch (user phyberos)       325GiB/1024GiB          62K/1000K
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:25:54-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:31:11-07:00,total,/scratch/phyberos/msm_e2e/run-3,813,188347489319,
+2026-11-19T16:31:11-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:31:11-07:00,dir,task_cache,25,172374351421,
+2026-11-19T16:31:11-07:00,dir,relay,3,1847391,
+2026-11-19T16:31:11-07:00,dir,runs,724,4750283106,
+2026-11-19T16:31:11-07:00,dir,msm,1,1121,
+2026-11-19T16:31:11-07:00,dir,data,3,646987590,
+2026-11-19T16:31:11-07:00,dir,lib,3,14466,
+2026-11-19T16:31:11-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:31:11-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:31:11-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:31:11-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:31:11-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:31:11-07:00,quota,-,0,0,/scratch (user phyberos)       351GiB/1024GiB          62K/1000K
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:31:11-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:36:55-07:00,total,/scratch/phyberos/msm_e2e/run-3,813,213813913280,
+2026-11-19T16:36:55-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:36:55-07:00,dir,task_cache,25,197840670325,
+2026-11-19T16:36:55-07:00,dir,relay,3,1847391,
+2026-11-19T16:36:55-07:00,dir,runs,724,4750388163,
+2026-11-19T16:36:55-07:00,dir,msm,1,1121,
+2026-11-19T16:36:55-07:00,dir,data,3,646987590,
+2026-11-19T16:36:55-07:00,dir,lib,3,14466,
+2026-11-19T16:36:55-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:36:55-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:36:55-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:36:55-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:36:55-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:36:55-07:00,quota,-,0,0,/scratch (user phyberos)       375GiB/1024GiB          62K/1000K
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:36:55-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:42:08-07:00,total,/scratch/phyberos/msm_e2e/run-3,814,242788669402,
+2026-11-19T16:42:08-07:00,dir,container_images,54,10574004224,
+2026-11-19T16:42:08-07:00,dir,task_cache,26,226815329055,
+2026-11-19T16:42:08-07:00,dir,relay,3,1847391,
+2026-11-19T16:42:08-07:00,dir,runs,724,4750485555,
+2026-11-19T16:42:08-07:00,dir,msm,1,1121,
+2026-11-19T16:42:08-07:00,dir,data,3,646987590,
+2026-11-19T16:42:08-07:00,dir,lib,3,14466,
+2026-11-19T16:42:08-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-3,0,0,0
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_bedtools..v2.27.1dfsg-4-deb_cv1.sif,1,48005120,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..biocontainers_megahit..1.2.9_cv1.sif,1,130707456,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..ecogenomic_gtdbtk@sha256..78ebc71b8de215fab505ed2b960f08df4923980d9acfcd0088996df483652cb0.sif,1,519819264,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,212320256,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_kofamscan..1.3.0--hdfd78af_2.sif,1,64974848,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabat2..2.17--h6f16272_1.sif,1,84529152,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_metabuli..1.2.0--pl5321h0bb26bb_0.sif,1,77877248,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4@sha256..966a1318a02cc3cda1785ccf62a4db2390e88dd48f303befa6c4a0a89a241a49.sif,1,105000960,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_phyloflash..3.4.2--hdfd78af_0.sif,1,707813376,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_pprodigal..1.0.1--pyhdfd78af_0.sif,1,58191872,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_biocontainers_semibin..2.1.0--pyhdfd78af_0.sif,1,741224448,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_checkm2..1.1.0.sif,1,2410160128,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_external_comebin..gpu-1.0.4.sif,1,3902869504,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..quay.io_hallamlab_polars..1.38.1.sif,1,320442368,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_bbtools..39.49.sif,1,141225984,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_seqkit..2.13.0.sif,1,40001536,
+2026-11-19T16:42:08-07:00,sif,/scratch/phyberos/msm_e2e/run-3/container_images/docker..staphb_skani..0.2.2.sif,1,30597120,
+2026-11-19T16:42:08-07:00,apptainer,/home/phyberos/.apptainer,175,24214312487,
+2026-11-19T16:42:08-07:00,job,28039305,0,0,nf-p10__buildPhyloflashDB_(1) RUNNING
+2026-11-19T16:42:08-07:00,quota,-,0,0,/home (user phyberos)        23GiB/  50GiB          16K/ 500K
+2026-11-19T16:42:08-07:00,quota,-,0,0,/scratch (user phyberos)       403GiB/1024GiB          62K/1000K
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3125356,0,0,./relay/msm_relay start 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3853774,0,0,/bin/bash ../../msm api run_workflow -a key=PriQs6Hg host=l2.nibi.sharcnet log_dir=./_metasmith/logs.2026-11-19_17-52-48
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3854073,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=PriQs6H
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861085,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/YpsSxgKG.running 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861097,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/EryTZJp6.running 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861098,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/jK6yMPIY.running 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861225,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 2 l2.nibi.shar
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861233,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 5 l2.nibi.shar
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861234,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 1 l2.nibi.shar
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861304,0,0,bash /scratch/phyberos/msm_e2e/run-3/relay/l2.nibi.sharcnet/wt6XkAiB.running 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3861384,0,0,/bin/bash /scratch/phyberos/msm_e2e/run-3/lib/msm_bootstrap /scratch/phyberos/msm_e2e/run-3/runs/PriQs6Hg 3 l2.nibi.shar
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3863847,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3863911,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3863923,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-19T16:42:08-07:00,proc,l2.nibi.sharcnet:3863934,0,0,_metasmith/relay/msm_relay start --local 

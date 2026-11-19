@@ -42,9 +42,15 @@ done
 STOP = r'''
 R=$1
 for id in $(squeue -u "$USER" -h -o '%i|%Z' | awk -F'|' -v r="$R" 'index($2, r)==1 {print $1}'); do scancel "$id" && echo "scancel $id"; done
-for p in $(ps -u "$USER" -o pid=); do
-  case "$(readlink /proc/$p/cwd 2>/dev/null)" in "$R"*) kill "$p" && echo "kill $(hostname):$p";; esac
-done
+# Container steps run with cwd /ws, so match the run dir in cwd or argv, then take every descendant.
+roots=$(for p in $(ps -u "$USER" -o pid=); do
+  [ "$p" = "$$" ] && continue
+  { readlink /proc/$p/cwd; tr '\0' ' ' < /proc/$p/cmdline; } 2>/dev/null | grep -q "$R" && echo $p
+done | tr '\n' ' ')
+ps -u "$USER" -o pid=,ppid= | awk -v roots=" $roots " '
+  { parent[$1]=$2 }
+  END { for (p in parent) { q=p; while (q in parent) { if (index(roots, " " q " ")) { print p; break } q=parent[q] } } }' |
+  while read -r p; do kill "$p" 2>/dev/null && echo "kill $(hostname):$p"; done
 '''
 
 
