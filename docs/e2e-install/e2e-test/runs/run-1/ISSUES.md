@@ -37,3 +37,9 @@ Kept beside this file: the agent's `STEPS.md` and `PROGRESS.md`, its `deploy_nib
 - H1. Every process the agent starts dies when its pass ends, and a pass ends at 45 minutes. A deploy longer than one pass can therefore never finish. A real user at a terminal would wait, so this loop is a harness artifact on top of issues 1 and 2. Keep the agent's background processes alive across passes, or let a pass run longer while the agent sleeps.
 - H2. The agent ended pass 1 with a background deploy still running, against the protocol's "sleep and check" rule.
 - H3. The first watcher check came 5 minutes after launch, and the probe's own runtime spaces samples 5 to 6 minutes apart. That is adequate.
+
+## Decision (Tony, 2026-11-19 13:00)
+
+> make appropriate fixes, but I thikn 1 hr in general is not enough. please check in on tests and stop them if doing in efficient stuff that can be fixed/improved -> fix them -> then try again. Please start with the browser route (test like a person) then we can try python API after (which should be just a comprehension test: are the calls understandable and do what is expected/documented).
+
+All issues above are open, and every one is in scope for the next round. The next run drives the GUI in a browser. The Python API run comes after it.

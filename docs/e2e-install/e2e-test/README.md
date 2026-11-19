@@ -158,3 +158,11 @@ Run the `debrief` skill for `metasmith/engine/install-loop`.
 - The template change (metabuli dropped, commit 17f0232a) reaches conda users only at the next release.
 - Run 1 downloads the reference databases inside its run dir. Whether later runs reuse them is decided after run 1.
 - nibi scratch already holds 57K files from earlier work. The 600K cap leaves room for them.
+## Revision after run 1 (2026-11-19)
+
+Run 1 stopped at deploy. Triage is in `docs/e2e-install/e2e-test/runs/run-1/ISSUES.md` (commit 63f981ec). Tony's decision is quoted there. It changes T9 as follows:
+
+- **Browser route first.** The naive agent installs metasmith, starts `msm gui`, and drives it in a browser like a person: deploy to nibi, then run `metagenomics_from_paired_reads` without metabuli on SRR9658108. Give it a browser through the Playwright MCP server; node, npx and the Playwright chromium builds already sit on altair. Keep the browser to localhost origins, and keep the silo. A Python API run follows as a comprehension test: are the calls understandable, and do they do what the docs say?
+- **Longer time budget.** One hour is not enough. Agent processes, such as the GUI server and a deploy, must survive across passes, and the run stops only when it ends. Raise the pass limit as well.
+- **Active supervision.** Check the transcript and the watcher about every 15 minutes. When the agent does something wasteful that a fix would remove, stop the run, fix it, and rerun. Do not let a run grind.
+- **Fixes before run 2:** issue 1 and issue 6 (setup commands: unpack in node-local `/tmp`, cache on scratch, `module load apptainer`), issue 5 (metasmith sets `APPTAINER_CACHEDIR` for the pull), issue 4 (narrow the `rootfs="sandbox"` note), and H1 (process lifetime). Then issue 2 (deploy progress, orphaned remote build) and issue 3 (template docs page) as the run shows they bite through the GUI.
