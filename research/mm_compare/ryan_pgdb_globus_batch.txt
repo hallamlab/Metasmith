@@ -1,0 +1,147 @@
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_10/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_10/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_10/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_10/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_10/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_10/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_11/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_11/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_11/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_11/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_11/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_11/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_12/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_12/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_12/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_12/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_12/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_12/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_23/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_23/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_23/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_23/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_23/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_23/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_26/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_26/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_26/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_26/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_26/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_26/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_27/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_27/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_27/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_27/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_27/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_27/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_4/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_4/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_4/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_4/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_4/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_4/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_7/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_7/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_7/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_7/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_7/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_7/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_8/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_8/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_8/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_8/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_8/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_8/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_9/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_9/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_9/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_9/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Airways_9/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Airways_9/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_0/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_0/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_0/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_0/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_0/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_0/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_1/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_1/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_1/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_1/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_1/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_1/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_10/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_10/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_10/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_10/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_10/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_10/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_11/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_11/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_11/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_11/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_11/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_11/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_12/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_12/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_12/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_12/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_12/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_12/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_2/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_2/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_2/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_2/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_2/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_2/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_3/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_3/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_3/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_3/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_3/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_3/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_4/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_4/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_4/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_4/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_4/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_4/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_5/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_5/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_5/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_5/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_5/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_5/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_9/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_9/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_9/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_9/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Gastrointestinal_9/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Gastrointestinal_9/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_13/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_13/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_13/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_13/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_13/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_13/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_14/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_14/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_14/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_14/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_14/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_14/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_15/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_15/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_15/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_15/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_15/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_15/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_16/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_16/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_16/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_16/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_16/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_16/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_17/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_17/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_17/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_17/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_17/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_17/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_18/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_18/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_18/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_18/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_18/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_18/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_19/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_19/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_19/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_19/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_19/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_19/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_6/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_6/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_6/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_6/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_6/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_6/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_7/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_7/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_7/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_7/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_7/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_7/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_8/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_8/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_8/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_8/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Oral_8/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Oral_8/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_1/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_1/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_1/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_1/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_1/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_1/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_13/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_13/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_13/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_13/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_13/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_13/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_14/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_14/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_14/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_14/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_14/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_14/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_15/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_15/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_15/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_15/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_15/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_15/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_16/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_16/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_16/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_16/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_16/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_16/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_17/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_17/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_17/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_17/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_17/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_17/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_18/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_18/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_18/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_18/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_18/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_18/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_19/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_19/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_19/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_19/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_19/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_19/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_20/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_20/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_20/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_20/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_20/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_20/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_28/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_28/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_28/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_28/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Skin_28/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Skin_28/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_0/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_0/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_0/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_0/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_0/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_0/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_2/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_2/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_2/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_2/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_2/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_2/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_21/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_21/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_21/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_21/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_21/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_21/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_22/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_22/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_22/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_22/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_22/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_22/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_24/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_24/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_24/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_24/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_24/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_24/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_25/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_25/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_25/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_25/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_25/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_25/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_3/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_3/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_3/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_3/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_3/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_3/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_5/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_5/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_5/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_5/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_5/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_5/compact-results.json
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_6/results/pgdb /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_6/pgdb
+--recursive /Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_6/magsplitter /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_6/magsplitter
+/Manuscripts/Science/2025-03-07_Engcyc/CAMI2/MetaPathways_benchmark_output/output-slurm-compact/Urogenital_6/compact-results.json /scratch/phyberos/bench/e4_mm/ryan_pgdb/Urogenital_6/compact-results.json

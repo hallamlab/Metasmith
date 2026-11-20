@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Render the inventory page from data/mm_compare/inventory/*.tsv.
+
+    inventory_page.py <repo root> <out.html>
+
+Counts stay in each method's own units. The prose sections live here, beside the numbers they describe.
+"""
+import html
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+METHODS = {"pgdb": "Pathway Tools", "carveme": "CarveMe", "gpr": "fabfos 4-lane"}
+LANES = ("clean", "kofam", "pbert", "uniref50")
+STRAINS = ("k12", "w3110", "bw25113", "dh1", "dh10b", "epi300")
+PGDB_ROUTES = {"biocyc": "BioCyc, prebuilt", "metasmith_pathologic": "metasmith pathologic",
+               "metapathways": "MetaPathways 3.5.1"}
+
+
+def fmt(v, digits=0):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return '<span class="na">—</span>'
+    if isinstance(v, str):
+        return html.escape(v)
+    return f"{v:,.{digits}f}"
+
+
+def table(head, rows, cls=""):
+    th = "".join(f"<th>{h}</th>" for h in head)
+    tr = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    return f'<div class="scroll"><table class="{cls}"><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table></div>'
+
+
+def tag(method):
+    return f'<span class="tag {method}">{METHODS[method]}</span>'
+
+
+def iqr(s, digits=0):
+    s = s.dropna()
+    if s.empty:
+        return fmt(None)
+    q1, q2, q3 = s.quantile([0.25, 0.5, 0.75])
+    return f'{fmt(q2, digits)} <span class="iqr">{fmt(q1, digits)}–{fmt(q3, digits)}</span>'
+
+
+def ecoli_section(cm, gp):
+    cm = cm[cm.dataset == "ecoli"].set_index("subject")
+    gp = gp[gp.dataset == "ecoli"].set_index("subject")
+    rows = []
+    for s in STRAINS:
+        c, g = cm.loc[s], gp.loc[s]
+        rows.append([f"<b>{s}</b>", fmt(int(g.orfs)),
+                     fmt(int(c.reactions)), fmt(int(c.reactions_with_gene_rule)), fmt(int(c.genes)),
+                     fmt(int(c.metabolites)), fmt(c.memote_total, 3),
+                     fmt(int(g.orfs_with_call)), fmt(int(g.calls)), fmt(int(g.mnxr)),
+                     *(fmt(int(g[f"{l}_mnxr"])) for l in LANES)])
+    head = ["strain", "proteins",
+            "reactions", "with gene rule", "genes", "metabolites", "MEMOTE",
+            "ORFs with a call", "calls", "distinct MNXR", *(f"{l} MNXR" for l in LANES)]
+    groups = ('<tr class="group"><th></th><th></th><th colspan="5" class="carveme">CarveMe</th>'
+              '<th colspan="7" class="gpr">fabfos 4-lane</th></tr>')
+    t = table(head, rows, "num")
+    return t.replace("<thead>", f"<thead>{groups}", 1)
+
+
+def ecoli_pgdb_section(pg):
+    pg = pg[pg.dataset == "ecoli"].set_index(["route", "subject"])
+    rows = []
+    for s in STRAINS:
+        row = [f"<b>{s}</b>"]
+        for r in PGDB_ROUTES:
+            x = pg.loc[(r, s)] if (r, s) in pg.index else None
+            row += [fmt(None) if x is None else fmt(int(x[c])) for c in ("reactions", "reactions_with_gene", "pathways")]
+        rows.append(row)
+    head = ["strain", *(["reactions", "with a gene", "pathways"] * len(PGDB_ROUTES))]
+    groups = '<tr class="group"><th></th>' + "".join(
+        f'<th colspan="3" class="pgdb">{n}</th>' for n in PGDB_ROUTES.values()) + "</tr>"
+    return table(head, rows, "num").replace("<thead>", f"<thead>{groups}", 1)
+
+
+def cami_summary(cm, pg, gp):
+    c = cm[cm.dataset == "cami_hmp"]
+    gen, com = pg[pg.level == "genome"], pg[pg.level == "community"]
+    rows = [
+        [tag("pgdb"), "gold-standard genome", fmt(len(gen)), "reactions", iqr(gen.reactions)],
+        ["", "", "", "reactions with a gene", iqr(gen.reactions_with_gene)],
+        ["", "", "", "genes with a reaction", iqr(gen.genes_with_reaction)],
+        ["", "", "", "pathways inferred", iqr(gen.pathways)],
+        ["", "", "", "pathways in _pwy.tsv", iqr(gen.pwy_tsv_rows)],
+        ["", "", "", "mean pathway score", iqr(gen.pwy_score_mean, 3)],
+        [tag("pgdb"), "community (one per sample)", fmt(len(com)), "reactions with a gene", iqr(com.reactions_with_gene)],
+        ["", "", "", "pathways inferred", iqr(com.pathways)],
+        [tag("carveme"), "E5 MAG", fmt(len(c)), "reactions", iqr(c.reactions)],
+        ["", "", "", "reactions with a gene rule", iqr(c.reactions_with_gene_rule)],
+        ["", "", "", "genes", iqr(c.genes)],
+        ["", "", "", "metabolites", iqr(c.metabolites)],
+        ["", "", "", "MEMOTE total", iqr(c.memote_total, 3)],
+    ]
+    g = gp[gp.dataset == "cami_hmp"] if gp is not None else None
+    if g is not None and len(g):
+        rows += [
+            [tag("gpr"), "E5 MAG", fmt(len(g)), "ORFs with a call", iqr(g.orfs_with_call)],
+            ["", "", "", "calls", iqr(g.calls)],
+            ["", "", "", "distinct MNXR", iqr(g.mnxr)],
+            *(["", "", "", f"{l} distinct MNXR", iqr(g[f"{l}_mnxr"])] for l in LANES),
+        ]
+    else:
+        rows.append([tag("gpr"), "E5 MAG", fmt(None), '<span class="pending">running on fir</span>', fmt(None)])
+    return table(["method", "subject", "subjects", "count", "median <span class=iqr>IQR</span>"], rows, "summary")
+
+
+def cami_samples(sm, cm, pg, gp):
+    c = cm[cm.dataset == "cami_hmp"].groupby("sample")
+    gen = pg[pg.level == "genome"].groupby("sample")
+    com = pg[pg.level == "community"].set_index("sample")
+    g = gp[gp.dataset == "cami_hmp"].groupby("sample") if gp is not None and (gp.dataset == "cami_hmp").any() else None
+    rows = []
+    for _, s in sm.sort_values(["body_site", "ryan_sample"]).iterrows():
+        r, e = s.ryan_sample, s.e5_sample
+        gg = g.get_group(e) if g is not None and e in g.groups else None
+        rows.append([f"<b>{r}</b>", s.body_site,
+                     fmt(len(gen.get_group(r))), fmt(gen.get_group(r).reactions_with_gene.median()),
+                     fmt(int(com.loc[r].reactions_with_gene)), fmt(int(com.loc[r].pathways)),
+                     fmt(len(c.get_group(e))), fmt(c.get_group(e).reactions.median()),
+                     fmt(c.get_group(e).memote_total.median(), 3),
+                     fmt(None if gg is None else gg.mnxr.median())])
+    head = ["sample", "body site", "genomes", "median rxns with gene", "community rxns with gene",
+            "community pathways", "MAGs", "median reactions", "median MEMOTE", "median distinct MNXR"]
+    groups = ('<tr class="group"><th></th><th></th><th colspan="4" class="pgdb">Pathway Tools</th>'
+              '<th colspan="3" class="carveme">CarveMe</th><th class="gpr">4-lane</th></tr>')
+    return table(head, rows, "num").replace("<thead>", f"<thead>{groups}", 1)
+
+
+FINDINGS = """
+<li><b>The methods describe different genomes on CAMI.</b> Ryan's PGDBs cover the 5,392 gold-standard
+CAMI_OTU genomes plus one community PGDB per sample. CarveMe and the 4-lane cover E5's 757 DAS Tool MAGs,
+assembled from reads. A per-subject pairing across these two sets needs a MAG-to-genome assignment, which
+neither output carries.</li>
+<li><b>Per-sample size follows each method's own subjects.</b> E5 recovered 6–36 MAGs per sample, from
+samples holding 24–320 gold-standard genomes, and the two counts do not track (Spearman −0.07). The community
+PGDB's size follows its genome count (0.80), CarveMe's union follows its MAG count (0.72), and the two sizes
+do not track each other (−0.07). A sample-level size comparison measures binning, not reconstruction.</li>
+<li><b>CarveMe's identifiers mostly sit inside the community PGDB.</b> Per sample, 78% (65–83%) of the MetaCyc
+reaction ids on CarveMe's gene-ruled reactions, pooled over the sample's MAGs, are reactions with a gene in
+the community PGDB. EC numbers give the same 78%. The reverse fraction is small (MetaCyc 15%, EC 28%), because
+the PGDB covers every genome and CarveMe covers only the binned ones. Both methods carry these ids natively,
+so this needs no translation.</li>
+<li><b>CarveMe recovers about three quarters of a curated E. coli model.</b> By BiGG reaction id, CarveMe's
+gene-ruled reactions hold 78% of iML1515's gene-ruled reactions for K-12, and 76% of iECDH10B_1368's for
+DH10B and EPI300. 82–86% of CarveMe's gene-ruled reactions are in the curated model. This anchor is partly
+circular: CarveMe's universal model is built from BiGG models, these among them. EPI300 has no curated
+model of its own and borrows DH10B's.</li>
+<li><b>CarveMe and the 4-lane agree on which strains differ.</b> Over the 15 strain pairs, the size of the
+set difference ranks the pairs alike in both methods (Spearman 0.84, CarveMe gene-ruled reactions against
+all 4-lane MNXR). Both put EPI300 nearest to DH10B, its parent strain: the 4-lane by a wide margin (62
+against 218 or more), CarveMe narrowly (32 against 38). Proteome size differences do not predict either
+(0.2–0.3). The KOfam and UniRef50 lanes see no difference between DH10B and EPI300 at all.</li>
+<li><b>MEMOTE's total is two states, set by one binary test.</b> DH10B scores 0.847 and the other five strains
+0.680–0.681. The 757 CAMI MAGs split the same way: 431 score 0.66–0.71 and 326 score 0.82–0.88, with none
+between. The consistency section alone separates them (0.45–0.53 against 0.89–0.97). In E. coli the switch is
+stoichiometric consistency: five strains fail it on unconserved protons (h_c, h_p, h_e), and DH10B passes.
+DH10B and EPI300 also carry an ATP-generating cycle that the other four do not. The best-scoring model
+holds a free-ATP loop, so a higher total does not mean a sounder model.</li>
+<li><b>The 4-lane emits a scored candidate set, not a model.</b> Each E. coli strain gets about 31,000
+calls to about 11,200 distinct MNXR from about 2,800 ORFs. CLEAN alone proposes about 9,700 MNXR.
+CarveMe's models hold about 2,480 reactions. Any count comparison with the 4-lane needs a score cut,
+and choosing it is part of the test. Its lanes score in different kinds (CLEAN confidence, KOfam bitscore,
+ProteinBERT neighbour vote, UniRef50 blast score ratio), so one cut does not fit all four.</li>
+<li><b>Untranslated MNXR overlap understates agreement.</b> Only 24% of CarveMe's MNXR in K-12 appear among
+the 4-lane's MNXR, and 35% for reactions that carry an EC number. CarveMe's MNXR come from BiGG's annotation
+and cluster at MNXR94k–103k, while the 4-lane's mostly sit at MNXR130k–200k. MetaNetX keeps separate ids for
+variants of one reaction, so the two methods often name the same reaction differently. The 4-lane reaches
+50% of the curated model's MNXR on the same footing. Treat MNXR overlap as a floor, not a measure.</li>
+<li><b>A PGDB's reaction list includes reactions with no gene.</b> In one genome, reactions.dat lists 2,320
+reactions and 1,443 have an enzyme linked to a gene. Count reactions with a gene when the question is
+what the genome encodes. Ryan's <code>_pwy.tsv</code> is also a filtered list: PathoLogic's evidence list
+names more pathways (358 against 328 in the same genome).</li>
+<li><b>Gene ids line up between CarveMe and the 4-lane, and the two mostly agree on which genes matter.</b>
+Both read the same proteins, the RefSeq proteome in E. coli and E5's MAG ORFs on CAMI, so the comparison
+needs no mapping. 83% of CarveMe's model genes carry at least one 4-lane call (median over 757 MAGs; 84% in
+E. coli). ProteinBERT reaches the most of them (73%), UniRef50 the fewest (39%). The reverse is lower: 35% of
+the ORFs the 4-lane calls are CarveMe model genes (48% in E. coli), because the 4-lane calls every ORF
+it can and CarveMe keeps only the genes its carved network uses.</li>
+<li><b>On the CAMI MAGs the 4-lane behaves as it does on E. coli.</b> Per MAG, 62% of ORFs get a call
+(59–64% interquartile), giving a median of 6,500 distinct MNXR against CarveMe's 1,360 reactions. A median 23% of a
+MAG's CarveMe MNXR appear among its 4-lane MNXR, the same floor as in E. coli.</li>
+<li><b>The E. coli PGDBs come from three routes, and none is Ryan's CAMI configuration.</b> BioCyc holds
+prebuilt PGDBs for three strains only: EcoCyc 27.0 for K-12, curated, and computational tier-3 PGDBs for DH10B
+(built 2020, Pathway Tools 24.0) and W3110 (built 2010, Pathway Tools 14.5, on an older genome record). The
+metasmith <code>pathologic</code> transform feeds the RefSeq proteome's DeepEC, KOfam and UniRef50 EC calls to
+PathoLogic. MetaPathways 3.5.1 calls its own ORFs from the genome and annotates them against SwissProt alone,
+because its MetaCyc reference needs a BioCyc login. Ryan's CAMI run used SwissProt and MetaCyc. Both de novo
+routes ran Pathway Tools 27.0. BioCyc's pathway counts are every pathway frame, super-pathways included, and the
+de novo counts are PathoLogic's evidence list, so pathway counts do not compare across routes.</li>
+<li><b>The metasmith pathologic transform had never produced a PGDB.</b> It failed five ways before its first
+PGDB: a missing image tag, a missing Python dependency, a missing dump function, a mount collision with the
+engine's task directory and no writable PGDB or home directory. The last fault let every step exit 0: DeepEC
+writes <code>EC:1.1.1.1</code>, PathoLogic reads only bare EC numbers, and the PGDBs came out with 4,300+
+genes and no reactions. Check a PGDB's reaction count, not the run's exit status.</li>
+<li><b>The two de novo routes agree on about half their gene-linked reactions.</b> By MetaCyc reaction frame,
+MetaPathways and the metasmith route share 1,220–1,250 gene-linked reactions per strain (Jaccard 0.53–0.54).
+Against EcoCyc's 2,218 for K-12, MetaPathways recovers 57%, the metasmith route 46%, and the MetaCyc ids on
+CarveMe's gene-ruled reactions 31%. Against the tier-3 BioCyc PGDBs both routes sit at Jaccard 0.36–0.45. Part
+of each gap is naming: Pathway Tools versions and MetaCyc releases differ between routes.</li>
+<li><b>The PGDB routes see strain differences too, and the metasmith route sees EPI300's parent.</b> Strain
+pairs differ by 3–61 gene-linked reactions in either de novo route. The metasmith route puts EPI300 next to
+DH10B by a wide margin (3, against 17 or more). MetaPathways does not single the pair out (15, tied with K-12
+against DH1), because its ORF calls do not repeat exactly between near-identical genomes. Over the 15 pairs,
+MetaPathways ranks the differences like the 4-lane (Spearman 0.78) and like CarveMe (0.57). The metasmith route
+agrees less with either (0.49 and 0.34).</li>
+<li><b>The metasmith PGDB shares gene ids with CarveMe and the 4-lane.</b> It reads the same RefSeq proteome, and
+PathoLogic only upper-cases the ids and strips their punctuation. 90% of its enzyme genes carry a 4-lane call
+and 56% are CarveMe model genes. MetaPathways' gene ids are its own ORFs (<code>C1-G1</code>, …). Their genome
+coordinates are in the kept <code>.pf</code> input, so a coordinate match can link them to RefSeq genes.</li>
+<li><b>Pooling a sample's MAGs into one 4-lane run changed nothing.</b> One MAG (3,041 ORFs) run alone
+gave the same CLEAN, KOfam and UniRef50 calls as its share of the pooled sample, with identical scores.
+ProteinBERT swapped 32 of 5,411 calls and moved scores by at most 1e-6, the lane's known non-determinism.
+Per-sample pooling is safe for later runs.</li>
+"""
+
+STYLE = """
+/* Layout: one reading column, wide tables scroll inside their own frame. */
+:root {
+  --bg: #f6f7f5; --panel: #ffffff; --fg: #1d2421; --muted: #5d6762; --rule: #d9ddd9;
+  --accent: #2f6b5a; --pgdb: #9a6a12; --carveme: #2d5f8f; --gpr: #7b3f74;
+  --pgdb-bg: #f6ecd9; --carveme-bg: #e1eaf3; --gpr-bg: #f0e3ee; --pending: #a14d1f;
+  --display: "Literata", Georgia, serif; --body: "Public Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141917; --panel: #1b2220; --fg: #e3e8e5; --muted: #9aa5a0; --rule: #2e3834;
+  --accent: #7cc3ac; --pgdb: #e2b15c; --carveme: #8bb8e3; --gpr: #d397cb;
+  --pgdb-bg: #352a17; --carveme-bg: #1c2a38; --gpr-bg: #33212f; --pending: #e7926a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141917; --panel: #1b2220; --fg: #e3e8e5; --muted: #9aa5a0; --rule: #2e3834;
+  --accent: #7cc3ac; --pgdb: #e2b15c; --carveme: #8bb8e3; --gpr: #d397cb;
+  --pgdb-bg: #352a17; --carveme-bg: #1c2a38; --gpr-bg: #33212f; --pending: #e7926a; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 36px; }
+header { display: grid; gap: 10px; }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
+h1 { font: 600 clamp(28px, 4vw, 38px)/1.15 var(--display); margin: 0; text-wrap: balance; }
+h2 { font: 600 22px/1.25 var(--display); margin: 0; text-wrap: balance; }
+p, li { max-width: 68ch; }
+p { margin: 0; }
+section { display: grid; gap: 14px; min-width: 0; }
+.lede { color: var(--muted); font-size: 16px; }
+button.theme { font: 500 12px var(--mono); color: var(--fg); background: var(--panel); border: 1px solid var(--rule);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+button.theme:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tag { justify-self: start; display: inline-block; font: 600 11px/1 var(--mono); letter-spacing: .03em; padding: 4px 7px; border-radius: 4px; white-space: nowrap; }
+.tag.pgdb { color: var(--pgdb); background: var(--pgdb-bg); }
+.tag.carveme { color: var(--carveme); background: var(--carveme-bg); }
+.tag.gpr { color: var(--gpr); background: var(--gpr-bg); }
+.methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.method { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.method dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 13.5px; }
+.method dt { color: var(--muted); }
+.method dd { margin: 0; min-width: 0; }
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+thead th { font: 600 11.5px/1.3 var(--body); color: var(--muted); background: var(--panel); vertical-align: bottom; white-space: normal; min-width: 64px; }
+tr.group th { font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .05em; border-bottom: 2px solid currentColor; }
+th.pgdb { color: var(--pgdb); } th.carveme { color: var(--carveme); } th.gpr { color: var(--gpr); }
+table.num td:not(:first-child):not(:nth-child(2)), table.summary td:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+table.summary td:nth-child(3) { font-family: var(--mono); text-align: right; }
+tbody tr:last-child td { border-bottom: 0; }
+.iqr { color: var(--muted); font-size: 11.5px; }
+.na { color: var(--muted); }
+.pending { color: var(--pending); font-weight: 600; }
+code { font: 12.5px var(--mono); }
+ol.findings { margin: 0; padding-left: 22px; display: grid; gap: 10px; }
+details summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+details[open] summary { margin-bottom: 10px; }
+.note { font-size: 13px; color: var(--muted); }
+ul.paths { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; }
+"""
+
+SCRIPT = """
+(function () {
+  var root = document.documentElement, b = document.getElementById('theme');
+  var modes = ['system', 'light', 'dark'];
+  function apply(m) { if (m === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', m); b.textContent = 'Theme: ' + m; }
+  var m = 'system';
+  try { m = localStorage.getItem('theme') || 'system'; } catch (e) {}
+  apply(m);
+  b.addEventListener('click', function () {
+    m = modes[(modes.indexOf(m) + 1) % 3]; apply(m);
+    try { localStorage.setItem('theme', m); } catch (e) {}
+  });
+})();
+"""
+
+
+def main(repo: Path, out: Path):
+    inv = repo / "data" / "mm_compare" / "inventory"
+    sm = pd.read_csv(repo / "data" / "mm_compare" / "sample_map.tsv", sep="\t")
+    cm = pd.read_csv(inv / "carveme_models.tsv", sep="\t")
+    pg = pd.read_csv(inv / "pgdb_models.tsv", sep="\t")
+    gp = pd.read_csv(inv / "gpr_models.tsv", sep="\t")
+    pg_cami = pg[pg.dataset == "cami_hmp"]
+    cami_gpr = (gp.dataset == "cami_hmp").any()
+    page = f"""<title>Metabolic Reconstruction Inventory</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,600&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>{STYLE}</style>
+<div class="wrap">
+<header>
+  <div class="top"><span class="eyebrow">metasmith · bench-E4 · mm_compare</span><button class="theme" id="theme" type="button">Theme: system</button></div>
+  <h1>Metabolic Reconstruction Inventory</h1>
+  <p class="lede">Three ways of turning a genome into gene-to-reaction knowledge, each applied as it stands to the
+  49 CAMI II toy human microbiome samples and to six E. coli strains. Every count is in the method's own units.
+  Nothing here is translated between methods, and nothing here is the comparison test.</p>
+</header>
+
+<section>
+  <h2>The three methods</h2>
+  <div class="methods">
+    <div class="method">{tag("pgdb")}
+      <dl><dt>Output</dt><dd>A Pathway Tools PGDB per genome and per community, from Ryan's MetaPathways run. In E. coli, by three routes</dd>
+      <dt>Speaks</dt><dd>MetaCyc reaction and pathway frames, EC numbers</dd>
+      <dt>Counted</dt><dd>reactions, reactions with a gene, genes with a reaction, pathways</dd>
+      <dt>Own score</dt><dd>PathoLogic pathway score (<code>PWY_SCORE</code>)</dd></dl></div>
+    <div class="method">{tag("carveme")}
+      <dl><dt>Output</dt><dd>A gap-filled SBML model per genome (CarveMe 1.6.6, E5's settings)</dd>
+      <dt>Speaks</dt><dd>BiGG ids, annotated with MNXR, MetaCyc and EC</dd>
+      <dt>Counted</dt><dd>reactions, reactions with a gene rule, genes, metabolites</dd>
+      <dt>Own score</dt><dd>MEMOTE total</dd></dl></div>
+    <div class="method">{tag("gpr")}
+      <dl><dt>Output</dt><dd>A table of ORF-to-reaction calls from four annotation lanes (CLEAN, KOfam, ProteinBERT, UniRef50)</dd>
+      <dt>Speaks</dt><dd>MetaNetX reactions (MNXR)</dd>
+      <dt>Counted</dt><dd>ORFs with a call, calls, distinct MNXR, per lane</dd>
+      <dt>Own score</dt><dd>a raw score per call, in each lane's own kind</dd></dl></div>
+  </div>
+</section>
+
+<section>
+  <h2>E. coli strains</h2>
+  <p>The small-perturbation arm: six lab strains of one species, each from its RefSeq proteome. CarveMe and the
+  4-lane read the same proteins, so their gene ids match.</p>
+  {ecoli_section(cm, gp)}
+  <p>Pathway Tools PGDBs by three routes. BioCyc has prebuilt PGDBs for three of the strains. The two de novo
+  routes ran on all six.</p>
+  {ecoli_pgdb_section(pg)}
+</section>
+
+<section>
+  <h2>CAMI II samples</h2>
+  <p>49 samples in two studies: airways, skin and urogenital (29) and gastrointestinal and oral (20). The PGDBs
+  describe the gold-standard genomes. CarveMe and the 4-lane describe the MAGs E5 binned from reads.</p>
+  {cami_summary(cm, pg_cami, gp)}
+  <details><summary>Per sample</summary>{cami_samples(sm, cm, pg_cami, gp)}</details>
+  {"" if cami_gpr else '<p class="note">The 4-lane run on the CAMI MAGs is in progress on fir. Its counts land here when it finishes.</p>'}
+</section>
+
+<section>
+  <h2>What the test session should know</h2>
+  <ol class="findings">{FINDINGS}</ol>
+</section>
+
+<section>
+  <h2>Where the data lives</h2>
+  <ul class="paths">
+    <li><code>data/mm_compare/manifest.tsv</code>: one row per output, with path and provenance</li>
+    <li><code>data/mm_compare/inventory/</code>: the per-subject counts on this page</li>
+    <li><code>data/mm_compare/ecoli_pgdb/&lt;route&gt;/</code>: the E. coli PGDBs as flat tables, with a <code>PROVENANCE</code> per route</li>
+    <li><code>data/mm_compare/gpr_4lane/</code>: the CAMI 4-lane calls, one table per sample with a <code>mag</code> column</li>
+    <li><code>data/mm_compare/probes/</code>: the tables behind the findings above</li>
+    <li><code>research/mm_compare/</code>: the scripts that fetched, ran and counted</li>
+  </ul>
+  <p class="note">Branch <code>feat/engine/bench-E4</code> of metasmith. The data is pinned by <code>data/mm_compare.dvc</code>.</p>
+</section>
+</div>
+<script>{SCRIPT}</script>
+"""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page)
+
+
+if __name__ == "__main__":
+    main(Path(sys.argv[1]), Path(sys.argv[2]))
