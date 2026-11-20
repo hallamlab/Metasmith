@@ -1,0 +1,29 @@
+{
+ "steps": 33,
+ "tools": 22,
+ "targets": 18,
+ "transforms": [
+  "assembly_stats",
+  "bbduk",
+  "checkv",
+  "chunkOrfsForAnnotation",
+  "contig_length_table",
+  "dramv",
+  "genomad",
+  "interleave_zipped_short_reads",
+  "kofamscan",
+  "megahit",
+  "merge_candidate_calls",
+  "merge_kofamscan",
+  "metabuli",
+  "mmseqs_precluster",
+  "mmseqs_votu",
+  "phyloflash",
+  "prodigal",
+  "seqkit_reads",
+  "splitContigsForAmr",
+  "vcontact3",
+  "vibrant",
+  "virsorter2"
+ ]
+}

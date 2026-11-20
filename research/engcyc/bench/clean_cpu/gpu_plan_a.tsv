@@ -1,0 +1,7 @@
+name	mode	toks	n	input	save
+mig3g_dh_bf16_t4096	bf16	4096	0	dh	1
+mig3g_mg2400_fp32_t4096	fp32	4096	2400	mg	1
+mig3g_mg2400_bf16_t4096	bf16	4096	2400	mg	1
+mig3g_mg20k_bf16_t8192	bf16	8192	20000	mg	0
+mig3g_mg20k_bf16_t16384	bf16	16384	20000	mg	0
+mig3g_mg20k_bf16_t1024	bf16	1024	20000	mg	0

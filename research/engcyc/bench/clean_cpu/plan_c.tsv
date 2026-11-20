@@ -1,0 +1,13 @@
+name	mode	procs	threads	toks	n	pin	stack	flags	env
+c_fp32_6x8	fp32	6	8	4096	2400	1	stock	save	-
+c_base_6x8	bf16	6	8	4096	2400	1	stock	save	-
+c_avx512_6x8	bf16	6	8	4096	2400	1	stock	-	ATEN_CPU_CAPABILITY=avx512
+c_sdpa_6x8	bf16	6	8	4096	2400	1	stock	--sdpa,save	-
+c_t25_6x8	bf16	6	8	4096	2400	1	t25	save	-
+c_t25sdpa_6x8	bf16	6	8	4096	2400	1	t25	--sdpa,save	-
+c_ipex_6x8	bf16	6	8	4096	2400	1	ipex	save	-
+c_ipexsdpa_6x8	bf16	6	8	4096	2400	1	ipex	--sdpa,save	-
+c_t25fp32_6x8	fp32	6	8	4096	2400	1	t25	-	-
+c_int8_6x8	int8	6	8	4096	2400	1	stock	save	-
+c_int8ffn_6x8	int8ffn	6	8	4096	2400	1	stock	save	-
+c_t25int8_6x8	int8	6	8	4096	2400	1	t25	save	-

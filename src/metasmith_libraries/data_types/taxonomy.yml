@@ -11,6 +11,14 @@ types:
     properties:
       _: metabuli krona report
       ext: html
+  rrna_gtdb:
+    properties:
+      _: GTDB r232 lineage per SSU rRNA gene from blastn, capped at the rank its best identity supports (gene, contig, product, lineage, rank, best_identity, best_bitscore, n_hits)
+      ext: tsv
+  contig_lcastar:
+    properties:
+      _: LCA* GTDB r232 lineage per contig voted from UniRef50 ORF LCAs, Metabuli k-mer matches and SSU rRNA, with each source's votes and own call
+      ext: tsv
 
   genomad_virus_summary:
     properties:
@@ -50,6 +58,10 @@ types:
   gtdbtk_raw:
     properties:
       _: gtdbtk raw workspace
+  gtdbtk_quality:
+    properties:
+      _: gtdbtk classifications of the aggregator's pool of quality MAGs
+      ext: tsv
 
   ani_table:
     properties:

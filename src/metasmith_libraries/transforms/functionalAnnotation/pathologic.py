@@ -1,83 +1,50 @@
 from metasmith.python_api import *
 
-lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
+lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model   = Transform()
 
-image    = model.AddRequirement(lib.GetType("env::pathologic.env"))
-orfs     = model.AddRequirement(lib.GetType("sequences::orfs"))
-ann      = model.AddRequirement(lib.GetType("annotation::ptools_annotation_table"))
-archive  = model.AddProduct(lib.GetType("annotation::pgdb_archive"))
-tables   = model.AddProduct(lib.GetType("annotation::pgdb_csv_tables"))
+pt      = model.AddRequirement(lib.GetType("env::pathologic.env"))
+python  = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
+orfs    = model.AddRequirement(lib.GetType("sequences::orfs"))
+ann     = model.AddRequirement(lib.GetType("annotation::ptools_annotation_table"), parents={orfs})
+pt_lib  = model.AddRequirement(lib.GetType("lib::pathologic"))
+ev_lib  = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
+archive = model.AddProduct(lib.GetType("annotation::pgdb_archive"))
+table   = model.AddProduct(lib.GetType("annotation::pathway_table"))
+
+LOCAL = ("${SLURM_TMPDIR:-${TMPDIR:-/tmp}}", "/lscratch")
+# Pathway Tools finds its home through the passwd entry, not $HOME, and stops at
+# start-up when that directory is absent, which `--no-home` makes it.
+PT_HOME = (f"{LOCAL[0]}/ptools_home", "$HOME")
 
 
 def protocol(context: ExecutionContext):
-    iorfs    = context.Input(orfs)
     iann     = context.Input(ann)
+    ilib     = context.Input(pt_lib)
+    iev      = context.Input(ev_lib)
     iarchive = context.Output(archive)
-    itables  = context.Output(tables)
+    itable   = context.Output(table)
+    name     = context.Input(orfs).local.stem
 
-    build_pf = f"""
-import pandas as pd
-
-orf_ids = []
-with open("{iorfs.container}") as fh:
-    for line in fh:
-        if line.startswith(">"):
-            orf_ids.append(line[1:].split()[0])
-
-df = pd.read_parquet("{iann.container}")
-by_orf = {{}}
-for _, r in df.iterrows():
-    by_orf.setdefault(str(r["orf_id"]), []).append((str(r["kind"]), str(r["value"])))
-
-EMIT = {{
-    "EC":       lambda v: ("EC",     v),
-    "GO":       lambda v: ("DBLINK", "GO:" + v.split(":",1)[-1]),
-    "KEGG":     lambda v: ("DBLINK", "KEGG:" + v),
-    "UNIPROT":  lambda v: ("DBLINK", "UNIPROT:" + v),
-    "FUNCTION": lambda v: ("FUNCTION", v),
-}}
-
-with open("0.pf", "w") as f:
-    for oid in orf_ids:
-        f.write(f"ID\\t{{oid}}\\n")
-        f.write(f"NAME\\t{{oid}}\\n")
-        f.write("PRODUCT-TYPE\\tP\\n")
-        for kind, value in by_orf.get(oid, []):
-            fn = EMIT.get(kind)
-            if fn is None:
-                continue
-            field, payload = fn(value)
-            f.write(f"{{field}}\\t{{payload}}\\n")
-        f.write("//\\n")
-"""
-
-    context.LocalShell("cat > _build_pf.py << 'PYEOF'\n" + build_pf + "\nPYEOF\n")
-
-    context.ExecWithEnv(
-        env=image,
-        cmd="""
-            ws="$PWD"
-            python3 "$ws/_build_pf.py"
-            pathologic -i "$ws/0.pf" -o "$ws/cyc" --silent
-            mkdir -p "$ws/tables"
-            dump_pgdb_csvs "$ws/cyc" "$ws/tables"
-            tar czf "$ws/cyc.tgz" -C "$ws/cyc" .
-            tar czf "$ws/tables.tgz" -C "$ws/tables" .
-        """,
-    )
-
-    context.LocalShell(f"cp cyc.tgz {iarchive.local}")
-    context.LocalShell(f"cp tables.tgz {itables.local}")
+    # The bind source must exist before apptainer mounts it, and only a container that binds LOCAL
+    # expands it the way the Pathway Tools step will.
+    context.ExecWithEnv(env=python, binds=[LOCAL], cmd=f"""
+        mkdir -p {LOCAL[1]}/ptools_home
+        PYTHONPATH=$(dirname {iev.container}) python3 {ilib.container}/build_pf.py --annotations {iann.container} --name {name} --out-dir ptin
+    """)
+    context.ExecWithEnv(env=pt, binds=[LOCAL, PT_HOME], cmd=f"""
+        export TMPDIR={LOCAL[1]}/pathologic_{name}
+        mkdir -p $TMPDIR
+        bash {ilib.container}/run.sh ptin pgdb
+    """)
+    context.ExecWithEnv(env=python, cmd=f"""
+        python3 {ilib.container}/pathway_table.py --pgdb pgdb --out {itable.container}
+    """)
+    context.LocalShell(f"tar czf {iarchive.local} pgdb pgdb.log")
 
     return ExecutionResult(
-        manifest=[
-            {
-                archive: iarchive.local,
-                tables:  itables.local,
-            },
-        ],
-        success=iarchive.local.exists() and itables.local.exists(),
+        manifest=[{archive: iarchive.local, table: itable.local}],
+        success=iarchive.local.exists() and itable.local.exists(),
     )
 
 
@@ -87,7 +54,7 @@ TransformInstance(
     group_by=orfs,
     resources=Resources(
         cpus=2,
-        memory=Size.GB(8),
-        duration=Duration(hours=4),
+        memory=Size.GB(32),
+        duration=Duration(hours=24),
     ),
 )

@@ -53,6 +53,10 @@ class TestUniref50:
         assert "stitle" not in uniref._HITS_HEADER
         assert uniref._HITS_HEADER.rstrip("\n").split("\t")[-1] == "bsr"
 
+    def test_the_search_keeps_five_hits_per_orf(self):
+        src = (TRANSFORMS / "diamond_uniref50.py").read_text()
+        assert "--max-target-seqs 5 " in src
+
     def test_a_title_with_a_tab_stays_one_field(self, uniref):
         # diamond puts stitle last, so it is split off by position; a tab inside
         # it would otherwise become two more columns in the hit table.
@@ -148,3 +152,13 @@ class TestMerge:
         b.write_text("qseqid\tbsr\nq2\t0.7\n")
         merge_uniref._concat_with_header([_Staged(a), _Staged(b)], out)
         assert out.read_text().splitlines() == ["qseqid\tbsr", "q1\t0.5", "q2\t0.7"]
+
+    def test_the_hit_merge_keeps_every_hit_of_an_orf(self, merge_uniref, tmp_path):
+        a, b, out = (tmp_path / n for n in ("a.tsv", "b.tsv", "merged.tsv"))
+        a.write_text("qseqid\tsseqid\tbsr\nq1\tUniRef50_A\t0.9\nq1\tUniRef50_B\t0.4\n")
+        b.write_text("qseqid\tsseqid\tbsr\nq2\tUniRef50_A\t0.7\n")
+        merge_uniref._concat_with_header([_Staged(a), _Staged(b)], out)
+        assert out.read_text().splitlines() == [
+            "qseqid\tsseqid\tbsr", "q1\tUniRef50_A\t0.9", "q1\tUniRef50_B\t0.4",
+            "q2\tUniRef50_A\t0.7",
+        ]

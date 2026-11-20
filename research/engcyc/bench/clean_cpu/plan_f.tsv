@@ -1,0 +1,5 @@
+name	mode	procs	threads	toks	n	pin	stack	flags	env	input
+f_6x8_t1024_20k	bf16	6	8	1024	20000	1	stock	slim	-	mg
+f_12x8_t1024_20k	bf16	12	8	1024	20000	1	stock	slim	-	mg
+f_24x8_t512_20k	bf16	24	8	512	20000	1	stock	slim	-	mg
+f_64x3_t512_20k	bf16	64	3	512	20000	1	stock	slim	-	mg

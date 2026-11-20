@@ -115,6 +115,22 @@ types:
     properties:
       src: aspire
       usage: command line
+  metapathways_pgdb:
+    properties:
+      src: metapathways_pgdb
+      usage: command line
+  lcastar:
+    properties:
+      src: lcastar
+      usage: command line
+  rna_scan:
+    properties:
+      src: rna_scan
+      usage: command line
+  pathologic:
+    properties:
+      src: pathologic
+      usage: command line
   # On PYTHONPATH it makes COMEBin's `main.py train` parallelise on a CPU; with CUDA it does nothing.
   comebin_cpu:
     properties:
