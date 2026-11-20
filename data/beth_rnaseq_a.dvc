@@ -1,0 +1,6 @@
+outs:
+- md5: 5d21b3568bff1124c2d500abe60f3987.dir
+  size: 4849895
+  nfiles: 3
+  hash: md5
+  path: beth_rnaseq_a
