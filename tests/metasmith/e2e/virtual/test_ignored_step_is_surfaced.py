@@ -10,6 +10,7 @@ finished when it had produced nothing at all.
 
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -86,10 +87,8 @@ def run_with_a_dead_step(virtual_runtime, tmp_path, mock_samples, mock_types, mo
     target_model.AddRequirement(properties={"bins", "method:metabat2"})
     target_model.AddRequirement(properties={"bins", "method:maxbin2"})
     plan = WorkflowPlan.Generate(
-        given=[[sv] for sv in mock_samples.AsSamples("mock::assembly")],
+        cases=Case.ByShape([[sv] for sv in mock_samples.AsSamples("mock::assembly")], target=target_model, target_names=["metabat2_bins", "maxbin2_bins"]),
         transforms=[tr_lib],
-        target_names=["metabat2_bins", "maxbin2_bins"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan)
     task = WorkflowTask(

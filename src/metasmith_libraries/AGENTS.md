@@ -102,7 +102,7 @@ product. Unpack, index and check content in a second transform that runs on a co
 runs on a shared login node, and a retry of it fetches everything again. The reasons are in
 `docs/metasmith_libraries/architecture.md`.
 
-## Two rules that fail quietly
+## Three rules that fail quietly
 
 **A collecting transform must not pair two grouped slots by position.**
 `InputGroup(a)[i]` and `InputGroup(b)[i]` arrive in independent task-arrival order and
@@ -121,6 +121,14 @@ caller registering an accession must register a name above it. No GenBank field 
 instead: `ORGANISM` is bare species for most isolates, `DEFINITION` carries the strain
 only sometimes, and two assemblies of one species collide under either. PPanGGOLiN then
 refuses the whole run over duplicate names.
+
+**A product group is one possible outcome.** Products a tool always writes together go in
+one group, through consecutive `AddProduct()` calls. `NewProductGroup()` declares an alternative,
+and the planner prepares a separate route below each group. A tool that writes several products
+at once but declares them as groups gets a plan in which no route reads two of them together.
+A fork's manifest holds one dict per group it wrote, and each dict names every product of that
+group. The bootstrap fails a task whose dict is not one whole declared group.
+`transforms/logistics/getSraReads.py` is the reference.
 
 ## An annotator emits its hits and its descriptions
 

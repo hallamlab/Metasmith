@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import json
 
 from metasmith.constants import AgentPaths
@@ -74,10 +75,8 @@ def _stage_mixed(tmp_path, mock_samples, mock_types):
     target_model.AddRequirement(properties={"bins", "method:concoct"})
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["metabat2_bins", "maxbin2_bins", "concoct_bins"]),
         transforms=[tr_lib],
-        target_names=["metabat2_bins", "maxbin2_bins", "concoct_bins"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), plan
     task = WorkflowTask(ok=True, plan=plan, data_libraries=[mock_samples], transform_libraries=[tr_lib])

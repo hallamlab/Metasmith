@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import time
 
 import pytest
@@ -21,10 +22,8 @@ def test_e1_empty_input_plan_hint(tmp_path):
     target.AddRequirement(properties={"assembly"})
     with pytest.raises(AssertionError, match="nothing given"):
         WorkflowPlan.Generate(
-            given=[],
+            cases=Case.ByShape([], target=target, target_names=["assembly"]),
             transforms=[],
-            target_names=["assembly"],
-            target_model=target,
         )
 
 

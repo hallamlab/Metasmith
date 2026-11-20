@@ -165,6 +165,30 @@ redeployed with 0.25.0+bb88d9e kept its 0.25.0+28ecc51 relay, which lacks the pe
 workspace. Pass `assertive=True` to `Deploy` to force the extraction. The first move is to
 compare the relay's checksum with the image's copy instead of its version string.
 
+**`merge_states` rewrites produced slots with no conformance check.** The `to_add_from_alt` loop
+in `mcts.rs` maps a carried-over step's *produced* slots through `swapped`. `substitute()` guards
+consumers only and skips the alt step itself. Traced: a flye assembly slot was rewritten to the
+megahit endpoint, and the witness refused the merged plan as `emission`. So the plan is never
+wrong, but the merge silently loses that arm. The first move is to check the produced side for
+conformance before the swap, so the merge refuses by name.
+
+**Three multi-case shapes still release only at close.** A key whose given post serves the key's
+own cases waits, as `s0` does in release-spec B19. A step grouped by a read set two cases share
+waits for both assembler lanes before it splits per case, so the aligner on shared reads waits
+for the slower assembler. A source step posts its products untagged, so its key reads every case
+and waits for every lane. Each run completes correctly. The first move is a release-spec case per
+shape in `test_release_spec.py`.
+
+**A consumer below a meet step can see the other outcome's items.** A step that reads a product
+two groups of one fork share is placed once per group, but the streams below those copies union
+as before. A step reached through that union, which serves one outcome only, receives the items
+of both. No test drives the shape. The first move is a flow test with a one-outcome consumer
+below a shared meet step, then a narrowing filter at that consumer.
+
+**A transform may declare two groups with the same products.** Nothing refuses it, and the
+planner then solves the same outcome twice. The first move is a check where a `Transform` is
+completed.
+
 ## Accepted risks
 
 **An external mtime-touching event makes the next run cold, and one file is enough.** Stat
@@ -194,6 +218,24 @@ the run that follows is warm. What remains stat-keyed is a transform's own outpu
 the agent staged, where `restat_leaf_ids` still runs — and pinning a library is still the
 mitigation there, because it skips pinned libraries by design. A given whose bytes change under
 its pool entry keeps its identity by design. `metasmith cache check` is how to notice.
+
+**The merged multi-case plan is never witnessed.** The witness checks each case's own solve, and
+the merge across cases runs after it. `_Merge.problems` is the only guard on the merged plan: one
+source per slot per case, and no cycle. A merge bug that passes that check reaches the runtime. Each fork outcome is a case,
+so the same holds for a plan with forks.
+
+**Nothing makes a fork outcome's route use the products that set it apart.** The hybrid outcome
+of a read fetch may assemble from its short reads alone and leave the long reads unused, since
+that route also reaches the target. The search picks `hybrid` there today, but no rule requires
+it. The first move, if a study needs the guarantee,
+is to require each outcome's route to consume a product only its group makes.
+
+**Separate case solves can pick different interchangeable tools, and then nothing merges.** Two
+cases that could share one assembler may each solve to a different one, so the merge finds no
+common step. The run is correct and computes twice. A fork's pushed cases already get this
+bias, from a guide of the steps no other outcome conditions. Declared cases solve without one, so
+their plans stay independent of declaration order. The first move is to measure a guide on
+declared cases.
 
 **A mutable container tag can produce a false cache hit.** A container's leaf id addresses the
 docker URL string, not the resolved image digest, so a pinned tag busts the cache on a version
@@ -261,6 +303,27 @@ hand-written. The first move is a smoke per recipe: build the env and run the to
 **The caching and reentrancy path has never been run live through the sockeye relay.** The
 cross-host proof was assembled from separate hosts showing cache-key identity, not from one
 relayed run.
+
+**Deploy-and-run end to end on the HPC hosts was red at the last check** and has not been
+re-verified since the bind failure was made fail-fast.
+
+**No test joins on a parent that only one lane of a stream union carries.** `child2parent` is
+keyed by stream, so a union's stream holds the parents of every producer in its class, and
+`classify` picks the join class from that union. A short-read assembly item never carries the
+long-read hash a hybrid assembly item does. Today `o.cases` drops the short-read items before any
+step that reads the long reads. No e2e case drives a join where both lanes survive the filter,
+so whether `group()` raises on the item that lacks the parent is unknown.
+
+**The virtual runtime writes every group of a fork for every sample.** That is a valid outcome,
+but it never exercises a sample that writes one group. Only the host Nextflow test
+`e2e/nextflow/test_forks.py` covers single-group samples. The first move is a per-sample group
+choice in `virtual_runtime.py`.
+
+**No test stages one data library under two task keys**, in either the virtual runtime or the
+`-stub` docker lane. 0.22.1 stopped a staged leaf's id depending on the task key, so this is a
+regression guard rather than a way to see an open bug -- and the defect it would guard needed a
+93-minute real run to find, twice. The same blind spot hid a record-path bug: the docker lane
+promotes from the host, so a container-side path never enters a cache record.
 
 **Closed at 0.22.0: the published artifacts are now driven as a user receives them.** The
 release guards still only inspect the artifact as the builder sees it — `-ud` reads the locally

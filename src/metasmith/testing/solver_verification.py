@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import random
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from ..models.solver import (
     Application,
@@ -480,7 +480,18 @@ def generate_problem(
     )
 
 
-def forward_closure_solvable(problem: SolverProblem) -> bool:
+def solved_groups(
+    tr: Transform, fork_groups: Sequence[tuple[Transform, int]] = (),
+) -> list[list[Dependency]]:
+    if len(tr.produces) < 2:
+        return tr.produces
+    chosen = next((g for t, g in fork_groups if t is tr), 0)
+    return [tr.produces[chosen]]
+
+
+def forward_closure_solvable(
+    problem: SolverProblem, fork_groups: Sequence[tuple[Transform, int]] = (),
+) -> bool:
     have: list[set[str]] = [set(e.properties) for group in problem.given for e in group]
 
     def _met(dep: Dependency) -> bool:
@@ -492,7 +503,7 @@ def forward_closure_solvable(problem: SolverProblem) -> bool:
         for tr in problem.transforms:
             if not all(_met(r) for r in tr.requires):
                 continue
-            for group in tr.produces:
+            for group in solved_groups(tr, fork_groups):
                 for p in group:
                     ps = set(p.properties)
                     if not any(ps == h for h in have):
@@ -523,6 +534,7 @@ def exhaustive_solvable(
     *,
     max_applications: int = 6,
     node_cap: int = 200_000,
+    fork_groups: Sequence[tuple[Transform, int]] = (),
 ) -> bool | None:
     if len(problem.transforms) > 8:
         return None
@@ -592,7 +604,7 @@ def exhaustive_solvable(
                     lineage.update(ep.parents)
                 frozen = frozenset(lineage)
                 grown = set(have)
-                for group in tr.produces:
+                for group in solved_groups(tr, fork_groups):
                     for p in group:
                         grown.add(_Ep(frozenset(p.properties), frozen))
                 nxt = frozenset(grown)

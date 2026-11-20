@@ -69,6 +69,8 @@ class TransformInstance:
     def __post_init__(self):
         assert self.batch_size>0, self.model
         assert self.group_by in self.model.requires, self.model
+        groups = [frozenset(g) for g in self.model.produces]
+        assert len(set(groups)) == len(groups), f"two product groups declare the same outputs: {self.model}"
         for k, vt in [
             ("protocol", Callable),
             ("model", Transform),

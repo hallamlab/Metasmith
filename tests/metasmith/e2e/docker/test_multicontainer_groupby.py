@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import re
 from pathlib import Path
 
@@ -64,10 +65,8 @@ def _make_plan(container_types, container_inputs, temp_dir, n: int) -> WorkflowP
     target_model = Transform()
     target_model.AddRequirement(properties={"pulled_container"})
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["pulled"]),
         transforms=[tr_lib],
-        target_names=["pulled"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), f"plan failed: {plan}"
     return plan, tr_lib

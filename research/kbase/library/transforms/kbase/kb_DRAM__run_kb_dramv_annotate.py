@@ -22,11 +22,12 @@ study              = model.AddRequirement(lib.GetType("kbase::study"))
 sample             = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 assembly_input_ref = model.AddRequirement(lib.GetType("kbase::accepts_39"), parents={sample})
 env                = model.AddRequirement(lib.GetType("env::kb_DRAM.env"))
-# output_name is one of 2 types; each is its own product branch
+# output_name is one of 2 types; each is its own product group, sharing the other products
 output_name        = model.AddProduct(lib.GetType("kbase::KBaseSearch_GenomeSet"))
+report_            = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 output_name_2      = model.AddProduct(lib.GetType("kbase::KBaseSets_GenomeSet"))
-report_            = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {output_name: context.Output(output_name)}

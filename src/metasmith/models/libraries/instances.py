@@ -146,6 +146,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
         self.instance_meta: dict[Path, dict] = {}
+        self.cases: dict[Path, list[str]] = {}
         self._type_sources: dict[str, Path] = {}
         # The `pinned:` block from index.yml, or None for the overwhelming
         # majority of libraries. See pinned.py.
@@ -156,6 +157,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             self.manifest = other.manifest
             self.types = other.types
             self.instance_meta = other.instance_meta
+            self.cases = other.cases
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
             self._pinned = other._pinned
@@ -375,9 +377,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self._invalidate_endpoint_cache()
         return path
 
-    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None, cases: Iterable[str]|None=None):
         self._refuse_if_pinned("AddItem")
-        return self._register(path, dtype, parents, self._mint_leaf_id)
+        path = self._register(path, dtype, parents, self._mint_leaf_id)
+        if cases:
+            self.cases[path] = list(cases)
+        return path
 
     # The caller supplies the identity, so nothing here invents one and the
     # given path does not refuse what this produces. That is the route a pool
@@ -518,9 +523,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         if path in self.parents:
             del self.parents[path]
         self.instance_meta.pop(path, None)
+        self.cases.pop(path, None)
         self._invalidate_endpoint_cache()
 
     def _migrate_instance_meta(self, old: Path, new: Path):
+        if old in self.cases:
+            self.cases[new] = self.cases.pop(old)
         meta = self.instance_meta.pop(old, None)
         if meta is None:
             return

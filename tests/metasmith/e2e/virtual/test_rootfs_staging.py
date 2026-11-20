@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -20,8 +21,8 @@ def _stage(tmp_path, mock_samples, mock_types, rootfs=None):
     target_model = Transform()
     target_model.AddRequirement(properties={"bins", "method:metabat2"})
     plan = WorkflowPlan.Generate(
-        given=given, transforms=[tr_lib],
-        target_names=["metabat2_bins"], target_model=target_model,
+        cases=Case.ByShape(given, target=target_model, target_names=["metabat2_bins"]),
+        transforms=[tr_lib],
     )
     assert isinstance(plan, WorkflowPlan), plan
     task = WorkflowTask(ok=True, plan=plan, data_libraries=[mock_samples], transform_libraries=[tr_lib])

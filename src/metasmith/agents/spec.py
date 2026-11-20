@@ -11,7 +11,7 @@ from ..models.libraries import (
     TransformInstanceLibrary, TransformInstanceLibraryView,
 )
 from ..models.solver import Dependency, Transform
-from ..models.workflow import WorkflowPlan, WorkflowTask
+from ..models.workflow import Case, WorkflowPlan, WorkflowTask
 from .targets import TargetBuilder, TargetSpec
 
 
@@ -206,10 +206,11 @@ class Spec:
             for s in samples
         ]
         plan = WorkflowPlan.Generate(
-            given=[[sample] + res_views for sample in _samples],
+            cases=Case.ByShape(
+                [[sample] + res_views for sample in _samples],
+                target=target_model, target_names=target_names,
+            ),
             transforms=transforms,
-            target_names=target_names,
-            target_model=target_model,
             max_iter=max_iter, max_refine=max_refine, seed=seed,
         )
         data_libs: list[DataInstanceLibrary] = []

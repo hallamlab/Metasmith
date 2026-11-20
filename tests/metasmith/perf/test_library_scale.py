@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import pytest
 import tempfile
 import shutil
@@ -153,10 +154,8 @@ class TestDataInstanceLibraryPerformance:
 
         start = time.time()
         plan = WorkflowPlan.Generate(
-            given=[[sv] for sv in samples],
+            cases=Case.ByShape([[sv] for sv in samples], target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
         elapsed = time.time() - start
 

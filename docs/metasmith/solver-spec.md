@@ -126,8 +126,9 @@ different answer from unsound.
 `read_metadata` endpoints with no lineage intern to one node — and the given step then presents that
 one pair once per group.
 
-**Nothing confines a plan to one declared group.** The groups are one per sample, and a multi-sample
-workflow legitimately spans all of them. What keeps a single step from mixing two samples is the
+**Nothing confines a plan to one sample family.** The given step's groups are one per sample, and
+a multi-sample workflow legitimately spans all of them. A fork's groups are a different thing, and
+Shape confines each step of a fork to one of them. What keeps a single step from mixing two samples is the
 lineage anchors, not group membership: a transform that declares no anchor between two inputs has
 not asked for them to come from the same sample, and refusing anyway would be refusing on the
 author's behalf.
@@ -150,8 +151,10 @@ Ten clauses. `Spec.lean` is normative and this is the reading.
 
 1. **Indexed.** Every id names something that exists, every parent precedes its child in both
    tables, and no transform names one requirement twice.
-2. **Shape.** Every step binds exactly the slots its transform requires and emits exactly one
-   endpoint per declared product slot.
+2. **Shape.** Every step binds exactly the slots its transform requires. It carries exactly one
+   product group, and that group emits one endpoint per slot of one declared group. A transform
+   with several groups is a fork, and each plan is solved for one of its outcomes. Groups may share
+   a slot, so the match is by slot set, not by position.
 3. **Conformance.** Every input binding fills its slot, properties and lineage together.
 4. **Emission.** Every produced endpoint fills the slot it is emitted from.
 5. **Derived.** A produced endpoint's declared lineage is exactly what its step confers — everything

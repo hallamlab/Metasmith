@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -26,10 +27,8 @@ def _build_binning_task(tmp_path, mock_samples, mock_types) -> WorkflowTask:
     target_names = ["metabat2_bins", "maxbin2_bins", "concoct_bins"]
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
         transforms=[tr_lib],
-        target_names=target_names,
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan)
     return WorkflowTask(

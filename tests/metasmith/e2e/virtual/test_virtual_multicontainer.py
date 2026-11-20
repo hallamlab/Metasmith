@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -56,10 +57,8 @@ def _build_pull_task(tmp_path) -> WorkflowTask:
     target_model = Transform()
     target_model.AddRequirement(properties={"pulled_container"})
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["pulled"]),
         transforms=[tr_lib],
-        target_names=["pulled"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan)
     assert len(plan.steps) == 1

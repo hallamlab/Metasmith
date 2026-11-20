@@ -36,6 +36,8 @@ class _StoreTransfer:
                 payload = meta.get("lineage_payload")
                 if payload is not None:
                     d["lineage_payload"] = payload.hex()
+            if path in self.cases:
+                d["cases"] = list(self.cases[path])
             return d
         if not self.is_pinned:
             for _path, _dtype in self.manifest.items():
@@ -63,12 +65,15 @@ class _StoreTransfer:
             )
         manifest = {}
         instance_meta: dict[Path, dict] = {}
+        cases: dict[Path, list[str]] = {}
         for k, v in raw["manifest"].items():
             type_name = v["type"]
             if check_integrity:
                 assert (location/k).exists(), f"[{k}], does not exist"
             cls._get_type(type_name, dtypes)
             manifest[Path(k)] = type_name
+            if v.get("cases"):
+                cases[Path(k)] = list(v["cases"])
             if "instance_id" in v:
                 payload = v.get("lineage_payload")
                 if isinstance(payload, str):
@@ -91,6 +96,7 @@ class _StoreTransfer:
         lib.schema = raw["schema"]
         lib.manifest = manifest
         lib.instance_meta = instance_meta
+        lib.cases = cases
         lib.fork_id = raw.get("fork_id")
         # `frozen` is what this block was called before the rename. Read, never
         # written: an index staged to a host that cannot re-pin it would

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -108,10 +109,8 @@ class TestProjection:
         target = Transform()
         target.AddRequirement(properties={"out"})
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target, target_names=["out_target"]),
             transforms=[tr_lib],
-            target_names=["out_target"],
-            target_model=target,
         )
         assert isinstance(plan, WorkflowPlan), f"did not converge: {plan!r}"
 

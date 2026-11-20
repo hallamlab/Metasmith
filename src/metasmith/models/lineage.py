@@ -74,8 +74,10 @@ class LinPayload:
     # early release. Stripped before PROV and publish, so a payload never
     # carries it; reserved here so one that did would not read it as lineage.
     SIBS_KEY: ClassVar[str] = "SIBS"
+    # The cases an item serves, set only in a run of more than one case.
+    CASES_KEY: ClassVar[str] = "CASES"
 
-    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY", "SIBS"})
+    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV", "KEY", "SIBS", "CASES"})
 
     def Pack(self) -> dict:
         return {"v": self.v, "entries": [dict(m) for m in self.entries]}
@@ -249,6 +251,7 @@ class InvocationEvent:
     step_order: Optional[int] = None
     step_name: Optional[str] = None
     cache_key: Optional[str] = None
+    cases: Optional[list[str]] = None
     schema_version: int = INVOCATION_EVENT_SCHEMA_VERSION
 
     def to_dict(self) -> dict:
@@ -274,6 +277,7 @@ class InvocationEvent:
             "step_order",
             "step_name",
             "cache_key",
+            "cases",
         ):
             v = getattr(self, k)
             if v is None:
@@ -316,6 +320,7 @@ class InvocationEvent:
             step_order=raw.get("step_order"),
             step_name=raw.get("step_name"),
             cache_key=raw.get("cache_key"),
+            cases=raw.get("cases"),
             schema_version=raw["schema_version"],
         )
 

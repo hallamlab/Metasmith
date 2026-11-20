@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import json
 import shutil
 import subprocess
@@ -216,10 +217,8 @@ def _make_task(
         target_model.AddRequirement(properties=props)
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
         transforms=[tr_lib],
-        target_names=target_names,
-        target_model=target_model,
     )
 
     assert isinstance(plan, WorkflowPlan)
@@ -475,10 +474,8 @@ class TestTraceSharedInputs:
         target_names = ["annotated"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
 
         assert isinstance(plan, WorkflowPlan)
@@ -542,10 +539,8 @@ class TestTraceSharedInputs:
         target_names = ["annotated"]
 
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target_model, target_names=target_names),
             transforms=[tr_lib],
-            target_names=target_names,
-            target_model=target_model,
         )
         assert isinstance(plan, WorkflowPlan)
         task = WorkflowTask(

@@ -150,12 +150,14 @@ def match_output_slot(name: str, slot_files: list[dict]) -> dict | None:
 
 def member_outputs(cwd: Path, position: int) -> list[Path]:
     """The products in `cwd` that the member at `position` (1-based) wrote."""
+    from ..models.workflow.payload import ZERO_MARK
+
     out: list[Path] = []
     for fp in sorted(cwd.iterdir()):
         if fp.is_symlink():
             continue
         m = CANONICAL_OUTPUT_PREFIX.match(fp.name)
-        if m is None or int(m.group(1)) != position:
+        if m is None or int(m.group(1)) != position or ZERO_MARK in fp.name:
             continue
         out.append(fp)
     return out
@@ -181,9 +183,10 @@ def promote_members(
 
     payload = LinPayload(v=LinPayload.VERSION, entries=list(entries))
     channels = meta.channels
-    required_branches = {
-        int(sf.get("branch_idx", 0)) for sf in meta.slot_files
-    } if len({int(sf.get("branch_idx", 0)) for sf in meta.slot_files}) == 1 else set()
+    slots_of: dict[int, set[str]] = {}
+    for sf in meta.slot_files:
+        slots_of.setdefault(int(sf.get("branch_idx", 0)), set()).add(str(sf.get("dtype_key", "")))
+    required_branches = set(slots_of) if len(slots_of) == 1 else set()
     records: list[dict] = []
     link_dir = _link_dir(cwd, cache_root)
     for member, entry in enumerate(entries):
@@ -224,13 +227,20 @@ def promote_members(
                 k: v for k, v in entry.items() if k not in LinPayload.RESERVED_KEYS
             },
         }
+        # The cases belong to this run, not to the product: they go on the
+        # record and never into the shard, which another run may hit.
+        if isinstance(entry.get(LinPayload.CASES_KEY), list):
+            record["cases"] = list(entry[LinPayload.CASES_KEY])
         if key_hex == "-" or not meta.cacheable:
             record["status"] = "uncacheable"
         elif not ok:
             record["status"] = "failed"
         elif not files or any(
             b not in {f["branch_idx"] for f in files} for b in required_branches
-        ):
+        ) or (len(slots_of) > 1 and any(
+            slots_of[b] - {f["dtype_key"] for f in files if f["branch_idx"] == b}
+            for b in {f["branch_idx"] for f in files}
+        )):
             record["status"] = "incomplete"
         else:
             record["status"], record["shard"] = _promote_one(
@@ -438,6 +448,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                         step_name=rec.get("step_name") or (meta.step_name if meta else ""),
                         cache_key=key_hex if key_hex != "-" else None,
                         work_dir=str(rec_file.parent),
+                        cases=rec.get("cases"),
                     ))
                 except Exception as e:
                     log.append(("warn", f"record {n} in {rec_file} not indexed: {e}"))
@@ -484,6 +495,7 @@ def record_run(*, workspace: Path, cache_root: Path, log: list | None = None) ->
                         step_order=int(hit.get("step", 0)) or None,
                         step_name=hit.get("step_name") or (meta.step_name if meta else ""),
                         cache_key=key_hex,
+                        cases=hit.get("cases"),
                     ))
                 except Exception as e:
                     log.append(("warn", f"hit {key_hex[:8]} not indexed: {e}"))
