@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from metasmith.models.solver import Transform
-from metasmith.models.workflow import WorkflowPlan, WorkflowTask
+from metasmith.models.workflow import Case, WorkflowPlan, WorkflowTask
 from metasmith.testing.mock_transforms import alignment_transform, binner_transforms
 
 from .conftest import create_transform_library, stage_task
@@ -13,10 +13,9 @@ def _task(tmp_path, mock_samples, mock_types, methods: list[str]) -> WorkflowTas
     for m in methods:
         target_model.AddRequirement(properties={"bins", f"method:{m}"})
     plan = WorkflowPlan.Generate(
-        given=[[sv] for sv in mock_samples.AsSamples("mock::assembly")],
+        cases=Case.ByShape([[sv] for sv in mock_samples.AsSamples("mock::assembly")],
+                           target=target_model, target_names=[f"{m}_bins" for m in methods]),
         transforms=[tr_lib],
-        target_names=[f"{m}_bins" for m in methods],
-        target_model=target_model,
     )
     return WorkflowTask(ok=True, plan=plan, data_libraries=[mock_samples], transform_libraries=[tr_lib])
 

@@ -20,10 +20,11 @@ def protocol(context: ExecutionContext):
         wget -c --no-check-certificate -O ssu.fna.gz "{SSU_URL}"
         gunzip -f ssu.fna.gz
     """)
+    ref = context.Mount(iout.local, "/ref")
     context.ExecWithEnv(
         env=image,
-        binds=[(iout.local, "/ref")],
-        cmd="makeblastdb -in /ref/ssu.fna -dbtype nucl -out /ref/ssu",
+        binds=[ref],
+        cmd=f"makeblastdb -in {ref}/ssu.fna -dbtype nucl -out {ref}/ssu",
     )
 
     return ExecutionResult(
