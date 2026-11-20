@@ -6,6 +6,10 @@ from pathlib import Path
 import fabfos_evidence as fe
 
 CELLULAR_ORGANISMS = 131567
+# Pathway Tools refuses a frame name over 60 characters, and it names a gene's protein <ID>-MONOMER.
+# The refusal is fatal to the whole build yet still exits 0. NAME keeps the ORF ID, and
+# pathway_table.py reads that.
+MAX_ID = 60 - len("-MONOMER")
 
 
 def org_id(name: str) -> str:
@@ -41,9 +45,11 @@ def main():
 
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    pf_ids = {orf: orf if len(orf) <= MAX_ID else orf[-MAX_ID:].lstrip("_-") for orf in ecs}
+    assert len(set(pf_ids.values())) == len(pf_ids), "truncated PathoLogic gene IDs collide"
     with open(out / "0.pf", "w") as fh:
         for orf in sorted(ecs):
-            fh.write(f"ID\t{orf}\nNAME\t{orf}\nPRODUCT-TYPE\tP\n")
+            fh.write(f"ID\t{pf_ids[orf]}\nNAME\t{orf}\nPRODUCT-TYPE\tP\n")
             fh.writelines(f"EC\t{ec}\n" for ec in ecs[orf])
             fh.write("//\n")
     (out / "genetic-elements.dat").write_text("ID\t0\nNAME\t0\nTYPE\t:CONTIG\nANNOT-FILE\t0.pf\n//\n")
