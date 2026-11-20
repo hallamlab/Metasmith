@@ -10,6 +10,14 @@ types:
       _: ASV abundance table
       Data: sample by ASV count matrix
       ext: tsv
+  # The table an analysis reads: curated, samples by features. No `_`, so a producer's
+  # own type can carry these two properties beside its description and satisfy it.
+  # Deliberately not a parent or child of `asv_table`, which is the raw table the
+  # curation steps consume -- sharing a type there would let curation read its own output.
+  abundance_table:
+    properties:
+      Data: analysis-ready sample by feature abundance matrix
+      ext: tsv
   asv_contig_map:
     properties:
       _: ASV to contig mapping via BLASTn

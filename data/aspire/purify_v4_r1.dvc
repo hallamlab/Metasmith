@@ -1,0 +1,6 @@
+outs:
+- md5: 5a0e46f869d771bb69bf32b9d8463f30.dir
+  size: 6548625
+  nfiles: 70
+  hash: md5
+  path: purify_v4_r1

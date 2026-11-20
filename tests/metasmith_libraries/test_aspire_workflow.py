@@ -8,7 +8,9 @@ PRESET = MLIB.parents[1] / "research" / "aspire" / "presets" / "aspire.yml"
 SWITCHES = ("spieceasi", "network_modules", "asv_mag_link", "graph_network")
 DEFAULT_ON = set(SWITCHES)
 REFERENCES = ("aspire::mito_reference_source",
-              "aspire::contaminant_reference_source", "amplicon::silva_db")
+              "aspire::contaminant_reference_set", "amplicon::silva_db",
+              "aspire::mag_collection")
+CONTAMINANT_LISTS = ("aspire::contaminants_literature", "aspire::contaminants_biofactorial")
 CORE = ["amplicon::asv_taxonomy", "aspire::counts_clean", "aspire::read_fate"]
 
 
@@ -22,7 +24,7 @@ def aspire_transforms(mlib):
 
 @pytest.fixture
 def aspire_inputs(tmp_inputs):
-    def _build(on=DEFAULT_ON, samples=2, parity="paired"):
+    def _build(on=DEFAULT_ON, samples=2, parity="paired", references=REFERENCES):
         inputs = tmp_inputs(["aspire.yml", "amplicon.yml", "sequences.yml"])
         sheet = "sample\tlabel\n" + "".join(
             f"sample_{i}\t{'A' if i % 2 else 'B'}\n" for i in range(1, samples + 1))
@@ -41,7 +43,7 @@ def aspire_inputs(tmp_inputs):
             else:
                 inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={meta})
 
-        for dtype in REFERENCES:
+        for dtype in references:
             inputs.AddItem(DEFERRED, dtype)
 
         for base in SWITCHES:
@@ -110,7 +112,33 @@ class TestAspireTopology:
         task = solve(aspire_inputs(), aspire_transforms, ["aspire::master_long"])
         assert task.ok, f"master summary did not solve: dropped {sorted(task.plan.dropped_targets)}"
         steps = picked(task, aspire_transforms)
-        assert {"master_summary", "sankey", "indicspecies"} <= set(steps), steps
+        assert {"master_summary", "clustermaps", "indicspecies", "module_mag_anchors"} <= set(steps), steps
+        assert "sankey" not in steps, steps
+
+    # The curated counts are a type fence: the raw table cannot answer for them, so every
+    # analysis reads plot_metadata's output and filter_table never reads its own descendant.
+    def test_analyses_read_curated_counts(self, aspire_transforms, aspire_inputs):
+        targets = ["aspire::diversity_outputs", "aspire::indicspecies_results",
+                   "aspire::network_outputs"]
+        task = solve(aspire_inputs(), aspire_transforms, targets)
+        assert task.ok, f"dropped {sorted(task.plan.dropped_targets)}"
+        steps = picked(task, aspire_transforms)
+        assert steps.count("filter_table") == 1 and steps.count("plot_metadata") == 1, steps
+        assert {"diversity_analysis", "indicspecies", "spieceasi", "graph_network"} <= set(steps), steps
+
+    # With no set given, the default set is bundled from both lists, and a list never stands in
+    # for the other's slot.
+    def test_default_contaminant_set_bundles_both_lists(self, aspire_transforms, aspire_inputs):
+        references = [r for r in REFERENCES if r != "aspire::contaminant_reference_set"]
+        task = solve(aspire_inputs(references=[*references, *CONTAMINANT_LISTS]),
+                     aspire_transforms, CORE)
+        assert task.ok, f"dropped {sorted(task.plan.dropped_targets)}"
+        steps = picked(task, aspire_transforms)
+        assert steps.count("contaminant_set") == 1, steps
+        bundle = task.plan.steps[steps.index("contaminant_set")]
+        used = sorted(u.dtype_name for u in bundle.uses if u.dtype_name.startswith("aspire::contaminants_"))
+        assert used == sorted(CONTAMINANT_LISTS), used
+        assert not {"buildAspireLiteratureContaminants", "downloadBiofactorialContaminants"} & set(steps), steps
 
     def test_solve_is_reproducible(self, aspire_transforms, aspire_inputs):
         inputs = aspire_inputs()
@@ -130,6 +158,8 @@ class TestAspireTopology:
     ("asv_mag_link", "asv_mag_link", "asv_mag_link_absent",
      ["aspire::network_outputs"]),
     ("graph_network", "graph_network", "graph_network_absent",
+     ["aspire::master_long"]),
+    ("asv_mag_link", "module_mag_anchors", "module_mag_anchors_absent",
      ["aspire::master_long"]),
 ])
 class TestPolicySwitches:

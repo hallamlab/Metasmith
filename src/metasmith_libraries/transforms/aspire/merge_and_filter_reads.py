@@ -40,11 +40,14 @@ def protocol(context: ExecutionContext):
     else:
         merged = f"gzip -cd {iqc.container} > merged.fq"
     maxlen = f"--fastq_maxlen {filt['max_len']}" if filt["max_len"] else ""
+    # A V4-V5 read cut to the V4 amplicon's length is the V4 read of the same template, since both
+    # start after 515F. vsearch truncates before it filters and drops the reads that are shorter.
+    trunclen = f"--fastq_trunclen {filt['trunc_len']}" if filt.get("trunc_len") else ""
     context.ExecWithEnv(env=image, cmd=f"""\
         set -euo pipefail
         {merged}
         vsearch --fastx_filter merged.fq --fastq_maxee {filt['max_ee']} \
-            --fastq_minlen {filt['min_len']} {maxlen} \
+            --fastq_minlen {filt['min_len']} {maxlen} {trunclen} \
             --relabel {sample}. --sample {sample} --fastaout filtered.fasta
         printf 'sample\\tparity\\tmerged\\tfiltered\\n{sample}\\t{parity}\\t%s\\t%s\\n' \
             $(( $(wc -l < merged.fq) / 4 )) $(grep -c '^>' filtered.fasta || true) > {icounts.container}

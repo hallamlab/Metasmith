@@ -1,0 +1,6 @@
+outs:
+- md5: c12f610701628b86054ceec4624a7136.dir
+  size: 1578813823
+  nfiles: 1701
+  hash: md5
+  path: lab_r1

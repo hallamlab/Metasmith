@@ -2,11 +2,11 @@
 
 ## Purpose & Contents
 
-This campaign tests the ASPIRE port end to end on real reads. It runs the reads-to-counts
-lane plus `sankey`, `plot_metadata` and `indicspecies` over 18 public V4 16S libraries
-(515F/806R, MiSeq 2x301) from the phycosphere of *Anabaena* and *Microcystis* cultures.
-This file says what the campaign needs and how to re-run it. `JOURNAL.md` records each
-run and what it found.
+This campaign tests the ASPIRE port end to end on real reads. It runs every row except the
+MAG lane over 18 public V4 16S libraries (515F/806R, MiSeq 2x301) from the phycosphere of
+*Anabaena* and *Microcystis* cultures. It is also the study the port is compared against
+upstream ASPIRE on, by `../upstream_cyano.py`. This file says what the campaign needs and
+how to re-run it. `JOURNAL.md` records each run and what it found.
 
 | file | holds |
 |---|---|
@@ -14,7 +14,7 @@ run and what it found.
 | `samples.tsv` | the 18 ENA runs: accession, alias, read count, sizes and md5s |
 | `study_metadata.tsv` | the study sheet: the sample id and one label, `culture` |
 | `params.yml` | the ASPIRE preset with this amplicon's primer trims and length window |
-| `check_results.py` | the acceptance checks over a retrieved run |
+| `check_results.py` | the acceptance checks over a retrieved run, one property per analysis |
 | `smoke_local.py` | the lane up to the filtered table, on two samples, in local docker |
 
 ## Re-running

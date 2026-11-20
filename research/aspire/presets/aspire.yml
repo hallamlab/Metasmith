@@ -47,6 +47,7 @@ table_filter:
 curate:
   min_pident: 97.0        # mito/contaminant BLAST hit identity; code default
   min_percov: 51.0        # mito/contaminant BLAST hit coverage; code default
+  contaminant_min_prevalence: 0.10  # a contaminant entry counts if seen in this share of its sources' blanks; port addition, 0 counts every entry
   abundance_threshold: 0.5  # percent, kept if reached in at least one sample. Code default 0.005, si config 0.005, mock 0.
                             # Reitmeier 2021 (ISME Commun 1:31) recommends 0.1-0.3; Bokulich 2013 uses 0.005 of the dataset total
   min_consensus: 0.0      # taxonomy consensus floor; code default
