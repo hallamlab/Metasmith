@@ -527,4 +527,21 @@ def _diagnose_plan_failure(
                     chain=[f"{_model_name(model)} needs {req_name} with parent {req_parent_name}"],
                     near_misses=near_misses,
                 ))
+    # Every target has a route from the givens and nothing on the way is too general or
+    # off-lineage, so the search ran out before it joined the routes into one plan. The
+    # per-producer hints would only list each target's unused dead ends.
+    explained = {'lineage_mismatch', 'too_general'}
+    if all(_matches_any_given(r) or _reachable(r) for r in target_model.requires) \
+            and not any(h.kind in explained for h in hints):
+        iterations = getattr(solver_result, "_iterations", None)
+        return [PlanHint(
+            kind='search_exhausted',
+            target=",".join(target_names),
+            message=(
+                "every target can be produced from the given inputs, but the planner found no "
+                "single plan for all of them together"
+                + (f" within {iterations} iterations" if iterations else "")
+                + ". Solve fewer targets at a time, or remove targets you do not need."
+            ),
+        )]
     return hints

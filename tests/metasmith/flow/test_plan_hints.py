@@ -475,10 +475,9 @@ def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(te
     for t in ("mock::stats", "mock::truth"):
         target_model.AddRequirement(tr_lib.GetType(t))
     plan = WorkflowPlan.Generate(
-        given=[[sv] for sv in inputs.AsSamples("mock::reads")],
+        cases=Case.ByShape([[sv] for sv in inputs.AsSamples("mock::reads")],
+                           target=target_model, target_names=["mock::stats", "mock::truth"]),
         transforms=[tr_lib],
-        target_names=["mock::stats", "mock::truth"],
-        target_model=target_model,
     )
 
     assert plan.steps == []
@@ -489,3 +488,38 @@ def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(te
     stats = [h for h in plan.hints if h.target == "mock::stats"]
     assert [h.kind for h in stats] == ["blocked_by_other_target"], stats
     assert not any("accession" in h.message for h in plan.hints), plan.hints
+
+
+def test_a_search_that_runs_out_names_no_dead_end(temp_dir):
+    types_path = temp_dir / "mock.yml"
+    _write_types_yml(types_path, {
+        name: {"properties": {"_": name}}
+        for name in ("reads", "assembly", "accession", "stats", "bins")
+    })
+    tr_lib = _make_transform_lib(temp_dir, types_path, {
+        "assemble": _transform(["reads"], "assembly"),
+        "fetch_assembly": _transform(["accession"], "assembly"),
+        "stats": _transform(["assembly"], "stats"),
+        "bin": _transform(["assembly", "reads"], "bins"),
+    })
+
+    inputs = DataInstanceLibrary(temp_dir / "inputs.xgdb")
+    inputs.AddTypeLibrary(types_path, namespace="mock")
+    inputs.AddValue("r.fq", "x", "mock::reads")
+    pool_backed(inputs)
+    inputs.Save()
+
+    targets = ["mock::stats", "mock::bins"]
+    target_model = Transform()
+    for t in targets:
+        target_model.AddRequirement(tr_lib.GetType(t))
+    plan = WorkflowPlan.Generate(
+        cases=Case.ByShape([[sv] for sv in inputs.AsSamples("mock::reads")],
+                           target=target_model, target_names=targets),
+        transforms=[tr_lib],
+        max_iter=1,
+    )
+
+    assert plan.steps == []
+    assert [h.kind for h in plan.hints] == ["search_exhausted"], plan.hints
+    assert "accession" not in plan.hints[0].message
