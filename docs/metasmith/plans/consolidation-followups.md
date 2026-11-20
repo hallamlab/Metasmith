@@ -81,6 +81,33 @@ and then with "the agent returned no JSON", and that error shows the agent's std
 stderr that named the cause was lost. The first move is to carry the stderr tail into that
 error. The second is a relay that reports a failed state write instead of going silent.
 
+**The logistics e2e tests cannot pass under the `local` preset** for that reason: six
+`download*` transforms declare far more memory than the preset allows, and the visible symptom
+is `No reads downloaded from SRA`. Host RAM is irrelevant. The class also carries `slow` and
+`network` marks that nothing deselects, and `network` is registered project-wide with a
+different meaning, so an opt-in-looking test is always on. Decide between the test naming an
+override, the preset defaulting to the host's real memory, and the suite honouring its marks —
+three policies, not three spellings of one fix.
+
+**`Agent.Deploy` raises a bare `AssertionError` instead of naming the failure.** It asserts
+one output line per command, which undercounts whenever remote home-resolution drops a line —
+an allocation-coded `/scratch` that refuses `mkdir`, for instance. It should report which path
+it failed to resolve.
+
+**A source checkout computes a container tag that 404s.** With no build hash, the tag degrades
+to the bare version, while the published image carries the hash suffix. Pass `container=`
+explicitly when driving from a source tree; conda installs bake the hash in.
+
+**The generated `stub:` block sorts a shared index value list in place.** Groovy's
+`List.sort()` mutates, and index value lists are shared by reference across the DAG — this is
+the one known writer, and it sits in generated code where the audit of `Orchestrator.groovy`
+does not reach. `v.sort(false)` returns a copy and is the whole fix.
+
+**The results index of a chunked step records only leaf ancestors and drops the chunk.**
+Nothing reads that index today, so the loss is invisible; anything that later asks which chunk
+produced a file gets a plausible answer built from the wrong level. Decide first whether the
+index is a provenance record or a convenience lookup — the two want different walks.
+
 **A one-ULP `log2` difference between the two solvers can still flip an `argmax` at a
 near-tie.** The policy this entry used to ask for is now set: `SOLVER_VALUE_TOLERANCE_ULP` in
 `models/solver_rng.py` states that the draw stream is exact and derived values carry libm's last

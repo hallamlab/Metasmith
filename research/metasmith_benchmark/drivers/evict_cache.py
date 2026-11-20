@@ -7,8 +7,10 @@ so tombstones other callers left in their grace period survive. An evicted entry
 miss and recomputes if a later plan asks for it.
 
 Dry run by default. Imports are refused: an import may be the only copy of its data.
+--rowless also evicts a lineage shard that has no index row, as a live run's promotions do until
+its record_run. Such a shard is tombstoned and removed. The run's record_run then only warns.
 
-    evict_cache.py --home <agent home> --keys <file of hex keys> [--protect-run KEY ...] [--apply]
+    evict_cache.py --home <agent home> --keys <file of hex keys> [--protect-run KEY ...] [--rowless] [--apply]
 """
 
 import argparse
@@ -17,7 +19,8 @@ import sqlite3
 import time
 from pathlib import Path
 
-from metasmith.caching.admission import IMPORTED
+from metasmith.caching.admission import IMPORTED, shard_for
+from metasmith.caching.invocation import TOMBSTONE_NAME, read_manifest
 from metasmith.caching.promote import tombstone_shard
 from metasmith.caching.store import CacheStore
 from metasmith.ops.cache import _inside, resolve_store_root
@@ -38,6 +41,7 @@ def main():
     ap.add_argument("--home", required=True)
     ap.add_argument("--keys", required=True, type=Path)
     ap.add_argument("--protect-run", action="append", default=[])
+    ap.add_argument("--rowless", action="store_true")
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
 
@@ -52,7 +56,17 @@ def main():
         for key_hex in wanted:
             e = store.probe(bytes.fromhex(key_hex))
             if e is None:
-                print(f"skip {key_hex[:12]}: absent or already tombstoned")
+                shard = shard_for(root, key_hex, "lineage")
+                manifest = read_manifest(shard) if args.rowless and not (shard / TOMBSTONE_NAME).exists() else None
+                if manifest is None:
+                    print(f"skip {key_hex[:12]}: absent or already tombstoned")
+                    continue
+                size = sum(f.stat().st_size for f in shard.rglob("*") if f.is_file() and not f.is_symlink())
+                print(f"{'evict' if args.apply else 'would evict'} {key_hex[:12]} rowless {size} B {shard}")
+                freed += size
+                if args.apply:
+                    tombstone_shard(root, key_hex, origin="lineage")
+                    shutil.rmtree(shard, ignore_errors=True)
                 continue
             if e.origin == IMPORTED or e.run in args.protect_run:
                 print(f"REFUSE {key_hex[:12]}: origin={e.origin} run={e.run}")

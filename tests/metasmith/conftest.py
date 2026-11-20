@@ -26,6 +26,7 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
     ("deploy", ["slow"]),
     ("e2e/virtual", ["e2e_virtual"]),
     ("e2e/docker", ["e2e_docker", "slow", "requires_docker"]),
+    ("e2e/nextflow", ["e2e_nextflow", "requires_nextflow"]),
     ("e2e/agentic/_harness", ["fast"]),
     ("e2e/agentic", ["e2e_agentic", "slow"]),
     ("audit", ["fast"]),

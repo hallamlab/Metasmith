@@ -1,0 +1,7 @@
+universe: 14692 BiGG reactions with a GPR -> 12156 MNXR; 14464 of them have an MNXR
+KO with >=1 MNXR: 5950 of 6242
+Pfam families hit: 3025; metabolic (>=5 carriers, >=50% with a reaction): 670; DUF/unknown: 187
+MAG DIAMOND best-hit identity, median over ORFs with a hit: 39%
+MAG reaction share, median over bins: 0.4274
+MAG no_reaction share, median over bins: 0.1669
+MAG remainder share, median over bins: 0.3946
