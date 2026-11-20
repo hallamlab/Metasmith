@@ -14,15 +14,18 @@ from tests.metasmith.e2e.agentic.drivers.claude import ClaudeDriver
 from tests.metasmith.e2e.agentic.harness import jail
 from tests.metasmith.e2e.agentic.harness.bootstrap_env import ensure_bootstrap_env
 from tests.metasmith.e2e.agentic.harness.loop import LoopBudgets, ralph_loop
+from tests.metasmith.e2e.agentic.harness.sandbox import _hardlink_channel
 
 REPO = Path(__file__).resolve().parents[4]
 DOCS = REPO / "docs" / "metasmith" / "source"
 HOST = "nibi"
 ACCOUNT = "def-shallam_cpu"
 REMOTE_ROOT = "/scratch/phyberos/msm_e2e"
-# SRA input cannot plan the full template yet (run-2 issue 1), so the user is given ENA's FASTQ pair.
 _ENA = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR965/008/SRR9658108/SRR9658108"
-SAMPLE = f"the paired reads of SRA run SRR9658108, which ENA serves as {_ENA}_1.fastq.gz and {_ENA}_2.fastq.gz"
+SAMPLES = {
+    "sra": "SRA run SRR9658108",
+    "ena": f"the paired reads of SRA run SRR9658108, which ENA serves as {_ENA}_1.fastq.gz and {_ENA}_2.fastq.gz",
+}
 PLAYWRIGHT_MCP = Path.home() / "msm_e2e" / "tools" / "playwright-mcp"
 CHROMIUM = Path.home() / ".cache" / "ms-playwright" / "chromium-1248" / "chrome-linux64" / "chrome"
 
@@ -68,8 +71,8 @@ PROTOCOL = """
 """
 
 
-def build_prompt(goal: str, sandbox: Path, remote: str) -> str:
-    text = GOALS[goal].format(host=HOST, account=ACCOUNT, remote=remote, sample=SAMPLE)
+def build_prompt(goal: str, sandbox: Path, remote: str, sample: str) -> str:
+    text = GOALS[goal].format(host=HOST, account=ACCOUNT, remote=remote, sample=SAMPLES[sample])
     return text + "\n" + PROTOCOL.format(sandbox=sandbox, host=HOST)
 
 
@@ -78,6 +81,16 @@ def remote_exists(path: str) -> bool:
     if r.returncode == 255:
         raise SystemExit(f"ssh {HOST} failed (is the master open?): {r.stderr.strip()}")
     return r.returncode == 0
+
+
+def stage_sif(sif: Path, tag: str, remote: str) -> None:
+    """Put an unpublished image where the agent's pull would land, as RELEASE_PROTOCOL.md describes."""
+    store = f"{remote}/container_images"
+    dst = f"{store}/docker..quay.io_hallamlab_metasmith..{tag}.sif"
+    subprocess.run(["ssh", HOST, f"mkdir -p {store}"], check=True)
+    subprocess.run(["rsync", "-a", str(sif), f"{HOST}:{dst}"], check=True)
+    subprocess.run(["ssh", HOST, f"module load apptainer && apptainer exec --no-home --cleanenv {dst} true && touch {dst}.verified"],
+                   check=True)
 
 
 def ssh_config_text(sandbox: Path) -> tuple[str, str]:
@@ -97,16 +110,19 @@ def ssh_config_text(sandbox: Path) -> tuple[str, str]:
     ), opts["controlpath"]
 
 
-def build_sandbox(sandbox: Path, docs: Path) -> tuple[list[jail.BindSpec], dict[str, str]]:
+def build_sandbox(sandbox: Path, docs: Path, channel: Path | None) -> tuple[list[jail.BindSpec], dict[str, str]]:
     home = sandbox / "home"
     for d in (home, sandbox / "tmp", sandbox / "envs", sandbox / "pkgs"):
         d.mkdir(parents=True)
     shutil.copytree(docs, sandbox / "docs")
     (sandbox / "PROGRESS.md").touch()
-    (home / ".condarc").write_text(
-        "channels:\n  - conda-forge\n  - bioconda\n"
-        f"envs_dirs:\n  - {sandbox}/envs\npkgs_dirs:\n  - {sandbox}/pkgs\n"
-    )
+    condarc = ("channels:\n  - conda-forge\n  - bioconda\n"
+               f"envs_dirs:\n  - {sandbox}/envs\npkgs_dirs:\n  - {sandbox}/pkgs\n")
+    if channel:
+        # `-c hallamlab` resolves to the local build, so the docs' install command installs the candidate.
+        _hardlink_channel(channel, sandbox / ".channels" / "hallamlab")
+        condarc += f"custom_channels:\n  hallamlab: file://{sandbox}/.channels\n"
+    (home / ".condarc").write_text(condarc)
     guard = sandbox / ".no-fresh-login"
     guard.write_text("#!/bin/sh\necho 'ssh: no connection to the cluster; ask the operator to reconnect' >&2\nexit 1\n")
     guard.chmod(0o755)
@@ -167,6 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--goal", choices=sorted(GOALS), default="gui")
     ap.add_argument("--local-root", type=Path, default=Path.home() / "msm_e2e")
     ap.add_argument("--docs", type=Path, default=DOCS)
+    ap.add_argument("--sample", choices=sorted(SAMPLES), default="sra")
+    ap.add_argument("--channel", type=Path, help="local conda channel (a conda_build dir) to serve as hallamlab")
+    ap.add_argument("--sif", type=Path, help="local metasmith.sif to stage on the cluster; needs --image-tag")
+    ap.add_argument("--image-tag", help="the image tag the candidate pulls, e.g. 0.25.1-abc1234")
     ap.add_argument("--model", default="haiku")
     ap.add_argument("--max-iters", type=int, default=20)
     ap.add_argument("--iter-timeout", type=float, default=4 * 3600.0)
@@ -190,8 +210,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.goal != "dry" and remote_exists(remote):
         raise SystemExit(f"{HOST}:{remote} exists; read and delete it before starting run {args.run}")
 
+    if args.sif:
+        stage_sif(args.sif, args.image_tag, remote)
+
     sandbox = run_dir / "sandbox"
-    binds, env = build_sandbox(sandbox, args.docs)
+    binds, env = build_sandbox(sandbox, args.docs, args.channel)
     wrapper = run_dir / "jailed-claude"
     write_jailed_claude(sandbox, wrapper, binds, env)
     (run_dir / "harness.pid").write_text(str(os.getpid()))
@@ -210,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                           extra_argv=mcp)
     result = ralph_loop(
         driver=driver,
-        prompt=build_prompt(args.goal, sandbox, remote),
+        prompt=build_prompt(args.goal, sandbox, remote, args.sample),
         sandbox=sandbox,
         budgets=LoopBudgets(max_iters=args.max_iters, max_tokens=args.max_tokens,
                             max_tokens_per_iter=args.max_tokens, max_usd_per_iter=args.usd_per_iter),
