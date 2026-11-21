@@ -19,7 +19,7 @@ isolate-hifi
 
 ## Stack
 - isolate-hifi — "We still need the HiFi stuff for isolate assembly... still have it plug into downstream"
-- catalog-survey — "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
+- catalog-survey — state: survey-kbase reported 2026-11-21 (est. ~50/54 KBase verbs answered; reachability 91% is an unre-solved projection, 1 of 3 refactors done; gene_set still unproduced; bacterial RNA-seq chain plans in 6 steps but never ran, no template; ~20 rival groups library-wide incl. read QC, read profilers x6, GTDB-Tk x5, embeddings x5, carveme cplex). "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
 - annotation-aggregate — one table of every annotation lane; consumers subset it (4-lane, CarveMe BiGG lane, DRAM-port lanes)
 - wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
@@ -28,7 +28,6 @@ isolate-hifi
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- survey-kbase — KBase coverage now, transcriptomics path, library-wide rivals (reads kbase/readiness, no contact)
 - survey-analyses — every lab analysis type, in or out of metasmith, gaps (reads scadc + live sessions' work, no contact)
 - mp-fix (resumed) — continues feat/engine/mp-fix from a5be461b (UniRef50 product names beside CLEAN ECs); rerun on fir; per-MAG overlap matters most
 
