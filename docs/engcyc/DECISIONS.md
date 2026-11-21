@@ -116,3 +116,25 @@ Decision: E5's version. Tony: "But no rivals. 1 way to make the carveme gem".
 - MEMOTE scores the model, with E5's `HOME=$PWD` fix.
 - The one-step CarveMe 1.6.1 transforms are deleted, not parked in `alternatives/`. There is one
   way to make a CarveMe GEM.
+
+## template-targets / viral (2026-11-21)
+
+Question: which viral callers and extras go into engcyc metagenomics?
+
+Decision:
+- Callers: all four (Tony: "Everything"). geNomad, VirSorter2, VIBRANT, DeepVirFinder, with E5's
+  settings. Then E5's chain: merge calls, CheckV, Pratama curation and provirus trim, mmseqs vOTUs
+  (95% identity, 80% coverage), representatives >= 5 kb with the island filter. vOTUs cluster within
+  the sample.
+- Extras: DRAM-v (through the DRAM port), CCTyper, vConTACT3, and iPHoP. Tony: "Iphop, but using mags
+  as host library". `iphop_add_to_db` grafts the sample's quality MAGs onto the iPHoP base database,
+  with GTDB-Tk de novo trees (`gtdbtk_de_novo_quality`), and `iphop_predict` runs against that.
+
+Build notes: `iphop_add_to_db` requires `viromics::contig_study` and a skani `cluster_table`. Binning
+decided on no within-sample skani, so the build either feeds it the DAS Tool set or relaxes that
+requirement. The iPHoP base database is large; the docs state its size.
+
+## template-targets (2026-11-21)
+
+Closed with its children: scope, binning, taxonomy, annotation, gem, viral. Read classes are in
+read-classes. The target list is these decisions together. The template description names each lane.
