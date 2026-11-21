@@ -40,3 +40,18 @@ Design:
 
 Landed: the build of engcyc metagenomics (assemblers/metagenome). Refines library-shape: assemblers
 are grouped by mode rather than parked in `alternatives/`.
+
+## mp-port-check (2026-11-21)
+
+Question: did the MetaPathways port succeed, and does it ship in engcyc metagenomics?
+
+Evidence: `research/beth_metapathways/comparison.md` (15 CPE3 assemblies against the MP4 results in
+`data/beth_mp/mp4`). Genes 98.3-99.8% identical. The port names more genes and assigns more ECs.
+Pathway overlap is only 0.52-0.57 (community) and 0.46-0.60 (per MAG). The report blames the
+Pathway Tools input: MP4 gives product names plus ECs, the port gives CLEAN ECs only. Untested.
+
+Decision: fix and recheck. The port's Pathway Tools input carries product names as well as ECs.
+PathoLogic reruns on 2-3 of the 15 assemblies on fir, and the comparison runs again. The MP lane
+ships in the template once pathway overlap rises. The rest of the template does not wait on it.
+
+Landed: worker mp-fix (see STACK.md Workers).
