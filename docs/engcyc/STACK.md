@@ -21,6 +21,7 @@ hybrid-assembly / two-assemblers
 ## Stack
 - hybrid-assembly — "Hybrid assembly issues 2 and 3"; "Id want something like e5 to work as 1 solve... Hybrid assembly in standard set is basically needed" (2026-11-21)
   - two-assemblers — a hybrid sample holds short reads, so MEGAHIT also makes an assembly; downstream can bind either
+    - state: hybrid-solve (feat/engine/hybrid-solve 673800c7, research/hybrid_solve/): generic target -> hybrid uses MEGAHIT; hybrid target -> short case fails; per-case targets (Case API) or a fence on hybrid short reads (hybrid_short_reads + hybrid bbduk) both route hybrid->OPERA-MS, short->MEGAHIT in one solve. Asked Tony: fence vs per-case targets.
   - hybrid-input — one SRA accession cannot be hybrid; fork-cases needs every outcome to reach every target
 - catalog-survey — (paused for hybrid-assembly; surveys done, port order proposed) state: survey-kbase reported 2026-11-21 (est. ~50/54 KBase verbs answered; reachability 91% is an unre-solved projection, 1 of 3 refactors done; gene_set still unproduced; bacterial RNA-seq chain plans in 6 steps but never ran, no template; ~20 rival groups library-wide incl. read QC, read profilers x6, GTDB-Tk x5, embeddings x5, carveme cplex). survey-analyses reported 2026-11-21: 17 analysis kinds outside the library. Mature gaps: msconvert+MZmine 4.7 feature table; matchms/LipidBlast annotation; featureCounts+strand sweep, DESeq2 dose trend, TPM (beth_rnaseq/library); amplicon threshold selection + cluster-stability bootstrap (steven-chen); tree inference / TreeSAPP refpkgs; ONT methylation pileup + reference diff (kalen mocklib); fosmid insert recovery (biofactorial). Exploratory: compound-ID ensemble (mock + approved plan), lipid abundance, MS ordination/MI, MMD-RFF, in-silico screen, CLIPZyme, copper sites, NMF/VAE guilds, gene-importance ML, GECCO/DeepBGC, Rfam, gapseq. Experiment-local libraries: metasmith_benchmark/library, beth_rnaseq/library, kalen_crage/mocklib, compound_id/mock. "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
 - annotation-aggregate — one table of every annotation lane; consumers subset it (4-lane, CarveMe BiGG lane, DRAM-port lanes)
@@ -29,6 +30,9 @@ hybrid-assembly / two-assemblers
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
 - mp-port-ship — mp-fix landed on feat/engine/mp-fix (a5be461b, b91e3394, 846b4182): per-MAG overlap 0.49 -> 0.62-0.66, community 0.55 -> 0.63-0.69 (names + CLEAN conf >= 0.5). Decide: enough to ship, or pull the next lever (MetaCyc protein DB hits + Swiss-Prot ECs, as MP4)
+- hint-fix — my search_exhausted hint claims every target is producible when one case cannot reach one (hybrid-solve V2/V3); gate it per case
+- mixed-study-check — a study holding short and hybrid samples is one case; plan 'succeeds' with OPERA-MS for samples lacking long reads; fail it
+- type-traps — `_` description is a matched property; extends cannot cross namespaces; pool keeps a given's first parents (match by name)
 - cache-issues — from mp-fix: resource edits do not invalidate the cache; adding an env recompiles every env id and misses the whole cache; a rerun refuses on a stale lock of an exited driver; comparison.md section is hand-written over a generated file
 - port-gaps — mature gaps after run 4, one at a time: MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
 - exploratory-gaps — stay in their projects until methods settle
@@ -36,7 +40,6 @@ hybrid-assembly / two-assemblers
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- hybrid-solve — one solve, 2 short + 2 hybrid samples, MEGAHIT and OPERA-MS lanes together; variants V1-V4; does downstream use the hybrid assembly? (own worktree branch)
 
 ## Closed
 - isolate-hifi — assemblers/isolate = hifiasm_meta only; hifiasm, filtlong_targeted, miniasm deleted; hybrid stays its own folder
