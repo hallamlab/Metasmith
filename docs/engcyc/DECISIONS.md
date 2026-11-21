@@ -17,3 +17,26 @@ Design:
 - No engine change.
 
 Landed: the rival audit (stack topic rival-audit) lists the moves once the template lanes settle.
+
+## read-classes (2026-11-21)
+
+Question: which read classes does engcyc metagenomics take, and how do hybrid and isolate assembly fit?
+
+Tony: "Isolate and hybrid assembly are opt in modes that must connect to down stream tools." He
+rejected per-sample input types ("I don't think you can do input sets like that"): a hybrid sample
+holds a short and a long read set, so MEGAHIT and Flye still qualify for it.
+
+Design:
+- The template picks the mode by loading exactly one assembler folder.
+  - `assemblers/metagenome`: MEGAHIT for short reads, Flye for long reads. engcyc metagenomics loads it.
+    It covers all three SRA outcomes: long, paired short, single-end short.
+  - `assemblers/hybrid`: a MEGAHIT draft under its own type (E5's type fence), then OPERA-MS.
+  - `assemblers/isolate`: the isolate assemblers.
+- Everything downstream stays in shared folders and takes any `sequences::assembly`, so every mode
+  reaches it. Template targets hang off the generic assembly, which fork-cases also needs.
+- Read-class settings (MetaBAT2 `--percentIdentity 80` and SemiBin2 long-read mode for long reads,
+  Flye mode from the platform) live inside one transform. It reads the read class from lineage at run time.
+- Hybrid and isolate templates go to later-templates. The isolate template has no binning targets.
+
+Landed: the build of engcyc metagenomics (assemblers/metagenome). Refines library-shape: assemblers
+are grouped by mode rather than parked in `alternatives/`.
