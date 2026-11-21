@@ -12,6 +12,7 @@ catalog-survey
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
+- 2026-11-21: Tony is losing track: short messages, one question, stack everything else.
 - 2026-11-21: ask questions as plain messages, never popups (accidental clicks). Popup answers after ~wrapper-ports are suspect: CarveMe answer re-asked.
 - 2026-11-19: phyloFlash dropped from the template. BBDuk (JGI) -> MEGAHIT for short reads.
 - 2026-11-21: engcyc metagenomics is the full template; every lane deselectable; docs list each lane's reference size; run 4 runs a stated subset.
@@ -24,6 +25,9 @@ catalog-survey
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
+- port-gaps — mature gaps after run 4, one at a time: MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
+- exploratory-gaps — stay in their projects until methods settle
+- experiment-libs — fate of benchmark/library, beth_rnaseq/library, kalen mocklib, compound_id mock
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
