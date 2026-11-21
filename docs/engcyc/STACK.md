@@ -19,7 +19,7 @@ hybrid-assembly / two-assemblers
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- hybrid-assembly — "Hybrid assembly issues 2 and 3"
+- hybrid-assembly — "Hybrid assembly issues 2 and 3"; "Id want something like e5 to work as 1 solve... Hybrid assembly in standard set is basically needed" (2026-11-21)
   - two-assemblers — a hybrid sample holds short reads, so MEGAHIT also makes an assembly; downstream can bind either
   - hybrid-input — one SRA accession cannot be hybrid; fork-cases needs every outcome to reach every target
 - catalog-survey — (paused for hybrid-assembly; surveys done, port order proposed) state: survey-kbase reported 2026-11-21 (est. ~50/54 KBase verbs answered; reachability 91% is an unre-solved projection, 1 of 3 refactors done; gene_set still unproduced; bacterial RNA-seq chain plans in 6 steps but never ran, no template; ~20 rival groups library-wide incl. read QC, read profilers x6, GTDB-Tk x5, embeddings x5, carveme cplex). survey-analyses reported 2026-11-21: 17 analysis kinds outside the library. Mature gaps: msconvert+MZmine 4.7 feature table; matchms/LipidBlast annotation; featureCounts+strand sweep, DESeq2 dose trend, TPM (beth_rnaseq/library); amplicon threshold selection + cluster-stability bootstrap (steven-chen); tree inference / TreeSAPP refpkgs; ONT methylation pileup + reference diff (kalen mocklib); fosmid insert recovery (biofactorial). Exploratory: compound-ID ensemble (mock + approved plan), lipid abundance, MS ordination/MI, MMD-RFF, in-silico screen, CLIPZyme, copper sites, NMF/VAE guilds, gene-importance ML, GECCO/DeepBGC, Rfam, gapseq. Experiment-local libraries: metasmith_benchmark/library, beth_rnaseq/library, kalen_crage/mocklib, compound_id/mock. "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
@@ -36,6 +36,7 @@ hybrid-assembly / two-assemblers
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- hybrid-solve — one solve, 2 short + 2 hybrid samples, MEGAHIT and OPERA-MS lanes together; variants V1-V4; does downstream use the hybrid assembly? (own worktree branch)
 
 ## Closed
 - isolate-hifi — assemblers/isolate = hifiasm_meta only; hifiasm, filtlong_targeted, miniasm deleted; hybrid stays its own folder
