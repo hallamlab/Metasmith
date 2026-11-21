@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-gem-reopen
+isolate-hifi
 
 ## Waiting on the user
 
@@ -18,9 +18,9 @@ gem-reopen
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- gem-reopen — "CarveMe?" (asked after DRAM->GPR lanes)
 - isolate-hifi — "We still need the HiFi stuff for isolate assembly... still have it plug into downstream"
 - catalog-survey — two survey agents were stopped (accidental?) before reporting; "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
+- annotation-aggregate — one table of every annotation lane; consumers subset it (4-lane, CarveMe BiGG lane, DRAM-port lanes)
 - wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
@@ -31,6 +31,7 @@ gem-reopen
 - mp-fix (resumed) — continues feat/engine/mp-fix from a5be461b (UniRef50 product names beside CLEAN ECs); rerun on fir; per-MAG overlap matters most
 
 ## Closed
+- gem-reopen — CarveMe stays; its BiGG search is a lane in one aggregate annotation table that consumers subset
 - wrapper-ports — wait for all ports; ports emit the standard annotation format (GPR lanes)
 - viral — 4 callers, CheckV, curation, vOTUs; DRAM-v (ported), CCTyper, vConTACT3, iPHoP with MAGs grafted
 - template-targets — all lanes decided (see children)

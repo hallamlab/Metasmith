@@ -149,3 +149,19 @@ Why port: Tony: "Dram import lets us deduplicate and standardize dram outputs wi
 match with our precedent format for annotaions that could potentially feed in as lanes to a gpr
 table". A ported search that we already run (KOfam, UniRef) is run once. Each part emits the
 standard per-gene annotation format, so it can feed the GPR table as a lane.
+
+## gem-reopen (2026-11-21)
+
+Question: CarveMe annotates on its own. Does it stay the one way to build the per-MAG GEM?
+
+Tony: "For the gpr table, we prolly want an aggregate set of all, which can then be subsetted by
+consumers to fit needs, like 4lane, or carveMe's single lane. We want to do the annotation outside of
+carveMe, rather than replciate".
+
+Decision:
+- CarveMe stays the one way to build a GEM (gem decision holds).
+- CarveMe does no annotation of its own. Its DIAMOND search against BiGG becomes an annotation lane
+  run outside it (E5's `carveme_annotate_bigg` split already does this), and carve + gapfill reads that lane.
+- One aggregate annotation table holds every lane. Each consumer takes the subset it needs: ECSPr
+  the 4 lanes, CarveMe the BiGG lane. Design of the table: stack topic annotation-aggregate.
+- Supersedes the 4-lane GPR target in the annotation decision: the target is the aggregate table.
