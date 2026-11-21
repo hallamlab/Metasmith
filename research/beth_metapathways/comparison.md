@@ -104,3 +104,34 @@ cut-off; it now votes only above 0.985.
   changes gene counts, not the pathway list.
 
 Tables: `per_assembly.tsv`, `ec_agreement.tsv` and `pathways_overlap.tsv` next to this file.
+
+## Recheck after the Pathway Tools input fix (2026-11-21)
+
+Three assemblies were rerun from the gene annotations onward with two changes to what the new
+pipeline feeds Pathway Tools. First, every gene gets its best named UniRef50 hit as a product
+name, as the original does. Second, CLEAN's EC numbers are kept only at confidence 0.5 or
+higher (CLEAN's own high-confidence cut), not 0.02. Overlap is shared pathways divided by
+pathways in either database. Pathway counts are original / new before / names only / names
+and the 0.5 cut.
+
+| Assembly | MAGs | MAG overlap before | names only | names + 0.5 | Community overlap before | names only | names + 0.5 | Community pathways | Mean MAG pathways |
+|---|---|---|---|---|---|---|---|---|---|
+| hybridspades_cpe3_r2a_cu7_8 | 4 | 0.49 | 0.57 | 0.63 | 0.54 | 0.59 | 0.63 | 836 / 931 / 1096 / 946 | 472 / 498 / 636 / 537 |
+| operams_cpe3_r2a_cu7_8 | 5 | 0.49 | 0.57 | 0.62 | 0.55 | 0.60 | 0.63 | 888 / 962 / 1139 / 992 | 497 / 521 / 662 / 558 |
+| shortspades_cpe3_r2a_cu1_5 | 5 | 0.51 | 0.59 | 0.66 | 0.57 | 0.64 | 0.69 | 985 / 1048 / 1256 / 1086 | 465 / 505 / 622 / 526 |
+
+- **Names recover most of the original's pathways, but alone they overshoot.** With names, the
+  new pipeline finds about 84% of the original's MAG pathways, up from 68%. But it predicts
+  30% more pathways than the original. About three quarters of those extra pathways were
+  already present before the change, so the low-confidence CLEAN calls cause them, not the
+  names.
+- **The 0.5 cut halves CLEAN's EC calls and brings pathway counts back near the original.**
+  Per-MAG overlap is 0.62 to 0.66.
+- **What still differs (about 100 pathways only in the original and 150 only in the new
+  pipeline, per MAG).** The original also searches MetaCyc's own protein database and passes
+  the reactions of the hit directly (METACYC lines). It also takes EC numbers from Swiss-Prot
+  hits. The new pipeline does neither. It still uses CLEAN's model calls, and its UniRef50
+  release is newer.
+
+Rerun outputs on fir are under `/scratch/phyberos/beth_mp/pffix/` (`names/` and `floor05/`,
+one directory per assembly). `pathway_recheck.py` and `pathway_recheck.sbatch` produce them.
