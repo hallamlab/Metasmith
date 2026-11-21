@@ -55,3 +55,22 @@ PathoLogic reruns on 2-3 of the 15 assemblies on fir, and the comparison runs ag
 ships in the template once pathway overlap rises. The rest of the template does not wait on it.
 
 Landed: worker mp-fix (see STACK.md Workers).
+
+## template-targets: scope (2026-11-21)
+
+Decision: engcyc metagenomics is the full template. Every lane is a target the user can deselect in
+the GUI. The docs and the template description list each lane's reference download size. Run 4
+runs a stated subset.
+
+## template-targets / binning (2026-11-21)
+
+Question: how do the three binners become the quality MAGs that taxonomy, MetaPathways per MAG and GEM consume?
+
+Decision: MetaBAT2 + SemiBin2 + COMEBin -> DAS Tool -> CheckM2 -> quality MAGs at >= 50% complete
+and <= 10% contamination. No within-sample skani (DAS Tool removes the overlap). Cross-sample
+dereplication waits for a study-level template.
+
+Build notes: promote CheckM2, DAS Tool (drops a binner with an empty table) and COMEBin (empty table
+on a tiny assembly) from the benchmark folders. Fold E5's long-read settings into the standard
+MetaBAT2 (`--percentIdentity 80`) and SemiBin2 (`--sequencing-type long_read`), keyed on the read class.
+CheckM1 becomes a rival.
