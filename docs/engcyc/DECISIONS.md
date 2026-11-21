@@ -87,3 +87,20 @@ Decision:
   not be practical... check". The pinned GTDB r232 Metabuli database is 634 GB packed and 1.4 TB at
   the unpack peak, over nibi's 1 TB scratch quota. Both stay in the library for users with the disk.
   LCA* needs Metabuli's votes, so it goes with it.
+
+## template-targets / annotation (2026-11-21)
+
+Question: which annotation lanes go into engcyc metagenomics?
+
+Decision:
+- Gene function on the assembly's ORFs: DIAMOND UniRef50, KOfamScan, InterProScan, eggNOG.
+- 4-lane GPR table. Tony: "The 4 lane is crucial, we can drop the 7 lanes". The 7-lane GPR becomes a rival.
+- Genome features: Bakta non-coding, ARAGORN tRNA, antiSMASH, PathoFact (AMR, virulence, toxins,
+  MGEs), mobileOG.
+- Metabolic models run per MAG only. Tony: "These are just models at different aggregate levels,
+  which i think should be per mag for now. MP on community is dubious if just modelling everything as
+  an open soup". So MetaPathways runs per quality MAG. Community PathoLogic leaves the template.
+- DRAM is ported into its parts, as MetaPathways was: its component searches become our transforms,
+  and its distill summary is reimplemented over them. Tony: "Lets try for all annotation lanes", so
+  the other wrapper pipelines (PathoFact, DRAM-v) get the same treatment. Tracked as stack topic
+  wrapper-ports.
