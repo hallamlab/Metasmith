@@ -138,3 +138,14 @@ requirement. The iPHoP base database is large; the docs state its size.
 
 Closed with its children: scope, binning, taxonomy, annotation, gem, viral. Read classes are in
 read-classes. The target list is these decisions together. The template description names each lane.
+
+## wrapper-ports (2026-11-21)
+
+Question: does engcyc metagenomics wait for the DRAM, DRAM-v and PathoFact ports?
+
+Decision: wait for all ports. Each port lands with a comparison against the original tool's output.
+
+Why port: Tony: "Dram import lets us deduplicate and standardize dram outputs with ours and also
+match with our precedent format for annotaions that could potentially feed in as lanes to a gpr
+table". A ported search that we already run (KOfam, UniRef) is run once. Each part emits the
+standard per-gene annotation format, so it can feed the GPR table as a lane.

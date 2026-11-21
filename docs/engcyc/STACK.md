@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-wrapper-ports
+gem-reopen
 
 ## Waiting on the user
 
@@ -17,16 +17,20 @@ wrapper-ports
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- wrapper-ports — port DRAM (and PathoFact, DRAM-v) into parts like the MP port; "Lets try for all annotaion lanes"
+- gem-reopen — "CarveMe?" (asked after DRAM->GPR lanes)
+- isolate-hifi — "We still need the HiFi stuff for isolate assembly... still have it plug into downstream"
+- catalog-survey — "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
+- wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- mp-fix — port feeds PathoLogic product names + ECs; rerun 2-3 CPE3 assemblies on fir; compare (own worktree branch)
 
 ## Closed
+- wrapper-ports — wait for all ports; ports emit the standard annotation format (GPR lanes)
+- mp-fix worker — stopped by Tony 2026-11-21, no result; do not restart unless asked
 - viral — 4 callers, CheckV, curation, vOTUs; DRAM-v (ported), CCTyper, vConTACT3, iPHoP with MAGs grafted
 - template-targets — all lanes decided (see children)
 - gem — E5 split CarveMe 1.6.6 + MEMOTE on subset MAG ORFs; old CarveMe deleted
