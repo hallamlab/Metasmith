@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-isolate-hifi
+annotation-aggregate (catalog-survey waits on survey-analyses)
 
 ## Waiting on the user
 
@@ -18,7 +18,6 @@ isolate-hifi
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- isolate-hifi — "We still need the HiFi stuff for isolate assembly... still have it plug into downstream"
 - catalog-survey — state: survey-kbase reported 2026-11-21 (est. ~50/54 KBase verbs answered; reachability 91% is an unre-solved projection, 1 of 3 refactors done; gene_set still unproduced; bacterial RNA-seq chain plans in 6 steps but never ran, no template; ~20 rival groups library-wide incl. read QC, read profilers x6, GTDB-Tk x5, embeddings x5, carveme cplex). "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
 - annotation-aggregate — one table of every annotation lane; consumers subset it (4-lane, CarveMe BiGG lane, DRAM-port lanes)
 - wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
@@ -32,6 +31,7 @@ isolate-hifi
 - mp-fix (resumed) — continues feat/engine/mp-fix from a5be461b (UniRef50 product names beside CLEAN ECs); rerun on fir; per-MAG overlap matters most
 
 ## Closed
+- isolate-hifi — assemblers/isolate = hifiasm_meta only; hifiasm, filtlong_targeted, miniasm deleted; hybrid stays its own folder
 - gem-reopen — CarveMe stays; its BiGG search is a lane in one aggregate annotation table that consumers subset
 - wrapper-ports — wait for all ports; ports emit the standard annotation format (GPR lanes)
 - viral — 4 callers, CheckV, curation, vOTUs; DRAM-v (ported), CCTyper, vConTACT3, iPHoP with MAGs grafted

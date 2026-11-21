@@ -165,3 +165,24 @@ Decision:
 - One aggregate annotation table holds every lane. Each consumer takes the subset it needs: ECSPr
   the 4 lanes, CarveMe the BiGG lane. Design of the table: stack topic annotation-aggregate.
 - Supersedes the 4-lane GPR target in the annotation decision: the target is the aggregate table.
+
+## isolate-hifi (2026-11-21)
+
+Question: how does HiFi isolate assembly stay out of the metagenome templates and still reach the
+downstream tools? Can a hybrid assembly target force the hybrid lane inside one template?
+
+Tony: "we have 3 folders for assembly. One of them is isolate. We load it separately." "Hifiasm meta
+as the canonical isolate assembler, i accept other recommendations".
+
+Decision:
+- `assemblers/isolate` holds hifiasm_meta as the one isolate assembler. Its product counts as
+  `sequences::isolate_assembly` (an assembly and a putative genome), so every downstream lane takes it.
+  Only the isolate template loads the folder.
+- hifiasm, filtlong_targeted (it fed only hifiasm) and miniasm are deleted. No rivals.
+- pbBam2fastq moves to a shared folder: it converts input, it does not assemble.
+- Hybrid stays a separate folder loaded by a hybrid template, not a target inside engcyc metagenomics.
+  A hybrid sample holds short reads, so MEGAHIT from the metagenome folder would also make an
+  assembly, and a target or `parents=` pin cannot pick between two producers of one generic type
+  (memories two-producers-need-a-masked-library, consumed-assembly-steals-its-lanes-slot). Reasoned,
+  not solve-tested; Tony accepted the recommendation.
+- Callout: hifiasm_meta is HiFi-only, so an ONT isolate has no assembler in the isolate folder.
