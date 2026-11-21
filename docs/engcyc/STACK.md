@@ -12,6 +12,7 @@ gem-reopen
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
+- 2026-11-21: ask questions as plain messages, never popups (accidental clicks). Popup answers after ~wrapper-ports are suspect: CarveMe answer re-asked.
 - 2026-11-19: phyloFlash dropped from the template. BBDuk (JGI) -> MEGAHIT for short reads.
 - 2026-11-21: engcyc metagenomics is the full template; every lane deselectable; docs list each lane's reference size; run 4 runs a stated subset.
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
@@ -19,7 +20,7 @@ gem-reopen
 ## Stack
 - gem-reopen — "CarveMe?" (asked after DRAM->GPR lanes)
 - isolate-hifi — "We still need the HiFi stuff for isolate assembly... still have it plug into downstream"
-- catalog-survey — "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
+- catalog-survey — two survey agents were stopped (accidental?) before reporting; "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
 - wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
@@ -27,10 +28,10 @@ gem-reopen
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- mp-fix (resumed) — continues feat/engine/mp-fix from a5be461b (UniRef50 product names beside CLEAN ECs); rerun on fir; per-MAG overlap matters most
 
 ## Closed
 - wrapper-ports — wait for all ports; ports emit the standard annotation format (GPR lanes)
-- mp-fix worker — stopped by Tony 2026-11-21, no result; do not restart unless asked
 - viral — 4 callers, CheckV, curation, vOTUs; DRAM-v (ported), CCTyper, vConTACT3, iPHoP with MAGs grafted
 - template-targets — all lanes decided (see children)
 - gem — E5 split CarveMe 1.6.6 + MEMOTE on subset MAG ORFs; old CarveMe deleted
