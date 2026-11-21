@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-template-targets / taxonomy
+template-targets / annotation
 
 ## Waiting on the user
 
@@ -18,7 +18,6 @@ template-targets / taxonomy
 
 ## Stack
 - template-targets — "E5 + taxonomy or other stuff from cyanoverse + annotation work with Beth", incl. viromics
-  - taxonomy — Metabuli, GTDB-Tk on quality MAGs, LCA* contigs, rRNA
   - annotation — ORFs, UniRef50, KOfam, MP lane, Bakta, tRNA, antiSMASH, PathoFact, mobileOG, DRAM
   - gem — CarveMe + MEMOTE on quality MAGs
   - viral — callers, CheckV, vOTUs, DRAM-v, iPHoP, vConTACT3
@@ -31,6 +30,7 @@ template-targets / taxonomy
 - mp-fix — port feeds PathoLogic product names + ECs; rerun 2-3 CPE3 assemblies on fir; compare (own worktree branch)
 
 ## Closed
+- taxonomy — GTDB-Tk on quality MAGs + rRNA scan; Metabuli and LCA* out (1.4 TB DB)
 - binning — DAS Tool over 3 binners -> CheckM2 -> quality MAGs (>=50/<=10)
 - mp-port-check — fix and recheck; MP lane ships once pathway overlap rises
 - read-classes — template picks the mode by loading one assembler folder; downstream takes any assembly

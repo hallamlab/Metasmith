@@ -74,3 +74,16 @@ Build notes: promote CheckM2, DAS Tool (drops a binner with an empty table) and 
 on a tiny assembly) from the benchmark folders. Fold E5's long-read settings into the standard
 MetaBAT2 (`--percentIdentity 80`) and SemiBin2 (`--sequencing-type long_read`), keyed on the read class.
 CheckM1 becomes a rival.
+
+## template-targets / taxonomy (2026-11-21)
+
+Question: which taxonomy targets go into engcyc metagenomics?
+
+Decision:
+- GTDB-Tk on the quality MAGs (Beth's `gtdbtk_quality`, GTDB r232).
+- rRNA scan on the assembly (barrnap + BLAST against GTDB rRNA). It replaces phyloFlash and works
+  for long reads.
+- Metabuli and LCA* are left out of the template. Tony: "Metabuli requires a large reference and may
+  not be practical... check". The pinned GTDB r232 Metabuli database is 634 GB packed and 1.4 TB at
+  the unpack peak, over nibi's 1 TB scratch quota. Both stay in the library for users with the disk.
+  LCA* needs Metabuli's votes, so it goes with it.
