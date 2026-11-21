@@ -22,9 +22,11 @@ def protocol(context: ExecutionContext):
     ipt    = context.Input(pt_lib)
     iout   = context.Output(out)
 
+    # 0.5 is CLEAN's own high-confidence cut. At the shared fe.CLEAN_MIN_SCORE CLEAN gives an EC to ~30%
+    # of ORFs, and those extra ECs, not the names, drive most pathways PathoLogic predicts beyond MP4.
     context.ExecWithEnv(env=image, cmd=f"""
         PYTHONPATH=$(dirname {iev.container}) python3 {ipt.container}/gather.py \
-            --orfs {iorfs.container} --clean {iclean.container} \
+            --orfs {iorfs.container} --clean {iclean.container} --floor 0.5 \
             --uniref50-hits {ihits.container} --uniref50-descriptions {idescs.container} --out {iout.container}
     """)
 
