@@ -28,13 +28,14 @@ hybrid-assembly / two-assemblers
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
+- mp-port-ship — mp-fix landed on feat/engine/mp-fix (a5be461b, b91e3394, 846b4182): per-MAG overlap 0.49 -> 0.62-0.66, community 0.55 -> 0.63-0.69 (names + CLEAN conf >= 0.5). Decide: enough to ship, or pull the next lever (MetaCyc protein DB hits + Swiss-Prot ECs, as MP4)
+- cache-issues — from mp-fix: resource edits do not invalidate the cache; adding an env recompiles every env id and misses the whole cache; a rerun refuses on a stale lock of an exited driver; comparison.md section is hand-written over a generated file
 - port-gaps — mature gaps after run 4, one at a time: MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
 - exploratory-gaps — stay in their projects until methods settle
 - experiment-libs — fate of benchmark/library, beth_rnaseq/library, kalen mocklib, compound_id mock
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- mp-fix (resumed) — continues feat/engine/mp-fix from a5be461b (UniRef50 product names beside CLEAN ECs); rerun on fir; per-MAG overlap matters most
 
 ## Closed
 - isolate-hifi — assemblers/isolate = hifiasm_meta only; hifiasm, filtlong_targeted, miniasm deleted; hybrid stays its own folder
