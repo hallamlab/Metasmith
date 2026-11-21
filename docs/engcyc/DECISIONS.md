@@ -104,3 +104,15 @@ Decision:
   and its distill summary is reimplemented over them. Tony: "Lets try for all annotation lanes", so
   the other wrapper pipelines (PathoFact, DRAM-v) get the same treatment. Tracked as stack topic
   wrapper-ports.
+
+## template-targets / gem (2026-11-21)
+
+Question: how is the GEM lane built per quality MAG?
+
+Decision: E5's version. Tony: "But no rivals. 1 way to make the carveme gem".
+- MAG ORFs are the subset of the assembly ORFs on the MAG's contigs (E5 `mag_orfs`), so a MAG's
+  genes keep the IDs of their contig-level annotations. MetaPathways per MAG uses the same ORFs.
+- CarveMe 1.6.6 in two steps: DIAMOND against BiGG, then carve and gapfill on SCIP with a named medium.
+- MEMOTE scores the model, with E5's `HOME=$PWD` fix.
+- The one-step CarveMe 1.6.1 transforms are deleted, not parked in `alternatives/`. There is one
+  way to make a CarveMe GEM.
