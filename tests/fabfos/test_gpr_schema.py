@@ -728,6 +728,14 @@ def _write_extra_lanes(work: Path) -> list:
         blast(ORFS[0], "YP_009001.1", "YP_009001.1 ribonucleotide reductase [Synechococcus phage]")
         .replace("orfs~", ""))
     _write_deepec(w / "deepec.tsv")
+    header = ("qseqid\tsseqid\tpident\tlength\tmismatch\tgapopen\tqstart\tqend\tsstart\tsend\t"
+              "evalue\tbitscore\tbsr\n")
+    bsr_lanes = {"swissprot": "sp|P07327|ADH1A_HUMAN", "uniref90": "UniRef90_P07327",
+                 "metacyc": "gnl|META|MONOMER-1"}
+    for lane, sid in bsr_lanes.items():
+        (w / f"{lane}.tsv").write_text(header + f"orfs~{ORFS[0]}\t{sid}\t95.0\t300\t5\t0\t1\t300\t1\t300\t"
+                                       "1e-80\t410.0\t0.9\n")
+        (w / f"{lane}_descriptions.tsv").write_text(f"sseqid\tdescription\n{sid}\tAlcohol dehydrogenase\n")
     # hmmsearch --tblout: ORF, -, model, -, full E, score, bias, then the best domain's.
     tbl = lambda orf, model, score: (f"{orf} - {model} - 1e-10 {score} 0.1 1e-10 {score} 0.1 "
                                      "1.0 1 0 0 1 1 1 1 -\n")
@@ -744,6 +752,7 @@ def _write_extra_lanes(work: Path) -> list:
         f"{ORFS[1]}\t0\t0.2\n")
     (w / "deeparg.tsv").write_text(DEEPARG_HEADER + "\n" + _deeparg_row(ORFS[0]) + "\n")
     return [
+        *[(lane, w / f"{lane}.tsv", w / f"{lane}_descriptions.tsv") for lane in bsr_lanes],
         ("pathofact_hmm", w / "pf_tox.tbl", w / "pf_vf.tbl", w / "pf_desc.tsv"),
         ("pathofact_ml", w / "pf_tox_ml.tsv", w / "pf_vf_ml.tsv"),
         ("deeparg", w / "deeparg.tsv"),

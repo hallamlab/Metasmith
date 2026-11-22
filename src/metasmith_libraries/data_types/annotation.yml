@@ -253,6 +253,38 @@ types:
       Format: BLAST6
       ext: tsv
   # DIAMOND against the BiGG gene index CarveMe ships
+  # DIAMOND against the three other protein databases MetaPathways 4 searches. Same shape as
+  # the UniRef50 lane: headered BLAST6 + bsr, subject titles in the sibling table.
+  diamond_swissprot_results:
+    properties:
+      _: DIAMOND alignment to UniProtKB/Swiss-Prot, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_swissprot_descriptions:
+    properties:
+      _: Swiss-Prot subject id to its title
+      Format: TSV
+      ext: tsv
+  diamond_uniref90_results:
+    properties:
+      _: DIAMOND alignment to UniRef90, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_uniref90_descriptions:
+    properties:
+      _: UniRef90 cluster id to its subject title
+      Format: TSV
+      ext: tsv
+  diamond_metacyc_results:
+    properties:
+      _: DIAMOND alignment to the MetaCyc protein sequences shipped with Pathway Tools, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_metacyc_descriptions:
+    properties:
+      _: MetaCyc protein id (gnl|META|<monomer>) to its title
+      Format: TSV
+      ext: tsv
   bigg_diamond_hits:
     properties:
       _: DIAMOND blastp of ORFs against CarveMe 1.6.6's BiGG gene index, the search carve runs internally; what carve --diamond reads back
@@ -414,7 +446,7 @@ types:
   # Pathway Tools (PathoLogic / ptools)
   ptools_annotation_table:
     properties:
-      _: Long-format per-ORF functional annotations (EC / GO / KEGG / UniProt / FUNCTION) for ingestion by Pathway Tools
+      _: Long-format per-ORF PathoLogic input (FUNCTION / EC / METACYC rows), chosen by MetaPathways 4's rules
       Format: Parquet
       ext: parquet
   pgdb_archive:
@@ -452,6 +484,18 @@ types:
       Format: CSV
       granularity: chunk
       ext: csv
+  diamond_uniref90_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND UniRef90 BLAST6, up to five hits per ORF (sibling of diamond_uniref90_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  diamond_uniref90_descriptions_chunk:
+    properties:
+      _: Per-chunk UniRef90 subject titles (sibling of diamond_uniref90_descriptions)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
   kofamscan_results_chunk:
     properties:
       _: Per-chunk KofamScan CSV (sibling of kofamscan_results)
@@ -892,7 +936,7 @@ types:
       ext: gff
   pathway_table:
     properties:
-      _: PathoLogic pathways of one PGDB with their ORFs (pathway, name, orf, reaction, ec)
+      _: "MetaPathways 4 pathway table of one PGDB, one row per pathway: SAMPLE, PWY_NAME, PWY_COMMON_NAME, PWY_SCORE, NUM_REACTIONS, NUM_COVERED_REACTIONS, ORF_COUNT, ORFS, then the pathways report's Pathway Frequency Score, Pathway Abundance, Reason to Keep"
       Format: TSV
       granularity: whole
       ext: tsv
@@ -909,7 +953,7 @@ types:
       ext: tgz
   bin_pathway_table:
     properties:
-      _: PathoLogic pathways of one quality MAG with their ORFs (sibling of pathway_table)
+      _: MetaPathways 4 pathway table of one quality MAG's PGDB, columns as pathway_table (sibling of pathway_table)
       Format: TSV
       granularity: bin
       ext: tsv

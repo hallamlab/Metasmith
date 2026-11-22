@@ -36,16 +36,22 @@ def main():
     a = p.parse_args()
 
     df = fe.read_parquet(a.annotations, columns=["orf_id", "kind", "value"])
-    keep = contig_ids(a.bin_fasta) if a.bin_fasta else None
-    names, ecs = {}, defaultdict(list)
+    names, lines = {}, defaultdict(list)
     for orf, kind, value in zip(df["orf_id"], df["kind"], df["value"]):
-        if keep is not None and contig_of(orf) not in keep:
-            continue
         if kind == "FUNCTION":
             names.setdefault(orf, value)
-        elif kind == "EC" and value not in ecs[orf]:
-            ecs[orf].append(value)
-    orfs = sorted(set(names) | set(ecs))
+        elif (kind, value) not in lines[orf]:
+            lines[orf].append((kind, value))
+    # MetaPathways 4 writes one ORF per product name (the first) into the community .pf, and its
+    # magsplitter gives every ORF on a MAG that representative's lines.
+    rep = {}
+    for orf, name in names.items():
+        rep.setdefault(name, orf)
+    if a.bin_fasta:
+        keep = contig_ids(a.bin_fasta)
+        orfs = [o for o in names if contig_of(o) in keep]
+    else:
+        orfs = list(rep.values())
 
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -53,17 +59,15 @@ def main():
     assert len(set(pf_ids.values())) == len(pf_ids), "truncated PathoLogic gene IDs collide"
     with open(out / "0.pf", "w") as fh:
         for orf in orfs:
-            fh.write(f"ID\t{pf_ids[orf]}\nNAME\t{orf}\nPRODUCT-TYPE\tP\n")
-            if orf in names:
-                fh.write(f"FUNCTION\t{names[orf]}\n")
-            fh.writelines(f"EC\t{ec}\n" for ec in ecs[orf])
-            fh.write("//\n")
+            fh.write(f"ID\t{pf_ids[orf]}\nNAME\t{orf}\nFUNCTION\t{names[orf]}\n")
+            fh.writelines(f"{kind}\t{value}\n" for kind, value in sorted(lines[rep[names[orf]]], key=lambda kv: kv[0] != "METACYC"))
+            fh.write("PRODUCT-TYPE\tP\n//\n")
     (out / "genetic-elements.dat").write_text("ID\t0\nNAME\t0\nTYPE\t:CONTIG\nANNOT-FILE\t0.pf\n//\n")
     ident = org_id(a.name)
     (out / "organism-params.dat").write_text(
         f"ID\t{ident}\nNAME\t{a.name}\nABBREV-NAME\t{ident}\nSTORAGE\tFILE\nSTRAIN\t1\n"
         f"RANK\t|species|\nNCBI-TAXON-ID\t{a.taxon}\n")
-    print(f"[build_pf] {ident}: {len(orfs):,} ORFs, {len(names):,} named, {sum(map(bool, ecs.values())):,} with an EC", flush=True)
+    print(f"[build_pf] {ident}: {len(orfs):,} ORFs from {len(names):,} named, {len(rep):,} distinct names", flush=True)
 
 
 if __name__ == "__main__":

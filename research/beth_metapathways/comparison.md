@@ -135,3 +135,54 @@ and the 0.5 cut.
 
 Rerun outputs on fir are under `/scratch/phyberos/beth_mp/pffix/` (`names/` and `floor05/`,
 one directory per assembly). `pathway_recheck.py` and `pathway_recheck.sbatch` produce them.
+
+## Recheck with MetaPathways 4's own Pathway Tools input (2026-11-22)
+
+The new pipeline now builds the Pathway Tools input by MetaPathways 4.0.3's rules, from the same
+four protein searches MetaPathways ran, at the same releases. CLEAN is no longer an input.
+
+- **Searches.** UniRef50, UniRef90 and Swiss-Prot from UniProt 2025_04 (the FASTA files behind
+  the original's own indexes), and the MetaCyc 27.0 protein sequences from the lab's licensed
+  Pathway Tools. Each is an ordinary annotation lane with up to five hits per gene.
+- **Rules, applied when the PathoLogic input is built.** Genes under 60 amino acids are left
+  out. A hit counts when its bit score ratio is at least 0.4, its e-value at most 1e-6 and its
+  alignment at least 45 amino acids. The product name is the best of the four databases' top
+  hits by MetaPathways' annotation score, which counts MetaCyc hits double. EC numbers come from
+  the UniProt EC maps for the Swiss-Prot and UniRef hits. The MetaCyc hit's reactions are passed
+  directly. Community databases keep one gene per product name, and each MAG gene takes its
+  representative's annotation, as in the original.
+- **Pathway Tools.** Taxonomic pruning is now on, as in the original. The pathway table has the
+  original's columns, read from the database the way the original reads it. On one MAG
+  database of the original it reproduces the original's table exactly (357 pathways).
+
+Overlap is shared pathways divided by pathways in either database. Pathway counts are
+original / names + 0.5 / faithful.
+
+| Assembly | MAGs | MAG overlap before | names + 0.5 | faithful | Community overlap before | names + 0.5 | faithful | Community pathways | Mean MAG pathways |
+|---|---|---|---|---|---|---|---|---|---|
+| hybridspades_cpe3_r2a_cu7_8 | 4 | 0.49 | 0.63 | 0.94 | 0.54 | 0.63 | 0.96 | 836 / 946 / 847 | 472 / 537 / 472 |
+| operams_cpe3_r2a_cu7_8 | 5 | 0.49 | 0.62 | 0.94 | 0.55 | 0.63 | 0.96 | 888 / 992 / 902 | 497 / 558 / 504 |
+| shortspades_cpe3_r2a_cu1_5 | 5 | 0.51 | 0.66 | 0.92 | 0.57 | 0.69 | 0.95 | 985 / 1086 / 985 | 465 / 526 / 467 |
+
+- **The input now matches gene by gene.** On genes both pipelines call identically, the MAG
+  inputs carry the same EC numbers for 97 to 98% of genes and the same MetaCyc reactions for 97
+  to 98%. The same product name holds for 80 to 94%. Totals agree within 2%: 1,587 / 1,576 EC
+  lines and 1,960 / 1,919 MetaCyc lines in hybridspades_cpe3_r2a_cu7_8's community input.
+- **What still differs (10 to 20 pathways only in the original and 15 to 22 only in the new
+  pipeline, per MAG).**
+  - The search program. The original uses FAST, the new pipeline DIAMOND, and the bit score
+    ratio's denominator is estimated rather than aligned. The top hit, and so the product name,
+    changes for 6 to 20% of genes.
+  - The original also names genes from eggNOG and CAZy hits (under 1% of names in
+    hybridspades_cpe3_r2a_cu7_8). The new pipeline does not search them for this input.
+  - The original's identity cut-off (20%) is not applied, because the annotation table does
+    not carry identity. The bit score ratio cut-off makes it bind rarely.
+  - The Pathway Tools image. Both are release 27.0, but the original ran its own build with
+    SRI's 27.0 patches and attached contig sequences to the database.
+
+The PathoLogic half of this recheck ran outside the workflow engine, through
+`faithful_pathologic.sbatch`, with the library's own scripts. In the engine the PathoLogic input
+reads the full annotation table, which on these assemblies would rerun lanes this input never
+reads. The four searches ran in the engine (`run_port.py --group mp4lanes`). `pf_agreement.py`
+compares the two pipelines' inputs gene by gene. Outputs on fir are under
+`/scratch/phyberos/beth_mp/pffix/faithful/`, one directory per assembly.

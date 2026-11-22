@@ -165,21 +165,27 @@ def parse_clean(path):
     })
 
 
-# ---- DIAMOND vs UniRef50: headered BLAST6 + bsr, subject titles in the sibling table.
-def parse_uniref50(results, descriptions=None):
+# ---- DIAMOND vs a protein database (UniRef50/90, Swiss-Prot, MetaCyc): headered BLAST6 +
+# bsr, subject titles in the sibling table. diamond_uniref50 keeps the cluster id at the head
+# of its titles, which _clean_stitle drops; lib::diamond_bsr.py writes titles without it.
+def _parse_bsr_hits(results, descriptions, namespace, product):
     fe = EV
     df = pd.read_csv(results, sep="\t", dtype=str)
     if list(df.columns) != fe._BLAST6_BSR_COLS:
-        _refuse_header(df.columns, fe._BLAST6_BSR_COLS, "diamond_uniref50_results",
-                       "diamond_uniref50")
+        _refuse_header(df.columns, fe._BLAST6_BSR_COLS, product, product.replace("_results", ""))
     titles = fe.read_uniref50_titles(descriptions)
     return pd.DataFrame({
         "orf": df["qseqid"], "start": df["qstart"], "end": df["qend"],
-        "namespace": "uniref50", "term": df["sseqid"],
+        "namespace": namespace, "term": df["sseqid"],
         "description": df["sseqid"].map(titles).fillna("").apply(fe._clean_stitle),
         "score": pd.to_numeric(df["bsr"], errors="coerce"), "score_kind": "bsr",
         "evalue": pd.to_numeric(df["evalue"], errors="coerce"),
     })
+
+
+def _bsr_lane(namespace):
+    product = "diamond_" + namespace + "_results"
+    return lambda results, descriptions=None: _parse_bsr_hits(results, descriptions, namespace, product)
 
 
 # ---- DIAMOND against a gene database, headerless outfmt 6. The four protein-resistome
@@ -640,7 +646,10 @@ def parse_pbert(embeddings):
 LANES = {
     "kofam":         (parse_kofam, "annotation::kofamscan_results", True),
     "clean":         (parse_clean, "annotation::clean_predictions", True),
-    "uniref50":      (parse_uniref50, "annotation::diamond_uniref50_results", True),
+    "uniref50":      (_bsr_lane("uniref50"), "annotation::diamond_uniref50_results", True),
+    "uniref90":      (_bsr_lane("uniref90"), "annotation::diamond_uniref90_results", True),
+    "swissprot":     (_bsr_lane("swissprot"), "annotation::diamond_swissprot_results", True),
+    "metacyc":       (_bsr_lane("metacyc"), "annotation::diamond_metacyc_results", True),
     "pbert":         (parse_pbert, "annotation::proteinbert_embeddings", True),
     "deepec":        (parse_deepec, "annotation::deepec_predictions", True),
     "eggnog":        (parse_eggnog, "annotation::eggnog_results", True),

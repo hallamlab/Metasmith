@@ -5,6 +5,7 @@ model   = Transform()
 
 pt      = model.AddRequirement(lib.GetType("env::pathologic.env"))
 python  = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
+mp4     = model.AddRequirement(lib.GetType("env::metapathways.env"))
 asm     = model.AddRequirement(lib.GetType("sequences::assembly"))
 orfs    = model.AddRequirement(lib.GetType("sequences::orfs"), parents={asm})
 ann     = model.AddRequirement(lib.GetType("annotation::ptools_annotation_table"), parents={orfs})
@@ -43,8 +44,8 @@ def protocol(context: ExecutionContext):
         mkdir -p $TMPDIR
         bash {ilib.container}/run.sh ptin pgdb
     """)
-    context.ExecWithEnv(env=python, cmd=f"""
-        python3 {ilib.container}/pathway_table.py --pgdb pgdb --out {itable.container}
+    context.ExecWithEnv(env=mp4, cmd=f"""
+        python3 {ilib.container}/pathway_table.py --pgdb pgdb --sample {name} --out {itable.container}
     """)
     context.LocalShell(f"tar czf {iarchive.local} pgdb pgdb.log")
 
