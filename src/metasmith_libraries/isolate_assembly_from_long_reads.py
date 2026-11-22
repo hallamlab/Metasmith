@@ -29,7 +29,7 @@ def build_spec(rebuild: bool = False) -> Spec:
             "annotation::kofamscan_descriptions",
         ],
         transform_libraries=A.transforms(
-            "logistics", "assembly", "metagenomics", "functionalAnnotation"),
+            "logistics", "assembly", "isolate", "metagenomics", "functionalAnnotation"),
         resource_libraries=[A.envs()],
     )
 

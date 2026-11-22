@@ -457,6 +457,13 @@ types:
                            # is a property-superset of orfs and satisfies orfs requirements, so
                            # whole-sample tools (rgi, amrfinderplus) fan out over every chunk.
       ext: faa
+  # The ORFs of a whole assembly, prodigal's. The viral lane's prodigal-gv ORFs of the frozen
+  # set also descend from the assembly, so only this type, not lineage, tells a target which.
+  assembly_orfs:
+    extends:
+    - orfs
+    properties:
+      orf_caller: prodigal
   orfs_shard:
     extends:
     - orfs

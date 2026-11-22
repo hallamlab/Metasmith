@@ -7,7 +7,7 @@
 ``gpr_4lane`` is canonical: it produces ``annotation::gpr_table`` directly
 rather than a subtype, so this stage has exactly one producer and no tiebreak
 is needed (unlike ``gpr_7lane`` -> ``gpr_table_7lane``, which stays available
-but is not this driver's target). See ``transforms/fabfos/gpr_4lane.py``.
+but is not this driver's target). See ``transforms/functionalAnnotation/gpr_4lane.py``.
 
 REFERENCE DEFAULTS. All six staged references this stage needs have real
 pinned copies in this repo's DVC-tracked ``data/processed/`` and are used as

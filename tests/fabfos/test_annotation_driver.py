@@ -12,6 +12,7 @@ EXPECTED_TRANSFORMS = {
     "chunkOrfsForAnnotation",
     "kofamscan", "clean", "diamond_uniref50", "proteinbert",
     "merge_kofamscan", "merge_diamond_uniref50", "merge_proteinbert",
+    "kofam_lane", "clean_lane", "uniref50_lane", "pbert_lane",
     "gpr_4lane",
 }
 

@@ -1027,9 +1027,6 @@ types:
   # MetaPhlAn SGB marker DB (mpa_vJan25_CHOCOPhlAnSGB_202503) that produced the
   # metaphlan_sam upstream; sample2markers.py -d needs the matching .pkl to
   # reconstruct consensus markers. Bound read-only at /mpa_db by the transform.
-  metaphlan_db:
-    properties:
-      _: MetaPhlAn vJan25 CHOCOPhlAnSGB marker database (dir holding the .pkl)
   strainphlan_consensus_markers:
     properties:
       _: StrainPhlAn per-sample consensus markers from the MetaPhlAn SAM
