@@ -467,3 +467,15 @@ small files).
 
 Landed: 948f6929 on feat/engine/dev-bugs, merged into rc as 5d03cd86. Values minted before it keep
 their old ID until first edited, so existing caches survive.
+
+## template-names — 2026-11-22
+
+Tony: "Let's just call the template engcyc_metagenomics." / "maybe we run a download version first
+to set up databases? engcyc_prep_references template?"
+
+Design: the template is `engcyc_metagenomics`. A second template, `engcyc_prep_references`, holds
+only its reference downloads and builds, with no samples, so a user sets up the databases once
+before a run. Both share one target source, and the references have the same identity in both, so
+the main run reuses them from cache. Run 4 tests the full engcyc_metagenomics, preceded by prep.
+
+Landed: hybrid-viral-solve worker (rename + prep template).
