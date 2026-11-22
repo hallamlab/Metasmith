@@ -1,0 +1,34 @@
+types:
+  # A licensed tool exactly as its user downloaded it. Nothing produces one: the
+  # user gives it as an input, a build transform turns it into the tool's env
+  # image once, and the cache keeps that image. It is never redistributed, so
+  # no published image carries one. `obtain_from` is what a failed plan names
+  # when a lane needs a package nobody gave (see the engine's plan hints).
+  package:
+    properties:
+      _: licensed tool as downloaded by its user; never redistributed
+  pathway_tools_package:
+    extends: package
+    properties:
+      _: Pathway Tools 27.0 Linux installer from SRI (pathway-tools-27.0-linux-64-tier1-install)
+      obtain_from: https://biocyc.org/download-bundle.shtml
+  signalp6_package:
+    extends: package
+    properties:
+      _: SignalP 6.0 archive from DTU Health Tech (signalp-6.0*.fast.tar.gz or slow_sequential)
+      obtain_from: https://services.healthtech.dtu.dk/cgi-bin/sw_request?software=signalp&version=6.0&packageversion=6.0i&platform=fast
+  deeptmhmm_package:
+    extends: package
+    properties:
+      _: DeepTMHMM source archive (predict.py and its model files)
+      obtain_from: https://dtu.biolib.com/DeepTMHMM
+  deeplocpro_package:
+    extends: package
+    properties:
+      _: DeepLocPro pip-installable package archive
+      obtain_from: https://ku.biolib.com/DeepLocPro
+  phobius_package:
+    extends: package
+    properties:
+      _: Phobius standalone archive (phobius101_linux.tar.gz)
+      obtain_from: https://phobius.sbc.su.se/download

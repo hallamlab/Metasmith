@@ -787,6 +787,11 @@ types:
       Format: TSV
       granularity: whole
       ext: tsv
+  signalp6_results:
+    properties:
+      _: SignalP 6.0 per-protein signal peptide prediction (prediction_results.txt)
+      Format: TSV
+      ext: tsv
   bin_pgdb_archive:
     properties:
       _: PathoLogic PGDB of one quality MAG, packaged as a tarball (sibling of pgdb_archive)

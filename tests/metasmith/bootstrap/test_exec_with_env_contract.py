@@ -181,3 +181,67 @@ def test_export_names_must_be_shell_identifiers(tmp_path, _bounce_ready):
     ctx = _mamba_context(tmp_path, env_dep)
     with pytest.raises(AssertionError, match="valid shell identifier"):
         ctx.ExecWithEnv(env=env_dep, cmd="run", exports={"a-b": "1"})
+
+
+# --------------------------------------------------------- an env that is an image file
+#
+# A licensed tool's env is the image a transform built from the user's download,
+# held in the cache as a file. It is run from where it lies: no store, no pull.
+
+def test_apptainer_runs_an_image_file_in_place(tmp_path, _bounce_ready):
+    image_dep = _dep("image")
+    ctx = _build_context(tmp_path, Runtime.APPTAINER, image_dep)
+    shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
+
+    ctx.ExecWithEnv(env=image_dep, cmd="echo hello")
+
+    assert len(shell.calls) == 1, "an image file is neither probed in the store nor materialised"
+    assert shell.calls[0].startswith("apptainer exec ")
+    assert '"/hpc/home/containers/tool.sif" bash ' in shell.calls[0]
+
+
+def test_docker_loads_an_image_archive_before_running_it(tmp_path, _bounce_ready):
+    image_dep = _dep("image")
+    ctx = _build_context(tmp_path, Runtime.DOCKER, image_dep)
+    shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
+
+    ctx.ExecWithEnv(env=image_dep, cmd="echo hello")
+
+    assert 'docker load -q -i "/hpc/home/containers/tool.sif"' in shell.calls[0]
+
+
+class SucceedingShell(RecordingShell):
+    def Exec(self, cmd: str, timeout=None, history: bool = False) -> ShellResult:
+        self.calls.append(cmd)
+        return ShellResult(out=[], err=[], exit_code=0)
+
+
+def _build_case(tmp_path: Path, runtime: Runtime):
+    ctx = _build_context(tmp_path, runtime, _dep("image"))
+    ctx.external_shell = SucceedingShell()
+    cp = lambda p: ContextPath(local=Path(p), external=Path(p), container=Path(p))
+    return ctx, cp("/hpc/lib/recipe"), cp("/hpc/work/tool.env"), {"package": cp("/hpc/licensed/installer")}
+
+
+def test_docker_builds_and_saves_the_image_to_the_product(tmp_path, _bounce_ready):
+    ctx, recipe, out, files = _build_case(tmp_path, Runtime.DOCKER)
+    assert ctx.BuildImage(recipe=recipe, out=out, files=files) == 0
+    (cmd,) = ctx.external_shell.calls
+    assert '"/hpc/licensed/installer" "/hpc/home/work/_image_build/package"' in cmd
+    assert "docker build" in cmd and 'docker save -o "/hpc/work/tool.env"' in cmd
+    assert cmd.rstrip().endswith("( exit $__msm_rc )")
+    assert 'rm -rf "/hpc/home/work/_image_build"; ( exit' in cmd, "the build context, holding the package, outlives the build"
+
+
+def test_apptainer_builds_the_sif_from_the_definition(tmp_path, _bounce_ready):
+    ctx, recipe, out, files = _build_case(tmp_path, Runtime.APPTAINER)
+    assert ctx.BuildImage(recipe=recipe, out=out, files=files) == 0
+    (cmd,) = ctx.external_shell.calls
+    assert 'apptainer build --force --build-arg recipe="/hpc/lib/recipe" --build-arg package="/hpc/licensed/installer"' in cmd
+    assert cmd.endswith('"/hpc/work/tool.env" "/hpc/lib/recipe/apptainer.def" )')
+
+
+def test_building_an_image_without_a_container_runtime_is_refused(tmp_path, _bounce_ready):
+    ctx, recipe, out, files = _build_case(tmp_path, Runtime.MAMBA)
+    with pytest.raises(libraries_mod.ExecutionFailed, match="needs a container runtime"):
+        ctx.BuildImage(recipe=recipe, out=out, files=files)

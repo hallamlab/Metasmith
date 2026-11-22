@@ -454,10 +454,12 @@ TransformInstance(protocol=protocol, model=model, group_by=r0)
 
 def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(temp_dir):
     types_path = temp_dir / "mock.yml"
-    _write_types_yml(types_path, {
+    types = {
         name: {"properties": {"_": name}}
         for name in ("reads", "assembly", "accession", "script", "truth", "stats")
-    })
+    }
+    types["script"]["properties"]["obtain_from"] = "https://example.org/licence"
+    _write_types_yml(types_path, types)
     tr_lib = _make_transform_lib(temp_dir, types_path, {
         "assemble": _transform(["reads"], "assembly"),
         "fetch_assembly": _transform(["accession"], "assembly"),
@@ -484,6 +486,7 @@ def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(te
     first = plan.hints[0]
     assert first.kind == "unproduced_requirement", plan.hints
     assert "mock::script" in first.message and first.target == "mock::truth"
+    assert "Obtain it from https://example.org/licence" in first.message
     assert first.candidate_transforms == ["gold"]
     stats = [h for h in plan.hints if h.target == "mock::stats"]
     assert [h.kind for h in stats] == ["blocked_by_other_target"], stats
