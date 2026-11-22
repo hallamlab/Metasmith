@@ -423,6 +423,10 @@ Design:
   \"consuming tool\"").
 - The every-lane annotation table stays as an optional consuming tool (Tony: "we can also have a
   full 20 lane aggregate transform as an optional \"consuming tool\"").
+- Each lane outputs its rows in the standard annotation-table schema as its own product (Tony:
+  "as long as the lanes themselves output some standard format..."). A standardizing step after the
+  lane's search keeps cached raw results valid. Consumers concatenate or filter lane tables and parse
+  no raw tool output.
 - Deselecting a lane deselects only the tools that read it.
 
 Landed: template-build worker on feat/engine/template-build.
