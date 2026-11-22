@@ -6,9 +6,10 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-lab-sifs
+mp-port-ship
 
 ## Waiting on the user
+- mp-port-ship: ship the PathoLogic lane at 0.62-0.66 overlap with MP4, or pull the next lever first?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
