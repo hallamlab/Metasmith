@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-(waiting on worker mp-faithful; then template-build)
+template-build (dispatching)
 
 ## Waiting on the user
 
@@ -25,6 +25,7 @@ Decisions: docs/engcyc/DECISIONS.md
 - dramv-port-followups — from 826885a5: old dramv.py + viromics_survey_from_assembly still target annotation::dramv_distill (retire after comparison); annotation_table grouped by assembly so a multi-sample study builds duplicate frozen-set tables; every annotation_table now runs the RefSeq viral search; vMAG_stats VirSorter category/Circular/Prophage always empty (VirSorter1 name suffixes); reps without VirSorter2 calls score 5, no AMGs; template gate (-b) not run; comparison vs upstream DRAM-v not run; docker daemon hung on altair (stopped container dramvfix, /tmp/dramv_fix/sif)
 - wrapper-build-run — DRAM done (3abba16d); DRAM-v done (826885a5); PathoFact done (fed84f3d, merged 875a1f6e)
 - pathofact-port-followups — from fed84f3d: ported PathoFact 2.0 (bd5d527), not v1: MGE arm is geNomad (reused), no PlasFlow/MOB-suite/VirSorter/DVF (Tony accepted 2.0, 2026-11-22); six env images digest-pinned but none pulled or run in a container; hmmsearch and DeepARG lanes never run; annotation table now needs 6 GB PathoFact DB + 1.9 GB DeepARG before it builds (make lanes deselectable); SignalP variant unsolvable until a signalp6_results producer exists (lab-sifs); run_port.py pathofact_amr now pulls the full table, old fir pathofact_db lacks source; ORFs Prodigal vs upstream pyrodigal-gv (50% overlap match); dereplication rep = first in FASTA; tool versions differ (RGI BLAST, AMRFinderPlus 4.2.7, geNomad 1.11); SignalP6->gff3 mapping from public code; deeparg image diamond version unconfirmed; fir comparison (research/pathofact_port/README.md) not run; delete /home/tony/scratch_pf (1.5 GB)
+- mp-faithful-followups — from 7a5ad1e3/39ddc95b (merged f17dcc96): MAG overlap with MP4 0.62-0.66 -> 0.92-0.94, community 0.95-0.96. Open: annotation_table now REQUIRES swissprot/uniref90/metacyc lanes whose refs (UniProt 2025_04, MetaCyc 27.0 from licensed PT) have no download/build transforms, so a default solve drops the table (probe now gives them); full engine PathoLogic route solved, not run on fir; diamond_uniref50 keeps its own BSR copy (cache); research/mm_compare/ecoli_pathologic.py plans differently now; remaining diffs DIAMOND vs FAST, no eggNOG/CAZy names, no identity>=20 cut, different PT 27 build; _clean_stitle fix changes UniRef50 names in GPR lanes; metapathways.env repinned 4.0.1 -> 4.0.3
 - template-build — after pathofact-port, mp-faithful, lab-sifs land: merge them, then one worker builds the engcyc metagenomics template (every decided lane, deselectable), retires metagenomics_from_paired_reads, regenerates goldens
 - gpr-data-layout — test_gpr_schema::test_the_schema_covers_every_gpr_table_in_the_tree fails on untracked data/fabfos/runs/{fang,fuhrer_clones,keio}/gpr/*.parquet (pre-schema layout); regenerate or drop those tables
 - release-0.26 — geoquery cuts 0.26.0 first, alone. At template-build (b): merge released feat/dev into rc, carry decided fixes untested. After run 4 is clean (c): release from rc; first check geoquery_from_aoi_table still solves and its tests pass (no regression). AGENTS.md conflict to resolve on our side
@@ -41,7 +42,6 @@ Decisions: docs/engcyc/DECISIONS.md
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- mp-faithful — PathoLogic input as MP4 (names + MetaCyc hits + Swiss-Prot ECs, no CLEAN; UniRef90; pinned release; <60 aa skipped) + MP4 pathway table + fir recheck (feat/engine/mp-faithful)
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed

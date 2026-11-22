@@ -40,6 +40,10 @@ def inputs():
     lib.AddItem(DEFERRED, "sequences::assembly", parents={meta})
     # Consumed by annotation_table's pbert lane and produced by nothing.
     lib.AddItem(DEFERRED, "ref::label_transfer_landmarks", parents={meta})
+    # The MP4 lanes' references have no download step yet.
+    for t in ("ref::uniref90_diamond_db", "ref::swissprot_diamond_db", "ref::uniprot_ec_maps",
+              "ref::metacyc_protein_diamond_db", "ref::metacyc_monomer_reactions"):
+        lib.AddItem(DEFERRED, t, parents={meta})
     lib.AddValue("eggnog_source.marker", "trigger", "annotation::eggnog_source", parents={meta})
     return record_library(lib)
 
