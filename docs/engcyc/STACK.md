@@ -9,7 +9,7 @@ Decisions: docs/engcyc/DECISIONS.md
 lab-sifs
 
 ## Waiting on the user
-- lab-sifs: DTU academic licence downloads (SignalP 6, DeepTMHMM, DeepLocPro; Phobius via its own form) — Tony requests them; I build the lab SIFs from them and from the Pathway Tools installer on fir
+- lab-sifs: Tony fills the forms in the alcor browser seat (viewer VNC). Found 2026-11-21: SignalP 6.0i fast = DTU sw_request form (institutional email, link by email); DeepTMHMM = Microsoft Forms request from dtu.biolib.com/DeepTMHMM (non-commercial; package sent); Phobius = direct download phobius101_linux.tgz (academic); DeepLocPro = public GitHub Jaimomar99/deeplocpro, CC BY-NC-SA 4.0, no form, so not a licensed lane (build from GitHub); Pathway Tools installer already on fir
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
