@@ -406,3 +406,20 @@ Tony: "they can go first then at b (which should allow us to apply any fixes tah
 Design: geoquery releases 0.26.0 alone. After the template build, merge the released feat/dev into feat/engine/rc and carry the decided fixes, untested. After run 4 is clean, release from rc. Before that release, check that geoquery_from_aoi_table still solves and its tests pass.
 
 Landed: message sent to geospatial-query-dfs (2026-11-22). Release-0.26 entry in STACK.md.
+
+## lane-deselect — 2026-11-22
+
+Question: the annotation table requires every lane (a requirement cannot be optional), so any
+consumer of it runs all lanes. How do lanes become deselectable?
+
+Tony: "option a, but we do lanes -> consuming tool, rather having lanes -> per consumer aggregate -> tool"
+
+Design:
+- Each consuming tool (PathoLogic gather, PathoFact reports, DRAM and DRAM-v distill, the GPR
+  tables, CarveMe's BiGG input) requires only the lane products it reads. It builds the
+  standard-format rows in its own step with the shared annotation-table code. No per-consumer
+  aggregate type sits between the lanes and the tool.
+- The every-lane annotation table stays, as one optional target.
+- Deselecting a lane deselects only the tools that read it.
+
+Landed: template-build worker on feat/engine/template-build.

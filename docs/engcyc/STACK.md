@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-template-build (dispatching)
+template-build (worker running)
 
 ## Waiting on the user
 
