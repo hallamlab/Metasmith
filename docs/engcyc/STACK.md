@@ -22,7 +22,8 @@ lab-sifs
 ## Stack
 - annotation-aggregate-followups — from 49112ec6: research drivers reparse_run.py and scadc_metag_gpr_4lane.py call the deleted 4-lane lib (port them); PathoFact not in the table (no batch merge, unknown output, image unpullable) — goes with the PathoFact port; BiGG lane has no BiGG->MNXR crosswalk so it is not in the GPR tables, and carveme_from_orfs still runs its own search instead of reading bigg_diamond_hits; antiSMASH/RGI/AMRFinderPlus parsers written from docs, check on real output; lib::fabfos_gpr is a fabfos name for general code; annotation table needs an assembly (bare-ORF fosmid path keeps the 4-lane route); gpr_4lane still a separate producer of gpr_table (pinned equal to the all-lanes subset)
 - licensed-build-followups — from 717e28f8: build recipes unverified against real downloads (verify with the staged files in ~/licensed-staging); DeepLocPro is public CC BY-NC-SA on GitHub, so drop its licensed type and build from GitHub; fir apptainer build without root unknown (else build SIFs on altair); docker loads the whole archive per call (~4 GB PT); build steps run on login node; fir drivers pin agent image 0.24.2 (SIF copied into store, not run in place); no DeepTMHMM/DeepLocPro/Phobius consumer lanes yet
-- wrapper-build-run — start DRAM, DRAM-v, PathoFact port workers once annotation-aggregate lands (decision in DECISIONS.md)
+- dram-port-followups — from bb2ede96: old dram_annotate_genes + buildDramDB (24 GB Pfam-A.full) overlap the port, retire (no rivals); IPS Pfam lacks version so Pfam ids never reach distill (no shipped form uses them); MEROPS via DIAMOND not mmseqs; rank only C/D/E (no reverse search); UniRef50 top hit lacks DRAM's bitscore>=60 cut; genome stats lack taxonomy/completeness/tRNA/rRNA; dbCAN/VOGDB descriptions written at merge, not chunk; nothing run end to end; comparison vs upstream DRAM on one CPE3 MAG (research/dram_port/README.md) not run
+- wrapper-build-run — DRAM done (bb2ede96); DRAM-v running; PathoFact next (decision in DECISIONS.md)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
 - mp-port-ship — mp-fix landed on feat/engine/mp-fix (a5be461b, b91e3394, 846b4182): per-MAG overlap 0.49 -> 0.62-0.66, community 0.55 -> 0.63-0.69 (names + CLEAN conf >= 0.5). Decide: enough to ship, or pull the next lever (MetaCyc protein DB hits + Swiss-Prot ECs, as MP4)
@@ -38,8 +39,8 @@ lab-sifs
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- dram-port — DRAM port on feat/engine/dram-port (based on annotation-aggregate)
-( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8, feat/engine/annotation-aggregate 49112ec6, feat/engine/licensed-build 717e28f8 — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
+- dramv-port — DRAM-v port on feat/engine/dramv-port (based on dram-port)
+( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8, feat/engine/annotation-aggregate 49112ec6, feat/engine/licensed-build 717e28f8, feat/engine/dram-port bb2ede96 (on annotation-aggregate) — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
 ## Closed
 - licensed-tools — download is an input; a build step makes the image once (cached); lanes off by default; lab SIFs built from lab downloads
