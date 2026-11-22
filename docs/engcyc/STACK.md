@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-(waiting on workers: mp-faithful, lab-sifs; then template-build)
+(waiting on worker mp-faithful; then template-build)
 
 ## Waiting on the user
 
@@ -20,7 +20,7 @@ Decisions: docs/engcyc/DECISIONS.md
 
 ## Stack
 - annotation-aggregate-followups — from 6504e5cb: research drivers reparse_run.py and scadc_metag_gpr_4lane.py call the deleted 4-lane lib (port them); PathoFact not in the table (no batch merge, unknown output, image unpullable) — goes with the PathoFact port; BiGG lane has no BiGG->MNXR crosswalk so it is not in the GPR tables, and carveme_from_orfs still runs its own search instead of reading bigg_diamond_hits; antiSMASH/RGI/AMRFinderPlus parsers written from docs, check on real output; lib::fabfos_gpr is a fabfos name for general code; annotation table needs an assembly (bare-ORF fosmid path keeps the 4-lane route); gpr_4lane still a separate producer of gpr_table (pinned equal to the all-lanes subset)
-- licensed-build-followups — from 86592509: build recipes unverified against real downloads (verify with the staged files in ~/licensed-staging); DeepLocPro is public CC BY-NC-SA on GitHub, so drop its licensed type and build from GitHub; fir apptainer build without root unknown (else build SIFs on altair); docker loads the whole archive per call (~4 GB PT); build steps run on login node; fir drivers pin agent image 0.24.2 (SIF copied into store, not run in place); no DeepTMHMM/DeepLocPro/Phobius consumer lanes yet
+- licensed-build-followups — recipes verified on real downloads (770ed56c, merged 01a47c9f); five SIFs in ~/licensed-staging/sif; fir copy + chinook archive in progress. Open: DeepLocPro has no env file or lane, public image push to quay needs Tony's ok (CC BY-NC-SA); test_built_image.py not rerun after last two recipe fixes; PT SIF drops xvfb/less (GUI mode untested); DeepTMHMM uses every CPU (cap threads in its lane); docker loads the whole archive per call (~4 GB PT); build steps run on login node; fir drivers pin agent image 0.24.2; no DeepTMHMM/DeepLocPro/Phobius consumer lanes yet; Phobius Perl warnings harmless
 - dram-port-followups — from 3abba16d: old dram_annotate_genes + buildDramDB (24 GB Pfam-A.full) overlap the port, retire (no rivals); IPS Pfam lacks version so Pfam ids never reach distill (no shipped form uses them); MEROPS via DIAMOND not mmseqs; rank only C/D/E (no reverse search); UniRef50 top hit lacks DRAM's bitscore>=60 cut; genome stats lack taxonomy/completeness/tRNA/rRNA; dbCAN/VOGDB descriptions written at merge, not chunk; nothing run end to end; comparison vs upstream DRAM on one CPE3 MAG (research/dram_port/README.md) not run
 - dramv-port-followups — from 826885a5: old dramv.py + viromics_survey_from_assembly still target annotation::dramv_distill (retire after comparison); annotation_table grouped by assembly so a multi-sample study builds duplicate frozen-set tables; every annotation_table now runs the RefSeq viral search; vMAG_stats VirSorter category/Circular/Prophage always empty (VirSorter1 name suffixes); reps without VirSorter2 calls score 5, no AMGs; template gate (-b) not run; comparison vs upstream DRAM-v not run; docker daemon hung on altair (stopped container dramvfix, /tmp/dramv_fix/sif)
 - wrapper-build-run — DRAM done (3abba16d); DRAM-v done (826885a5); PathoFact done (fed84f3d, merged 875a1f6e)
@@ -42,7 +42,6 @@ Decisions: docs/engcyc/DECISIONS.md
 
 ## Workers
 - mp-faithful — PathoLogic input as MP4 (names + MetaCyc hits + Swiss-Prot ECs, no CLEAN; UniRef90; pinned release; <60 aa skipped) + MP4 pathway table + fir recheck (feat/engine/mp-faithful)
-- lab-sifs — verify recipes on real downloads, build SIFs on altair into ~/licensed-staging/sif (downloads on fir /project/rpp-shallam/phyberos/licensed/{signalp_6.0,deeptmhmm_1.0,phobius_1.01}, md5 ok); then copy SIFs to fir
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
