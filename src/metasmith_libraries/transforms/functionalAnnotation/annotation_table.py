@@ -29,6 +29,9 @@ ORF_LANES = {
     "bacmet":        ("annotation::bacmet_diamond_results",),
     "vfdb":          ("annotation::vfdb_diamond_results",),
     "bigg":          ("annotation::bigg_diamond_hits",),
+    "dbcan":         ("annotation::dbcan_hmmsearch_results", "annotation::dbcan_descriptions"),
+    "merops":        ("annotation::merops_diamond_results",),
+    "vogdb":         ("annotation::vogdb_hmmsearch_results", "annotation::vogdb_descriptions"),
     "rgi":           ("annotation::rgi_results",),
     "amrfinderplus": ("annotation::amrfinderplus_results",),
 }

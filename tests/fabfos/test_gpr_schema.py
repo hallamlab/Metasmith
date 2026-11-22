@@ -78,7 +78,7 @@ def _write_orfs(p: Path):
     with open(p, "w") as fh:
         for o in ORFS:
             tag = f" [gene={GENE_OF[o]}]" if GENE_OF[o] else ""
-            fh.write(f">{o}{tag} # some prodigal trailer\nMKV\n")
+            fh.write(f">{o}{tag} # 1 # 300 # 1 # ID=1_1;partial=00\nMKVCAACHM\n")
 
 
 def _write_kofam(p: Path):
@@ -689,8 +689,36 @@ def _write_extra_lanes(work: Path) -> list:
         {"id": CONTIGS[0], "areas": [{"start": 0, "end": 5000, "products": ["NRPS", "T1PKS"]}]},
         {"id": CONTIGS[1], "areas": []},
     ]}))
+    # hmmsearch --domtblout: ORF, -, len, model, -, model len, full E, score, bias, #, of,
+    # c-E, i-E, dom score, bias, hmm from, hmm to, ali from, ali to, env from, env to, acc.
+    dom = lambda orf, model, mlen, e, hf, ht: (
+        f"{orf} - 300 {model} - {mlen} {e} 140.0 0.1 1 1 {e} {e} 139.0 0.1 {hf} {ht} "
+        f"5 260 3 262 0.95 -\n")
+    trailer = "# Program:         hmmsearch\n# [ok]\n"
+    # GH5_4 twice, the second domain covering less: one row, at the better coverage.
+    # GT2 passes hmmsearch's -E and fails DRAM's 1e-18, so it is in the table and not
+    # in DRAM's render.
+    (w / "dbcan.domtbl").write_text(
+        "# target name\n" + dom(ORFS[0], "GH5_4.hmm", 280, "1e-40", 10, 250)
+        + dom(ORFS[0], "GH5_4.hmm", 280, "1e-40", 100, 120)
+        + dom(ORFS[0], "GT2.hmm", 200, "1e-10", 1, 190) + trailer)
+    (w / "dbcan_descriptions.tsv").write_text(
+        "term\tdescription\nGH5_4\tGH5 endo-beta-1,4-glucanase\nGT2\tGT2 cellulose synthase\n")
+    (w / "vogdb.domtbl").write_text(
+        "# target name\n" + dom(ORFS[0], "VOG00001", 169, "1e-30", 5, 160) + trailer)
+    (w / "vogdb_descriptions.tsv").write_text(
+        "term\tdescription\nVOG00001\tREFSEQ hypothetical protein; XrXs\n")
+    pep = ("MER0000002 - chymotrypsin A (cattle-type) (Bos taurus) [S01.001]#S01A#"
+           "{peptidase unit: 34-263}~source XP_608091~")
+    (w / "merops.tsv").write_text(
+        blast(ORFS[0], "MER0000002", pep).replace("orfs~", "")
+        + blast(ORFS[0], "MER0000009", "MER0000009 - weak [S01.009]#S01A#").replace(
+            "orfs~", "").replace("410.0", "55.0"))
     _write_deepec(w / "deepec.tsv")
     return [
+        ("dbcan", w / "dbcan.domtbl", w / "dbcan_descriptions.tsv"),
+        ("merops", w / "merops.tsv"),
+        ("vogdb", w / "vogdb.domtbl", w / "vogdb_descriptions.tsv"),
         ("deepec", w / "deepec.tsv"), ("eggnog", w / "eggnog.tsv"),
         ("interproscan", w / "ips.csv", w / "ips_descriptions.csv"),
         *[(lane, w / f"{lane}.tsv") for lane in ("mobileog", "megares", "bacmet", "vfdb")],
@@ -698,6 +726,16 @@ def _write_extra_lanes(work: Path) -> list:
         ("amrfinderplus", w / "amrfinderplus.tsv"),
         ("bakta_nc", w / "bakta.tsv"), ("antismash", w / "antismash.json"),
     ]
+
+
+# By path: the transform library's own annotation_table.py takes that module name first
+# whenever a planning test runs earlier in the session.
+def _gpr_module(name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("fabfos_gpr_" + name, GPR_LIB / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _annotation_table(work: Path, rng):
@@ -710,8 +748,7 @@ def _annotation_table(work: Path, rng):
 
 
 def test_annotation_table_carries_every_lane_under_the_fastas_ids(tmp_path):
-    sys.path.insert(0, str(GPR_LIB))
-    import annotation_table as at
+    at = _gpr_module("annotation_table")
     kw, table = _annotation_table(tmp_path, np.random.default_rng(40))
     df = pd.read_parquet(table)
     assert list(df.columns) == at.ANNOTATION_COLS
@@ -733,6 +770,40 @@ def test_annotation_table_carries_every_lane_under_the_fastas_ids(tmp_path):
     assert set(df.loc[df["lane"] == "interproscan", "namespace"]) == {"pfam", "interpro", "go"}
     assert set(df.loc[df["lane"] == "kofam", "description"]) == {"alcohol dehydrogenase",
                                                                  "hexokinase"}
+    # one row per ORF x model at its best-covering domain, and DRAM's E-value cut not applied
+    cazy = df[df["lane"] == "dbcan"].set_index("term")
+    assert sorted(cazy.index) == ["GH5_4", "GT2"]
+    assert cazy.loc["GH5_4", "score"] == pytest.approx(240 / 280)
+    assert set(df.loc[df["lane"] == "merops", "term"]) == {"MER0000002", "MER0000009"}
+
+
+def test_dram_annotations_render_one_mags_rows_the_way_dram_cuts_them(tmp_path):
+    dram = _gpr_module("dram_annotations")
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(43))
+    scaffold = ORFS[0].rpartition("_")[0]
+    (tmp_path / "mag1.fna").write_text(f">{scaffold}\nACGT\n")
+    out = tmp_path / "annotations.tsv"
+    r = _run([sys.executable, str(GPR_LIB / "dram_annotations.py"), "--ev-lib", kw["ev_lib"],
+              "--annotation-table", str(table), "--orfs", kw["orfs"],
+              "--mag", str(tmp_path / "mag1.fna"), "--name", "mag1", "--out", str(out)],
+             tmp_path)
+    assert r.returncode == 0, f"render failed:\n{r.stdout}\n{r.stderr}"
+    df = pd.read_csv(out, sep="\t", index_col=0)
+    assert list(df.columns) == dram.DRAM_COLS
+    # only the MAG's ORF, under the id the FASTA gives it
+    assert list(df.index) == [ORFS[0]]
+    row = df.loc[ORFS[0]]
+    assert (row["fasta"], row["scaffold"], row["gene_position"]) == ("mag1", scaffold, 1)
+    assert (row["start_position"], row["end_position"], row["strandedness"]) == (1, 300, 1)
+    assert (row["ko_id"], row["kegg_hit"]) == (KOS[0], "alcohol dehydrogenase")
+    assert row["uniref_id"] == f"UniRef50_{ACCS[0]}"
+    assert row["pfam_hits"] == "Zinc-binding dehydrogenase [PF00107]"
+    assert (row["cazy_ids"], row["cazy_best_hit"]) == ("GH5_4", "GH5_4")
+    assert row["cazy_hits"] == "GH5 endo-beta-1,4-glucanase"
+    assert (row["peptidase_id"], row["peptidase_family"]) == ("MER0000002", "S01A")
+    assert (row["vogdb_id"], row["vogdb_categories"]) == ("VOG00001", "Xr;Xs")
+    assert row["heme_regulatory_motif_count"] == 1
+    assert row["rank"] == "C"
 
 
 def test_gpr_table_all_holds_every_reaction_lane(tmp_path):

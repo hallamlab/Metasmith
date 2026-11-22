@@ -427,3 +427,41 @@ types:
     - reference_data
     properties:
       _: iPHoP release as fetched -- its split tar chunks and their md5 list, joined and unpacked by buildIphopDB
+  # The three DRAM search databases annotation_table takes as lanes, each a fetch and a
+  # build. DRAM-setup.py would fetch the same files; the build is what it does to them.
+  dbcan_sources:
+    extends:
+    - reference_data
+    properties:
+      _: dbCAN HMMdb and the CAZy family-activities table as fetched, pressed by buildDbcanDB
+  dbcan_hmm:
+    extends:
+    - reference_data
+    properties:
+      _: dbCAN HMMdb pressed for hmmsearch (dbCAN.hmm) beside descriptions.tsv, HMM family to CAZy activity
+  merops_sources:
+    extends:
+    - reference_data
+    properties:
+      _: MEROPS pepunit.lib (peptidase units) as fetched, the protein library DRAM searches for peptidases
+  merops_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted MEROPS peptidase units
+      ext: dmnd
+  vogdb_sources:
+    extends:
+    - reference_data
+    properties:
+      _: VOGDB release as fetched -- vog.hmm.tar.gz and vog.annotations.tsv.gz, merged and pressed by buildVogDB
+  vogdb_hmm:
+    extends:
+    - reference_data
+    properties:
+      _: Every VOG HMM merged and pressed for hmmsearch (vog.hmm) beside descriptions.tsv, DRAM's VOG description strings
+  dram_sheets:
+    extends:
+    - reference_data
+    properties:
+      _: The four DRAM distill forms (genome_summary_form, module_step_form, etc_module_database, function_heatmap_form) from one DRAM release

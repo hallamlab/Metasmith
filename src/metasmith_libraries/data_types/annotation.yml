@@ -823,3 +823,83 @@ types:
       Format: TSV
       granularity: bin
       ext: tsv
+
+  # --- The three DRAM search lanes the library had no equivalent of: dbCAN (CAZy),
+  # MEROPS (peptidases) and VOGDB. Each feeds annotation_table as a lane; the DRAM
+  # products below are rendered from that table rather than from DRAM's own annotate.
+  dbcan_hmmsearch_results:
+    properties:
+      _: hmmsearch --domtblout of ORFs against the dbCAN HMMs, as hmmsearch wrote it
+      Format: domtblout
+      ext: domtbl
+  dbcan_hmmsearch_results_chunk:
+    properties:
+      _: Per-chunk dbCAN hmmsearch domtblout (sibling of dbcan_hmmsearch_results)
+      Format: domtblout
+      granularity: chunk
+      ext: domtbl
+  dbcan_descriptions:
+    properties:
+      _: dbCAN HMM name (no .hmm) to its CAZy family activity, for the families hit
+      Format: TSV
+      ext: tsv
+  merops_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to the MEROPS peptidase units (pepunit.lib), outfmt 6 plus stitle
+      Format: BLAST6
+      ext: tsv
+  merops_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND MEROPS BLAST6 (sibling of merops_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  vogdb_hmmsearch_results:
+    properties:
+      _: hmmsearch --domtblout of ORFs against the VOGDB HMMs, as hmmsearch wrote it
+      Format: domtblout
+      ext: domtbl
+  vogdb_hmmsearch_results_chunk:
+    properties:
+      _: Per-chunk VOGDB hmmsearch domtblout (sibling of vogdb_hmmsearch_results)
+      Format: domtblout
+      granularity: chunk
+      ext: domtbl
+  vogdb_descriptions:
+    properties:
+      _: VOG to "ConsensusFunctionalDescription; FunctionalCategory", DRAM's own description string, for the VOGs hit
+      Format: TSV
+      ext: tsv
+
+  # DRAM 1.5 distill of one quality MAG, run over annotation_table rendered into DRAM's
+  # annotations.tsv. One group: distill writes all of them at once.
+  dram_mag_annotations:
+    properties:
+      _: One quality MAG's annotation_table rows rendered as DRAM 1.5 annotations.tsv -- the file DRAM distill reads
+      Format: TSV
+      granularity: bin
+      ext: tsv
+  dram_product_html:
+    properties:
+      _: DRAM distill product heatmap of one quality MAG (module, ETC and function coverage)
+      Format: HTML
+      granularity: bin
+      ext: html
+  dram_product_tsv:
+    properties:
+      _: DRAM distill product table of one quality MAG, the data behind the heatmap
+      Format: TSV
+      granularity: bin
+      ext: tsv
+  dram_metabolism_summary:
+    properties:
+      _: DRAM distill genome metabolism summary of one quality MAG, one sheet per category
+      Format: XLSX
+      granularity: bin
+      ext: xlsx
+  dram_genome_stats:
+    properties:
+      _: DRAM distill genome statistics of one quality MAG
+      Format: TSV
+      granularity: bin
+      ext: tsv

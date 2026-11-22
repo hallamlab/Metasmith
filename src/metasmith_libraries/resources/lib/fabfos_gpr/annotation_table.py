@@ -211,6 +211,45 @@ def _diamond_lane(namespace, with_title):
     return lambda path: _parse_diamond(path, namespace, with_title)
 
 
+# ---- hmmsearch --domtblout (dbCAN, VOGDB): one row per ORF x model. hmmsearch's
+# `target` is the ORF and its `query` the model. The score is the model coverage of the
+# best-covering domain, (hmm to - hmm from) / model length, because that and the
+# full-sequence E-value are the two things DRAM's significance test reads; the bitscore is
+# left in the domtblout.
+def _parse_domtblout(path, namespace, descriptions, strip=""):
+    rows = []
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            f = line.split()
+            if len(f) < 22:
+                raise SystemExit("[annotation] " + path + " has a " + str(len(f))
+                                 + "-field row; the " + namespace + " lane reads hmmsearch "
+                                 "--domtblout, which has 22 before the description")
+            hmm_len = float(f[5])
+            rows.append((f[0], f[3].removesuffix(strip), float(f[6]),
+                         (int(f[16]) - int(f[15])) / hmm_len if hmm_len else float("nan"),
+                         int(f[19]), int(f[20])))
+    df = pd.DataFrame(rows, columns=["orf", "term", "evalue", "score", "start", "end"])
+    df = (df.sort_values("score", ascending=False, kind="stable")
+            .drop_duplicates(["orf", "term"]))
+    names = {}
+    if descriptions:
+        d = pd.read_csv(descriptions, sep="\t", dtype=str).fillna("")
+        names = dict(zip(d["term"], d["description"]))
+    return df.assign(namespace=namespace, score_kind="hmm_coverage",
+                     description=df["term"].map(names))
+
+
+def parse_dbcan(results, descriptions=None):
+    return _parse_domtblout(results, "cazy", descriptions, strip=".hmm")
+
+
+def parse_vogdb(results, descriptions=None):
+    return _parse_domtblout(results, "vogdb", descriptions)
+
+
 # ---- DeepEC: two columns, `EC:`-prefixed calls, no score. A score-less tool asserts
 # presence; the consumer decides what that is worth.
 def parse_deepec(path):
@@ -543,6 +582,9 @@ LANES = {
     "bacmet":        (_diamond_lane("bacmet", True), "annotation::bacmet_diamond_results", True),
     "vfdb":          (_diamond_lane("vfdb", True), "annotation::vfdb_diamond_results", True),
     "bigg":          (_diamond_lane("bigg.gene", False), "annotation::bigg_diamond_hits", True),
+    "dbcan":         (parse_dbcan, "annotation::dbcan_hmmsearch_results", True),
+    "merops":        (_diamond_lane("merops", True), "annotation::merops_diamond_results", True),
+    "vogdb":         (parse_vogdb, "annotation::vogdb_hmmsearch_results", True),
     "rgi":           (parse_rgi, "annotation::rgi_results", True),
     "amrfinderplus": (parse_amrfinderplus, "annotation::amrfinderplus_results", True),
     "bakta_nc":      (parse_bakta_nc, "annotation::bakta_tsv", False),
