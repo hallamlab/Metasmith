@@ -106,6 +106,16 @@ def test_the_sentinel_still_wins_over_a_live_driver(rig, live_process_group):
     assert _wait(agent, key) == "completed"
 
 
+def test_a_failed_run_is_failed_and_says_why(rig):
+    agent, key, workspace = rig
+    run_dir = Path(os.readlink(workspace / AgentPaths.INTERNALS / "logs.latest"))
+    why = f"{AgentPaths.RUN_FAILED_SENTINEL} [now] nextflow exited [1]: Error executing process > 'p01__fetch (1)'"
+    (run_dir / "agent.log").write_text(f"running\n{why}\n")
+    res = agent.WaitForWorkflow(key, timeout_s=1.0, poll_s=0.1, grace_s=0.0)
+    assert res["status"] == "failed"
+    assert res["reason"] == why
+
+
 def test_a_log_with_no_match_is_not_read_as_a_shifted_line(rig):
     """`grep -c` prints its 0 and exits 1, so a `|| echo 0` fallback doubles it.
 

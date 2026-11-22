@@ -1,8 +1,8 @@
-"""Which steps a run reports as failed and ignored, from nextflow's task table."""
+"""Which steps a run reports as failed, from nextflow's task table and its log."""
 
 import pandas as pd
 
-from metasmith.agents.runner import _failed_steps
+from metasmith.agents.runner import _failed_steps, _nextflow_failure
 
 
 def _tasks(*rows):
@@ -32,3 +32,19 @@ def test_an_aborted_step_and_a_nonzero_completion_are_failures():
         ("p10__checkm (2)", "COMPLETED", "1"),
     )
     assert _failed_steps(df) == ["p09__clean (1)", "p10__checkm (2)"]
+
+
+def test_an_aborted_nextflow_names_its_first_error(tmp_path):
+    log = tmp_path / "nxf.log"
+    log.write_text(
+        "Nov-19 10:00:00.000 [main] DEBUG nextflow.cli.Launcher - $> nextflow run\n"
+        "Nov-19 10:30:00.000 [Task monitor] ERROR nextflow.processor.TaskProcessor"
+        " - Error executing process > 'p03__fetch_source (1)'\n"
+        "Nov-19 10:30:01.000 [main] ERROR nextflow.cli.Launcher - @unknown\n"
+    )
+    assert _nextflow_failure(1, log) == "nextflow exited [1]: Error executing process > 'p03__fetch_source (1)'"
+
+
+def test_an_aborted_nextflow_with_no_log_points_at_it(tmp_path):
+    log = tmp_path / "nxf.log"
+    assert _nextflow_failure(1, log) == f"nextflow exited [1]: see [{log}]"
