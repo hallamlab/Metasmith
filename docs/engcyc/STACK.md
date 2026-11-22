@@ -9,6 +9,7 @@ Decisions: docs/engcyc/DECISIONS.md
 annotation-aggregate
 
 ## Waiting on the user
+- annotation-aggregate: two levels (annotation table of every lane -> GPR table of reaction lanes, 4-lane and BiGG as subsets) or one table?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -30,8 +31,8 @@ annotation-aggregate
 - mixed-study-check — a study holding short and hybrid samples is one case; plan 'succeeds' with OPERA-MS for samples lacking long reads; fail it
 - type-traps — `_` description is a matched property; extends cannot cross namespaces; pool keeps a given's first parents (match by name)
 - cache-issues — from mp-fix: resource edits do not invalidate the cache; adding an env recompiles every env id and misses the whole cache; a rerun refuses on a stale lock of an exited driver; comparison.md section is hand-written over a generated file
-- port-gaps — mature gaps after run 4, one at a time: MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
-- exploratory-gaps — stay in their projects until methods settle. Shortlist "soon": MS ordination and compound-ID ensemble, once their sessions settle the method
+- port-gaps — mature gaps after run 4, one at a time: MS ion ID (pilot ok) + MS ordination (figures tuned, https://claude.ai/artifact/6EbejKytP9ZMrtv5Bt1n8V); MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
+- exploratory-gaps — stay in their projects until methods settle.
 - experiment-libs — fate of benchmark/library, beth_rnaseq/library, kalen mocklib, compound_id mock
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
@@ -39,7 +40,7 @@ annotation-aggregate
 (none running. Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8 — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
 ## Closed
-- catalog-survey — template now (+ resistome lanes, FEAST dropped); mature gaps after run 4; MS ordination + compound-ID shortlisted
+- catalog-survey — template now (+ resistome lanes, FEAST dropped); mature gaps after run 4; MS ion ID + ordination join port-gaps
 - mixed-session — support now: targets carry the given types they need; each shape gets the targets it satisfies
 - read-types — short_reads and long_reads only; parity/platform in read_metadata; pe/se types deleted in stdlib
 - hybrid-assembly — chosen ahead of time; explicit hybrid target; hybrid lane in the standard library; no hybrid SRA outcome

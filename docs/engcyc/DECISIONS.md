@@ -256,7 +256,8 @@ Decision:
 - FEAST is dropped (Tony: "ok, drop FEAST"). Its source table is Antonio's hand compilation with no
   public download, and `feast.py` never reads the sample.
 - After run 4: the mature gaps one at a time (port-gaps).
-- Exploratory work stays in its projects. Tony: MS ordination and the compound-ID ensemble are
-  shortlisted to integrate "soon" once their sessions settle the method.
+- Exploratory work stays in its projects. MS ion ID (compound-ID ensemble, pilot run succeeded) and
+  MS ordination (figures tuned, https://claude.ai/artifact/6EbejKytP9ZMrtv5Bt1n8V) move to the
+  after-run-4 port list (Tony, 2026-11-21: "fold them in with category 2, after the run").
 
 Landed: this file; port order in STACK.md.
