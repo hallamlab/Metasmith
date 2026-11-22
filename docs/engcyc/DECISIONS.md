@@ -430,6 +430,11 @@ Design:
 - The standard schema is a minimum. Lanes add their useful native fields as extra columns (Tony:
   "the standard is a minimum, but lanes can give more columns if they are useful, and I think many
   should. kofam should have the dynamic threshold and score columns, for example").
+- A lane whose prediction is a motif or region within the protein also outputs a hits table in one
+  shared format: one row per hit (ORF, lane, term, start, end, score, extras). This covers
+  InterProScan, the HMM lanes, SignalP, DeepTMHMM and Phobius. Whole-sequence predictions get none.
+  Tony: "yes, that is sensible.. only when the predicted features are a motif within the protein
+  sequence rather than of the sequence itself".
 - Deselecting a lane deselects only the tools that read it.
 
 Landed: template-build worker on feat/engine/template-build.
