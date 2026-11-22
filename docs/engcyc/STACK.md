@@ -9,7 +9,6 @@ Decisions: docs/engcyc/DECISIONS.md
 lab-sifs
 
 ## Waiting on the user
-- lab-sifs: Tony fills the forms in the alcor browser seat (viewer VNC). Found 2026-11-21: SignalP 6.0i fast = DTU sw_request form (institutional email, link by email); DeepTMHMM = Microsoft Forms request from dtu.biolib.com/DeepTMHMM (non-commercial; package sent); Phobius = direct download phobius101_linux.tgz (academic); DeepLocPro = public GitHub Jaimomar99/deeplocpro, CC BY-NC-SA 4.0, no form, so not a licensed lane (build from GitHub); Pathway Tools installer already on fir
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -39,6 +38,7 @@ lab-sifs
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- lab-sifs — verify recipes on real downloads, build SIFs on altair into ~/licensed-staging/sif (downloads on fir /project/rpp-shallam/phyberos/licensed/{signalp_6.0,deeptmhmm_1.0,phobius_1.01}, md5 ok); then copy SIFs to fir
 - dramv-port — DRAM-v port on feat/engine/dramv-port (based on dram-port)
 ( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8, feat/engine/annotation-aggregate 49112ec6, feat/engine/licensed-build 717e28f8, feat/engine/dram-port bb2ede96 (on annotation-aggregate) — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
