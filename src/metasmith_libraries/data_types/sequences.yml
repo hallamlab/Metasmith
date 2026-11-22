@@ -323,6 +323,19 @@ types:
     - assembly
     properties:
       method: megahit
+  # The hybrid lane. MEGAHIT's contigs for OPERA-MS carry no `origin: assembler`, so no
+  # assembly consumer takes the draft and a hybrid sample's downstream reads OPERA-MS alone.
+  megahit_draft:
+    properties:
+      _: MEGAHIT contigs of a hybrid sample's short reads, for OPERA-MS to scaffold
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+  opera_ms_assembly:
+    extends:
+    - assembly
+    properties:
+      method: opera_ms
   spades_assembly:
     extends:
     - assembly
