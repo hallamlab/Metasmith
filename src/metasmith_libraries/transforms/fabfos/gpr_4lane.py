@@ -6,6 +6,7 @@ model = Transform()
 image     = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 orfs      = model.AddRequirement(lib.GetType("sequences::orfs"))
 kofam     = model.AddRequirement(lib.GetType("annotation::kofamscan_results"), parents={orfs})
+kofam_d   = model.AddRequirement(lib.GetType("annotation::kofamscan_descriptions"), parents={orfs})
 clean     = model.AddRequirement(lib.GetType("annotation::clean_predictions"), parents={orfs})
 uniref    = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_results"), parents={orfs})
 uniref_d  = model.AddRequirement(lib.GetType("annotation::diamond_uniref50_descriptions"), parents={orfs})
@@ -21,9 +22,14 @@ LANE_SET = "chosen_4"
 
 THREADS = 8
 
+# The chosen-4 subset of the annotation table, built from those four lanes alone so a
+# fosmid pool reaches it from its ORFs without the assembly-scoped lanes. It runs the same
+# two programs `annotation_table` and `gpr_from_annotation_table` run, so its rows are the
+# chosen-4 rows of `annotation::gpr_table_all` for the same ORF set.
 def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
     ikof  = context.Input(kofam)
+    ikofd = context.Input(kofam_d)
     icln  = context.Input(clean)
     iuni  = context.Input(uniref)
     iunid = context.Input(uniref_d)
@@ -36,21 +42,26 @@ def protocol(context: ExecutionContext):
     iout  = context.Output(out_gpr)
 
     cmd = f"""
-            python3 {igpr.container}/gpr_4lane.py \
+            python3 {igpr.container}/annotation_table.py \
             --ev-lib {iev.container} \
             --orfs {iorfs.container} \
-            --kofam {ikof.container} \
-            --clean {icln.container} \
-            --uniref {iuni.container} \
-            --uniref-descriptions {iunid.container} \
-            --pbert-emb {ipe.container} \
-            --bridge {ibr.container} \
+            --source {iorfs.local.stem} \
+            --lane kofam {ikof.container} {ikofd.container} \
+            --lane clean {icln.container} \
+            --lane uniref50 {iuni.container} {iunid.container} \
+            --lane pbert {ipe.container} \
             --landmarks {ilm.container} \
+            --threads {THREADS} \
+            --out annotation_{LANE_SET}.parquet && \
+            python3 {igpr.container}/gpr_table.py \
+            --ev-lib {iev.container} \
+            --annotation-table annotation_{LANE_SET}.parquet \
+            --orfs {iorfs.container} \
+            --bridge {ibr.container} \
             --calibration {ical.container} \
-            --out {iout.container} \
             --lane-set {LANE_SET} \
             --source {iorfs.local.stem} \
-            --threads {THREADS}
+            --out {iout.container}
     """
     context.ExecWithEnv(env=image, cmd=cmd)
 

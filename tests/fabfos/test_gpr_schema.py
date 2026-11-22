@@ -92,6 +92,11 @@ def _write_kofam(p: Path):
     }).to_csv(p, index=False)
 
 
+def _write_kofam_descriptions(p: Path):
+    pd.DataFrame({"KO": KOS, "definition": ["alcohol dehydrogenase", "hexokinase"]}
+                 ).to_csv(p, index=False)
+
+
 def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_score")):
     with open(p, "w") as fh:
         fh.write("\t".join(header) + "\n")
@@ -194,6 +199,7 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
     # Write every input both mappers read; return the argv kwargs.
     _write_orfs(work / "orfs.faa")
     _write_kofam(work / "kofam.csv")
+    _write_kofam_descriptions(work / "kofam_descriptions.csv")
     _write_clean(work / "clean.tsv")
     _write_uniref(work / "uniref.tsv", work / "uniref_descriptions.tsv")
     _write_bridge(work / "bridge.parquet")
@@ -204,6 +210,7 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
         ev_lib=str(EV_LIB), calibration=str(work / "calibration"),
         orfs=str(work / "orfs.faa"),
         kofam=str(work / "kofam.csv"), clean=str(work / "clean.tsv"),
+        kofam_descriptions=str(work / "kofam_descriptions.csv"),
         uniref=str(work / "uniref.tsv"),
         uniref_descriptions=str(work / "uniref_descriptions.tsv"),
         bridge=str(work / "bridge.parquet"),
@@ -225,6 +232,7 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
         # process's inputs by basename and the mapper takes both.
         _write_landmarks(work / "landmarks_esmc", rng, dim=esmc_lm_dim, near=qe)
         kw.pop("threads")
+        kw.pop("kofam_descriptions")
         kw.update(
             lane_set="full_7", source="orfs",
             deepec=str(work / "deepec.tsv"), ezpred=str(work / "ezpred.csv"),
@@ -246,6 +254,47 @@ def _argv(mapper: str, kw: dict) -> list[str]:
 
 def _run(argv: list[str], work: Path) -> subprocess.CompletedProcess:
     return subprocess.run(argv, cwd=work, capture_output=True, text=True)
+
+
+GPR_LIB = MLIB / "resources" / "lib" / "fabfos_gpr"
+
+
+def _annotation_argv(kw: dict, out: Path, extra_lanes=()) -> list[str]:
+    argv = [sys.executable, str(GPR_LIB / "annotation_table.py"),
+            "--ev-lib", kw["ev_lib"], "--orfs", kw["orfs"], "--source", kw["source"],
+            "--landmarks", kw["landmarks"], "--threads", "1", "--out", str(out),
+            "--lane", "kofam", kw["kofam"], kw["kofam_descriptions"],
+            "--lane", "clean", kw["clean"],
+            "--lane", "uniref50", kw["uniref"], kw["uniref_descriptions"],
+            "--lane", "pbert", kw["pbert_emb"]]
+    for name, *paths in extra_lanes:
+        argv += ["--lane", name, *map(str, paths)]
+    return argv
+
+
+def _gpr_argv(kw: dict, table: Path, lane_set: str, out: Path) -> list[str]:
+    return [sys.executable, str(GPR_LIB / "gpr_table.py"),
+            "--ev-lib", kw["ev_lib"], "--annotation-table", str(table),
+            "--orfs", kw["orfs"], "--bridge", kw["bridge"],
+            "--calibration", kw["calibration"], "--lane-set", lane_set,
+            "--source", kw["source"], "--out", str(out)]
+
+
+def _run_chain(work: Path, *argvs) -> subprocess.CompletedProcess:
+    out, err = "", ""
+    for argv in argvs:
+        r = _run(argv, work)
+        out, err = out + r.stdout, err + r.stderr
+        if r.returncode:
+            break
+    return subprocess.CompletedProcess(argvs, r.returncode, out, err)
+
+
+def _run4(kw: dict, work: Path) -> subprocess.CompletedProcess:
+    # The two programs the `gpr_4lane` transform runs, in its order.
+    table = Path(work) / "annotation_chosen_4.parquet"
+    return _run_chain(work, _annotation_argv(kw, table),
+                      _gpr_argv(kw, table, "chosen_4", Path(kw["out"])))
 
 
 def _check_table(out: Path, lane_set: str):
@@ -283,7 +332,7 @@ def _check_best_uniref_hit(df):
 def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(0)
     kw = _lanes(tmp_path, rng, seven=False)
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "chosen_4")
 
@@ -332,7 +381,7 @@ def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):
     # No landmarks.parquet means no landmarks, and there is no degraded mode.
     rng = np.random.default_rng(2)
     kw = _lanes(tmp_path, rng, seven=False, lm_table="something_else.parquet")
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "landmarks.parquet" in r.stderr and "pbert" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -366,7 +415,7 @@ def test_embedding_lane_abstains_when_no_landmark_is_near(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     # the landmarks no longer sit on top of the queries
     _write_landmarks(tmp_path / "landmarks", np.random.default_rng(12))
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert "2 with no landmark at cosine" in r.stdout, r.stdout
     # and the empty lane is then refused rather than written as a table with a
     # silently missing channel
@@ -401,7 +450,7 @@ def test_embedding_lane_admits_by_neighbourhood_not_by_a_fixed_count(tmp_path):
                                  "mnxr_list": [";".join(MNXRS[:2])] * n}),
                    _dims(lm)], axis=1).to_parquet(
             work / "landmarks" / "landmarks.parquet", index=False)
-        r = _run(_argv("gpr_4lane", kw), work)
+        r = _run4(kw, work)
         line = next(ln for ln in r.stdout.splitlines() if ln.startswith("[gpr] pbert:"))
         return float(line.split(" voting on ")[1].split(" admitted")[0])
 
@@ -416,7 +465,7 @@ def test_mapper_refuses_when_a_lane_contributes_no_rows(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     b = pd.read_parquet(tmp_path / "bridge.parquet")
     b[b["id_source"] != "ko"].to_parquet(tmp_path / "bridge.parquet", index=False)
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "kofam" in r.stderr and "0 rows" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -427,7 +476,7 @@ def test_mapper_refuses_an_orf_id_mismatch(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     with open(tmp_path / "orfs.faa", "w") as fh:
         fh.write(">something_else_1\nMKV\n")
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "ORF ids that are not in this shard's FASTA" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -437,7 +486,7 @@ def test_clean_lane_refuses_a_header_drift(tmp_path):
     rng = np.random.default_rng(5)
     kw = _lanes(tmp_path, rng, seven=False)
     _write_clean(tmp_path / "clean.tsv", header=("query", "ec", "score"))
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "clean_predictions header" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -506,13 +555,14 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
     assert set(fe.RAW_SCORE_RANGE) == set(fe.CHANNELS)
     assert set(fe.ASSERTION_CHANNELS).isdisjoint(fe.CHANNELS)
     assert set(fe.LANE_SETS["chosen_4"]) < set(fe.LANE_SETS["full_7"])
-    for mapper in ("gpr_4lane", "gpr_7lane"):
-        # The transform declares the lane; the module under `lib::fabfos_gpr` is where
-        # the channel strings are actually written, so both are read.
-        src = ((MLIB / "transforms" / "fabfos" / f"{mapper}.py").read_text()
-               + (MLIB / "resources" / "lib" / "fabfos_gpr" / f"{mapper}.py").read_text())
+    assert set(fe.LANE_SETS["chosen_4"]) < set(fe.LANE_SETS["all_reaction"])
+    # The transform declares the lane; the modules under `lib::fabfos_gpr` are where the
+    # channel strings are actually written, so both are read.
+    for src_path in [*(MLIB / "transforms" / "fabfos").glob("gpr_*.py"),
+                     *GPR_LIB.glob("*.py")]:
+        src = src_path.read_text()
         for dead in ("dl_ec", "uniref50_dr", "pbert_transfer"):
-            assert f'"{dead}"' not in src, f"{mapper} still spells a channel {dead!r}"
+            assert f'"{dead}"' not in src, f"{src_path.name} still spells a channel {dead!r}"
 
     reemitters = {
         "host_gpr_denovo": REPO_ROOT / "src" / "fabfos" / "build_references" / "transforms"
@@ -581,3 +631,136 @@ def test_the_schema_covers_every_gpr_table_in_the_tree():
     assert not legacy_layout, (
         "these tables are on a pre-schema layout -- whatever wrote them is still "
         "building the old columns by hand:\n" + "\n".join(legacy_layout))
+
+
+# ---- the annotation table, and the GPR tables cut from it -----------------------------
+#
+# One fixture file per lane the aggregator reads beyond the four above, each in the layout
+# its producer writes. The batch-split lanes name their query `<stem>~<orf>`, which is what
+# the splitter feeding them writes and no merge removes; the table must carry the ORF as the
+# FASTA names it.
+CONTIGS = ["pool1:megahit:k141_1", "pool1:megahit:k141_2"]
+_EGGNOG_HEADER = ("#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\tmax_annot_lvl\t"
+                  "COG_category\tDescription\tPreferred_name\tGOs\tEC\tKEGG_ko\t"
+                  "KEGG_Pathway\tKEGG_Module\tKEGG_Reaction\tKEGG_rclass\tBRITE\tKEGG_TC\t"
+                  "CAZy\tBiGG_Reaction\tPFAMs")
+
+
+def _write_extra_lanes(work: Path) -> list:
+    w = work
+    with open(w / "eggnog.tsv", "w") as fh:
+        fh.write("## emapper-2.1.12\n" + _EGGNOG_HEADER + "\n")
+        fh.write(f"{ORFS[0]}\t562.ABC\t1e-50\t200.5\tCOG1@1|root\troot\tC\t"
+                 f"Alcohol dehydrogenase\tadhE\tGO:0000001,GO:0000002\t-\tko:{KOS[0]}\t"
+                 f"-\t-\tR00754\t-\t-\t-\t-\tALCD2x\tADH_N,ADH_zinc_N\n")
+        fh.write(f"{ORFS[1]}\t562.DEF\t1e-30\t150.0\tCOG2@1|root\troot\tG\tHexokinase\t"
+                 f"glk\t-\t{ECS[1]}\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\n")
+        fh.write("## 2 queries scanned\n")
+    pd.DataFrame({
+        "orf": [ORFS[0]], "start": ["5"], "stop": ["180"], "score": ["1.2E-40"],
+        "database": ["Pfam"], "Name": ["PF00107"], "Dbxref": ["IPR013149"],
+        "Ontology_term": ["GO:0016491|GO:0055114"],
+    }).to_csv(w / "ips.csv", index=False)
+    pd.DataFrame({"Name": ["PF00107"], "description": ["Zinc-binding dehydrogenase"]}
+                 ).to_csv(w / "ips_descriptions.csv", index=False)
+    blast = lambda q, s, title: (f"orfs~{q}\t{s}\t95.0\t300\t5\t0\t1\t300\t1\t300\t1e-80\t"
+                                 f"410.0" + (f"\t{title}" if title else "") + "\n")
+    for lane in ("mobileog", "megares", "bacmet", "vfdb"):
+        (w / f"{lane}.tsv").write_text(blast(ORFS[0], f"{lane.upper()}0001",
+                                             f"{lane.upper()}0001 some {lane} gene"))
+    (w / "megares.tsv").write_text("")      # a lane with no hits is a lane, not a failure
+    (w / "bigg.tsv").write_text(blast(ORFS[1], "b0001", None).replace("orfs~", ""))
+    pd.DataFrame({
+        "ORF_ID": [f"orfs~{ORFS[1]} # 1 # 300 # 1 # ID=1_2"], "Cut_Off": ["Strict"],
+        "Best_Hit_Bitscore": ["512.3"], "Best_Hit_ARO": ["TEM-1"], "ARO": ["3000873"],
+    }).to_csv(w / "rgi.tsv", sep="\t", index=False)
+    pd.DataFrame({
+        "Protein id": [f"orfs~{ORFS[0]}"], "Element symbol": ["blaTEM-1"],
+        "Element name": ["class A beta-lactamase TEM-1"],
+        "% Identity to reference": ["100.00"], "Closest reference accession": ["WP_000027057.1"],
+    }).to_csv(w / "amrfinderplus.tsv", sep="\t", index=False)
+    with open(w / "bakta.tsv", "w") as fh:
+        fh.write("# Annotated with Bakta\n#Sequence Id\tType\tStart\tStop\tStrand\t"
+                 "Locus Tag\tGene\tProduct\tDbXrefs\n")
+        fh.write(f"{CONTIGS[0]}\ttRNA\t10\t85\t+\tX_1\ttrnA\ttRNA-Ala\tSO:0000253\n")
+        fh.write(f"{CONTIGS[1]}\tncRNA\t200\t300\t-\tX_2\t\t6S ncRNA\tRFAM:RF00013\n")
+    import json
+    (w / "antismash.json").write_text(json.dumps({"records": [
+        {"id": CONTIGS[0], "areas": [{"start": 0, "end": 5000, "products": ["NRPS", "T1PKS"]}]},
+        {"id": CONTIGS[1], "areas": []},
+    ]}))
+    _write_deepec(w / "deepec.tsv")
+    return [
+        ("deepec", w / "deepec.tsv"), ("eggnog", w / "eggnog.tsv"),
+        ("interproscan", w / "ips.csv", w / "ips_descriptions.csv"),
+        *[(lane, w / f"{lane}.tsv") for lane in ("mobileog", "megares", "bacmet", "vfdb")],
+        ("bigg", w / "bigg.tsv"), ("rgi", w / "rgi.tsv"),
+        ("amrfinderplus", w / "amrfinderplus.tsv"),
+        ("bakta_nc", w / "bakta.tsv"), ("antismash", w / "antismash.json"),
+    ]
+
+
+def _annotation_table(work: Path, rng):
+    kw = _lanes(work, rng, seven=False)
+    extra = _write_extra_lanes(work)
+    table = work / "annotation.parquet"
+    r = _run(_annotation_argv(kw, table, extra), work)
+    assert r.returncode == 0, f"aggregator failed:\n{r.stdout}\n{r.stderr}"
+    return kw, table
+
+
+def test_annotation_table_carries_every_lane_under_the_fastas_ids(tmp_path):
+    sys.path.insert(0, str(GPR_LIB))
+    import annotation_table as at
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(40))
+    df = pd.read_parquet(table)
+    assert list(df.columns) == at.ANNOTATION_COLS
+    # every lane given is a lane of the table, the hitless one included only by name
+    assert set(df["lane"]) == set(at.LANES) - {"megares"}
+    orf_rows = df[df["orf"].notna()]
+    assert set(orf_rows["orf"]) == set(ORFS), "the `<stem>~` prefix reached the table"
+    contig_rows = df[df["lane"].isin(["bakta_nc", "antismash"])]
+    assert contig_rows["orf"].isna().all() and set(contig_rows["contig"]) <= set(CONTIGS)
+    assert set(df.loc[df["lane"] == "antismash", "term"]) == {"NRPS", "T1PKS"}
+    assert set(df.loc[df["lane"] == "bakta_nc", "term"]) == {"trnA", "6S ncRNA"}
+    # nothing abstains here: CLEAN's 0.0008 call is in the table, for a consumer to drop
+    assert (df.loc[df["lane"] == "clean", "score"] < fe.CLEAN_MIN_SCORE).any()
+    egg = df[df["lane"] == "eggnog"]
+    assert set(egg.loc[egg["namespace"] == "ko", "term"]) == {KOS[0]}
+    assert set(egg.loc[egg["namespace"] == "ec", "term"]) == {ECS[1]}
+    assert {"go", "pfam", "bigg.reaction", "kegg.reaction", "eggnog.seed"} <= set(egg["namespace"])
+    assert set(df.loc[df["lane"] == "rgi", "term"]) == {"3000873"}
+    assert set(df.loc[df["lane"] == "interproscan", "namespace"]) == {"pfam", "interpro", "go"}
+    assert set(df.loc[df["lane"] == "kofam", "description"]) == {"alcohol dehydrogenase",
+                                                                 "hexokinase"}
+
+
+def test_gpr_table_all_holds_every_reaction_lane(tmp_path):
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(41))
+    out = tmp_path / "gpr_all.parquet"
+    r = _run(_gpr_argv(kw, table, "all_reaction", out), tmp_path)
+    assert r.returncode == 0, f"mapper failed:\n{r.stdout}\n{r.stderr}"
+    df = _check_table(out, "all_reaction")
+    # deepec and eggnog were never fitted, and the table says so per row
+    for ch in ("deepec", "eggnog"):
+        g = df[df["channel"] == ch]
+        assert len(g) and (g["llr"] == fe.UNCALIBRATED_LLR).all()
+        assert set(g["llr_route"]) == {"uncalibrated"}
+    assert set(df.loc[df["channel"] == "kofam", "llr_route"]) == {"calibrated"}
+    assert set(df.loc[df["channel"] == "eggnog", "intermediate_id"]) == {KOS[0], ECS[1]}
+
+
+def test_chosen_4_is_the_all_reaction_table_cut_to_its_lanes(tmp_path):
+    # `gpr_4lane` builds from its four lanes alone so a fosmid pool reaches it from bare
+    # ORFs; it must still be exactly what a consumer gets by filtering the full table.
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(42))
+    full = tmp_path / "gpr_all.parquet"
+    assert _run(_gpr_argv(kw, table, "all_reaction", full), tmp_path).returncode == 0
+    r = _run4(kw, tmp_path)
+    assert r.returncode == 0, f"4-lane chain failed:\n{r.stdout}\n{r.stderr}"
+    key = fe.GRAIN_KEY
+    cut = pd.read_parquet(full)
+    cut = cut[cut["channel"].isin(fe.LANE_SETS["chosen_4"])].drop(columns="lane_set")
+    four = pd.read_parquet(kw["out"]).drop(columns="lane_set")
+    pd.testing.assert_frame_equal(cut.sort_values(key).reset_index(drop=True),
+                                  four.sort_values(key).reset_index(drop=True))
