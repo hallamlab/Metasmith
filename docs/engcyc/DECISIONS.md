@@ -192,7 +192,7 @@ Decision:
 Question: how do hybrid samples reach OPERA-MS when the same library holds MEGAHIT, and how does a
 hybrid sample come in from SRA?
 
-Evidence: hybrid-solve worker (feat/engine/hybrid-solve 673800c7, research/hybrid_solve/). A generic
+Evidence: hybrid-solve worker (feat/engine/hybrid-solve 1ad9ba60, research/hybrid_solve/). A generic
 assembly target sends hybrid samples to MEGAHIT and ignores the long reads. An explicit OPERA-MS
 target sends them to OPERA-MS, and downstream uses it. One SRA run is one library on one platform,
 so a hybrid sample is always two runs.
@@ -382,8 +382,8 @@ Decision:
   metagenomics_from_paired_reads in the same commit, goldens regenerated
   (MSM_REGEN_TEMPLATE_GOLDEN=1).
 
-Landed: merges 57e499eb (mp-fix), 060c0967 (hybrid-solve), 85ec6ca9 (shape-targets; solve.py
-took shape-targets' copy), 3b1544eb (licensed-build), f221b56b (dramv-port, carrying dram-port and
+Landed: merges cfe197cd (mp-fix), 60408efe (hybrid-solve), 949c87ca (shape-targets; solve.py
+took shape-targets' copy), fd066d45 (licensed-build), 8a944d44 (dramv-port, carrying dram-port and
 annotation-aggregate). Metadata compiles; test_spec, test_cases, test_licensed_lanes pass;
 test_gpr_schema 20/21 (the failure reads untracked fabfos run tables on the old layout, not code).
 
@@ -395,7 +395,7 @@ Tony: "accept rec 2.0"
 
 Design: port PathoFact 2.0 at commit bd5d527. Its MGE arm reuses our geNomad lane, and it adds no v1 MGE tools. It uses SignalP 6, which the licensed lane provides.
 
-Landed: feat/engine/pathofact-port 01488c91, merged into feat/engine/rc as e6c2a8ab.
+Landed: feat/engine/pathofact-port fed84f3d, merged into feat/engine/rc as 875a1f6e.
 
 ## release-order — 2026-11-22
 
