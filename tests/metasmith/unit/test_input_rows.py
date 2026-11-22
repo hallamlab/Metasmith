@@ -121,10 +121,11 @@ def test_a_value_rows_path_is_minted_and_never_moves(lib_path):
     out = op_inputs.sync(str(lib_path), rows)
     assert out["rows"]["v"] == path, "the mint is a mint, not a re-roll"
     assert (lib_path / path).read_text() == "GCF_000005845.3"
-    assert ids(lib_path) == before
+    assert ids(lib_path).keys() == before.keys()
 
 
-def test_a_value_row_whose_contents_change_keeps_its_identity(lib_path):
+def test_a_value_row_whose_contents_change_moves_its_identity(lib_path):
+    # Same file, new bytes: a cache built on "one" must not serve "two".
     rows = [row("v", mode="value", value="one")]
     out = op_inputs.sync(str(lib_path), rows)
     path = out["rows"]["v"]
@@ -132,7 +133,7 @@ def test_a_value_row_whose_contents_change_keeps_its_identity(lib_path):
     rows[0]["value"] = "two"
     op_inputs.sync(str(lib_path), rows)
     assert (lib_path / path).read_text() == "two"
-    assert ids(lib_path) == before
+    assert ids(lib_path)[path] != before[path]
 
 
 def test_two_value_rows_with_the_same_contents_are_two_items(lib_path):
