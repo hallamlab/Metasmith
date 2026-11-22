@@ -304,3 +304,22 @@ Tony: "yes"
 
 Decision: add DeepTMHMM (TM topology + SP) and PSORTb 3 (bacterial localization) as annotation lanes.
 PSORTb ships openly. DeepTMHMM and SignalP 6 fall under licensed-tools.
+
+## licensed-tools (2026-11-21)
+
+Question: how do lanes that need a licensed tool (PathoLogic/Pathway Tools, SignalP 6, DeepTMHMM,
+DeepLocPro, Phobius) work for a user who must download the tool themselves?
+
+Tony: "ok, can we also add a step to build the image? so that users can create from downloading
+themselves? for our lab, can you create local sifs?"
+
+Decision:
+- The user's download is an input, like a reference DB (`licensed::<tool>_package`).
+- A build step turns that package into the tool's image, once, and the cache keeps it. The lane runs
+  on the built image. Nothing licensed goes into a published image.
+- No package given: the lane is unreachable. Licensed lanes are off by default. Selecting one
+  without its package fails with an error that says where to get it.
+- For the lab: build local SIFs from the lab's own downloads (Pathway Tools installer already on
+  fir; the DTU tools need Tony's licence forms).
+
+Landed: worker licensed-build on feat/engine/licensed-build.
