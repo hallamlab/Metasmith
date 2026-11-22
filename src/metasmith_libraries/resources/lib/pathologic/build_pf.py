@@ -36,20 +36,26 @@ def main():
     a = p.parse_args()
 
     df = fe.read_parquet(a.annotations, columns=["orf_id", "kind", "value"])
-    df = df[df["kind"] == "EC"]
     keep = contig_ids(a.bin_fasta) if a.bin_fasta else None
-    ecs = defaultdict(list)
-    for orf, ec in zip(df["orf_id"], df["value"]):
-        if (keep is None or contig_of(orf) in keep) and ec not in ecs[orf]:
-            ecs[orf].append(ec)
+    names, ecs = {}, defaultdict(list)
+    for orf, kind, value in zip(df["orf_id"], df["kind"], df["value"]):
+        if keep is not None and contig_of(orf) not in keep:
+            continue
+        if kind == "FUNCTION":
+            names.setdefault(orf, value)
+        elif kind == "EC" and value not in ecs[orf]:
+            ecs[orf].append(value)
+    orfs = sorted(set(names) | set(ecs))
 
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    pf_ids = {orf: orf if len(orf) <= MAX_ID else orf[-MAX_ID:].lstrip("_-") for orf in ecs}
+    pf_ids = {orf: orf if len(orf) <= MAX_ID else orf[-MAX_ID:].lstrip("_-") for orf in orfs}
     assert len(set(pf_ids.values())) == len(pf_ids), "truncated PathoLogic gene IDs collide"
     with open(out / "0.pf", "w") as fh:
-        for orf in sorted(ecs):
+        for orf in orfs:
             fh.write(f"ID\t{pf_ids[orf]}\nNAME\t{orf}\nPRODUCT-TYPE\tP\n")
+            if orf in names:
+                fh.write(f"FUNCTION\t{names[orf]}\n")
             fh.writelines(f"EC\t{ec}\n" for ec in ecs[orf])
             fh.write("//\n")
     (out / "genetic-elements.dat").write_text("ID\t0\nNAME\t0\nTYPE\t:CONTIG\nANNOT-FILE\t0.pf\n//\n")
@@ -57,7 +63,7 @@ def main():
     (out / "organism-params.dat").write_text(
         f"ID\t{ident}\nNAME\t{a.name}\nABBREV-NAME\t{ident}\nSTORAGE\tFILE\nSTRAIN\t1\n"
         f"RANK\t|species|\nNCBI-TAXON-ID\t{a.taxon}\n")
-    print(f"[build_pf] {ident}: {len(ecs):,} ORFs with an EC", flush=True)
+    print(f"[build_pf] {ident}: {len(orfs):,} ORFs, {len(names):,} named, {sum(map(bool, ecs.values())):,} with an EC", flush=True)
 
 
 if __name__ == "__main__":
