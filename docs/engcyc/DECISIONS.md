@@ -186,3 +186,25 @@ Decision:
   (memories two-producers-need-a-masked-library, consumed-assembly-steals-its-lanes-slot). Reasoned,
   not solve-tested; Tony accepted the recommendation.
 - Callout: hifiasm_meta is HiFi-only, so an ONT isolate has no assembler in the isolate folder.
+
+## hybrid-assembly / two-assemblers + hybrid-input (2026-11-21)
+
+Question: how do hybrid samples reach OPERA-MS when the same library holds MEGAHIT, and how does a
+hybrid sample come in from SRA?
+
+Evidence: hybrid-solve worker (feat/engine/hybrid-solve 673800c7, research/hybrid_solve/). A generic
+assembly target sends hybrid samples to MEGAHIT and ignores the long reads. An explicit OPERA-MS
+target sends them to OPERA-MS, and downstream uses it. One SRA run is one library on one platform,
+so a hybrid sample is always two runs.
+
+Tony: "it really needs to be known and choosen ahead of time." "you need to specify a hybrid assembly target."
+
+Decision:
+- Hybrid is chosen ahead of time. A hybrid sample gives a short read set and a long read set (or a
+  short-run and a long-run accession, each fetched with its class known, no fork), and the user asks
+  for an explicit hybrid assembly target. Everything downstream hangs off it as a generic assembly.
+- getSraReads keeps its three outcomes (long, paired, single). There is no hybrid fork outcome.
+- The hybrid lane (MEGAHIT draft under its own type, then OPERA-MS) joins the standard library.
+  Revises read-classes: hybrid is not a separate folder or template.
+- Open: a session mixing short and hybrid samples needs the hybrid target on the hybrid samples only
+  (per-shape targets; the planner already takes a target per case).
