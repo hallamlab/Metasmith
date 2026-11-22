@@ -1,20 +1,23 @@
 #!/bin/sh
 # Runs as root inside the build, from the SRI installer the user downloaded
-# (pathway-tools-27.0-linux-64-tier1-install). Lays Pathway Tools out where
-# lib::pathologic/run.sh looks: the launcher at /opt/pathway-tools/pathway-tools
-# and ptools-local at /data/ptools-local. The answers piped to the installer are
-# destination, data folder, then its prompts (MetaPathways' docker/Dockerfile_ptools).
+# (pathway-tools-27.0-linux-64-tier1-install, an InstallBuilder binary). Its
+# unattended mode lays Pathway Tools out where lib::pathologic/run.sh looks:
+# the launcher at /opt/pathway-tools/pathway-tools and ptools-local at
+# /data/ptools-local. The packages are what the launcher's Lisp image links.
+# It dlopens an unversioned libcrypto.so, which only libssl-dev provides; without
+# it the installer's own first launch fails silently and writes no
+# ptools-init.dat, which run.sh copies.
 set -eu
 export DEBIAN_FRONTEND=noninteractive
+# A throwaway build root needs no fsync per package, and on a busy disk it stalls.
+echo force-unsafe-io > /etc/dpkg/dpkg.cfg.d/msm-unsafe-io
 apt-get update
-apt-get install -y --no-install-recommends xterm openssl libxml2 xvfb libxm4 procps less ca-certificates
+apt-get install -y --no-install-recommends xterm openssl libxml2 libxm4 libssl-dev procps ca-certificates
 rm -rf /var/lib/apt/lists/*
 cp "$1" /tmp/pt-install
 chmod +x /tmp/pt-install
-printf '/opt/pathway-tools\n/data\n\nn\nY\nn\n\n' | /tmp/pt-install
+/tmp/pt-install --mode unattended --InstallDir /opt/pathway-tools --PTOOLS_LOCAL_PATH /data --InstallDesktopShortcuts 0
 rm -f /tmp/pt-install
-/opt/pathway-tools/pathway-tools -lisp -eval '(exit)' </dev/null || true
-mkdir -p /data/ptools-local
-[ -f /data/ptools-local/ptools-init.dat ] || printf '#\nWWW-Server-Hostname localhost\nWWW-Server-Port 1555\n' > /data/ptools-local/ptools-init.dat
 chmod -R a+rX /opt/pathway-tools /data
 test -x /opt/pathway-tools/pathway-tools
+test -f /data/ptools-local/ptools-init.dat
