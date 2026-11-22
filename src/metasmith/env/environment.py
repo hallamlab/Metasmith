@@ -64,6 +64,13 @@ class Environment:
     def SetRuntime(self, runtime: Runtime):
         self.runtime = runtime
 
+    @property
+    def is_artifact(self) -> bool:
+        # An image a transform built and the cache holds as a file: a SIF under
+        # apptainer, a `docker save` archive under docker. It is run from where it
+        # lies, so it has no store entry, no pull and no verify stamp.
+        return self.image.startswith("/")
+
     def _get_image(self):
         image = self.image
         if self.runtime == Runtime.DOCKER:
@@ -79,11 +86,13 @@ class Environment:
         return Path(f"${{APPTAINER_CACHEDIR:-{self.container.cache}}}")
 
     def GetLocalPath(self):
+        if self.is_artifact: return None
         match self.runtime:
             case Runtime.APPTAINER:
                 return self._store_root()/f"{self._cached_name()}.sif"
 
     def GetSandboxPath(self):
+        if self.is_artifact: return None
         match self.runtime:
             case Runtime.APPTAINER:
                 return self._store_root()/f"{self._cached_name()}.sandbox"
@@ -197,6 +206,9 @@ class Environment:
                 others = ['--platform=linux/amd64', '--rm', '-u $(id -u):$(id -g)', '--network=host', '-e TMPDIR=${TMPDIR-"/tmp"}', f'--label {AgentPaths.RUN_LABEL}=${{{AgentPaths.RUN_TOKEN_ENV}:-}}', '--entrypoint=""']
                 workdir = f'--workdir="{self.container.workdir}"' if self.container.workdir is not None else ''
                 run = 'run'
+                if self.is_artifact:
+                    # Loading is idempotent and names the tag the archive was saved under.
+                    image = f'"$(docker load -q -i "{image}" | sed -n "s/^Loaded image[^:]*: //p" | tail -1)"'
             case Runtime.APPTAINER:
                 nthreads = '${SLURM_CPUS_PER_TASK:-1}'
                 # `--cleanenv` drops the run token, and the token is what a
@@ -206,6 +218,8 @@ class Environment:
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
                     image = local
+                elif self.is_artifact:
+                    image = f'"{image}"'
                 elif local:
                     sif = self.GetLocalPath()
                     sandbox = self.GetSandboxPath()

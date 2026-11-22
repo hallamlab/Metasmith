@@ -141,3 +141,25 @@ types:
     properties:
       src: mobileelementfinder_jsonfix
       usage: library
+  # Recipes that build a licensed tool's env image from its licensed:: package:
+  # a Dockerfile and an apptainer.def around one install.sh (ExecutionContext.BuildImage).
+  licensed_pathway_tools:
+    properties:
+      src: licensed_pathway_tools
+      usage: image recipe
+  licensed_signalp6:
+    properties:
+      src: licensed_signalp6
+      usage: image recipe
+  licensed_deeptmhmm:
+    properties:
+      src: licensed_deeptmhmm
+      usage: image recipe
+  licensed_deeplocpro:
+    properties:
+      src: licensed_deeplocpro
+      usage: image recipe
+  licensed_phobius:
+    properties:
+      src: licensed_phobius
+      usage: image recipe

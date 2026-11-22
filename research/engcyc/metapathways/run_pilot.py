@@ -46,6 +46,8 @@ SAMPLES = {
 
 # The Metabuli database on fir is GTDB214.1+humanT2T. gtdb232 is a 634 GB tarball nobody has staged.
 GLOBAL_REFS = {
+    # The lab's licensed Pathway Tools image, given as the env so the plan builds nothing.
+    "env::pathologic.env": Path("/scratch/phyberos/engcyc/licensed/pathologic.sif"),
     "ref::uniref50_diamond_db": c.DB_PATHS["ref::uniref50_diamond_db"],
     "ref::kofamscan_profiles": c.DB_PATHS["ref::kofamscan_profiles"],
     "ref::kofamscan_ko_list": c.DB_PATHS["ref::kofamscan_ko_list"],
@@ -63,11 +65,6 @@ TYPE_LIBS = [c.MLIB / "data_types" / t for t in (
     "sequences.yml", "ref.yml", "annotation.yml", "taxonomy.yml", "binning.yml", "binning_local.yml",
     "modelling.yml", "env.yml", "lib.yml")]
 
-# The licensed Pathway Tools image cannot be pulled. It is adopted into the store under the name
-# the engine derives from env::pathologic.env's container URI, and the store stays mode 700.
-LOCAL_IMAGES = {
-    "docker..quay.io_txyliu_pathologic..27.0.sif": Path("/scratch/phyberos/engcyc/licensed/pathologic.sif"),
-}
 SETUP_COMMANDS = [*c.SETUP_COMMANDS, f"export APPTAINER_CACHEDIR={HOME / 'container_images'}"]
 AGENT_IMAGE = os.environ.get("MSM_AGENT_IMAGE", "docker://quay.io/hallamlab/metasmith:0.24.2")
 
@@ -143,10 +140,7 @@ def expected_counts(sample):
 
 def cmd_setup(args):
     store = HOME / "container_images"
-    # The `.verified` stamp stops the engine re-pulling an image it finds without one, which fails here.
-    links = "; ".join(f'([ -e "{store}/{name}" ] || ln "{src}" "{store}/{name}") && touch "{store}/{name}.verified"'
-                      for name, src in LOCAL_IMAGES.items())
-    print(c.host_sh(f'mkdir -p "{store}" && chmod 700 "{store}" && {links} && ls -la "{store}"'))
+    print(c.host_sh(f'mkdir -p "{store}" && chmod 700 "{store}"'))
     if args.deploy:
         source = Source.FromLocal(HOME) if c.ON_HOST else SshSource(host=c.HPC_HOST, path=HOME).AsSource()
         Agent(home=source, container=AGENT_IMAGE, runtime=Runtime.APPTAINER,
@@ -202,7 +196,7 @@ def cmd_status(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("setup", help="adopt the licensed image into the home's store")
+    p = sub.add_parser("setup", help="create the home's image store")
     p.add_argument("--deploy", action="store_true")
     p.set_defaults(fn=cmd_setup)
     for name in ("import", "run"):

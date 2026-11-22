@@ -94,6 +94,18 @@ runtime decides how. See `docs/metasmith_libraries/ENV_PORT.md`.
 **A bind goes through `context.Mount(src, dst)`.** Put the path it returns in the command. A
 raw `(src, dst)` tuple raises before the tool runs, under every runtime.
 
+## A licensed tool is an input and a build
+
+A tool whose licence forbids redistribution has no `resources/env/` file and no published image.
+The user's download is a `licensed::<tool>_package` input. A `build*Image` transform turns it into
+the tool's `env::<tool>.env` with `context.BuildImage`, from the recipe in
+`resources/lib/licensed_<tool>/`. The recipe is one `install.sh` that both its `Dockerfile` and
+its `apptainer.def` run. The cache keeps the built image, and the lane runs in it.
+
+- Give the package type an `obtain_from:` URL. A plan that needs the package and lacks it names that URL.
+- A prebuilt image file given as the env (a SIF, or a `docker save` archive) satisfies the lane with no build.
+- **CAUTION** apptainer builds from a definition file only where user namespaces or fakeroot are enabled. Where they are not, build the SIF elsewhere and give it as the env.
+
 ## A large download is a fetch and a build
 
 Fetch on `local` into `context.StagingDir()` with `FetchCommand`, and move the files into the
