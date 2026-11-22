@@ -5,7 +5,8 @@
 #SBATCH --mem=32G
 #SBATCH --time=12:00:00
 #SBATCH --output=/scratch/phyberos/beth_mp/pffix/logs/faithful_%j.log
-# Usage: sbatch faithful_pathologic.sbatch SAMPLE LANES_RUN_KEY CHECKOUT
+# Usage: sbatch faithful_pathologic.sbatch SAMPLE LANES_RUN_KEY CHECKOUT ORFS_RUN_KEY
+# ORFS_RUN_KEY is a run that delivered the assembly's sequences::orfs (the mp group's).
 #
 # The PathoLogic half of the port on one assembly, outside the engine: the annotation table of the
 # four MetaPathways 4 searches (the mp4lanes group's run), then ptools_annotation_gather,
@@ -14,6 +15,7 @@
 # these assemblies would re-run lanes the PathoLogic input never reads.
 set -euo pipefail
 S=$1 R=/scratch/phyberos/beth_mp/port/metasmith/runs/$2 L=$3
+ORFS_RUN=/scratch/phyberos/beth_mp/port/metasmith/runs/$4
 B=/scratch/phyberos/beth_mp
 O=$B/pffix/faithful/$S
 IMG=$B/port/metasmith/container_images
@@ -27,7 +29,10 @@ mkdir -p $O $LOCAL/ptools_home
 py() { apptainer exec --cleanenv -B /scratch/phyberos $PY_SIF python3 "$@"; }
 one() { ls $R/results/annotation-$1/* | head -1; }
 
-orfs=$(ls $R/results/sequences-orfs/* | head -1)
+orfs=$(ls $ORFS_RUN/results/sequences-orfs/* | head -1)
+missing=$(comm -13 <(grep '^>' $orfs | cut -c2- | cut -d' ' -f1 | sort -u) \
+    <(tail -n +2 "$(one diamond_uniref90_results)" | cut -f1 | sort -u) | wc -l)
+[ "$missing" -eq 0 ] || { echo "$missing hit ORFs are not in $orfs"; exit 1; }
 lanes=()
 for db in uniref50 uniref90 swissprot metacyc; do
     lanes+=(--lane $db "$(one diamond_${db}_results)" "$(one diamond_${db}_descriptions)")
