@@ -43,11 +43,11 @@ def dummy(name):
 
 
 def declare_givens(smith, nano_type="hyb::nanopore_reads", hybrid_short_type="sequences::short_reads_pe", tag="base",
-                   one_study=False):
+                   one_study=False, samples=None):
     # A sample is everything under one root, so a study per shape gives one sample, and one case, per shape.
     givens = smith.PoolGivens()
     studies = {}
-    for sid, hybrid in SAMPLES:
+    for sid, hybrid in samples or SAMPLES:
         key = "mixed" if one_study else ("hybrid" if hybrid else "short")
         if key not in studies:
             studies[key] = c.add_value(givens, f"hs/study/{key}", {"study": key}, "sequences::study")
@@ -98,6 +98,14 @@ def targets_both():
     asm = t.Add("sequences::megahit_assembly")
     t.Add("hyb::opera_ms_assembly")
     downstream(t, asm)
+    return t
+
+
+def targets_conditional():
+    # Through Spec: the generic lane for every shape, OPERA-MS only where a shape carries Nanopore reads.
+    t = TargetBuilder()
+    downstream(t, t.Add("sequences::assembly"))
+    downstream(t, t.Add("hyb::opera_ms_assembly", when=["hyb::nanopore_reads"]))
     return t
 
 
@@ -196,6 +204,8 @@ VARIANTS = {
     "V4a": dict(per_case=(targets_megahit, targets_hybrid)),
     "V4b": dict(per_case=(targets_generic, targets_hybrid)),
     # One shared generic target; the hybrid sample's short reads sit behind a fence MEGAHIT cannot cross.
+    # One short sample, one hybrid sample, one TargetBuilder with a conditional hybrid target.
+    "V5": dict(targets=targets_conditional, givens=dict(samples=[("S1", False), ("H1", True)], tag="v5")),
     "V4c": dict(targets=targets_generic, transforms=dict(hyb_dir="hyb_fenced"),
                 givens=dict(hybrid_short_type="hyb::hybrid_short_reads", tag="fenced")),
 }
