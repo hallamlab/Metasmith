@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-replace-old
+(waiting on workers: pathofact-port, mp-faithful, lab-sifs; then template-build)
 
 ## Waiting on the user
 
@@ -24,7 +24,8 @@ replace-old
 - dram-port-followups — from bb2ede96: old dram_annotate_genes + buildDramDB (24 GB Pfam-A.full) overlap the port, retire (no rivals); IPS Pfam lacks version so Pfam ids never reach distill (no shipped form uses them); MEROPS via DIAMOND not mmseqs; rank only C/D/E (no reverse search); UniRef50 top hit lacks DRAM's bitscore>=60 cut; genome stats lack taxonomy/completeness/tRNA/rRNA; dbCAN/VOGDB descriptions written at merge, not chunk; nothing run end to end; comparison vs upstream DRAM on one CPE3 MAG (research/dram_port/README.md) not run
 - dramv-port-followups — from 48b395db: old dramv.py + viromics_survey_from_assembly still target annotation::dramv_distill (retire after comparison); annotation_table grouped by assembly so a multi-sample study builds duplicate frozen-set tables; every annotation_table now runs the RefSeq viral search; vMAG_stats VirSorter category/Circular/Prophage always empty (VirSorter1 name suffixes); reps without VirSorter2 calls score 5, no AMGs; template gate (-b) not run; comparison vs upstream DRAM-v not run; docker daemon hung on altair (stopped container dramvfix, /tmp/dramv_fix/sif)
 - wrapper-build-run — DRAM done (bb2ede96); DRAM-v done (48b395db); PathoFact running (decision in DECISIONS.md)
-- replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
+- template-build — after pathofact-port, mp-faithful, lab-sifs land: merge them, then one worker builds the engcyc metagenomics template (every decided lane, deselectable), retires metagenomics_from_paired_reads, regenerates goldens
+- gpr-data-layout — test_gpr_schema::test_the_schema_covers_every_gpr_table_in_the_tree fails on untracked data/fabfos/runs/{fang,fuhrer_clones,keio}/gpr/*.parquet (pre-schema layout); regenerate or drop those tables
 - run-4 — "check that an agent can E2E install msm and run the template"
 - shape-targets-followups — from worker d1feecd8: hybrid case skipped MEGAHIT only by solver choice (no rule; same gap as consume-distinguishing-products); `when` on an input-only type gives an error that does not mention conditions; same target with two `when` lists duplicates; no GUI widget for `when` (yaml/json/Python only)
 - hint-fix — my search_exhausted hint claims every target is producible when one case cannot reach one (hybrid-solve V2/V3); gate it per case
@@ -41,9 +42,10 @@ replace-old
 - mp-faithful — PathoLogic input as MP4 (names + MetaCyc hits + Swiss-Prot ECs, no CLEAN; UniRef90; pinned release; <60 aa skipped) + MP4 pathway table + fir recheck (feat/engine/mp-faithful)
 - lab-sifs — verify recipes on real downloads, build SIFs on altair into ~/licensed-staging/sif (downloads on fir /project/rpp-shallam/phyberos/licensed/{signalp_6.0,deeptmhmm_1.0,phobius_1.01}, md5 ok); then copy SIFs to fir
 - pathofact-port — PathoFact port on feat/engine/pathofact-port (from dramv-port)
-( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8, feat/engine/annotation-aggregate 49112ec6, feat/engine/licensed-build 717e28f8, feat/engine/dram-port bb2ede96 (on annotation-aggregate), feat/engine/dramv-port 48b395db (on dram-port) — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
+(Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 717e28f8, dramv-port incl. dram-port + annotation-aggregate. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
+- replace-old — merge finished branches now (done); template built after the last three ports, replacing the old one in the same commit
 - mp-outputs — only MP4's pathway table (score, coverage, ORFs, report fields) replaces ours; other MP4 outputs not rebuilt
 - mp-port-ship — faithful to MP4: names + MetaCyc hits + Swiss-Prot ECs, CLEAN out of PathoLogic input; recheck then ship
 - licensed-tools — download is an input; a build step makes the image once (cached); lanes off by default; lab SIFs built from lab downloads

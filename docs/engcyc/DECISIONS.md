@@ -367,3 +367,22 @@ Decision:
   per pathway, per MAG and for the community. The PGDB archive stays.
 
 Landed: added to worker mp-faithful (feat/engine/mp-faithful).
+
+## replace-old (2026-11-22)
+
+Question: how do the worker branches come together, and when does the engcyc template replace
+metagenomics_from_paired_reads?
+
+Tony: "ok"
+
+Decision:
+- Merge every finished worker branch into feat/engine/rc now and settle conflicts while small.
+- Once PathoFact, mp-faithful and lab-sifs land, one worker builds the engcyc metagenomics
+  template on the merged tree with every decided lane, each deselectable, and retires
+  metagenomics_from_paired_reads in the same commit, goldens regenerated
+  (MSM_REGEN_TEMPLATE_GOLDEN=1).
+
+Landed: merges 57e499eb (mp-fix), 060c0967 (hybrid-solve), 85ec6ca9 (shape-targets; solve.py
+took shape-targets' copy), 3b1544eb (licensed-build), f221b56b (dramv-port, carrying dram-port and
+annotation-aggregate). Metadata compiles; test_spec, test_cases, test_licensed_lanes pass;
+test_gpr_schema 20/21 (the failure reads untracked fabfos run tables on the old layout, not code).
