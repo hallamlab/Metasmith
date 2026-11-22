@@ -1,4 +1,4 @@
-# gtdbtk_de_novo.py on the aggregator's pool of quality MAGs: the genomes iphop_add_to_db adds.
+# gtdbtk_de_novo.py on the pool of quality MAGs: the genomes iphop_add_to_db adds.
 #
 # add_to_db reads the decorated trees for the genomes it is handed, so the tree must be built
 # from that same pool. Built from any other putative_genome, such as DAS Tool's bins, the trees
