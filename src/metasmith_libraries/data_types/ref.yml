@@ -54,6 +54,7 @@ types:
       _: InterProScan release tarball as fetched, unindexed, for buildInterProScanDB
       ext: tar.gz
   metabuli_ref:
+    stage: link
     extends:
     - reference_data
     properties:
@@ -82,6 +83,7 @@ types:
     properties:
       _: Kraken2 database directory (hash.k2d + Bracken kmer_distrib)
   centrifuger_db:
+    stage: link
     extends:
     - reference_data
     properties:

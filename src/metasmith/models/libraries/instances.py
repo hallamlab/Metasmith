@@ -264,6 +264,11 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         e = self._get_type(name, self.types)
         return e
 
+    def IsLinked(self, name: str) -> bool:
+        namespace, _, type_name = name.partition("::")
+        lib = self.types.get(namespace)
+        return lib is not None and type_name in lib.linked
+
     def GetName(self, dtype: Endpoint):
         if dtype in self._dtype2name: return self._dtype2name[dtype]
         for k, lib in self.types.items():

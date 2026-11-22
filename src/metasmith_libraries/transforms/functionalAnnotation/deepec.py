@@ -9,18 +9,41 @@ orfs = model.AddRequirement(lib.GetType("sequences::orf_chunk"))
 out_predictions = model.AddProduct(lib.GetType("annotation::deepec_predictions_chunk"))
 
 
+# DeepEC 0.4.1's one-hot encoder knows these 21 letters and drops, silently, any sequence holding
+# another. Prodigal ends every complete gene with '*', so unsanitised input left only partial genes.
+ALPHABET = set("ACDEFGHIKLMNPQRSTVWYX")
+
+
+def sanitise(src: Path, dst: Path):
+    with open(src) as fin, open(dst, "w") as fout:
+        seq = []
+        def flush():
+            if seq:
+                s = "".join(seq).upper().rstrip("*")
+                fout.write("".join(c if c in ALPHABET else "X" for c in s) + "\n")
+                seq.clear()
+        for line in fin:
+            if line.startswith(">"):
+                flush()
+                fout.write(">" + (line[1:].split() or ["orf"])[0] + "\n")
+            else:
+                seq.append(line.strip())
+        flush()
+
+
 def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
     iout = context.Output(out_predictions)
 
     threads = context.params.get("cpus", 8)
+    sanitise(Path(iorfs.local), Path("deepec_input.faa"))
 
     context.ExecWithEnv(
         env=image,
         cmd=f"""
             deepec \
                 -p {threads} \
-                -i {iorfs.container} \
+                -i deepec_input.faa \
                 -o deepec_output
         """,
     )

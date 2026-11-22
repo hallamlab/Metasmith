@@ -273,3 +273,16 @@ def test_the_stub_hash_sorts_copies_not_the_index(tmp_path):
     stubs = [ln for ln in body.splitlines() if "collectEntries" in ln]
     assert stubs, "no stub hash rendered"
     assert all("v.sort(false)" in ln and "v.sort()" not in ln for ln in stubs), stubs
+
+
+def test_inputs_are_copied_in_scratch_unless_their_type_reads_in_place(tmp_path):
+    import re
+
+    task = linear_3step.build_task(tmp_path, linked=("seed", "step_a"))
+    body = (_stage(task, tmp_path) / "workflow.nf").read_text()
+    processes = dict(re.findall(r"process p\d+__(\w+) \{(.*?)\n\}", body, re.S))
+    copy_line = '[ "\\$__msm_wd" = "\\$PWD" ] || for f in ${_01}; do'
+
+    assert {tr: copy_line in processes[tr] for tr in ("trA", "trB", "trC")} == {
+        "trA": False, "trB": False, "trC": True,
+    }

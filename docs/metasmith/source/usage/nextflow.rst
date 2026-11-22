@@ -187,6 +187,18 @@ rather than ``'link'`` — hardlinks across the same mount are still
 non-atomic on most network filesystems. Override explicitly via
 ``params.metasmith_cache_strategy``.
 
+**A database read in place loads the Lustre metadata server.** SQLite
+checks for a ``-journal`` and a ``-wal`` file beside a database before
+every read, and on Lustre each check is a metadata lookup. eggNOG-mapper,
+DRAM and bakta all read SQLite. On fir, about 200 concurrent
+eggNOG-mapper tasks reading ``eggnog.db`` in place made about 750 failed
+lookups per second each, and the Alliance capped the account at one
+running job (Ticket#0331813). Each task now copies its inputs into
+node-local scratch, so the checks land on local disk. A type marked
+``stage: link`` skips that copy, so never mark a type that holds SQLite.
+``eggnog_mapper`` also opens its databases with ``immutable=1``, which
+stops the checks wherever the database sits.
+
 **Emergency off.** ``METASMITH_CACHE=0`` (env) bypasses the probe pass
 and skips post-exec promote. The on-disk ``task_cache/`` is untouched.
 

@@ -675,6 +675,20 @@ copied at promotion and again on every hit cost about 250 GB of I/O each time. A
 in node-local scratch still copies, because its products sit on another device from the cache. A
 transform with large products takes the `noscratch` label, so it runs in its work dir and links.
 
+**A task in node-local scratch reads a copy of each input.** Nextflow stages every input as a
+symlink. When the task runs in scratch, the generated script replaces each symlink with a real
+copy before `bootstrap`, under the same `$__msm_wd` test that guards the metadata copy. Codegen
+decides per slot and leaves a slot linked when its type carries `stage: link`. Bootstrap does not
+re-derive that decision. It reads the work-dir path for an input whose staged name is a real file
+there, and the source path otherwise. A task outside scratch (the local executor, `xlocalx`,
+`xnoscratchx`) reads every input at its source path.
+
+**CAUTION** `stage: link` lives in `DataTypeLibrary.linked`, outside the `Endpoint`, so it moves no
+type key and no cache key. The cost is that a library compiled before a type gained the flag
+carries the type without it. Codegen therefore asks the freshly compiled transform library as well
+as the input's own library. Asking only the input's library copied a 744 GB metabuli reference per
+task.
+
 **CAUTION** Two binds of one filesystem share a device and still refuse a link across them with
 `EXDEV`. A driver container binds the agent home at its host path and again at `/msm_home`.
 Promotion and the twin therefore link through the spelling of the path that shares the cache's

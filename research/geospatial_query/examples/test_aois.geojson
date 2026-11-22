@@ -1,0 +1,642 @@
+{
+ "type": "FeatureCollection",
+ "name": "test_aois_north_america",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:OGC:1.3/CRS84"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "id": "farm_sk_quarter",
+   "properties": {
+    "aoi_id": "farm_sk_quarter",
+    "aoi_class": "farmland",
+    "country": "CA",
+    "area_km2": 0.647,
+    "tier": "test",
+    "centroid_lat": 52.0,
+    "centroid_lon": -106.3,
+    "description": "Quarter section dryland grain, near Saskatoon SK",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -106.305868,
+       51.996387
+      ],
+      [
+       -106.294132,
+       51.996387
+      ],
+      [
+       -106.294132,
+       52.003613
+      ],
+      [
+       -106.305868,
+       52.003613
+      ],
+      [
+       -106.305868,
+       51.996387
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "farm_on_essex",
+   "properties": {
+    "aoi_id": "farm_on_essex",
+    "aoi_class": "farmland",
+    "country": "CA",
+    "area_km2": 0.5,
+    "tier": "test",
+    "centroid_lat": 42.15,
+    "centroid_lon": -82.75,
+    "description": "Cash-crop field, Essex County ON - densest open farm data in Canada",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -82.754284,
+       42.146824
+      ],
+      [
+       -82.745716,
+       42.146824
+      ],
+      [
+       -82.745716,
+       42.153176
+      ],
+      [
+       -82.754284,
+       42.153176
+      ],
+      [
+       -82.754284,
+       42.146824
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "farm_ab_taber",
+   "properties": {
+    "aoi_id": "farm_ab_taber",
+    "aoi_class": "farmland",
+    "country": "CA",
+    "area_km2": 0.64,
+    "tier": "test",
+    "centroid_lat": 49.8,
+    "centroid_lon": -112.15,
+    "description": "Centre-pivot irrigated field, Taber AB - tests water/ET layers",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -112.155567,
+       49.796407
+      ],
+      [
+       -112.144433,
+       49.796407
+      ],
+      [
+       -112.144433,
+       49.803593
+      ],
+      [
+       -112.155567,
+       49.803593
+      ],
+      [
+       -112.155567,
+       49.796407
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "farm_us_ia_story",
+   "properties": {
+    "aoi_id": "farm_us_ia_story",
+    "aoi_class": "farmland",
+    "country": "US",
+    "area_km2": 0.647,
+    "tier": "test",
+    "centroid_lat": 42.05,
+    "centroid_lon": -93.6,
+    "description": "Quarter section maize/soy, Story County IA - US counterpart",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -93.604865,
+       42.046387
+      ],
+      [
+       -93.595135,
+       42.046387
+      ],
+      [
+       -93.595135,
+       42.053613
+      ],
+      [
+       -93.604865,
+       42.053613
+      ],
+      [
+       -93.604865,
+       42.046387
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "mine_hvc_bc",
+   "properties": {
+    "aoi_id": "mine_hvc_bc",
+    "aoi_class": "mine",
+    "country": "CA",
+    "area_km2": 5.0,
+    "tier": "test",
+    "centroid_lat": 50.4833,
+    "centroid_lon": -121.0167,
+    "description": "Highland Valley Copper open pit, BC - active subsidence",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -121.032484,
+       50.473257
+      ],
+      [
+       -121.000916,
+       50.473257
+      ],
+      [
+       -121.000916,
+       50.493343
+      ],
+      [
+       -121.032484,
+       50.493343
+      ],
+      [
+       -121.032484,
+       50.473257
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "mine_syncrude_ab",
+   "properties": {
+    "aoi_id": "mine_syncrude_ab",
+    "aoi_class": "mine",
+    "country": "CA",
+    "area_km2": 5.0,
+    "tier": "test",
+    "centroid_lat": 57.0,
+    "centroid_lon": -111.6,
+    "description": "Syncrude Mildred Lake oil sands + tailings, AB",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -111.618441,
+       56.989957
+      ],
+      [
+       -111.581559,
+       56.989957
+      ],
+      [
+       -111.581559,
+       57.010043
+      ],
+      [
+       -111.618441,
+       57.010043
+      ],
+      [
+       -111.618441,
+       56.989957
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "mine_sudbury_on",
+   "properties": {
+    "aoi_id": "mine_sudbury_on",
+    "aoi_class": "mine",
+    "country": "CA",
+    "area_km2": 5.0,
+    "tier": "test",
+    "centroid_lat": 46.48,
+    "centroid_lon": -81.05,
+    "description": "Sudbury basin nickel, Copper Cliff ON - long disturbance history",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -81.064585,
+       46.469957
+      ],
+      [
+       -81.035415,
+       46.469957
+      ],
+      [
+       -81.035415,
+       46.490043
+      ],
+      [
+       -81.064585,
+       46.490043
+      ],
+      [
+       -81.064585,
+       46.469957
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "mine_us_bingham_ut",
+   "properties": {
+    "aoi_id": "mine_us_bingham_ut",
+    "aoi_class": "mine",
+    "country": "US",
+    "area_km2": 5.0,
+    "tier": "test",
+    "centroid_lat": 40.523,
+    "centroid_lon": -112.151,
+    "description": "Bingham Canyon open pit, UT - US counterpart",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -112.164213,
+       40.512957
+      ],
+      [
+       -112.137787,
+       40.512957
+      ],
+      [
+       -112.137787,
+       40.533043
+      ],
+      [
+       -112.164213,
+       40.533043
+      ],
+      [
+       -112.164213,
+       40.512957
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "city_toronto_core",
+   "properties": {
+    "aoi_id": "city_toronto_core",
+    "aoi_class": "city",
+    "country": "CA",
+    "area_km2": 4.0,
+    "tier": "test",
+    "centroid_lat": 43.65,
+    "centroid_lon": -79.383,
+    "description": "Downtown Toronto ON, 2x2 km",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -79.395415,
+       43.641017
+      ],
+      [
+       -79.370585,
+       43.641017
+      ],
+      [
+       -79.370585,
+       43.658983
+      ],
+      [
+       -79.395415,
+       43.658983
+      ],
+      [
+       -79.395415,
+       43.641017
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "city_montreal_core",
+   "properties": {
+    "aoi_id": "city_montreal_core",
+    "aoi_class": "city",
+    "country": "CA",
+    "area_km2": 4.0,
+    "tier": "test",
+    "centroid_lat": 45.502,
+    "centroid_lon": -73.567,
+    "description": "Downtown Montreal QC, 2x2 km",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.579817,
+       45.493017
+      ],
+      [
+       -73.554183,
+       45.493017
+      ],
+      [
+       -73.554183,
+       45.510983
+      ],
+      [
+       -73.579817,
+       45.510983
+      ],
+      [
+       -73.579817,
+       45.493017
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "city_windsor_on",
+   "properties": {
+    "aoi_id": "city_windsor_on",
+    "aoi_class": "city",
+    "country": "CA",
+    "area_km2": 4.0,
+    "tier": "test",
+    "centroid_lat": 42.31,
+    "centroid_lon": -83.03,
+    "description": "Windsor ON, 2x2 km - border pair with Detroit",
+    "border_pair": "windsor_detroit"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -83.042147,
+       42.301017
+      ],
+      [
+       -83.017853,
+       42.301017
+      ],
+      [
+       -83.017853,
+       42.318983
+      ],
+      [
+       -83.042147,
+       42.318983
+      ],
+      [
+       -83.042147,
+       42.301017
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "city_us_detroit_mi",
+   "properties": {
+    "aoi_id": "city_us_detroit_mi",
+    "aoi_class": "city",
+    "country": "US",
+    "area_km2": 4.0,
+    "tier": "test",
+    "centroid_lat": 42.34,
+    "centroid_lon": -83.06,
+    "description": "Detroit MI, 2x2 km - border pair with Windsor",
+    "border_pair": "windsor_detroit"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -83.072153,
+       42.331017
+      ],
+      [
+       -83.047847,
+       42.331017
+      ],
+      [
+       -83.047847,
+       42.348983
+      ],
+      [
+       -83.072153,
+       42.348983
+      ],
+      [
+       -83.072153,
+       42.331017
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "stress_mine_hvc_full",
+   "properties": {
+    "aoi_id": "stress_mine_hvc_full",
+    "aoi_class": "mine",
+    "country": "CA",
+    "area_km2": 50.0,
+    "tier": "stress",
+    "centroid_lat": 50.4833,
+    "centroid_lon": -121.0167,
+    "description": "Full HVC lease + tailings footprint",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -121.066613,
+       50.45154
+      ],
+      [
+       -120.966787,
+       50.45154
+      ],
+      [
+       -120.966787,
+       50.51506
+      ],
+      [
+       -121.066613,
+       50.51506
+      ],
+      [
+       -121.066613,
+       50.45154
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "stress_oilsands_region",
+   "properties": {
+    "aoi_id": "stress_oilsands_region",
+    "aoi_class": "mine",
+    "country": "CA",
+    "area_km2": 250.0,
+    "tier": "stress",
+    "centroid_lat": 57.0,
+    "centroid_lon": -111.6,
+    "description": "Athabasca oil sands mining region",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -111.730394,
+       56.928982
+      ],
+      [
+       -111.469606,
+       56.928982
+      ],
+      [
+       -111.469606,
+       57.071018
+      ],
+      [
+       -111.730394,
+       57.071018
+      ],
+      [
+       -111.730394,
+       56.928982
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "stress_city_toronto_full",
+   "properties": {
+    "aoi_id": "stress_city_toronto_full",
+    "aoi_class": "city",
+    "country": "CA",
+    "area_km2": 630.0,
+    "tier": "stress",
+    "centroid_lat": 43.7183,
+    "centroid_lon": -79.3772,
+    "description": "City of Toronto full extent",
+    "border_pair": null
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -79.533184,
+       43.605563
+      ],
+      [
+       -79.221216,
+       43.605563
+      ],
+      [
+       -79.221216,
+       43.831037
+      ],
+      [
+       -79.533184,
+       43.831037
+      ],
+      [
+       -79.533184,
+       43.605563
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}
