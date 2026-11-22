@@ -338,6 +338,12 @@ Decision:
   an annotation-table lane).
 - Also as MP4: search UniRef90 beside UniRef50, pin and record the UniProt release, skip proteins
   under 60 aa for the PathoLogic input only (the annotation table keeps every protein).
+- Tony (same day): "we want the annotation lanes to match the existing (our) pattern, but when
+  pathologic consumes, its transform then does the conversion into 'metapathways style' like
+  filtering out proteins". The new searches (MetaCyc proteins, Swiss-Prot, UniRef90) are ordinary
+  annotation-table lanes with no MP filtering. The PathoLogic transform reads the annotation table
+  and applies every MP4 rule itself. The same holds for any port: lanes in our format, the
+  consumer converts.
 - Recheck on the three CPE3 assemblies on fir; ship at the overlap it reaches, documented in
   comparison.md.
 - MP4 outputs not yet rebuilt (function hierarchy tables, per-ORF function+taxonomy table,
