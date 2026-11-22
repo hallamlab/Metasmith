@@ -276,3 +276,21 @@ Decision:
   subsets of it. Supersedes the 4-lane GPR as the target (gem-reopen).
 
 Landed: worker annotation-aggregate on feat/engine/annotation-aggregate.
+
+## wrapper-build (2026-11-21)
+
+Question: what does "importing" DRAM, DRAM-v and PathoFact mean?
+
+Tony: "looks good to me" (DRAM), "yes, that all looks good" (PathoFact).
+
+Decision:
+- DRAM: run only the search lanes we lack (dbCAN/CAZy, MEROPS, VOGDB) as annotation-table lanes.
+  Reuse KOfam, InterProScan Pfam, and UniRef50 in place of UniRef90. Run DRAM distill over the
+  annotation table.
+- DRAM-v: the same pattern over the viral lanes.
+- PathoFact: reuse RGI and the viral callers (VirSorter2, DeepVirFinder). Add only its unique parts
+  as lanes: toxin HMMs + SignalP, the virulence-factor classifier, DeepARG, PlasFlow/MOB-suite. Its
+  gene-on-mobile-element join runs over the annotation table and the contig calls.
+- Each port gets a comparison against the upstream tool's own output (as the MetaPathways port).
+
+Landed: workers start once annotation-aggregate lands (they emit into its format).

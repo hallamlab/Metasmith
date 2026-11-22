@@ -6,10 +6,9 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-wrapper-build
+localization-lanes
 
 ## Waiting on the user
-- wrapper-build: DRAM port = run only the DRAM search lanes we lack (dbCAN/CAZy, MEROPS, VOGDB) into the annotation table, reuse ours (KOfam, Pfam via IPS, UniRef50 for UniRef90), then DRAM distill from the annotation table?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -20,7 +19,8 @@ wrapper-build
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
+- wrapper-build-run — start DRAM, DRAM-v, PathoFact port workers once annotation-aggregate lands (decision in DECISIONS.md)
+- localization-lanes — "since we are adding signalP, were there adjacent tools that we might as well add too?" (prior: GORG-Dark proteorhodopsin signal peptides)
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
@@ -40,6 +40,7 @@ wrapper-build
 ( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8 — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
 ## Closed
+- wrapper-build — DRAM/DRAM-v/PathoFact ported: run only lanes we lack, reuse ours, upstream rules over the annotation table
 - annotation-aggregate — two levels: annotation table (every lane) -> GPR table (reaction lanes); consumers subset
 - catalog-survey — template now (+ resistome lanes, FEAST dropped); mature gaps after run 4; MS ion ID + ordination join port-gaps
 - mixed-session — support now: targets carry the given types they need; each shape gets the targets it satisfies
