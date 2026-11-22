@@ -19,6 +19,7 @@ localization-lanes
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
+- licensed-tools — PathoLogic (Pathway Tools SIF only on fir, personal quay namespace), SignalP 6, DeepTMHMM, DeepLocPro, Phobius: user-supplied package step, default off; run 4 subset excludes them
 - wrapper-build-run — start DRAM, DRAM-v, PathoFact port workers once annotation-aggregate lands (decision in DECISIONS.md)
 - localization-lanes — "since we are adding signalP, were there adjacent tools that we might as well add too?" (prior: GORG-Dark proteorhodopsin signal peptides)
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
