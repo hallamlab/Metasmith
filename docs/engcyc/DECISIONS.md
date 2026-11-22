@@ -396,3 +396,13 @@ Tony: "accept rec 2.0"
 Design: port PathoFact 2.0 at commit bd5d527. Its MGE arm reuses our geNomad lane, and it adds no v1 MGE tools. It uses SignalP 6, which the licensed lane provides.
 
 Landed: feat/engine/pathofact-port 01488c91, merged into feat/engine/rc as e6c2a8ab.
+
+## release-order — 2026-11-22
+
+Question: when does our work join the geoquery 0.26.0 release?
+
+Tony: "they can go first then at b (which should allow us to apply any fixes taht we have already decided on, but it just wont be tested) / we just need to make sure we dont regress what they do after c"
+
+Design: geoquery releases 0.26.0 alone. After the template build, merge the released feat/dev into feat/engine/rc and carry the decided fixes, untested. After run 4 is clean, release from rc. Before that release, check that geoquery_from_aoi_table still solves and its tests pass.
+
+Landed: message sent to geospatial-query-dfs (2026-11-22). Release-0.26 entry in STACK.md.
