@@ -427,6 +427,9 @@ Design:
   "as long as the lanes themselves output some standard format..."). A standardizing step after the
   lane's search keeps cached raw results valid. Consumers concatenate or filter lane tables and parse
   no raw tool output.
+- The standard schema is a minimum. Lanes add their useful native fields as extra columns (Tony:
+  "the standard is a minimum, but lanes can give more columns if they are useful, and I think many
+  should. kofam should have the dynamic threshold and score columns, for example").
 - Deselecting a lane deselects only the tools that read it.
 
 Landed: template-build worker on feat/engine/template-build.
