@@ -13,8 +13,6 @@ gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 # lane -> its product(s), in the order `annotation_table.py --lane` takes them. A fixed
 # set: a requirement cannot be optional, so this transform is the "every lane" table, and
 # a subset is a consumer filtering on `lane` (`gpr_from_annotation_table`, `gpr_4lane`).
-# PathoFact is absent: it has no merge over its contig batches and its output layout is
-# not known here.
 ORF_LANES = {
     "kofam":         ("annotation::kofamscan_results", "annotation::kofamscan_descriptions"),
     "clean":         ("annotation::clean_predictions",),
@@ -35,6 +33,10 @@ ORF_LANES = {
     "refseq_viral":  ("annotation::refseq_viral_diamond_results",),
     "rgi":           ("annotation::rgi_results",),
     "amrfinderplus": ("annotation::amrfinderplus_results",),
+    "pathofact_hmm": ("annotation::pathofact_tox_hmm", "annotation::pathofact_vf_hmm",
+                      "annotation::pathofact_hmm_descriptions"),
+    "pathofact_ml":  ("annotation::pathofact_tox_ml", "annotation::pathofact_vf_ml"),
+    "deeparg":       ("annotation::deeparg_results",),
 }
 # Read off the assembly by tools that call their own genes, so they name contigs.
 CONTIG_LANES = {

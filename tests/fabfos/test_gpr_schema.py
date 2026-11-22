@@ -646,6 +646,16 @@ _EGGNOG_HEADER = ("#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\tmax_annot_l
                   "CAZy\tBiGG_Reaction\tPFAMs")
 
 
+DEEPARG_HEADER = ("#ARG\tquery-start\tquery-end\tread_id\tpredicted_ARG-class\tbest-hit\t"
+                  "probability\tidentity\talignment-length\talignment-bitscore\t"
+                  "alignment-evalue\tcounts")
+
+
+def _deeparg_row(orf):
+    return (f"TEM-1\t1\t280\t{orf}\tbeta-lactam\tAAA1|FEATURES|TEM-1|beta-lactam|TEM-1\t"
+            "0.987\t99.0\t280\t560.0\t1e-150\t1")
+
+
 def _write_extra_lanes(work: Path) -> list:
     w = work
     with open(w / "eggnog.tsv", "w") as fh:
@@ -718,7 +728,25 @@ def _write_extra_lanes(work: Path) -> list:
         blast(ORFS[0], "YP_009001.1", "YP_009001.1 ribonucleotide reductase [Synechococcus phage]")
         .replace("orfs~", ""))
     _write_deepec(w / "deepec.tsv")
+    # hmmsearch --tblout: ORF, -, model, -, full E, score, bias, then the best domain's.
+    tbl = lambda orf, model, score: (f"{orf} - {model} - 1e-10 {score} 0.1 1e-10 {score} 0.1 "
+                                     "1.0 1 0 0 1 1 1 1 -\n")
+    (w / "pf_tox.tbl").write_text("# target name\n" + tbl(ORFS[0], "pfam00001", "41.0")
+                                  + "# [ok]\n")
+    (w / "pf_vf.tbl").write_text("# target name\n" + tbl(ORFS[0], "cd00001", "45.0")
+                                 + tbl(ORFS[0], "cd00002", "60.5") + "# [ok]\n")
+    (w / "pf_desc.tsv").write_text("term\tdescription\ncd00001: adhesin\tadhesin\n")
+    # The toxin script rounds to two decimals and the VF script does not.
+    (w / "pf_tox_ml.tsv").write_text(
+        f"Sequence\tPrediction\tProbability\n{ORFS[0]}\t1\t0.55\n{ORFS[1]}\t1\t0.80\n")
+    (w / "pf_vf_ml.tsv").write_text(
+        f"Sequence\tPrediction\tProbability\n{ORFS[0]}\t1\t0.95123456\n"
+        f"{ORFS[1]}\t0\t0.2\n")
+    (w / "deeparg.tsv").write_text(DEEPARG_HEADER + "\n" + _deeparg_row(ORFS[0]) + "\n")
     return [
+        ("pathofact_hmm", w / "pf_tox.tbl", w / "pf_vf.tbl", w / "pf_desc.tsv"),
+        ("pathofact_ml", w / "pf_tox_ml.tsv", w / "pf_vf_ml.tsv"),
+        ("deeparg", w / "deeparg.tsv"),
         ("dbcan", w / "dbcan.domtbl", w / "dbcan_descriptions.tsv"),
         ("merops", w / "merops.tsv"),
         ("vogdb", w / "vogdb.domtbl", w / "vogdb_descriptions.tsv"),
@@ -891,3 +919,127 @@ def test_chosen_4_is_the_all_reaction_table_cut_to_its_lanes(tmp_path):
     four = pd.read_parquet(kw["out"]).drop(columns="lane_set")
     pd.testing.assert_frame_equal(cut.sort_values(key).reset_index(drop=True),
                                   four.sort_values(key).reset_index(drop=True))
+
+
+# Three proteins: ORFS[0] and a copy of it on another contig, and ORFS[1].
+PF_COPY = "pool1:megahit:k141_9_1"
+
+
+def _pathofact_inputs(w: Path):
+    contig = lambda orf: orf.rpartition("_")[0]
+    (w / "pf_orfs.faa").write_text(
+        f">{ORFS[0]} # 1 # 300 # 1 # ID=1_1\nMKVLAAGH*\n"
+        f">{ORFS[1]} # 1 # 300 # -1 # ID=2_1\nMSTNPQRW*\n"
+        f">{PF_COPY} # 1 # 300 # 1 # ID=3_1\nMKVLAAGH\n")
+    (w / "deeparg_argnorm.tsv").write_text(
+        DEEPARG_HEADER + "\tARO\tARO_name\tCut_Off\n" + _deeparg_row(ORFS[0])
+        + "\tARO:3000873\tTEM-1\tStrict\n")
+    pd.DataFrame({
+        "ORF_ID": [f"orfs~{ORFS[0]} # 1 # 300 # 1", f"orfs~{ORFS[1]} # 1 # 300 # -1"],
+        "Cut_Off": ["Strict", "Loose"], "ARO": ["3000873", "3000001"],
+        "AMR Gene Family": ["TEM beta-lactamase", "some family"],
+    }).to_csv(w / "rgi.txt", sep="\t", index=False)
+    pd.DataFrame({
+        "Protein id": [f"orfs~{ORFS[1]}"], "Scope": ["plus"], "Element symbol": ["stxA"],
+        "ARO": ["ARO:3003381"], "ARO_name": ["soxR"], "Cut_Off": ["Loose"],
+    }).to_csv(w / "amrfinderplus_argnorm.tsv", sep="\t", index=False)
+    # geNomad names the batch's contigs `<stem>~<contig>`. One plasmid passes --conservative
+    # and one does not; the provirus gene has no marker, which geNomad writes NA.
+    genes_cols = ("gene\tstart\tend\tlength\tstrand\tgc_content\tgenetic_code\trbs_motif\t"
+                  "marker\tevalue\tbitscore\tuscg\tplasmid_hallmark\tvirus_hallmark\ttaxid\t"
+                  "taxname\tannotation_conjscan\tannotation_amr\tannotation_accessions\t"
+                  "annotation_description\n")
+    gene = lambda name, start, end, strand, marker: (
+        f"{name}\t{start}\t{end}\t{end - start + 1}\t{strand}\t0.5\t11\tNone\t{marker}\t"
+        "1e-20\t80.0\tNA\t0\t0\t1\troot\tNA\tNA\tNA\tNA\n")
+    p0, p1 = "asm~" + contig(ORFS[0]), "asm~" + contig(ORFS[1])
+    (w / "plasmid_summary.tsv").write_text(
+        "seq_name\tlength\ttopology\tn_genes\tgenetic_code\tplasmid_score\tfdr\t"
+        "n_hallmarks\tmarker_enrichment\tconjugation_genes\tamr_genes\n"
+        f"{p0}\t5000\tNo terminal repeats\t5\t11\t0.95\tNA\t1\t2.0\tNA\tNA\n"
+        f"{p1}\t5000\tNo terminal repeats\t5\t11\t0.75\tNA\t1\t2.0\tNA\tNA\n")
+    (w / "plasmid_genes.tsv").write_text(genes_cols + gene(p0 + "_1", 1, 300, 1, "PL_0001")
+                                         + gene(p1 + "_1", 1, 300, -1, "PL_0002"))
+    (w / "virus_summary.tsv").write_text(
+        "seq_name\tlength\ttopology\tcoordinates\tn_genes\tgenetic_code\tvirus_score\tfdr\t"
+        "n_hallmarks\tmarker_enrichment\ttaxonomy\n"
+        f"{p1}|provirus_1_500\t500\tProvirus\t1-500\t1\t11\t0.9\tNA\t2\t3.0\tUnclassified\n")
+    (w / "virus_genes.tsv").write_text(genes_cols + gene(p1 + "|provirus_1_500_1", 2, 300, -1, "NA"))
+    import json
+    cds = lambda kind, functions: {"type": "CDS", "location": "[0:300](+)", "qualifiers": {
+        "gene_kind": [kind], "gene_functions": functions}}
+    (w / "antismash_pf.json").write_text(json.dumps({"records": [
+        {"id": contig(PF_COPY), "areas": [{"start": 0, "end": 5000, "products": ["NRPS"]}],
+         "features": [cds("biosynthetic", ["biosynthetic (rule-based-clusters) NRPS: Condensation",
+                                           "biosynthetic-additional (smcogs) SMCOG1"])]},
+        {"id": contig(ORFS[1]), "areas": [{"start": 0, "end": 5000, "products": ["NRPS"]}],
+         "features": [dict(cds("other", []), location="[0:300](-)")]},
+    ]}))
+
+
+def test_pathofact_report_applies_pathofacts_rules(tmp_path):
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(45))
+    _pathofact_inputs(tmp_path)
+    outs = {k: tmp_path / f"{k}.tsv"
+            for k in ("vf", "vf-ambiguous", "tox", "tox-ambiguous", "amr", "combined")}
+    w = tmp_path
+    r = _run([sys.executable, str(GPR_LIB / "pathofact_report.py"), "--ev-lib", kw["ev_lib"],
+              "--annotation-table", str(table), "--orfs", str(w / "pf_orfs.faa"),
+              "--sample", "asm", "--deeparg", str(w / "deeparg_argnorm.tsv"),
+              "--rgi", str(w / "rgi.txt"), "--amrfinderplus", str(w / "amrfinderplus_argnorm.tsv"),
+              "--plasmid-summary", str(w / "plasmid_summary.tsv"),
+              "--plasmid-genes", str(w / "plasmid_genes.tsv"),
+              "--virus-summary", str(w / "virus_summary.tsv"),
+              "--virus-genes", str(w / "virus_genes.tsv"),
+              "--antismash-json", str(w / "antismash_pf.json"),
+              *[a for k, p in outs.items() for a in (f"--out-{k}", str(p))]], w)
+    assert r.returncode == 0, f"report failed:\n{r.stdout}\n{r.stderr}"
+    read = lambda k: pd.read_csv(outs[k], sep="\t", dtype=str, keep_default_na=False)
+
+    # The VF arm: hits sorted by bitscore, the copy named beside its representative.
+    vf = read("vf")
+    assert list(vf["ProteinID"]) == [ORFS[0]]
+    row = vf.iloc[0]
+    assert (row["Query_vf"], row["bit_score_vf"]) == ("cd00002,cd00001", "60.5,45.0")
+    assert (row["Rfprediction_vf"], row["Rfprob_vf"]) == ("VF", "0.95123456")
+    assert (row["Plasmid_marker"], row["Virus_marker"]) == ("PL_0001", "-")
+    assert row["Other_proteins_in_cluster"] == PF_COPY
+    assert read("vf-ambiguous").empty
+    # The toxin arm cuts at 0.8 on the two-decimal probability; an HMM hit with a weak
+    # call is ambiguous. ORFS[1] is on a provirus whose gene has no marker.
+    tox, amb = read("tox"), read("tox-ambiguous")
+    assert list(tox["ProteinID"]) == [ORFS[1]] and tox.iloc[0]["Rfprob_tox"] == "0.80"
+    assert (tox.iloc[0]["Plasmid_marker"], tox.iloc[0]["Virus_marker"]) == ("-", "NA")
+    assert list(amb["ProteinID"]) == [ORFS[0]] and amb.iloc[0]["Query_tox"] == "pfam00001"
+    # The AMR arm: RGI's Loose hit and AMRFinderPlus's plus-scope hit are not PathoFact's.
+    amr = read("amr")
+    assert list(amr["ProteinID"]) == [ORFS[0]]
+    assert list(amr.iloc[0][2:12]) == ["ARO:3000873", "TEM-1", "0.99", "Strict", "ARO:3000873",
+                                       "Strict", "TEM beta-lactamase", "-", "-", "-"]
+    # The combined report: high-probability VF and toxin rows, every AMR row, every BGC
+    # gene, each column's first value; pandas reads geNomad's NA as missing, so `-`.
+    comb = read("combined")
+    # PathoFact orders by the digits of the last three `_` fields: k141_9 before k141_1:0-1200.
+    assert list(comb["ProteinID"]) == [PF_COPY, ORFS[0], ORFS[1], "3"]
+    assert comb.iloc[-1]["Sample"] == "#Total"
+    c = comb.set_index("ProteinID")
+    assert c.loc[ORFS[0], "Query_tox"] == "-" and c.loc[ORFS[0], "Query_vf"] == "cd00002,cd00001"
+    assert c.loc[ORFS[1], "Virus_marker"] == "-"
+    assert (c.loc[PF_COPY, "BGC"], c.loc[PF_COPY, "Antismash_Description"]) == (
+        "biosynthetic", "NRPS(Condensation)")
+    assert c.loc[ORFS[1], "BGC"] == "-"
+
+    # SignalP is kept for the protein's first arm, and only for that arm's candidates:
+    # ORFS[1] is a toxin with no toxin HMM hit.
+    (w / "signalp.txt").write_text(
+        "# SignalP-6.0\tOrganism: Other\n# ID\tPrediction\tOTHER\tSP(Sec/SPI)\n"
+        f"{ORFS[0]} # 1 # 300\tSP\t0.01\t0.99\n{ORFS[1]} # 1 # 300\tLIPO\t0.1\t0.0\n"
+        f"{PF_COPY} # 1 # 300\tOTHER\t0.99\t0.01\n")
+    r = _run([sys.executable, str(GPR_LIB / "pathofact_report.py"), "--report",
+              str(outs["combined"]), "--signalp", str(w / "signalp.txt"),
+              "--out", str(w / "combined_signalp.tsv")], w)
+    assert r.returncode == 0, f"signalp failed:\n{r.stdout}\n{r.stderr}"
+    sp = pd.read_csv(w / "combined_signalp.tsv", sep="\t", dtype=str, keep_default_na=False)
+    cols = list(sp.columns)
+    assert cols.index("SignalP") + 1 == cols.index("Plasmid_marker")
+    assert list(sp["SignalP"]) == ["-", "signal_peptide", "-", "1"]

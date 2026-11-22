@@ -1,0 +1,10 @@
+name: pathofact_models
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - scikit-learn=1.5.2
+  - xgboost=2.1.1
+  - pandas=2.2.2
+  - scipy
+  - joblib

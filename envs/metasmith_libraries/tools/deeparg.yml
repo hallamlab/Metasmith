@@ -1,0 +1,8 @@
+name: deeparg
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=2.7.18
+  - diamond=0.9.24
+  - deeparg=1.0.4
