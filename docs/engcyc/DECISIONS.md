@@ -438,3 +438,16 @@ Design:
 - Deselecting a lane deselects only the tools that read it.
 
 Landed: template-build worker on feat/engine/template-build.
+
+## deeplocpro-licensed — 2026-11-22
+
+Question: DeepLocPro is under licence. How does its lane work?
+
+Tony: "DeepLocPro is under license..." / "but it is installable from git? that is simpler..."
+
+Design: a licensed lane as in licensed-tools (off by default, nothing published), but its build step
+installs from the public GitHub repository (docker/deeplocpro, pinned commit) and needs no user
+download. The image is built and cached on the user's side. The lab copy is the GitHub build in
+~/licensed-staging/sif/. The quay image pushed by mistake stays private and is to be deleted.
+
+Landed: stack item deeplocpro-licensed (template-build worker told).
