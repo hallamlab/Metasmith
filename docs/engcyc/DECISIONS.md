@@ -294,3 +294,13 @@ Decision:
 - Each port gets a comparison against the upstream tool's own output (as the MetaPathways port).
 
 Landed: workers start once annotation-aggregate lands (they emit into its format).
+
+## localization-lanes (2026-11-21)
+
+Question: since SignalP comes in with PathoFact, which adjacent tools come too? (Prior work:
+GORG-Dark proteorhodopsin signal peptides, where the first TM helix is easy to miscall as an SP.)
+
+Tony: "yes"
+
+Decision: add DeepTMHMM (TM topology + SP) and PSORTb 3 (bacterial localization) as annotation lanes.
+PSORTb ships openly. DeepTMHMM and SignalP 6 fall under licensed-tools.
