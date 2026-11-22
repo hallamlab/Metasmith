@@ -451,3 +451,18 @@ download. The image is built and cached on the user's side. The lab copy is the 
 ~/licensed-staging/sif/. The quay image pushed by mistake stays private and is to be deleted.
 
 Landed: stack item deeplocpro-licensed (template-build worker told).
+
+## value-identity — 2026-11-22
+
+Question: the leaf-identity fix (fdd1630c) gives a GUI value row a new ID when its text changes,
+reversing the July rule "identity here is provenance, not bytes". Keep it, and how is the ID formed?
+
+Tony: "for the values, we should just calculate the ID by hashing the value itself" and, on hashing
+it with its row name so two rows with equal text stay separate: "Okay, that sounds good."
+
+Design: a value item's ID is a hash of its value and its minted path. An edit gives a new ID.
+Undoing the edit restores the old ID and its cache. Equal text in two rows gives two IDs. File,
+folder and pool leaves keep the stamp rule from fdd1630c (path + mtime, with a content check for
+small files).
+
+Landed: dev-bugs worker, feat/engine/dev-bugs (follow-up commit).
