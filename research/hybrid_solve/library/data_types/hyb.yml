@@ -1,0 +1,63 @@
+types:
+  # E5's hybrid lane as a test library: the types fenced exactly as E5 fences them.
+  nanopore_reads:
+    properties:
+      _: Nanopore reads of a hybrid sample; no sequences::reads properties, so Flye and read mapping cannot take them
+      hyb: nanopore_reads
+      ext: fq.gz
+  megahit_draft:
+    properties:
+      _: MEGAHIT contigs that OPERA-MS scaffolds; no origin assembler, so no assembly consumer binds them
+      hyb: megahit_draft
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+  opera_ms_assembly:
+    properties:
+      _: OPERA-MS contigs, MEGAHIT's draft scaffolded with the long reads
+      hyb: opera_ms_assembly
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: assembler
+  opera_ms.env:
+    properties:
+      hyb: env
+      provides: [opera_ms]
+
+  # The V4c fence: a hybrid sample's short reads carry every property of sequences::reads, its `_` included, (read QC, coverage mapping) and
+  # read_length short_of_hybrid, so bbduk and MEGAHIT, which require read_length short, cannot take them.
+  hybrid_short_reads:
+    properties:
+      hyb: hybrid_short_reads
+      _: DNA reads
+      qc: none
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: complete
+      read_length: short_of_hybrid
+      parity: interleaved
+  clean_hybrid_short_reads:
+    properties:
+      hyb: clean_hybrid_short_reads
+      _: DNA reads
+      qc: filtered
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: complete
+      read_length: short_of_hybrid
+  discarded_hybrid_short_reads:
+    properties:
+      hyb: discarded_hybrid_short_reads
+      _: DNA reads
+      qc: discarded
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: complete
+      read_length: short_of_hybrid
