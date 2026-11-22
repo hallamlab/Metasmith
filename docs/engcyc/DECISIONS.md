@@ -386,3 +386,13 @@ Landed: merges 57e499eb (mp-fix), 060c0967 (hybrid-solve), 85ec6ca9 (shape-targe
 took shape-targets' copy), 3b1544eb (licensed-build), f221b56b (dramv-port, carrying dram-port and
 annotation-aggregate). Metadata compiles; test_spec, test_cases, test_licensed_lanes pass;
 test_gpr_schema 20/21 (the failure reads untracked fabfos run tables on the old layout, not code).
+
+## pathofact-version — 2026-11-22
+
+Question: the PathoFact port follows PathoFact 2.0 (mobile elements from geNomad), not v1 (PlasFlow, MOB-suite, VirSorter, DeepVirFinder). Keep it?
+
+Tony: "accept rec 2.0"
+
+Design: port PathoFact 2.0 at commit bd5d527. Its MGE arm reuses our geNomad lane, and it adds no v1 MGE tools. It uses SignalP 6, which the licensed lane provides.
+
+Landed: feat/engine/pathofact-port 01488c91, merged into feat/engine/rc as e6c2a8ab.
