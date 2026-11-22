@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-hybrid-assembly / two-assemblers
+mixed-session
 
 ## Waiting on the user
 
@@ -19,10 +19,7 @@ hybrid-assembly / two-assemblers
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- hybrid-assembly — "Hybrid assembly issues 2 and 3"; "Id want something like e5 to work as 1 solve... Hybrid assembly in standard set is basically needed" (2026-11-21)
-  - two-assemblers — a hybrid sample holds short reads, so MEGAHIT also makes an assembly; downstream can bind either
-    - state: hybrid-solve (feat/engine/hybrid-solve 673800c7, research/hybrid_solve/): generic target -> hybrid uses MEGAHIT; hybrid target -> short case fails; per-case targets (Case API) or a fence on hybrid short reads (hybrid_short_reads + hybrid bbduk) both route hybrid->OPERA-MS, short->MEGAHIT in one solve. Asked Tony: fence vs per-case targets.
-  - hybrid-input — one SRA accession cannot be hybrid; fork-cases needs every outcome to reach every target
+- mixed-session — short + hybrid samples in one session need the hybrid target on hybrid samples only (per-shape targets); now or later?
 - catalog-survey — (paused for hybrid-assembly; surveys done, port order proposed) state: survey-kbase reported 2026-11-21 (est. ~50/54 KBase verbs answered; reachability 91% is an unre-solved projection, 1 of 3 refactors done; gene_set still unproduced; bacterial RNA-seq chain plans in 6 steps but never ran, no template; ~20 rival groups library-wide incl. read QC, read profilers x6, GTDB-Tk x5, embeddings x5, carveme cplex). survey-analyses reported 2026-11-21: 17 analysis kinds outside the library. Mature gaps: msconvert+MZmine 4.7 feature table; matchms/LipidBlast annotation; featureCounts+strand sweep, DESeq2 dose trend, TPM (beth_rnaseq/library); amplicon threshold selection + cluster-stability bootstrap (steven-chen); tree inference / TreeSAPP refpkgs; ONT methylation pileup + reference diff (kalen mocklib); fosmid insert recovery (biofactorial). Exploratory: compound-ID ensemble (mock + approved plan), lipid abundance, MS ordination/MI, MMD-RFF, in-silico screen, CLIPZyme, copper sites, NMF/VAE guilds, gene-importance ML, GECCO/DeepBGC, Rfam, gapseq. Experiment-local libraries: metasmith_benchmark/library, beth_rnaseq/library, kalen_crage/mocklib, compound_id/mock. "percent coverage of kbase, and work in transcriptomics, and the scadc metabolomics? ... curated set of everything"
 - annotation-aggregate — one table of every annotation lane; consumers subset it (4-lane, CarveMe BiGG lane, DRAM-port lanes)
 - wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
@@ -42,6 +39,8 @@ hybrid-assembly / two-assemblers
 ## Workers
 
 ## Closed
+- read-types — short_reads and long_reads only; parity/platform in read_metadata; pe/se types deleted in stdlib
+- hybrid-assembly — chosen ahead of time; explicit hybrid target; hybrid lane in the standard library; no hybrid SRA outcome
 - isolate-hifi — assemblers/isolate = hifiasm_meta only; hifiasm, filtlong_targeted, miniasm deleted; hybrid stays its own folder
 - gem-reopen — CarveMe stays; its BiGG search is a lane in one aggregate annotation table that consumers subset
 - wrapper-ports — wait for all ports; ports emit the standard annotation format (GPR lanes)

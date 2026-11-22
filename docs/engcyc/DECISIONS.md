@@ -208,3 +208,17 @@ Decision:
   Revises read-classes: hybrid is not a separate folder or template.
 - Open: a session mixing short and hybrid samples needs the hybrid target on the hybrid samples only
   (per-shape targets; the planner already takes a target per case).
+
+## read-types (2026-11-21)
+
+Question: can the read types be just short and long, with the details in read_metadata?
+
+Decision: yes.
+- getSraReads has two outcomes: `sequences::short_reads` and `sequences::long_reads`.
+- Parity (paired, single) and platform (ONT, CLR, HiFi) live only in read_metadata. BBDuk, MEGAHIT,
+  assembly_stats and Flye already read them at run time.
+- Delete `short_reads_pe`, `short_reads_se`, `clean_short_reads_pe`, `clean_short_reads_se` from the
+  standard library. Retype `ora2fastq` and the givens of fosmid_inserts_from_pooled_reads and
+  ecspr_survey_from_pooled_reads to `short_reads`.
+- Research libraries keep their types, so old benchmark caches stay valid.
+- Effect on read-classes: the template has two SRA outcomes to route, not three.
