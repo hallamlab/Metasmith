@@ -781,11 +781,11 @@ def cds_lanes(pf, mp, pgdb_tables, gpr_cache):
         if p:
             df = concat(read_tsv(x) for x in p)
             if df is not None and len(df):
-                orf = next((c for c in df.columns if c.upper() in ("ORF", "ORF_ID")), df.columns[1])
-                arg = next((c for c in df.columns if c.upper() in ("ARG", "ARG_PREDICTION")), df.columns[2])
-                cats = [c for c in df.columns if "categor" in c.lower() or "class" in c.lower() or "mechanism" in c.lower()]
-                df["desc"] = df[cats].agg("; ".join, axis=1) if cats else ""
-                yield "pathofact", df.rename(columns={orf: "key", arg: "id"}).assign(ns="port_cds", conf=np.nan)
+                # PathoFact 2.0's amr_hits table: one ARO column per tool, `-` where it made no call.
+                aro = df[["DeepARG:ARO", "RGI_Accession:ARO", "amrfinder:ARO"]].replace({"-": np.nan, "": np.nan})
+                df["id"] = aro.bfill(axis=1).iloc[:, 0]
+                df["desc"] = df["RGI:AMR_Gene_family"].where(df["RGI:AMR_Gene_family"] != "-", df["DeepARG:ARO_name"])
+                yield "pathofact", df.rename(columns={"ProteinID": "key"}).assign(ns="port_cds", conf=np.nan)
         p = pf.get("annotation::eggnog_results")
         if p:
             frames = []

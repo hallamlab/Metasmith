@@ -664,28 +664,113 @@ types:
       Format: CSV
       ext: csv
 
-  # --- Virulence/integrative: PathoFact 2.0 (BUILD-blocked container) ---
-  pathofact_db:
+  # --- PathoFact 2.0, imported rather than called ---
+  # The three lanes PathoFact has and the library lacked (its toxin and virulence-factor
+  # HMMs, its two classifiers, DeepARG) are annotation_table lanes. pathofact_report then
+  # applies PathoFact's own report rules over the table, RGI, AMRFinderPlus and geNomad.
+  pathofact_tox_hmm:
     properties:
-      _: PathoFact 2.0 bundled databases (HMMs + models)
-  pathofact_amr:
+      _: hmmsearch --tblout of ORFs against PathoFact 2.0's toxin CDD HMMs (TOX_CDD.hmm) at full-sequence bitscore 40
+      Format: tblout
+      ext: tbl
+  pathofact_tox_hmm_chunk:
     properties:
-      _: PathoFact ARG predictions (contig IDs preserved)
+      _: Per-chunk hmmsearch --tblout against PathoFact 2.0's toxin CDD HMMs (sibling of pathofact_tox_hmm)
+      Format: tblout
+      granularity: chunk
+      ext: tbl
+  pathofact_vf_hmm:
+    properties:
+      _: hmmsearch --tblout of ORFs against PathoFact 2.0's virulence-factor CDD HMMs (virulence_factors_CDD.hmm) at full-sequence bitscore 40
+      Format: tblout
+      ext: tbl
+  pathofact_vf_hmm_chunk:
+    properties:
+      _: Per-chunk hmmsearch --tblout against PathoFact 2.0's virulence-factor CDD HMMs (sibling of pathofact_vf_hmm)
+      Format: tblout
+      granularity: chunk
+      ext: tbl
+  pathofact_hmm_descriptions:
+    properties:
+      _: CDD accession to its short name and description (cddid_all.tbl), for the PathoFact toxin and virulence-factor HMMs hit
       Format: TSV
       ext: tsv
+  pathofact_tox_ml:
+    properties:
+      _: PathoFact 2.0 toxin random forest (5-mer counts) per ORF -- Sequence, Prediction, Probability, as its predict.py writes them
+      Format: TSV
+      ext: tsv
+  pathofact_tox_ml_chunk:
+    properties:
+      _: Per-chunk PathoFact 2.0 toxin random forest predictions (sibling of pathofact_tox_ml)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  pathofact_vf_ml:
+    properties:
+      _: PathoFact 2.0 virulence-factor XGBoost (AAC, DPC and CTD composition) per ORF -- Sequence, Prediction, Probability, as its vf_prediction2.py writes them
+      Format: TSV
+      ext: tsv
+  pathofact_vf_ml_chunk:
+    properties:
+      _: Per-chunk PathoFact 2.0 virulence-factor XGBoost predictions (sibling of pathofact_vf_ml)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  deeparg_results:
+    properties:
+      _: DeepARG 1.0 LS model on ORFs at --min-prob 0.7, its .mapping.ARG
+      Format: TSV
+      ext: tsv
+  deeparg_results_chunk:
+    properties:
+      _: Per-chunk DeepARG .mapping.ARG (sibling of deeparg_results)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  # PathoFact 2.0's reports for a contig sample with geNomad on. One group: the report
+  # step writes them together. Rows are dereplicated proteins (identical sequences), each
+  # naming its identical copies in Other_proteins_in_cluster.
   pathofact_vf:
     properties:
-      _: PathoFact virulence-factor predictions (contig IDs preserved)
+      _: PathoFact 2.0 VF_hits_rep_prot_with_MGE.tsv -- proteins at virulence-factor probability 0.9 or more, with their VF HMM hits and geNomad markers
+      Format: TSV
+      ext: tsv
+  pathofact_vf_ambiguous:
+    properties:
+      _: PathoFact 2.0 ambiguous_VF_hits_rep_prot_with_MGE.tsv -- proteins with a VF HMM hit or a positive VF prediction below probability 0.9
       Format: TSV
       ext: tsv
   pathofact_tox:
     properties:
-      _: PathoFact toxin predictions (contig IDs preserved)
+      _: PathoFact 2.0 TOX_hits_rep_prot_with_MGE.tsv -- proteins at toxin probability 0.8 or more, with their toxin HMM hits and geNomad markers
       Format: TSV
       ext: tsv
-  pathofact_mge:
+  pathofact_tox_ambiguous:
     properties:
-      _: PathoFact mobile-genetic-element predictions (contig IDs preserved)
+      _: PathoFact 2.0 ambiguous_TOX_hits_rep_prot_with_MGE.tsv -- proteins with a toxin HMM hit or a positive toxin prediction below probability 0.8
+      Format: TSV
+      ext: tsv
+  pathofact_amr:
+    properties:
+      _: PathoFact 2.0 amr_hits_rep_prot_with_MGE.tsv -- DeepARG, RGI and AMRFinderPlus calls per protein, ARGs named by argNorm, with geNomad markers
+      Format: TSV
+      ext: tsv
+  pathofact_report:
+    properties:
+      _: PathoFact 2.0 combined_report_with_MGE.tsv -- one row per protein that is a VF, a toxin, an ARG or a BGC gene, with geNomad markers and antiSMASH gene kind
+      Format: TSV
+      ext: tsv
+  pathofact_report_signalp:
+    properties:
+      _: pathofact_report with PathoFact 2.0's SignalP column, from SignalP 6 on its candidate proteins
+      Format: TSV
+      ext: tsv
+  # Defined here, not produced here: the signalp6 lane on feat/engine/licensed-build
+  # produces it. Identical definition, so the two merge as one type.
+  signalp6_results:
+    properties:
+      _: SignalP 6.0 per-protein signal peptide prediction (prediction_results.txt)
       Format: TSV
       ext: tsv
 

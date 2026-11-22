@@ -84,7 +84,6 @@ EXTRA_REFS = {
     "annotation::megares_diamond_db": Path("/scratch/phyberos/databases/megares/megares.dmnd"),
     "annotation::vfdb_diamond_db": Path("/scratch/phyberos/databases/vfdb/vfdb.dmnd"),
     "annotation::tcdb_diamond_db": Path("/scratch/phyberos/databases/tcdb/tcdb.dmnd"),
-    "annotation::pathofact_db": Path("/scratch/phyberos/databases/pathofact_db"),
     # Copied from the workstation DVC cache (data/fabfos/processed). The leaf names differ from
     # ref::label_transfer_landmarks's `landmarks`, which nextflow would otherwise stage over.
     "ref::esm_c_600m_weights": PORT / "refs" / "esm_c_weights" / "esmc_600m.tgz",
@@ -145,7 +144,7 @@ PARENT_SCALED = {
     "bakta_noncoding": (32, 96, 12),
     "virsorter2": (8, 32, 16),
     "genomad": (16, 96, 12),
-    "pathofact": (8, 96, 12),
+    "pathofact_report": (1, 64, 2),
     "mobileelementfinder": (4, 32, 6),
     # Measured, not scaled: shortspades_cpe3_parent's single ORF batch ran out of memory at 8 GB.
     "amrfinderplus": (8, 64, 6),

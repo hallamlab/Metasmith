@@ -429,6 +429,26 @@ types:
       _: iPHoP release as fetched -- its split tar chunks and their md5 list, joined and unpacked by buildIphopDB
   # The three DRAM search databases annotation_table takes as lanes, each a fetch and a
   # build. DRAM-setup.py would fetch the same files; the build is what it does to them.
+  pathofact_sources:
+    extends:
+    - reference_data
+    properties:
+      _: PathoFact 2.0 DATABASES.tar.gz (Zenodo 14192463) and its source tree at a pinned commit, as fetched
+  pathofact_db:
+    extends:
+    - reference_data
+    properties:
+      _: PathoFact 2.0 unpacked -- HMM/TOX_CDD.hmm, HMM/virulence_factors_CDD.hmm, Models/VF, Models/TOX, cddid_all.tbl, and src/ holding its prediction scripts
+  deeparg_sources:
+    extends:
+    - reference_data
+    properties:
+      _: DeepARG data deeparg.zip (Zenodo 8280582), as fetched
+  deeparg_db:
+    extends:
+    - reference_data
+    properties:
+      _: DeepARG data unpacked for deeparg predict -d (database/v2, model/v2)
   dbcan_sources:
     extends:
     - reference_data

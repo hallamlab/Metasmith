@@ -1,0 +1,6 @@
+name: argnorm
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - argnorm=1.1.0

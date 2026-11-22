@@ -250,6 +250,74 @@ def parse_vogdb(results, descriptions=None):
     return _parse_domtblout(results, "vogdb", descriptions)
 
 
+# ---- PathoFact 2.0's toxin and virulence-factor HMMs: hmmsearch --tblout, one row per ORF
+# x CDD model it reported at bitscore 40. The bitscore is the score: PathoFact reports it
+# and cuts on nothing else.
+def _parse_tblout(path, namespace, names):
+    rows = []
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            f = line.split()
+            rows.append((f[0], f[2], float(f[5]), float(f[4])))
+    df = pd.DataFrame(rows, columns=["orf", "term", "score", "evalue"])
+    return df.assign(namespace=namespace, score_kind="bitscore",
+                     description=df["term"].map(names))
+
+
+def parse_pathofact_hmm(tox, vf, descriptions=None):
+    names = {}
+    if descriptions:
+        d = pd.read_csv(descriptions, sep="\t", dtype=str).fillna("")
+        names = dict(zip(d["term"], d["description"]))
+    return pd.concat([_parse_tblout(tox, "pathofact.tox_hmm", names),
+                      _parse_tblout(vf, "pathofact.vf_hmm", names)], ignore_index=True)
+
+
+# ---- PathoFact 2.0's two classifiers: Sequence, Prediction, Probability for every ORF.
+# The term is the class the classifier called, TOX or non-TOX, VF or non-VF; the
+# probability is the score, and PathoFact's own 0.8 (toxin) and 0.9 (VF) are the
+# consumer's. The call is kept beside the score because the toxin script rounds the
+# probability to two decimals, so 0.50 can be either class.
+_PATHOFACT_ML_COLS = ["Sequence", "Prediction", "Probability"]
+
+
+def _parse_pathofact_ml(path, label):
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    if list(df.columns) != _PATHOFACT_ML_COLS:
+        _refuse_header(df.columns, _PATHOFACT_ML_COLS, "pathofact_" + label + "_ml",
+                       "PathoFact's " + label + " classifier")
+    return pd.DataFrame({
+        "orf": df["Sequence"], "namespace": "pathofact." + label + "_ml",
+        "term": (pd.to_numeric(df["Prediction"], errors="coerce") == 1).map(
+            {True: label.upper(), False: "non-" + label.upper()}),
+        "score": pd.to_numeric(df["Probability"], errors="coerce"),
+        "score_kind": "classifier_probability",
+    })
+
+
+def parse_pathofact_ml(tox, vf):
+    return pd.concat([_parse_pathofact_ml(tox, "tox"), _parse_pathofact_ml(vf, "vf")],
+                     ignore_index=True)
+
+
+# ---- DeepARG .mapping.ARG: `#ARG`-headed. The term is DeepARG's database gene, which is
+# what argNorm maps to an ARO; the ARG name and its class are the description.
+def parse_deeparg(path):
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    product = "deeparg_results"
+    arg = _pick(df, product, "#ARG")
+    return pd.DataFrame({
+        "orf": _pick(df, product, "read_id"), "namespace": "deeparg",
+        "term": _pick(df, product, "best-hit"),
+        "description": arg + " (" + _pick(df, product, "predicted_ARG-class") + ")",
+        "score": pd.to_numeric(_pick(df, product, "probability"), errors="coerce"),
+        "score_kind": "deeparg_probability",
+        "evalue": pd.to_numeric(_pick(df, product, "alignment-evalue"), errors="coerce"),
+    })
+
+
 # ---- DeepEC: two columns, `EC:`-prefixed calls, no score. A score-less tool asserts
 # presence; the consumer decides what that is worth.
 def parse_deepec(path):
@@ -588,6 +656,9 @@ LANES = {
     "refseq_viral":  (_diamond_lane("refseq_viral", True), "annotation::refseq_viral_diamond_results", True),
     "rgi":           (parse_rgi, "annotation::rgi_results", True),
     "amrfinderplus": (parse_amrfinderplus, "annotation::amrfinderplus_results", True),
+    "pathofact_hmm": (parse_pathofact_hmm, "annotation::pathofact_tox_hmm", True),
+    "pathofact_ml":  (parse_pathofact_ml, "annotation::pathofact_tox_ml", True),
+    "deeparg":       (parse_deeparg, "annotation::deeparg_results", True),
     "bakta_nc":      (parse_bakta_nc, "annotation::bakta_tsv", False),
     "antismash":     (parse_antismash, "annotation::antismash_json", False),
 }

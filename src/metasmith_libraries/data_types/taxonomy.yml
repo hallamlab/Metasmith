@@ -34,6 +34,10 @@ types:
   # `<out>/<prefix>_annotate/<prefix>_taxonomy.tsv`, NOT a file in the summary
   # directory -- and it survives `--cleanup`, which removes only the `_mmseqs2`
   # subdirectory (genomad/modules/annotate.py:210).
+  genomad_plasmid_genes:
+    properties:
+      _: genomad per-gene table for the called plasmids -- marker, uscg, plasmid_hallmark, annotation columns, as the virus table
+      ext: tsv
   genomad_taxonomy:
     properties:
       _: genomad ICTV lineage and agreement score per called viral sequence
