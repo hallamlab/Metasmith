@@ -22,6 +22,9 @@ DRAM_COLS = [
     "peptidase_hit", "peptidase_bitScore", "peptidase_eVal", "vogdb_id", "vogdb_hits",
     "vogdb_categories", "heme_regulatory_motif_count",
 ]
+# DRAM-v adds its RefSeq viral search to the same set.
+VIRAL_COLS = ["viral_id", "viral_hit", "viral_bitScore", "viral_eVal"]
+DRAMV_COLS = DRAM_COLS[:12] + VIRAL_COLS + DRAM_COLS[12:]
 
 # DRAM's own cut-offs (mag_annotator 1.5.0): an HMM hit counts at model coverage >= 0.35
 # and a full-sequence E-value at or under 1e-18 for dbCAN, 1e-15 otherwise; a blast-style
@@ -84,7 +87,7 @@ def _joined(df, col):
         lambda v: "; ".join(dict.fromkeys(x for x in v if isinstance(x, str) and x)))
 
 
-def render(table, genes, name):
+def render(table, genes, name, cols=DRAM_COLS):
     out = genes.copy()
     out.insert(0, "fasta", name)
 
@@ -99,10 +102,16 @@ def render(table, genes, name):
     ur = _top(_lane(table, "uniref50"), ["score", "evalue"], [False, True])
     out["uniref_id"], out["uniref_hit"], out["uniref_eVal"] = ur["term"], ur["description"], ur["evalue"]
 
-    # InterProScan does not report the Pfam version, and DRAM's reader of `pfam_hits`
-    # wants `[PF00001.23]`, so distill counts no Pfam id from here. No shipped form names one.
+    # InterProScan does not report the Pfam version. DRAM's readers of `pfam_hits` match
+    # `\[PF\d{5}.\d*\]` and drop what follows the dot, so `[PF00001.]` reads as PF00001
+    # to both distill and DRAM-v's transposon test.
     pf = _lane(table, "interproscan", "pfam").sort_values(["orf", "start"], kind="stable")
-    out["pfam_hits"] = _joined(pf.assign(hit=pf["description"].fillna("") + " [" + pf["term"] + "]"), "hit")
+    out["pfam_hits"] = _joined(pf.assign(hit=pf["description"].fillna("") + " [" + pf["term"] + ".]"), "hit")
+
+    vr = _lane(table, "refseq_viral")
+    vr = _top(vr[vr["score"] >= MIN_BITSCORE], "score", False)
+    out["viral_id"], out["viral_hit"] = vr["term"], vr["description"]
+    out["viral_bitScore"], out["viral_eVal"] = vr["score"], vr["evalue"]
 
     cz = _lane(table, "dbcan")
     cz = cz[(cz["score"] >= HMM_MIN_COVERAGE) & (cz["evalue"] <= DBCAN_MAX_EVALUE)]
@@ -131,7 +140,7 @@ def render(table, genes, name):
     out.loc[some, "rank"] = "D"
     out.loc[best, "rank"] = "C"
     out.index.name = None
-    return out[DRAM_COLS]
+    return out[cols]
 
 
 def main():

@@ -464,4 +464,15 @@ types:
     extends:
     - reference_data
     properties:
-      _: The four DRAM distill forms (genome_summary_form, module_step_form, etc_module_database, function_heatmap_form) from one DRAM release
+      _: The DRAM forms (genome_summary_form, module_step_form, etc_module_database, function_heatmap_form, amg_database) from one DRAM release
+  refseq_viral_sources:
+    extends:
+    - reference_data
+    properties:
+      _: RefSeq viral proteins (viral.1.protein.faa.gz) as fetched, the protein library DRAM-v searches as `viral`
+  refseq_viral_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted RefSeq viral proteins
+      ext: dmnd

@@ -585,6 +585,7 @@ LANES = {
     "dbcan":         (parse_dbcan, "annotation::dbcan_hmmsearch_results", True),
     "merops":        (_diamond_lane("merops", True), "annotation::merops_diamond_results", True),
     "vogdb":         (parse_vogdb, "annotation::vogdb_hmmsearch_results", True),
+    "refseq_viral":  (_diamond_lane("refseq_viral", True), "annotation::refseq_viral_diamond_results", True),
     "rgi":           (parse_rgi, "annotation::rgi_results", True),
     "amrfinderplus": (parse_amrfinderplus, "annotation::amrfinderplus_results", True),
     "bakta_nc":      (parse_bakta_nc, "annotation::bakta_tsv", False),

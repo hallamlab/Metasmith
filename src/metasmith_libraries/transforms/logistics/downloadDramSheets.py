@@ -9,7 +9,7 @@ sheets = model.AddProduct(lib.GetType("ref::dram_sheets"))
 # which is whatever the repository holds on the day.
 BASE_URL = "https://raw.githubusercontent.com/WrightonLabCSU/DRAM/v1.5.0/data"
 SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
-          "function_heatmap_form")
+          "function_heatmap_form", "amg_database")
 
 
 def protocol(context: ExecutionContext):

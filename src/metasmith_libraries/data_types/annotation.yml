@@ -870,6 +870,18 @@ types:
       _: VOG to "ConsensusFunctionalDescription; FunctionalCategory", DRAM's own description string, for the VOGs hit
       Format: TSV
       ext: tsv
+  # DRAM-v's one search the library had no equivalent of.
+  refseq_viral_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to the RefSeq viral proteins, outfmt 6 plus stitle
+      Format: BLAST6
+      ext: tsv
+  refseq_viral_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND RefSeq viral BLAST6 (sibling of refseq_viral_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
 
   # DRAM 1.5 distill of one quality MAG, run over annotation_table rendered into DRAM's
   # annotations.tsv. One group: distill writes all of them at once.
@@ -902,4 +914,28 @@ types:
       _: DRAM distill genome statistics of one quality MAG
       Format: TSV
       granularity: bin
+      ext: tsv
+
+  # DRAM-v 1.5 distill of a study's vOTU representatives, run over annotation_table
+  # rendered into DRAM-v's annotations.tsv with VirSorter2's gene categories. One group:
+  # distill writes all of them at once.
+  dramv_votu_annotations:
+    properties:
+      _: The vOTU representatives' genes as DRAM-v 1.5 annotations.tsv, with DRAM-v's own auxiliary scores and AMG flags -- the file DRAM-v distill reads
+      Format: TSV
+      ext: tsv
+  dramv_amg_summary:
+    properties:
+      _: DRAM-v distill amg_summary.tsv -- one row per potential AMG of a vOTU representative and the form entry that made it one
+      Format: TSV
+      ext: tsv
+  dramv_product_html:
+    properties:
+      _: DRAM-v distill product heatmap of potential AMG functions per vOTU representative
+      Format: HTML
+      ext: html
+  dramv_vmag_stats:
+    properties:
+      _: DRAM-v distill vMAG_stats.tsv -- gene count, strand switches, AMG count, transposase and VOG category counts per vOTU representative
+      Format: TSV
       ext: tsv

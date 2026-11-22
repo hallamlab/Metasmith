@@ -25,5 +25,5 @@ One CPE3 quality MAG on fir, both arms on the same Prodigal ORFs:
 - `metabolism_summary.xlsx`: count differences per sheet and `gene_id`.
 - `product.tsv`: module step coverage and function presence that differ.
 - Expected and not a finding: `rank` is never A or B, because no reciprocal search runs. UniRef50
-  ids replace UniRef90 ids. distill counts no Pfam id, because InterProScan reports Pfam accessions
-  without their version.
+  ids replace UniRef90 ids. Pfam hits read `[PF00001.]`, because InterProScan reports no Pfam
+  version; distill drops the version, so the ids still count.

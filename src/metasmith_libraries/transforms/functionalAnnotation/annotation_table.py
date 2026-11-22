@@ -32,6 +32,7 @@ ORF_LANES = {
     "dbcan":         ("annotation::dbcan_hmmsearch_results", "annotation::dbcan_descriptions"),
     "merops":        ("annotation::merops_diamond_results",),
     "vogdb":         ("annotation::vogdb_hmmsearch_results", "annotation::vogdb_descriptions"),
+    "refseq_viral":  ("annotation::refseq_viral_diamond_results",),
     "rgi":           ("annotation::rgi_results",),
     "amrfinderplus": ("annotation::amrfinderplus_results",),
 }

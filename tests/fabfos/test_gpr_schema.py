@@ -714,11 +714,15 @@ def _write_extra_lanes(work: Path) -> list:
         blast(ORFS[0], "MER0000002", pep).replace("orfs~", "")
         + blast(ORFS[0], "MER0000009", "MER0000009 - weak [S01.009]#S01A#").replace(
             "orfs~", "").replace("410.0", "55.0"))
+    (w / "refseq_viral.tsv").write_text(
+        blast(ORFS[0], "YP_009001.1", "YP_009001.1 ribonucleotide reductase [Synechococcus phage]")
+        .replace("orfs~", ""))
     _write_deepec(w / "deepec.tsv")
     return [
         ("dbcan", w / "dbcan.domtbl", w / "dbcan_descriptions.tsv"),
         ("merops", w / "merops.tsv"),
         ("vogdb", w / "vogdb.domtbl", w / "vogdb_descriptions.tsv"),
+        ("refseq_viral", w / "refseq_viral.tsv"),
         ("deepec", w / "deepec.tsv"), ("eggnog", w / "eggnog.tsv"),
         ("interproscan", w / "ips.csv", w / "ips_descriptions.csv"),
         *[(lane, w / f"{lane}.tsv") for lane in ("mobileog", "megares", "bacmet", "vfdb")],
@@ -797,13 +801,65 @@ def test_dram_annotations_render_one_mags_rows_the_way_dram_cuts_them(tmp_path):
     assert (row["start_position"], row["end_position"], row["strandedness"]) == (1, 300, 1)
     assert (row["ko_id"], row["kegg_hit"]) == (KOS[0], "alcohol dehydrogenase")
     assert row["uniref_id"] == f"UniRef50_{ACCS[0]}"
-    assert row["pfam_hits"] == "Zinc-binding dehydrogenase [PF00107]"
+    assert row["pfam_hits"] == "Zinc-binding dehydrogenase [PF00107.]"
     assert (row["cazy_ids"], row["cazy_best_hit"]) == ("GH5_4", "GH5_4")
     assert row["cazy_hits"] == "GH5 endo-beta-1,4-glucanase"
     assert (row["peptidase_id"], row["peptidase_family"]) == ("MER0000002", "S01A")
     assert (row["vogdb_id"], row["vogdb_categories"]) == ("VOG00001", "Xr;Xs")
     assert row["heme_regulatory_motif_count"] == 1
     assert row["rank"] == "C"
+
+
+def test_dramv_annotations_move_virsorter2_genes_into_the_representatives_frame(tmp_path):
+    dram = _gpr_module("dram_annotations")
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(44))
+    # The representative is bases 51..2000 of `asm1~k141_1`, and its one ORF (prodigal-gv on
+    # the frozen set) is already in its frame. The member is not a representative.
+    rep, member = "s1|asm1~k141_1|51_2000", "s1|asm1~k141_1|60_1990"
+    orf = rep + "_1"
+    t = pd.read_parquet(table)
+    t.loc[t["orf"] == ORFS[0], "orf"] = orf
+    t.to_parquet(tmp_path / "frozen_table.parquet", index=False)
+    (tmp_path / "orfs.faa").write_text(f">{orf} # 51 # 350 # -1 # ID=1_1\nMKVCAACHM\n"
+                                       f">{member}_1 # 1 # 300 # 1 # ID=2_1\nMKV\n")
+    (tmp_path / "frozen.fna").write_text(f">{rep}\nACGT\n>{member}\nACGT\n")
+    pd.DataFrame({"frozen_id": [rep, member], "sample": ["s1", "s1"],
+                  "source_contig": ["asm1~k141_1"] * 2, "start": [51, 60],
+                  "end": [2000, 1990], "length": [1950, 1931], "callers": ["virsorter2"] * 2}
+                 ).to_csv(tmp_path / "prov.tsv", sep="\t", index=False)
+    (tmp_path / "votu.tsv").write_text(f"{rep}\t{rep}\n{rep}\t{member}\n")
+    # VirSorter2 calls genes on the whole batch contig and keeps those coordinates in the
+    # affi table; the one at 10..40 lies outside the interval.
+    gene = lambda i, s, e, cat: (f"asm1~k141_1__full__{i}|{s}|{e}|{e - s + 1}|1|"
+                                 f"hmm{i}|50|1e-10|{cat}|-|-|-\n")
+    (tmp_path / "affi.tab").write_text(
+        ">asm1~k141_1__full|4|l\n" + gene(1, 10, 40, 1) + gene(2, 60, 99, 0)
+        + gene(3, 101, 400, 2) + gene(4, 500, 900, 0))
+    out = tmp_path / "rendered.tsv"
+    r = _run([sys.executable, str(GPR_LIB / "dramv_annotations.py"), "--ev-lib", kw["ev_lib"],
+              "--frozen", str(tmp_path / "frozen.fna"), "--provenance", str(tmp_path / "prov.tsv"),
+              "--votu", str(tmp_path / "votu.tsv"), "--orfs", str(tmp_path / "orfs.faa"),
+              "--annotation-table", str(tmp_path / "frozen_table.parquet"),
+              "--affi", str(tmp_path / "affi.tab"), "--name", "votus",
+              "--out-annotations", str(out), "--out-affi", str(tmp_path / "votu.tab"),
+              "--out-fasta", str(tmp_path / "reps.fna")], tmp_path)
+    assert r.returncode == 0, f"render failed:\n{r.stdout}\n{r.stderr}"
+    df = pd.read_csv(out, sep="\t", index_col=0)
+    assert list(df.columns) == dram.DRAMV_COLS
+    assert list(df.index) == [orf]
+    row = df.iloc[0]
+    assert (row["fasta"], row["scaffold"]) == ("votus", rep)
+    assert (row["start_position"], row["end_position"], row["strandedness"]) == (51, 350, -1)
+    assert (row["viral_id"], row["viral_bitScore"]) == ("YP_009001.1", 410.0)
+    assert row["ko_id"] == KOS[0] and row["pfam_hits"] == "Zinc-binding dehydrogenase [PF00107.]"
+    name = rep.replace("|", "_")
+    assert (tmp_path / "votu.tab").read_text().splitlines() == [
+        f">{name}|3|l",
+        f"{name}__1|10|49|40|1|hmm2|50|1e-10|0|-|-|-",
+        f"{name}__2|51|350|300|1|hmm3|50|1e-10|2|-|-|-",
+        f"{name}__3|450|850|401|1|hmm4|50|1e-10|0|-|-|-",
+    ]
+    assert (tmp_path / "reps.fna").read_text() == f">{rep}\nACGT\n"
 
 
 def test_gpr_table_all_holds_every_reaction_lane(tmp_path):
