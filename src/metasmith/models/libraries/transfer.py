@@ -38,6 +38,8 @@ class _StoreTransfer:
                     d["lineage_payload"] = payload.hex()
                 if meta.get("stamp") is not None:
                     d["stamp"] = meta["stamp"]
+                if meta.get("value"):
+                    d["value"] = True
             if path in self.cases:
                 d["cases"] = list(self.cases[path])
             return d
@@ -93,6 +95,8 @@ class _StoreTransfer:
                 }
                 if v.get("stamp") is not None:
                     instance_meta[Path(k)]["stamp"] = v["stamp"]
+                if v.get("value"):
+                    instance_meta[Path(k)]["value"] = True
         lib = cls(
             location=location,
         )

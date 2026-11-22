@@ -301,13 +301,15 @@ class TestLibraryMinting:
         lib.AddItem(Path("data.txt"), "cf::seed")
         assert lib.Get(Path("data.txt")).instance_id == stat_leaf_id(f)
 
-    def test_add_value_mints_the_stat_id(self, tmp_path):
+    def test_add_value_mints_the_value_id(self, tmp_path):
+        from metasmith.models.libraries.identity import value_leaf_id
+
         types_path = build_types_library(tmp_path, TYPE_NAMES)
         lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
         lib.AddTypeLibrary(types_path, namespace="cf")
 
         at = lib.AddValue("param", "42", "cf::seed")
-        assert lib.Get(at).instance_id == stat_leaf_id(lib.location / at), (
+        assert lib.Get(at).instance_id == value_leaf_id(lib.location / at, at), (
             "a value was registered before it was written, so its id is random"
         )
 

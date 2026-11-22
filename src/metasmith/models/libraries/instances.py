@@ -116,11 +116,14 @@ class DataInstance:
             instance_id=raw.get("instance_id"),
         )
         if raw.get("instance_id"):
+            was_value = lib.instance_meta.get(inst.path, {}).get("value")
             lib.instance_meta[inst.path] = {
                 "instance_id": inst.instance_id,
                 "origin": inst.origin,
                 "lineage_payload": inst.lineage_payload,
             }
+            if was_value:
+                lib.instance_meta[inst.path]["value"] = True
         return inst
 
 class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _TelemetryQueries):
@@ -427,16 +430,15 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
-        # The file is written before it is registered: a leaf id is derived from
-        # the file's stat, and registering first would find nothing there and
-        # fall back to a random id.
+        # The file is written before it is registered: a value's id is derived
+        # from its text.
         self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
         with open(self.location/path, "w") as f:
             f.write(value)
-        return self.AddItem(path=path, dtype=dtype, parents=parents)
+        return self._register(path, dtype, parents, lambda p: self._mint_leaf_id(p, value=True))
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()
@@ -474,6 +476,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 skipped[str(path)] = (
                     "produced by a run; its identity is its lineage"
                 )
+                continue
+            if entry.get("value"):
+                skipped[str(path)] = "a value; its identity is its text, so edit the text"
                 continue
             abs_path = self._abs(path)
             if is_deferred(abs_path):
@@ -535,7 +540,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         if meta.get("origin", "leaf") != "leaf":
             self.instance_meta[new] = meta
         else:
-            self._mint_leaf_id(new)
+            self._mint_leaf_id(new, value=bool(meta.get("value")))
 
     def Rename(self, path: Path, new: Path, _save=True):
         self._refuse_if_pinned("Rename")

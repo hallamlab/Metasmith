@@ -732,6 +732,12 @@ the mtime keeps the id. The stamp is excluded from the library key for the same 
 written before stamps existed keeps its ids, and each id gains a stamp at its next save if it still
 re-derives from the file.
 
+**A value item's id is its text.** `AddValue` marks the entry `value` and derives the id from the
+bytes and the relative library path, the minted filename that stands for the row. An edit moves
+the id, an undo restores it, and the agent derives the same id from its copy. A value item minted
+before this keeps its old id until a recipe sync rewrites its text, because one cache miss per
+downstream step is too high a price for unchanged data.
+
 **A given's identity is a record, and the plan refuses one that is not.** `_mint_leaf_id` marks
 what it invented, `Pack` does not carry the mark, and `CollectSolverInputs` refuses anything that
 still carries it — naming `metasmith data import` and the `GivenLibrary` call that replaces the

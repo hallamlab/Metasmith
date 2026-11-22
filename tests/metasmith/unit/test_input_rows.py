@@ -136,6 +136,49 @@ def test_a_value_row_whose_contents_change_moves_its_identity(lib_path):
     assert ids(lib_path)[path] != before[path]
 
 
+def test_a_value_edited_and_undone_gets_its_first_identity_back(lib_path):
+    # A value's id is its text and path, so undoing an edit serves the old cache.
+    rows = [row("v", mode="value", value="one")]
+    path = op_inputs.sync(str(lib_path), rows)["rows"]["v"]
+    first = ids(lib_path)[path]
+    rows[0]["value"] = "two"
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] != first
+    rows[0]["value"] = "one"
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] == first
+
+
+def test_a_value_whose_mtime_moves_keeps_its_identity(lib_path):
+    import os
+
+    path = op_inputs.sync(str(lib_path), [row("v", mode="value", value="one")])["rows"]["v"]
+    before = ids(lib_path)
+    os.utime(lib_path / path, ns=(10**18, 10**18))
+    assert ids(lib_path) == before
+
+
+def test_a_value_minted_before_values_were_hashed_moves_only_when_edited(lib_path):
+    import yaml
+
+    rows = [row("v", mode="value", value="one")]
+    path = op_inputs.sync(str(lib_path), rows)["rows"]["v"]
+    index = lib_path / "_metadata" / "index.yml"
+    raw = yaml.safe_load(index.read_text())
+    raw["manifest"][path].pop("value")
+    raw["manifest"][path]["instance_id"] = "1e20" + "ab" * 32
+    index.write_text(yaml.safe_dump(raw))
+
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] == "1e20" + "ab" * 32
+    rows[0]["value"] = "two"
+    op_inputs.sync(str(lib_path), rows)
+    rows[0]["value"] = "one"
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] != "1e20" + "ab" * 32
+    assert loaded(lib_path).instance_meta[Path(path)]["value"]
+
+
 def test_two_value_rows_with_the_same_contents_are_two_items(lib_path):
     rows = [row("a", mode="value", value="same"), row("b", mode="value", value="same")]
     out = op_inputs.sync(str(lib_path), rows)

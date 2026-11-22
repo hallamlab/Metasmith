@@ -105,6 +105,50 @@ def test_an_index_written_before_stamps_keeps_its_ids_and_is_stamped_on_save(tmp
     assert _reloaded_ids(lib)[item] != before[item]
 
 
+def _value_library(tmp_path: Path) -> DataInstanceLibrary:
+    lib = _library(tmp_path)
+    lib.AddValue("accession", "GCF_000005845.2", "cf::seed")
+    lib.Save()
+    return lib
+
+
+def test_a_value_edited_and_undone_gets_its_first_identity_back(tmp_path):
+    lib = _value_library(tmp_path)
+    f = lib.location / "accession"
+    first = _reloaded_ids(lib)[Path("accession")]
+    f.write_text("GCF_000005845.3")
+    assert _reloaded_ids(lib)[Path("accession")] != first
+    f.write_text("GCF_000005845.2")
+    assert _reloaded_ids(lib)[Path("accession")] == first
+
+
+def test_a_value_whose_mtime_moves_keeps_its_identity(tmp_path):
+    lib = _value_library(tmp_path)
+    before = _reloaded_ids(lib)
+    os.utime(lib.location / "accession", ns=(10**18, 10**18))
+    assert _reloaded_ids(lib) == before
+
+
+def test_invalidate_skips_a_value_and_says_to_edit_it(tmp_path):
+    lib = _value_library(tmp_path)
+    report = lib.Invalidate([Path("accession")])
+    assert "edit the text" in report["skipped"]["accession"]
+
+
+def test_a_value_is_derived_the_same_from_a_copy_on_another_host(tmp_path):
+    # The agent re-derives from its own copy at another absolute path.
+    import shutil
+
+    from metasmith.models.libraries.identity import value_leaf_id
+
+    lib = _value_library(tmp_path)
+    copy = tmp_path / "agent" / "lib"
+    shutil.copytree(lib.location, copy)
+    here = _reloaded_ids(lib)[Path("accession")]
+    assert value_leaf_id(copy / "accession", Path("accession"), lib.fork_id) == here
+    assert DataInstanceLibrary.Load(copy).Get(Path("accession")).instance_id == here
+
+
 def test_invalidate_all_moves_every_leaf(tmp_path):
     lib = _library(tmp_path)
     before = {p: m["instance_id"] for p, m in lib.instance_meta.items()}
