@@ -109,7 +109,14 @@ def _to_polars(df: pd.DataFrame):
             # pandas spells a missing string NaN -- under pandas 3's `str` dtype as
             # much as under object -- and polars refuses a float among strings, so
             # the sentinel has to be translated rather than passed through.
-            arr = s.astype(object).where(s.notna(), None).to_numpy()
+            vals = s.astype(object).where(s.notna(), None)
+            # polars types an object array by its FIRST element, so a string column
+            # that opens on a null -- `gene` on a prodigal ORF set, `contig` on an
+            # annotation table -- becomes Object, which it refuses to write.
+            if all(v is None or isinstance(v, str) for v in vals):
+                cols[name] = pl.Series(name, vals.tolist(), dtype=pl.String)
+                continue
+            arr = vals.to_numpy()
         cols[name] = arr
     return pl.DataFrame(cols)
 
@@ -272,9 +279,14 @@ def schema_for(extensions=()) -> list:
 # `uniref50_dr`, `pbert_transfer` beside the mappers' `ezpred`, `uniref50`,
 # `pbert`); a join written against one silently returns nothing against the other,
 # so the names are declared once, here, and read from here.
+#
+# `all_reaction` is every lane of the annotation table whose terms reach a reaction
+# (`fabfos_gpr/gpr_table.py::REACTION_LANES`); `chosen_4` is the subset the fosmid
+# pipeline and every shipped `annotation::gpr_table` consumer read.
 LANE_SETS = {
     "chosen_4": ("kofam", "clean", "uniref50", "pbert"),
     "full_7": ("kofam", "clean", "deepec", "ezpred", "uniref50", "pbert", "esmc"),
+    "all_reaction": ("kofam", "clean", "uniref50", "pbert", "deepec", "eggnog"),
 }
 CHANNELS = tuple(sorted(set(c for cs in LANE_SETS.values() for c in cs)))
 
@@ -341,6 +353,8 @@ RAW_SCORE_RANGE = {
     "ezpred": (0.0, 1.0),
     # A score-less tool asserting presence.
     "deepec": (1.0, 1.0),
+    # eggNOG-mapper's seed-ortholog bitscore. Never fitted, so it only has to be positive.
+    "eggnog": (0.0, 1e6),
 }
 
 # THE PRIOR THE LLR IS MEASURED AGAINST, and the one `pool_logodds` combines it with.

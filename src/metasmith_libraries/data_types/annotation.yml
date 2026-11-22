@@ -191,11 +191,22 @@ types:
       Format: CSV
       ext: csv
 
+  # Annotation table: every annotation lane's calls on one ORF set, long format, one row
+  # per (lane, ORF or contig feature, term). THE SCHEMA IS DECLARED IN CODE:
+  # resources/lib/fabfos_gpr/annotation_table.py holds ANNOTATION_COLS and one parser per
+  # lane. Lanes are kept as their tools wrote them, with no abstain, so the table is the
+  # aggregate a consumer subsets by `lane`; the GPR tables below are two such subsets.
+  annotation_table:
+    properties:
+      _: Every annotation lane's calls in one long table, one row per lane x ORF or contig feature x term. Schema in lib::fabfos_gpr/annotation_table.py::ANNOTATION_COLS
+      Format: Parquet
+      ext: parquet
+
   # GPR table (gene-attributed reaction evidence, long format).
   #
   # THE SCHEMA IS DECLARED IN CODE, not here: resources/lib/fabfos_evidence.py
   # holds SCHEMA_COLS, the channel vocabulary (LANE_SETS), the calibration that
-  # turns a lane's own score into `llr`, and the validator both mappers call
+  # turns a lane's own score into `llr`, and the validator every mapper calls
   # before writing. A column list transcribed into this comment is a second copy
   # that goes stale without anything raising, which is how two channel
   # vocabularies came to exist at once.
@@ -203,23 +214,30 @@ types:
   # Grain: one row per (source, orf, channel, intermediate_id, mnxr). No
   # cross-lane dedup -- the same ORF->MNXR claim from two lanes stays two rows.
   #
-  # `llr` IS ONE NUMBER IN NATS AND IT IS COMPARABLE ACROSS CHANNELS, which is
-  # what replaced a per-lane `raw_score` that was explicitly not. It is the
+  # `llr` IS ONE NUMBER IN NATS AND IT IS COMPARABLE ACROSS CHANNELS. It is the
   # log-odds a call of this strength is correct, less the pooling prior, so
   # pooling can add two lanes' evidence rather than picking between two scales.
-  # `llr_route` says which of the four routes produced it, so a measured weight
-  # is distinguishable from a placeholder one; a table whose lanes were never
-  # calibrated says `uncalibrated` rather than looking calibrated.
+  # `llr_route` says which route produced it, so a measured weight is
+  # distinguishable from a placeholder one: a lane with no fitted curve says
+  # `uncalibrated` rather than looking calibrated.
   #
-  # CANONICAL. The chosen-4 lane set (kofam, CLEAN, uniref50, ProteinBERT) IS the
-  # GPR table: `gpr_4lane` produces this type directly rather than a subtype, so
-  # the fosmid pipeline has exactly one producer of it and needs no tiebreak.
-  # `gpr_7lane` stays as a transform and keeps its own subtype below.
+  # TWO SUBSETS OF ONE MAPPING, built by resources/lib/fabfos_gpr/gpr_table.py from
+  # the annotation table. `gpr_table` is the chosen-4 lanes (kofam, CLEAN, uniref50,
+  # ProteinBERT), which every shipped consumer reads; `gpr_4lane` builds it from
+  # those four lanes alone, so the fosmid pipeline reaches it from bare ORFs.
+  # `gpr_table_all` is every reaction-mapping lane of `annotation_table`. Neither
+  # extends the other: a consumer of one must never be handed the other.
   gpr_table:
     properties:
       _: Gene-attributed GPR evidence table (long-format, one row per source x ORF x channel x intermediate x MNXR); the canonical chosen-4 lane set. Schema in lib::fabfos_evidence.py::SCHEMA_COLS
       Format: Parquet
       lane_set: chosen_4
+      ext: parquet
+  gpr_table_all:
+    properties:
+      _: GPR evidence table over every reaction-mapping lane of annotation::annotation_table (kofam, CLEAN, uniref50, ProteinBERT, DeepEC, eggNOG). Schema in lib::fabfos_evidence.py::SCHEMA_COLS
+      Format: Parquet
+      lane_set: all_reaction
       ext: parquet
   gpr_table_7lane:
     extends:
@@ -232,6 +250,12 @@ types:
   diamond_uniref50_results:
     properties:
       _: DIAMOND alignment to UniRef50, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  # DIAMOND against the BiGG gene index CarveMe ships
+  bigg_diamond_hits:
+    properties:
+      _: DIAMOND blastp of ORFs against CarveMe 1.6.6's BiGG gene index, the search carve runs internally; what carve --diamond reads back
       Format: BLAST6
       ext: tsv
   diamond_uniref50_top1_results:
@@ -803,4 +827,120 @@ types:
       _: PathoLogic pathways of one quality MAG with their ORFs (sibling of pathway_table)
       Format: TSV
       granularity: bin
+      ext: tsv
+
+  # --- The three DRAM search lanes the library had no equivalent of: dbCAN (CAZy),
+  # MEROPS (peptidases) and VOGDB. Each feeds annotation_table as a lane; the DRAM
+  # products below are rendered from that table rather than from DRAM's own annotate.
+  dbcan_hmmsearch_results:
+    properties:
+      _: hmmsearch --domtblout of ORFs against the dbCAN HMMs, as hmmsearch wrote it
+      Format: domtblout
+      ext: domtbl
+  dbcan_hmmsearch_results_chunk:
+    properties:
+      _: Per-chunk dbCAN hmmsearch domtblout (sibling of dbcan_hmmsearch_results)
+      Format: domtblout
+      granularity: chunk
+      ext: domtbl
+  dbcan_descriptions:
+    properties:
+      _: dbCAN HMM name (no .hmm) to its CAZy family activity, for the families hit
+      Format: TSV
+      ext: tsv
+  merops_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to the MEROPS peptidase units (pepunit.lib), outfmt 6 plus stitle
+      Format: BLAST6
+      ext: tsv
+  merops_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND MEROPS BLAST6 (sibling of merops_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  vogdb_hmmsearch_results:
+    properties:
+      _: hmmsearch --domtblout of ORFs against the VOGDB HMMs, as hmmsearch wrote it
+      Format: domtblout
+      ext: domtbl
+  vogdb_hmmsearch_results_chunk:
+    properties:
+      _: Per-chunk VOGDB hmmsearch domtblout (sibling of vogdb_hmmsearch_results)
+      Format: domtblout
+      granularity: chunk
+      ext: domtbl
+  vogdb_descriptions:
+    properties:
+      _: VOG to "ConsensusFunctionalDescription; FunctionalCategory", DRAM's own description string, for the VOGs hit
+      Format: TSV
+      ext: tsv
+  # DRAM-v's one search the library had no equivalent of.
+  refseq_viral_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to the RefSeq viral proteins, outfmt 6 plus stitle
+      Format: BLAST6
+      ext: tsv
+  refseq_viral_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND RefSeq viral BLAST6 (sibling of refseq_viral_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
+  # DRAM 1.5 distill of one quality MAG, run over annotation_table rendered into DRAM's
+  # annotations.tsv. One group: distill writes all of them at once.
+  dram_mag_annotations:
+    properties:
+      _: One quality MAG's annotation_table rows rendered as DRAM 1.5 annotations.tsv -- the file DRAM distill reads
+      Format: TSV
+      granularity: bin
+      ext: tsv
+  dram_product_html:
+    properties:
+      _: DRAM distill product heatmap of one quality MAG (module, ETC and function coverage)
+      Format: HTML
+      granularity: bin
+      ext: html
+  dram_product_tsv:
+    properties:
+      _: DRAM distill product table of one quality MAG, the data behind the heatmap
+      Format: TSV
+      granularity: bin
+      ext: tsv
+  dram_metabolism_summary:
+    properties:
+      _: DRAM distill genome metabolism summary of one quality MAG, one sheet per category
+      Format: XLSX
+      granularity: bin
+      ext: xlsx
+  dram_genome_stats:
+    properties:
+      _: DRAM distill genome statistics of one quality MAG
+      Format: TSV
+      granularity: bin
+      ext: tsv
+
+  # DRAM-v 1.5 distill of a study's vOTU representatives, run over annotation_table
+  # rendered into DRAM-v's annotations.tsv with VirSorter2's gene categories. One group:
+  # distill writes all of them at once.
+  dramv_votu_annotations:
+    properties:
+      _: The vOTU representatives' genes as DRAM-v 1.5 annotations.tsv, with DRAM-v's own auxiliary scores and AMG flags -- the file DRAM-v distill reads
+      Format: TSV
+      ext: tsv
+  dramv_amg_summary:
+    properties:
+      _: DRAM-v distill amg_summary.tsv -- one row per potential AMG of a vOTU representative and the form entry that made it one
+      Format: TSV
+      ext: tsv
+  dramv_product_html:
+    properties:
+      _: DRAM-v distill product heatmap of potential AMG functions per vOTU representative
+      Format: HTML
+      ext: html
+  dramv_vmag_stats:
+    properties:
+      _: DRAM-v distill vMAG_stats.tsv -- gene count, strand switches, AMG count, transposase and VOG category counts per vOTU representative
+      Format: TSV
       ext: tsv

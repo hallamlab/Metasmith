@@ -78,7 +78,7 @@ def _write_orfs(p: Path):
     with open(p, "w") as fh:
         for o in ORFS:
             tag = f" [gene={GENE_OF[o]}]" if GENE_OF[o] else ""
-            fh.write(f">{o}{tag} # some prodigal trailer\nMKV\n")
+            fh.write(f">{o}{tag} # 1 # 300 # 1 # ID=1_1;partial=00\nMKVCAACHM\n")
 
 
 def _write_kofam(p: Path):
@@ -90,6 +90,11 @@ def _write_kofam(p: Path):
         "E-value": [1e-70, 1e-40],
         "best": ["*", "*"],
     }).to_csv(p, index=False)
+
+
+def _write_kofam_descriptions(p: Path):
+    pd.DataFrame({"KO": KOS, "definition": ["alcohol dehydrogenase", "hexokinase"]}
+                 ).to_csv(p, index=False)
 
 
 def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_score")):
@@ -194,6 +199,7 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
     # Write every input both mappers read; return the argv kwargs.
     _write_orfs(work / "orfs.faa")
     _write_kofam(work / "kofam.csv")
+    _write_kofam_descriptions(work / "kofam_descriptions.csv")
     _write_clean(work / "clean.tsv")
     _write_uniref(work / "uniref.tsv", work / "uniref_descriptions.tsv")
     _write_bridge(work / "bridge.parquet")
@@ -204,6 +210,7 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
         ev_lib=str(EV_LIB), calibration=str(work / "calibration"),
         orfs=str(work / "orfs.faa"),
         kofam=str(work / "kofam.csv"), clean=str(work / "clean.tsv"),
+        kofam_descriptions=str(work / "kofam_descriptions.csv"),
         uniref=str(work / "uniref.tsv"),
         uniref_descriptions=str(work / "uniref_descriptions.tsv"),
         bridge=str(work / "bridge.parquet"),
@@ -225,6 +232,7 @@ def _lanes(work: Path, rng, seven: bool, lm_table="landmarks.parquet",
         # process's inputs by basename and the mapper takes both.
         _write_landmarks(work / "landmarks_esmc", rng, dim=esmc_lm_dim, near=qe)
         kw.pop("threads")
+        kw.pop("kofam_descriptions")
         kw.update(
             lane_set="full_7", source="orfs",
             deepec=str(work / "deepec.tsv"), ezpred=str(work / "ezpred.csv"),
@@ -246,6 +254,47 @@ def _argv(mapper: str, kw: dict) -> list[str]:
 
 def _run(argv: list[str], work: Path) -> subprocess.CompletedProcess:
     return subprocess.run(argv, cwd=work, capture_output=True, text=True)
+
+
+GPR_LIB = MLIB / "resources" / "lib" / "fabfos_gpr"
+
+
+def _annotation_argv(kw: dict, out: Path, extra_lanes=()) -> list[str]:
+    argv = [sys.executable, str(GPR_LIB / "annotation_table.py"),
+            "--ev-lib", kw["ev_lib"], "--orfs", kw["orfs"], "--source", kw["source"],
+            "--landmarks", kw["landmarks"], "--threads", "1", "--out", str(out),
+            "--lane", "kofam", kw["kofam"], kw["kofam_descriptions"],
+            "--lane", "clean", kw["clean"],
+            "--lane", "uniref50", kw["uniref"], kw["uniref_descriptions"],
+            "--lane", "pbert", kw["pbert_emb"]]
+    for name, *paths in extra_lanes:
+        argv += ["--lane", name, *map(str, paths)]
+    return argv
+
+
+def _gpr_argv(kw: dict, table: Path, lane_set: str, out: Path) -> list[str]:
+    return [sys.executable, str(GPR_LIB / "gpr_table.py"),
+            "--ev-lib", kw["ev_lib"], "--annotation-table", str(table),
+            "--orfs", kw["orfs"], "--bridge", kw["bridge"],
+            "--calibration", kw["calibration"], "--lane-set", lane_set,
+            "--source", kw["source"], "--out", str(out)]
+
+
+def _run_chain(work: Path, *argvs) -> subprocess.CompletedProcess:
+    out, err = "", ""
+    for argv in argvs:
+        r = _run(argv, work)
+        out, err = out + r.stdout, err + r.stderr
+        if r.returncode:
+            break
+    return subprocess.CompletedProcess(argvs, r.returncode, out, err)
+
+
+def _run4(kw: dict, work: Path) -> subprocess.CompletedProcess:
+    # The two programs the `gpr_4lane` transform runs, in its order.
+    table = Path(work) / "annotation_chosen_4.parquet"
+    return _run_chain(work, _annotation_argv(kw, table),
+                      _gpr_argv(kw, table, "chosen_4", Path(kw["out"])))
 
 
 def _check_table(out: Path, lane_set: str):
@@ -283,7 +332,7 @@ def _check_best_uniref_hit(df):
 def test_gpr_4lane_driver_writes_a_valid_table(tmp_path):
     rng = np.random.default_rng(0)
     kw = _lanes(tmp_path, rng, seven=False)
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode == 0, f"driver failed:\n{r.stdout}\n{r.stderr}"
     df = _check_table(tmp_path / "gpr.parquet", "chosen_4")
 
@@ -332,7 +381,7 @@ def test_embedding_lane_refuses_a_landmark_dir_without_its_table(tmp_path):
     # No landmarks.parquet means no landmarks, and there is no degraded mode.
     rng = np.random.default_rng(2)
     kw = _lanes(tmp_path, rng, seven=False, lm_table="something_else.parquet")
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "landmarks.parquet" in r.stderr and "pbert" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -366,7 +415,7 @@ def test_embedding_lane_abstains_when_no_landmark_is_near(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     # the landmarks no longer sit on top of the queries
     _write_landmarks(tmp_path / "landmarks", np.random.default_rng(12))
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert "2 with no landmark at cosine" in r.stdout, r.stdout
     # and the empty lane is then refused rather than written as a table with a
     # silently missing channel
@@ -401,7 +450,7 @@ def test_embedding_lane_admits_by_neighbourhood_not_by_a_fixed_count(tmp_path):
                                  "mnxr_list": [";".join(MNXRS[:2])] * n}),
                    _dims(lm)], axis=1).to_parquet(
             work / "landmarks" / "landmarks.parquet", index=False)
-        r = _run(_argv("gpr_4lane", kw), work)
+        r = _run4(kw, work)
         line = next(ln for ln in r.stdout.splitlines() if ln.startswith("[gpr] pbert:"))
         return float(line.split(" voting on ")[1].split(" admitted")[0])
 
@@ -416,7 +465,7 @@ def test_mapper_refuses_when_a_lane_contributes_no_rows(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     b = pd.read_parquet(tmp_path / "bridge.parquet")
     b[b["id_source"] != "ko"].to_parquet(tmp_path / "bridge.parquet", index=False)
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "kofam" in r.stderr and "0 rows" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -427,7 +476,7 @@ def test_mapper_refuses_an_orf_id_mismatch(tmp_path):
     kw = _lanes(tmp_path, rng, seven=False)
     with open(tmp_path / "orfs.faa", "w") as fh:
         fh.write(">something_else_1\nMKV\n")
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "ORF ids that are not in this shard's FASTA" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -437,7 +486,7 @@ def test_clean_lane_refuses_a_header_drift(tmp_path):
     rng = np.random.default_rng(5)
     kw = _lanes(tmp_path, rng, seven=False)
     _write_clean(tmp_path / "clean.tsv", header=("query", "ec", "score"))
-    r = _run(_argv("gpr_4lane", kw), tmp_path)
+    r = _run4(kw, tmp_path)
     assert r.returncode != 0
     assert "clean_predictions header" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
@@ -506,13 +555,14 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
     assert set(fe.RAW_SCORE_RANGE) == set(fe.CHANNELS)
     assert set(fe.ASSERTION_CHANNELS).isdisjoint(fe.CHANNELS)
     assert set(fe.LANE_SETS["chosen_4"]) < set(fe.LANE_SETS["full_7"])
-    for mapper in ("gpr_4lane", "gpr_7lane"):
-        # The transform declares the lane; the module under `lib::fabfos_gpr` is where
-        # the channel strings are actually written, so both are read.
-        src = ((MLIB / "transforms" / "fabfos" / f"{mapper}.py").read_text()
-               + (MLIB / "resources" / "lib" / "fabfos_gpr" / f"{mapper}.py").read_text())
+    assert set(fe.LANE_SETS["chosen_4"]) < set(fe.LANE_SETS["all_reaction"])
+    # The transform declares the lane; the modules under `lib::fabfos_gpr` are where the
+    # channel strings are actually written, so both are read.
+    for src_path in [*(MLIB / "transforms" / "fabfos").glob("gpr_*.py"),
+                     *GPR_LIB.glob("*.py")]:
+        src = src_path.read_text()
         for dead in ("dl_ec", "uniref50_dr", "pbert_transfer"):
-            assert f'"{dead}"' not in src, f"{mapper} still spells a channel {dead!r}"
+            assert f'"{dead}"' not in src, f"{src_path.name} still spells a channel {dead!r}"
 
     reemitters = {
         "host_gpr_denovo": REPO_ROOT / "src" / "fabfos" / "build_references" / "transforms"
@@ -581,3 +631,263 @@ def test_the_schema_covers_every_gpr_table_in_the_tree():
     assert not legacy_layout, (
         "these tables are on a pre-schema layout -- whatever wrote them is still "
         "building the old columns by hand:\n" + "\n".join(legacy_layout))
+
+
+# ---- the annotation table, and the GPR tables cut from it -----------------------------
+#
+# One fixture file per lane the aggregator reads beyond the four above, each in the layout
+# its producer writes. The batch-split lanes name their query `<stem>~<orf>`, which is what
+# the splitter feeding them writes and no merge removes; the table must carry the ORF as the
+# FASTA names it.
+CONTIGS = ["pool1:megahit:k141_1", "pool1:megahit:k141_2"]
+_EGGNOG_HEADER = ("#query\tseed_ortholog\tevalue\tscore\teggNOG_OGs\tmax_annot_lvl\t"
+                  "COG_category\tDescription\tPreferred_name\tGOs\tEC\tKEGG_ko\t"
+                  "KEGG_Pathway\tKEGG_Module\tKEGG_Reaction\tKEGG_rclass\tBRITE\tKEGG_TC\t"
+                  "CAZy\tBiGG_Reaction\tPFAMs")
+
+
+def _write_extra_lanes(work: Path) -> list:
+    w = work
+    with open(w / "eggnog.tsv", "w") as fh:
+        fh.write("## emapper-2.1.12\n" + _EGGNOG_HEADER + "\n")
+        fh.write(f"{ORFS[0]}\t562.ABC\t1e-50\t200.5\tCOG1@1|root\troot\tC\t"
+                 f"Alcohol dehydrogenase\tadhE\tGO:0000001,GO:0000002\t-\tko:{KOS[0]}\t"
+                 f"-\t-\tR00754\t-\t-\t-\t-\tALCD2x\tADH_N,ADH_zinc_N\n")
+        fh.write(f"{ORFS[1]}\t562.DEF\t1e-30\t150.0\tCOG2@1|root\troot\tG\tHexokinase\t"
+                 f"glk\t-\t{ECS[1]}\t-\t-\t-\t-\t-\t-\t-\t-\t-\t-\n")
+        fh.write("## 2 queries scanned\n")
+    pd.DataFrame({
+        "orf": [ORFS[0]], "start": ["5"], "stop": ["180"], "score": ["1.2E-40"],
+        "database": ["Pfam"], "Name": ["PF00107"], "Dbxref": ["IPR013149"],
+        "Ontology_term": ["GO:0016491|GO:0055114"],
+    }).to_csv(w / "ips.csv", index=False)
+    pd.DataFrame({"Name": ["PF00107"], "description": ["Zinc-binding dehydrogenase"]}
+                 ).to_csv(w / "ips_descriptions.csv", index=False)
+    blast = lambda q, s, title: (f"orfs~{q}\t{s}\t95.0\t300\t5\t0\t1\t300\t1\t300\t1e-80\t"
+                                 f"410.0" + (f"\t{title}" if title else "") + "\n")
+    for lane in ("mobileog", "megares", "bacmet", "vfdb"):
+        (w / f"{lane}.tsv").write_text(blast(ORFS[0], f"{lane.upper()}0001",
+                                             f"{lane.upper()}0001 some {lane} gene"))
+    (w / "megares.tsv").write_text("")      # a lane with no hits is a lane, not a failure
+    (w / "bigg.tsv").write_text(blast(ORFS[1], "b0001", None).replace("orfs~", ""))
+    pd.DataFrame({
+        "ORF_ID": [f"orfs~{ORFS[1]} # 1 # 300 # 1 # ID=1_2"], "Cut_Off": ["Strict"],
+        "Best_Hit_Bitscore": ["512.3"], "Best_Hit_ARO": ["TEM-1"], "ARO": ["3000873"],
+    }).to_csv(w / "rgi.tsv", sep="\t", index=False)
+    pd.DataFrame({
+        "Protein id": [f"orfs~{ORFS[0]}"], "Element symbol": ["blaTEM-1"],
+        "Element name": ["class A beta-lactamase TEM-1"],
+        "% Identity to reference": ["100.00"], "Closest reference accession": ["WP_000027057.1"],
+    }).to_csv(w / "amrfinderplus.tsv", sep="\t", index=False)
+    with open(w / "bakta.tsv", "w") as fh:
+        fh.write("# Annotated with Bakta\n#Sequence Id\tType\tStart\tStop\tStrand\t"
+                 "Locus Tag\tGene\tProduct\tDbXrefs\n")
+        fh.write(f"{CONTIGS[0]}\ttRNA\t10\t85\t+\tX_1\ttrnA\ttRNA-Ala\tSO:0000253\n")
+        fh.write(f"{CONTIGS[1]}\tncRNA\t200\t300\t-\tX_2\t\t6S ncRNA\tRFAM:RF00013\n")
+    import json
+    (w / "antismash.json").write_text(json.dumps({"records": [
+        {"id": CONTIGS[0], "areas": [{"start": 0, "end": 5000, "products": ["NRPS", "T1PKS"]}]},
+        {"id": CONTIGS[1], "areas": []},
+    ]}))
+    # hmmsearch --domtblout: ORF, -, len, model, -, model len, full E, score, bias, #, of,
+    # c-E, i-E, dom score, bias, hmm from, hmm to, ali from, ali to, env from, env to, acc.
+    dom = lambda orf, model, mlen, e, hf, ht: (
+        f"{orf} - 300 {model} - {mlen} {e} 140.0 0.1 1 1 {e} {e} 139.0 0.1 {hf} {ht} "
+        f"5 260 3 262 0.95 -\n")
+    trailer = "# Program:         hmmsearch\n# [ok]\n"
+    # GH5_4 twice, the second domain covering less: one row, at the better coverage.
+    # GT2 passes hmmsearch's -E and fails DRAM's 1e-18, so it is in the table and not
+    # in DRAM's render.
+    (w / "dbcan.domtbl").write_text(
+        "# target name\n" + dom(ORFS[0], "GH5_4.hmm", 280, "1e-40", 10, 250)
+        + dom(ORFS[0], "GH5_4.hmm", 280, "1e-40", 100, 120)
+        + dom(ORFS[0], "GT2.hmm", 200, "1e-10", 1, 190) + trailer)
+    (w / "dbcan_descriptions.tsv").write_text(
+        "term\tdescription\nGH5_4\tGH5 endo-beta-1,4-glucanase\nGT2\tGT2 cellulose synthase\n")
+    (w / "vogdb.domtbl").write_text(
+        "# target name\n" + dom(ORFS[0], "VOG00001", 169, "1e-30", 5, 160) + trailer)
+    (w / "vogdb_descriptions.tsv").write_text(
+        "term\tdescription\nVOG00001\tREFSEQ hypothetical protein; XrXs\n")
+    pep = ("MER0000002 - chymotrypsin A (cattle-type) (Bos taurus) [S01.001]#S01A#"
+           "{peptidase unit: 34-263}~source XP_608091~")
+    (w / "merops.tsv").write_text(
+        blast(ORFS[0], "MER0000002", pep).replace("orfs~", "")
+        + blast(ORFS[0], "MER0000009", "MER0000009 - weak [S01.009]#S01A#").replace(
+            "orfs~", "").replace("410.0", "55.0"))
+    (w / "refseq_viral.tsv").write_text(
+        blast(ORFS[0], "YP_009001.1", "YP_009001.1 ribonucleotide reductase [Synechococcus phage]")
+        .replace("orfs~", ""))
+    _write_deepec(w / "deepec.tsv")
+    return [
+        ("dbcan", w / "dbcan.domtbl", w / "dbcan_descriptions.tsv"),
+        ("merops", w / "merops.tsv"),
+        ("vogdb", w / "vogdb.domtbl", w / "vogdb_descriptions.tsv"),
+        ("refseq_viral", w / "refseq_viral.tsv"),
+        ("deepec", w / "deepec.tsv"), ("eggnog", w / "eggnog.tsv"),
+        ("interproscan", w / "ips.csv", w / "ips_descriptions.csv"),
+        *[(lane, w / f"{lane}.tsv") for lane in ("mobileog", "megares", "bacmet", "vfdb")],
+        ("bigg", w / "bigg.tsv"), ("rgi", w / "rgi.tsv"),
+        ("amrfinderplus", w / "amrfinderplus.tsv"),
+        ("bakta_nc", w / "bakta.tsv"), ("antismash", w / "antismash.json"),
+    ]
+
+
+# By path: the transform library's own annotation_table.py takes that module name first
+# whenever a planning test runs earlier in the session.
+def _gpr_module(name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("fabfos_gpr_" + name, GPR_LIB / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _annotation_table(work: Path, rng):
+    kw = _lanes(work, rng, seven=False)
+    extra = _write_extra_lanes(work)
+    table = work / "annotation.parquet"
+    r = _run(_annotation_argv(kw, table, extra), work)
+    assert r.returncode == 0, f"aggregator failed:\n{r.stdout}\n{r.stderr}"
+    return kw, table
+
+
+def test_annotation_table_carries_every_lane_under_the_fastas_ids(tmp_path):
+    at = _gpr_module("annotation_table")
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(40))
+    df = pd.read_parquet(table)
+    assert list(df.columns) == at.ANNOTATION_COLS
+    # every lane given is a lane of the table, the hitless one included only by name
+    assert set(df["lane"]) == set(at.LANES) - {"megares"}
+    orf_rows = df[df["orf"].notna()]
+    assert set(orf_rows["orf"]) == set(ORFS), "the `<stem>~` prefix reached the table"
+    contig_rows = df[df["lane"].isin(["bakta_nc", "antismash"])]
+    assert contig_rows["orf"].isna().all() and set(contig_rows["contig"]) <= set(CONTIGS)
+    assert set(df.loc[df["lane"] == "antismash", "term"]) == {"NRPS", "T1PKS"}
+    assert set(df.loc[df["lane"] == "bakta_nc", "term"]) == {"trnA", "6S ncRNA"}
+    # nothing abstains here: CLEAN's 0.0008 call is in the table, for a consumer to drop
+    assert (df.loc[df["lane"] == "clean", "score"] < fe.CLEAN_MIN_SCORE).any()
+    egg = df[df["lane"] == "eggnog"]
+    assert set(egg.loc[egg["namespace"] == "ko", "term"]) == {KOS[0]}
+    assert set(egg.loc[egg["namespace"] == "ec", "term"]) == {ECS[1]}
+    assert {"go", "pfam", "bigg.reaction", "kegg.reaction", "eggnog.seed"} <= set(egg["namespace"])
+    assert set(df.loc[df["lane"] == "rgi", "term"]) == {"3000873"}
+    assert set(df.loc[df["lane"] == "interproscan", "namespace"]) == {"pfam", "interpro", "go"}
+    assert set(df.loc[df["lane"] == "kofam", "description"]) == {"alcohol dehydrogenase",
+                                                                 "hexokinase"}
+    # one row per ORF x model at its best-covering domain, and DRAM's E-value cut not applied
+    cazy = df[df["lane"] == "dbcan"].set_index("term")
+    assert sorted(cazy.index) == ["GH5_4", "GT2"]
+    assert cazy.loc["GH5_4", "score"] == pytest.approx(240 / 280)
+    assert set(df.loc[df["lane"] == "merops", "term"]) == {"MER0000002", "MER0000009"}
+
+
+def test_dram_annotations_render_one_mags_rows_the_way_dram_cuts_them(tmp_path):
+    dram = _gpr_module("dram_annotations")
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(43))
+    scaffold = ORFS[0].rpartition("_")[0]
+    (tmp_path / "mag1.fna").write_text(f">{scaffold}\nACGT\n")
+    out = tmp_path / "annotations.tsv"
+    r = _run([sys.executable, str(GPR_LIB / "dram_annotations.py"), "--ev-lib", kw["ev_lib"],
+              "--annotation-table", str(table), "--orfs", kw["orfs"],
+              "--mag", str(tmp_path / "mag1.fna"), "--name", "mag1", "--out", str(out)],
+             tmp_path)
+    assert r.returncode == 0, f"render failed:\n{r.stdout}\n{r.stderr}"
+    df = pd.read_csv(out, sep="\t", index_col=0)
+    assert list(df.columns) == dram.DRAM_COLS
+    # only the MAG's ORF, under the id the FASTA gives it
+    assert list(df.index) == [ORFS[0]]
+    row = df.loc[ORFS[0]]
+    assert (row["fasta"], row["scaffold"], row["gene_position"]) == ("mag1", scaffold, 1)
+    assert (row["start_position"], row["end_position"], row["strandedness"]) == (1, 300, 1)
+    assert (row["ko_id"], row["kegg_hit"]) == (KOS[0], "alcohol dehydrogenase")
+    assert row["uniref_id"] == f"UniRef50_{ACCS[0]}"
+    assert row["pfam_hits"] == "Zinc-binding dehydrogenase [PF00107.]"
+    assert (row["cazy_ids"], row["cazy_best_hit"]) == ("GH5_4", "GH5_4")
+    assert row["cazy_hits"] == "GH5 endo-beta-1,4-glucanase"
+    assert (row["peptidase_id"], row["peptidase_family"]) == ("MER0000002", "S01A")
+    assert (row["vogdb_id"], row["vogdb_categories"]) == ("VOG00001", "Xr;Xs")
+    assert row["heme_regulatory_motif_count"] == 1
+    assert row["rank"] == "C"
+
+
+def test_dramv_annotations_move_virsorter2_genes_into_the_representatives_frame(tmp_path):
+    dram = _gpr_module("dram_annotations")
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(44))
+    # The representative is bases 51..2000 of `asm1~k141_1`, and its one ORF (prodigal-gv on
+    # the frozen set) is already in its frame. The member is not a representative.
+    rep, member = "s1|asm1~k141_1|51_2000", "s1|asm1~k141_1|60_1990"
+    orf = rep + "_1"
+    t = pd.read_parquet(table)
+    t.loc[t["orf"] == ORFS[0], "orf"] = orf
+    t.to_parquet(tmp_path / "frozen_table.parquet", index=False)
+    (tmp_path / "orfs.faa").write_text(f">{orf} # 51 # 350 # -1 # ID=1_1\nMKVCAACHM\n"
+                                       f">{member}_1 # 1 # 300 # 1 # ID=2_1\nMKV\n")
+    (tmp_path / "frozen.fna").write_text(f">{rep}\nACGT\n>{member}\nACGT\n")
+    pd.DataFrame({"frozen_id": [rep, member], "sample": ["s1", "s1"],
+                  "source_contig": ["asm1~k141_1"] * 2, "start": [51, 60],
+                  "end": [2000, 1990], "length": [1950, 1931], "callers": ["virsorter2"] * 2}
+                 ).to_csv(tmp_path / "prov.tsv", sep="\t", index=False)
+    (tmp_path / "votu.tsv").write_text(f"{rep}\t{rep}\n{rep}\t{member}\n")
+    # VirSorter2 calls genes on the whole batch contig and keeps those coordinates in the
+    # affi table; the one at 10..40 lies outside the interval.
+    gene = lambda i, s, e, cat: (f"asm1~k141_1__full__{i}|{s}|{e}|{e - s + 1}|1|"
+                                 f"hmm{i}|50|1e-10|{cat}|-|-|-\n")
+    (tmp_path / "affi.tab").write_text(
+        ">asm1~k141_1__full|4|l\n" + gene(1, 10, 40, 1) + gene(2, 60, 99, 0)
+        + gene(3, 101, 400, 2) + gene(4, 500, 900, 0))
+    out = tmp_path / "rendered.tsv"
+    r = _run([sys.executable, str(GPR_LIB / "dramv_annotations.py"), "--ev-lib", kw["ev_lib"],
+              "--frozen", str(tmp_path / "frozen.fna"), "--provenance", str(tmp_path / "prov.tsv"),
+              "--votu", str(tmp_path / "votu.tsv"), "--orfs", str(tmp_path / "orfs.faa"),
+              "--annotation-table", str(tmp_path / "frozen_table.parquet"),
+              "--affi", str(tmp_path / "affi.tab"), "--name", "votus",
+              "--out-annotations", str(out), "--out-affi", str(tmp_path / "votu.tab"),
+              "--out-fasta", str(tmp_path / "reps.fna")], tmp_path)
+    assert r.returncode == 0, f"render failed:\n{r.stdout}\n{r.stderr}"
+    df = pd.read_csv(out, sep="\t", index_col=0)
+    assert list(df.columns) == dram.DRAMV_COLS
+    assert list(df.index) == [orf]
+    row = df.iloc[0]
+    assert (row["fasta"], row["scaffold"]) == ("votus", rep)
+    assert (row["start_position"], row["end_position"], row["strandedness"]) == (51, 350, -1)
+    assert (row["viral_id"], row["viral_bitScore"]) == ("YP_009001.1", 410.0)
+    assert row["ko_id"] == KOS[0] and row["pfam_hits"] == "Zinc-binding dehydrogenase [PF00107.]"
+    name = rep.replace("|", "_")
+    assert (tmp_path / "votu.tab").read_text().splitlines() == [
+        f">{name}|3|l",
+        f"{name}__1|10|49|40|1|hmm2|50|1e-10|0|-|-|-",
+        f"{name}__2|51|350|300|1|hmm3|50|1e-10|2|-|-|-",
+        f"{name}__3|450|850|401|1|hmm4|50|1e-10|0|-|-|-",
+    ]
+    assert (tmp_path / "reps.fna").read_text() == f">{rep}\nACGT\n"
+
+
+def test_gpr_table_all_holds_every_reaction_lane(tmp_path):
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(41))
+    out = tmp_path / "gpr_all.parquet"
+    r = _run(_gpr_argv(kw, table, "all_reaction", out), tmp_path)
+    assert r.returncode == 0, f"mapper failed:\n{r.stdout}\n{r.stderr}"
+    df = _check_table(out, "all_reaction")
+    # deepec and eggnog were never fitted, and the table says so per row
+    for ch in ("deepec", "eggnog"):
+        g = df[df["channel"] == ch]
+        assert len(g) and (g["llr"] == fe.UNCALIBRATED_LLR).all()
+        assert set(g["llr_route"]) == {"uncalibrated"}
+    assert set(df.loc[df["channel"] == "kofam", "llr_route"]) == {"calibrated"}
+    assert set(df.loc[df["channel"] == "eggnog", "intermediate_id"]) == {KOS[0], ECS[1]}
+
+
+def test_chosen_4_is_the_all_reaction_table_cut_to_its_lanes(tmp_path):
+    # `gpr_4lane` builds from its four lanes alone so a fosmid pool reaches it from bare
+    # ORFs; it must still be exactly what a consumer gets by filtering the full table.
+    kw, table = _annotation_table(tmp_path, np.random.default_rng(42))
+    full = tmp_path / "gpr_all.parquet"
+    assert _run(_gpr_argv(kw, table, "all_reaction", full), tmp_path).returncode == 0
+    r = _run4(kw, tmp_path)
+    assert r.returncode == 0, f"4-lane chain failed:\n{r.stdout}\n{r.stderr}"
+    key = fe.GRAIN_KEY
+    cut = pd.read_parquet(full)
+    cut = cut[cut["channel"].isin(fe.LANE_SETS["chosen_4"])].drop(columns="lane_set")
+    four = pd.read_parquet(kw["out"]).drop(columns="lane_set")
+    pd.testing.assert_frame_equal(cut.sort_values(key).reset_index(drop=True),
+                                  four.sort_values(key).reset_index(drop=True))

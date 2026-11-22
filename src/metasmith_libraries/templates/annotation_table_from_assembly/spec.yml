@@ -1,0 +1,48 @@
+name: annotation_table_from_assembly
+description: 'Run every annotation lane against an existing assembly and collect their
+  calls into one
+
+  long annotation::annotation_table, one row per lane, ORF or contig feature, and
+  term. Also
+
+  cuts the GPR evidence table over every reaction-mapping lane from it
+
+  (annotation::gpr_table_all).'
+sample_type: null
+target_types:
+- annotation::annotation_table
+- annotation::gpr_table_all
+transform_libraries:
+- metagenomics
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/41be5d29d278414b86412b1aa2194723:
+      type: ref::mnxr_lookup
+      instance_id: 1e20c5758bd1a3f1591726ccd80b4fae541dea59f78944b74c3dd0b7ff3261d575b9
+      origin: leaf
+    /msm_deferred/79b31775d69948c6a86dabdbb99f30d1:
+      type: ref::lane_calibration
+      instance_id: 1e2019d9eb953f0ff0caf46410b2154e5ded7fc315159c688a69cb565c3d7d6c0e9f
+      origin: leaf
+    /msm_deferred/7bcca54e406d43ba8230e2d210c3d05a:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e209412027b8b9b0d6bebcac82214c894402f76f2b081df935f8bb70ff0dfbbd0dd
+      origin: leaf
+    /msm_deferred/a6f5af5aa97746939f26fc56658683f9:
+      type: sequences::assembly
+      instance_id: 1e2031d863122f0ceba50005fe6ffb5a825f561dad319c0f063b31912df20c95d866
+      origin: leaf
+    eggnog_source.marker:
+      type: annotation::eggnog_source
+      instance_id: 1e20c79952b492eeeceaa4b5cd1adb6a2d07b565909f67631855b27d2e3104107f73
+      origin: leaf
+  values:
+    eggnog_source.marker: trigger

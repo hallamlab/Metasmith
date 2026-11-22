@@ -38,6 +38,7 @@ AUTHORS = (
     "amplicon_asv_study_from_short_reads",
     "viromics_survey_from_assembly",
     "gpr_table_from_assembly",
+    "annotation_table_from_assembly",
     "ecspr_results_from_gpr_table",
     "ecspr_survey_from_pooled_reads",
 )

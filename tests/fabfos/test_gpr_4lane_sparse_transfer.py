@@ -1,6 +1,6 @@
 # The sparse label transfer must be the dense one, not merely like it.
 #
-# `gpr_4lane.lane_embed` used to materialise a dense (reference x MNXR) float32
+# `annotation_table.lane_embed` used to materialise a dense (reference x MNXR) float32
 # indicator matrix and take the kNN vote as `w @ L[nn]`. At the pinned pool that
 # matrix is 222,019 x 13,112 -- 10.84 GiB, 99.97% zeros -- which is the whole
 # reason the step had to declare 48 GB. It is now a CSR-shaped gather over only
@@ -30,7 +30,7 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
 MAPPER = (REPO / "src" / "metasmith_libraries" / "resources" / "lib"
-          / "fabfos_gpr" / "gpr_4lane.py")
+          / "fabfos_gpr" / "annotation_table.py")
 
 K = 30
 FLOOR = 0.20
