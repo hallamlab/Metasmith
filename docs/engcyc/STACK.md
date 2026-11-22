@@ -9,6 +9,7 @@ Decisions: docs/engcyc/DECISIONS.md
 mixed-session
 
 ## Waiting on the user
+- mixed-session: support short + hybrid samples in one session now (per-shape targets via the planner's per-case target), or hybrid runs as its own session for v1?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -37,6 +38,7 @@ mixed-session
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+(none running. Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve)
 
 ## Closed
 - read-types — short_reads and long_reads only; parity/platform in read_metadata; pe/se types deleted in stdlib
