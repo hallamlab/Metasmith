@@ -350,3 +350,20 @@ Decision:
   product-name merge) are a separate topic: mp-outputs.
 
 Landed: worker mp-faithful on feat/engine/mp-faithful (from feat/engine/mp-fix).
+
+## mp-outputs (2026-11-22)
+
+Question: which MetaPathways outputs does the port rebuild?
+
+Tony: "we dont care about the other metapathways outputs, but we should generate some usable output
+for pathologic" ... "can we replace with extracted pathway table from pgdb? ... what does MP4 do?"
+... "ok".
+
+Decision:
+- Do not rebuild MP4's hierarchy count tables, per-ORF function+taxonomy table or product-name merge.
+- Replace `pathway_table` and `bin_pathway_table` with MP4's per-PGDB pathway table: SAMPLE,
+  PWY_NAME, PWY_COMMON_NAME, PWY_SCORE, NUM_REACTIONS, NUM_COVERED_REACTIONS, ORF_COUNT, ORFS, plus
+  Pathway Frequency Score, Pathway Abundance and Reason to Keep from the pathways report. One row
+  per pathway, per MAG and for the community. The PGDB archive stays.
+
+Landed: added to worker mp-faithful (feat/engine/mp-faithful).
