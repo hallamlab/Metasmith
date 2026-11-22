@@ -1,12 +1,15 @@
-"""Annotation table: every annotation lane's calls on one ORF set, in one long table.
+"""Lane tables: one annotation lane's calls on one ORF set, in the standard long format.
 
-One row per (lane, ORF or contig feature, term). Each lane is read as its tool wrote it and
-nothing is abstained here: a cut-off belongs to the consumer that needs it, so one table can
-serve every subset of lanes. `gpr_table.py` is the reaction consumer. The one lane that is
-computed rather than read is ProteinBERT's, whose calls do not exist until the kNN vote
-against the labelled landmarks makes them.
+One row per (lane, ORF or contig feature, term), ANNOTATION_COLS first and then the lane's own
+useful fields as `<lane>_<field>` columns. Each lane is read as its tool wrote it and nothing is
+abstained here: a cut-off belongs to the consumer that needs it. A lane whose calls are motifs
+within the protein (HIT_LANES) also writes every hit, one row each, in HITS_COLS; its lane table
+keeps the best hit per term. The one lane that is computed rather than read is ProteinBERT's,
+whose calls do not exist until the kNN vote against the labelled landmarks makes them.
 
-    --lane NAME PATH [PATH ...]   once per lane; LANES lists the names and their files
+    --lane NAME PATH [PATH ...]   LANES lists the names and their files
+    --table PATH [PATH ...]       instead: concatenate lane tables into the every-lane table;
+                                  a lane's extra columns are null on the other lanes' rows
 """
 import json
 import os
@@ -19,10 +22,12 @@ def _args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ev-lib", required=True)
-    p.add_argument("--orfs", required=True)
-    p.add_argument("--source", required=True)
+    p.add_argument("--orfs")
+    p.add_argument("--source")
     p.add_argument("--out", required=True)
+    p.add_argument("--hits-out", help="the lane's per-hit table; HIT_LANES only")
     p.add_argument("--lane", nargs="+", action="append", default=[], metavar="NAME PATH")
+    p.add_argument("--table", nargs="+", default=[])
     p.add_argument("--landmarks", help="ref::label_transfer_landmarks; the pbert lane needs it")
     p.add_argument("--threads", type=int, default=1)
     return p.parse_args()
@@ -50,6 +55,10 @@ ANNOTATION_COLS = [
     "source", "orf", "contig", "start", "end",
     "lane", "namespace", "term", "description",
     "score", "score_kind", "evalue", "via", "provenance",
+]
+HITS_COLS = [
+    "source", "orf", "lane", "namespace", "term", "start", "end",
+    "score", "score_kind", "evalue",
 ]
 
 
@@ -93,6 +102,13 @@ def _pick(df, product, *candidates):
                      + "; its columns are " + repr(list(df.columns)))
 
 
+def _optional(df, *candidates):
+    for c in candidates:
+        if c in df.columns:
+            return df[c]
+    return None
+
+
 def _split_terms(values, sep):
     return [t.strip() for t in str(values).split(sep)
             if t.strip() and t.strip() not in ("-", "nan")]
@@ -133,6 +149,8 @@ def parse_kofam(results, descriptions=None):
                   / pd.to_numeric(df["thrshld"], errors="coerce")),
         "score_kind": "kofam_score_over_threshold",
         "evalue": pd.to_numeric(df["E-value"], errors="coerce"),
+        "x_bitscore": pd.to_numeric(df["score"], errors="coerce"),
+        "x_threshold": pd.to_numeric(df["thrshld"], errors="coerce"),
     })
     if descriptions:
         d = pd.read_csv(descriptions, dtype=str).fillna("")
@@ -180,6 +198,9 @@ def _parse_bsr_hits(results, descriptions, namespace, product):
         "description": df["sseqid"].map(titles).fillna("").apply(fe._clean_stitle),
         "score": pd.to_numeric(df["bsr"], errors="coerce"), "score_kind": "bsr",
         "evalue": pd.to_numeric(df["evalue"], errors="coerce"),
+        "x_pident": pd.to_numeric(df["pident"], errors="coerce"),
+        "x_length": pd.to_numeric(df["length"], errors="coerce"),
+        "x_bitscore": pd.to_numeric(df["bitscore"], errors="coerce"),
     })
 
 
@@ -210,6 +231,8 @@ def _parse_diamond(path, namespace, with_title):
         "description": df["stitle"] if with_title else None,
         "score": pd.to_numeric(df["bitscore"], errors="coerce"), "score_kind": "bitscore",
         "evalue": pd.to_numeric(df["evalue"], errors="coerce"),
+        "x_pident": pd.to_numeric(df["pident"], errors="coerce"),
+        "x_length": pd.to_numeric(df["length"], errors="coerce"),
     })
 
 
@@ -236,10 +259,9 @@ def _parse_domtblout(path, namespace, descriptions, strip=""):
             hmm_len = float(f[5])
             rows.append((f[0], f[3].removesuffix(strip), float(f[6]),
                          (int(f[16]) - int(f[15])) / hmm_len if hmm_len else float("nan"),
-                         int(f[19]), int(f[20])))
-    df = pd.DataFrame(rows, columns=["orf", "term", "evalue", "score", "start", "end"])
-    df = (df.sort_values("score", ascending=False, kind="stable")
-            .drop_duplicates(["orf", "term"]))
+                         int(f[19]), int(f[20]), float(f[7]), float(f[13]), float(f[12])))
+    df = pd.DataFrame(rows, columns=["orf", "term", "evalue", "score", "start", "end",
+                                     "x_full_score", "x_domain_score", "x_domain_ievalue"])
     names = {}
     if descriptions:
         d = pd.read_csv(descriptions, sep="\t", dtype=str).fillna("")
@@ -266,8 +288,8 @@ def _parse_tblout(path, namespace, names):
             if line.startswith("#") or not line.strip():
                 continue
             f = line.split()
-            rows.append((f[0], f[2], float(f[5]), float(f[4])))
-    df = pd.DataFrame(rows, columns=["orf", "term", "score", "evalue"])
+            rows.append((f[0], f[2], float(f[5]), float(f[4]), float(f[8])))
+    df = pd.DataFrame(rows, columns=["orf", "term", "score", "evalue", "x_best_domain_score"])
     return df.assign(namespace=namespace, score_kind="bitscore",
                      description=df["term"].map(names))
 
@@ -321,6 +343,10 @@ def parse_deeparg(path):
         "score": pd.to_numeric(_pick(df, product, "probability"), errors="coerce"),
         "score_kind": "deeparg_probability",
         "evalue": pd.to_numeric(_pick(df, product, "alignment-evalue"), errors="coerce"),
+        "x_class": _pick(df, product, "predicted_ARG-class"),
+        "x_identity": pd.to_numeric(_optional(df, "identity"), errors="coerce"),
+        "x_aro": _optional(df, "ARO"), "x_aro_name": _optional(df, "ARO_name"),
+        "x_cut_off": _optional(df, "Cut_Off"),
     })
 
 
@@ -417,6 +443,11 @@ def parse_rgi(path):
         "description": _pick(df, product, "Best_Hit_ARO"),
         "score": pd.to_numeric(_pick(df, product, "Best_Hit_Bitscore"), errors="coerce"),
         "score_kind": "bitscore",
+        "x_cut_off": _pick(df, product, "Cut_Off"),
+        "x_model_type": _optional(df, "Model_type"),
+        "x_amr_gene_family": _pick(df, product, "AMR Gene Family"),
+        "x_drug_class": _optional(df, "Drug Class"),
+        "x_pident": pd.to_numeric(_optional(df, "Best_Identities"), errors="coerce"),
     })
 
 
@@ -434,6 +465,10 @@ def parse_amrfinderplus(path):
         "score_kind": "percent_identity",
         "via": _pick(df, product, "Closest reference accession",
                      "Accession of closest sequence"),
+        "x_scope": _optional(df, "Scope"),
+        "x_class": _optional(df, "Class"),
+        "x_aro": _optional(df, "ARO"), "x_aro_name": _optional(df, "ARO_name"),
+        "x_cut_off": _optional(df, "Cut_Off"),
     })
 
 
@@ -673,8 +708,13 @@ LANES = {
 }
 
 
+# Lanes whose calls are motifs or domains within the protein rather than of the whole sequence.
+# PathoFact's HMMs and kofamscan report no coordinates, so they are not among them.
+HIT_LANES = {"interproscan", "dbcan", "vogdb"}
+
+
 def _finish(df, lane, source, provenance):
-    df = df.copy()
+    df = df.rename(columns={c: lane + c[1:] for c in df.columns if c.startswith("x_")})
     for c in ANNOTATION_COLS:
         if c not in df.columns:
             df[c] = None
@@ -685,9 +725,17 @@ def _finish(df, lane, source, provenance):
     # container, has no column type for pandas' nullable-integer NA.
     for c in ("start", "end", "score", "evalue"):
         df[c] = pd.to_numeric(df[c], errors="coerce").astype(float)
-    for c in ("orf", "contig", "namespace", "term", "description", "score_kind", "via"):
+    extras = [c for c in df.columns if c not in ANNOTATION_COLS]
+    text = ["orf", "contig", "namespace", "term", "description", "score_kind", "via"]
+    for c in text + [c for c in extras if df[c].dtype == object]:
         df[c] = df[c].astype("object").where(df[c].notna(), None)
-    return df[ANNOTATION_COLS]
+    return df[ANNOTATION_COLS + extras]
+
+
+def _best_per_term(df):
+    return (df.sort_values(["score", "evalue"], ascending=[False, True], kind="stable",
+                           na_position="last")
+              .drop_duplicates(["orf", "namespace", "term"], ignore_index=True))
 
 
 # The batch splitter that feeds the DIAMOND, RGI and AMRFinderPlus lanes renames every
@@ -697,7 +745,7 @@ def _unprefix(orfs, ids):
     return orfs.where(orfs.isin(ids) | ~tail.isin(ids), tail)
 
 
-def build(lanes, fasta, source):
+def build(lanes, fasta, source, hits=None):
     ids, _ = orf_ids(fasta)
     if not ids:
         raise SystemExit("[annotation] the input ORF FASTA has no records")
@@ -729,8 +777,16 @@ def build(lanes, fasta, source):
         print("[annotation]   " + "%-13s" % name + " " + "%9d" % len(df) + " rows  "
               + "%7d" % df["orf"].nunique() + " ORFs  " + "%7d" % df["term"].nunique()
               + " terms", flush=True)
+        if name in HIT_LANES:
+            if hits is not None:
+                hits.append(df[HITS_COLS + [c for c in df.columns if c.startswith(name + "_")]])
+            df = _best_per_term(df)
         frames.append(df)
-    table = pd.concat(frames, ignore_index=True).drop_duplicates(ignore_index=True)
+    return pd.concat(frames, ignore_index=True).drop_duplicates(ignore_index=True)
+
+
+def concatenate(paths):
+    table = pd.concat([EV.read_parquet(str(p)) for p in paths], ignore_index=True)
     if len(table) == 0:
         raise SystemExit("[annotation] the table is empty; every lane parsed to nothing, "
                          "which is a staging failure rather than a finding")
@@ -740,7 +796,17 @@ def build(lanes, fasta, source):
 if __name__ == "__main__":
     EV = load_evidence(A.ev_lib)
     LANDMARKS = A.landmarks
-    t = build(A.lane, A.orfs, str(A.source))
+    if A.table:
+        t = concatenate(A.table)
+    else:
+        if not (A.lane and A.orfs and A.source):
+            raise SystemExit("[annotation] a lane table takes --lane, --orfs and --source")
+        hits = [] if A.hits_out else None
+        t = build(A.lane, A.orfs, str(A.source), hits)
+        if hits is not None:
+            if not hits:
+                raise SystemExit("[annotation] --hits-out names no lane of " + repr(sorted(HIT_LANES)))
+            EV.write_parquet(pd.concat(hits, ignore_index=True), str(A.hits_out))
     EV.write_parquet(t, str(A.out))
     print("[annotation] wrote " + str(len(t)) + " rows over " + str(t["lane"].nunique())
           + " lanes -> " + str(A.out), flush=True)

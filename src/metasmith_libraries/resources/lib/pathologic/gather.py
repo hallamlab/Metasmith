@@ -122,13 +122,13 @@ def gather(table, lengths, ec_map, reactions):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--orfs", required=True)
-    p.add_argument("--annotations", required=True, help="annotation::annotation_table")
+    p.add_argument("--annotations", nargs="+", required=True, help="the four lanes' lane tables")
     p.add_argument("--ec-maps", required=True, help="ref::uniprot_ec_maps")
     p.add_argument("--metacyc-reactions", required=True, help="ref::metacyc_monomer_reactions")
     p.add_argument("--out", required=True)
     a = p.parse_args()
 
-    table = fe.read_parquet(a.annotations, columns=["orf", "lane", "term", "description", "score", "start", "end", "evalue"])
+    table = fe.read_lane_tables(a.annotations, columns=["orf", "lane", "term", "description", "score", "start", "end", "evalue"])
     table = table[table["lane"].isin(DATABASES)]
     rxn = pd.read_csv(a.metacyc_reactions, sep="\t", dtype=str)
     reactions = rxn.groupby("MC")["RXN"].apply(lambda s: list(dict.fromkeys(s))).to_dict()

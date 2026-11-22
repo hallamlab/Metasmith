@@ -17,7 +17,9 @@ frozen = model.AddRequirement(lib.GetType("viromics::dereplicated_candidate_viru
 prov   = model.AddRequirement(lib.GetType("viromics::candidate_call_provenance"), parents={study})
 votu   = model.AddRequirement(lib.GetType("viromics::votu_cluster_table"), parents={frozen})
 orfs   = model.AddRequirement(lib.GetType("sequences::orfs"), parents={frozen})
-table  = model.AddRequirement(lib.GetType("annotation::annotation_table"), parents={orfs})
+# The lanes dram_annotations.render reads.
+lanes  = [model.AddRequirement(lib.GetType(f"annotation::{k}_lane_table"), parents={orfs})
+          for k in ("kofam", "uniref50", "interproscan", "refseq_viral", "dbcan", "merops", "vogdb")]
 affi   = model.AddRequirement(lib.GetType("annotation::virsorter2_affi_contigs"), parents={study})
 sheets = model.AddRequirement(lib.GetType("ref::dram_sheets"))
 gpr_lib = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
@@ -37,10 +39,6 @@ def protocol(context: ExecutionContext):
     iann    = context.Output(annotations)
     iouts   = {t: context.Output(t) for t in DISTILL}
 
-    # annotation_table is grouped by assembly, and every assembly is an ancestor of the
-    # frozen set, so the slot can hold one table per sample. Their ORF rows are the same lanes over
-    # the same ORFs; only the contig lanes differ, and DRAM-v reads none.
-    itable = sorted(context.InputGroup(table), key=lambda p: str(p.local))[0]
     affis = " ".join(str(f.container) for f in context.InputGroup(affi))
 
     with open("DRAM.config", "w") as fh:
@@ -58,7 +56,7 @@ def protocol(context: ExecutionContext):
             --provenance {context.Input(prov).container} \
             --votu {context.Input(votu).container} \
             --orfs {context.Input(orfs).container} \
-            --annotation-table {itable.container} \
+            --annotation-table {" ".join(str(context.Input(t).container) for t in lanes)} \
             --affi {affis} \
             --name votu_representatives \
             --out-annotations rendered.tsv --out-affi votu-affi-contigs.tab \

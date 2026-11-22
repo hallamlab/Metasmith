@@ -87,6 +87,11 @@ def read_parquet(path, columns=None, filters=None) -> pd.DataFrame:
     return _from_polars(lf.collect())
 
 
+def read_lane_tables(paths, columns=None, filters=None) -> pd.DataFrame:
+    return pd.concat([read_parquet(p, columns=columns, filters=filters) for p in paths],
+                     ignore_index=True)
+
+
 def write_parquet(df: pd.DataFrame, path, compression=None) -> None:
     if _PARQUET_ENGINE == "pyarrow":
         extra = {} if compression is None else {"compression": compression}

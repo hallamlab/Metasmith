@@ -147,7 +147,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ev-lib", required=True)
-    p.add_argument("--annotation-table", required=True)
+    p.add_argument("--annotation-table", nargs="+", required=True, help="lane tables")
     p.add_argument("--orfs", required=True, help="the ORF FASTA the table was built on")
     p.add_argument("--mag", required=True, help="the MAG's contig FASTA")
     p.add_argument("--name", required=True, help="DRAM's `fasta` column: the genome name")
@@ -164,8 +164,7 @@ def main():
             "[dram] no ORF of " + a.orfs + " lies on a contig of " + a.mag + " ("
             + str(len(contigs)) + " contigs). The MAG and the ORF set come from different "
             "assemblies, or the ORF ids are not `<contig>_<n>`")
-    table = ev.read_parquet(a.annotation_table)
-    table = table[table["orf"].isin(genes.index)]
+    table = ev.read_lane_tables(a.annotation_table, filters=[("orf", "in", list(genes.index))])
     out = render(table, genes, a.name)
     out.to_csv(a.out, sep="\t")
     print("[dram] " + a.name + ": " + str(len(out)) + " genes on " + str(len(contigs))

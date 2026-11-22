@@ -5,7 +5,9 @@ model = Transform()
 
 image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 orfs    = model.AddRequirement(lib.GetType("sequences::orfs"))
-ann     = model.AddRequirement(lib.GetType("annotation::annotation_table"), parents={orfs})
+# fe.LANE_SETS["all_reaction"]
+lanes   = [model.AddRequirement(lib.GetType(f"annotation::{k}_lane_table"), parents={orfs})
+           for k in ("kofam", "clean", "uniref50", "pbert", "deepec", "eggnog")]
 bridge  = model.AddRequirement(lib.GetType("ref::mnxr_lookup"))
 calib   = model.AddRequirement(lib.GetType("ref::lane_calibration"))
 ev_lib  = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
@@ -21,7 +23,7 @@ def protocol(context: ExecutionContext):
     cmd = f"""
             python3 {context.Input(gpr_lib).container}/gpr_table.py \
             --ev-lib {context.Input(ev_lib).container} \
-            --annotation-table {context.Input(ann).container} \
+            --annotation-table {" ".join(str(context.Input(t).container) for t in lanes)} \
             --orfs {iorfs.container} \
             --bridge {context.Input(bridge).container} \
             --calibration {context.Input(calib).container} \
