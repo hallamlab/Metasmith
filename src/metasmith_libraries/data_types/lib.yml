@@ -155,10 +155,6 @@ types:
     properties:
       src: licensed_deeptmhmm
       usage: image recipe
-  licensed_deeplocpro:
-    properties:
-      src: licensed_deeplocpro
-      usage: image recipe
   licensed_phobius:
     properties:
       src: licensed_phobius

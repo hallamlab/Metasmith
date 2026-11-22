@@ -20,15 +20,10 @@ types:
   deeptmhmm_package:
     extends: package
     properties:
-      _: DeepTMHMM source archive (predict.py and its model files)
+      _: DeepTMHMM 1.0 academic package (DeepTMHMM-Academic-License-v1.0.zip)
       obtain_from: https://dtu.biolib.com/DeepTMHMM
-  deeplocpro_package:
-    extends: package
-    properties:
-      _: DeepLocPro pip-installable package archive
-      obtain_from: https://ku.biolib.com/DeepLocPro
   phobius_package:
     extends: package
     properties:
-      _: Phobius standalone archive (phobius101_linux.tar.gz)
+      _: Phobius 1.01 standalone archive (phobius101_linux.tgz)
       obtain_from: https://phobius.sbc.su.se/download
