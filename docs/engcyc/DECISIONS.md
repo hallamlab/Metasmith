@@ -222,3 +222,22 @@ Decision: yes.
   ecspr_survey_from_pooled_reads to `short_reads`.
 - Research libraries keep their types, so old benchmark caches stay valid.
 - Effect on read-classes: the template has two SRA outcomes to route, not three.
+
+## mixed-session (2026-11-21)
+
+Question: can short and hybrid samples share one session?
+
+Finding: the planner already solves a target per case, but `Spec` builds one target set and
+`Case.ByShape` copies it to every shape, so the API and the GUI never reach it.
+
+Tony: "lets try to support it now. can be awkward, but as long as it works, we can refine as we go"
+
+Decision:
+- Thread per-shape targets through `Spec` and the GUI now, before run 4.
+- First cut: a target may name the given types it needs (for example the hybrid assembly target
+  needs `sequences::long_reads`). Each shape gets only the targets its givens satisfy. A target
+  with no condition goes to every shape.
+- Effect on mixed-study-check: a short-only sample no longer gets the hybrid target, so the false
+  OPERA-MS "success" goes away for split studies. A study that stays one case still needs the check.
+
+Landed: worker shape-targets on feat/engine/shape-targets.
