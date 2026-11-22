@@ -29,7 +29,7 @@ template-build (worker running)
 - template-build — after pathofact-port, mp-faithful, lab-sifs land: merge them, then one worker builds the engcyc metagenomics template (every decided lane, deselectable), retires metagenomics_from_paired_reads, regenerates goldens
 - gpr-data-layout — test_gpr_schema::test_the_schema_covers_every_gpr_table_in_the_tree fails on untracked data/fabfos/runs/{fang,fuhrer_clones,keio}/gpr/*.parquet (pre-schema layout); regenerate or drop those tables
 - release-0.26 — geoquery cuts 0.26.0 first, alone. At template-build (b): merge released feat/dev into rc, carry decided fixes untested. After run 4 is clean (c): release from rc; first check geoquery_from_aoi_table still solves and its tests pass (no regression). AGENTS.md conflict to resolve on our side
-- version-probe-timeout — geoquery's E2E on 0.25.1 died at StageWorkflow: the remote `./msm --version` probe idled 60 s and raised TimeoutError instead of warning; check on rc before run 4
+- dev-bugs — engine/dev bug reports a8a72167 (version probe raises), 8a254b1b (run completed on abort), f2726d1d (leaf id not re-minted), cebb1818 (serial pool imports, no retry), 146fb883 (array twins, already fixed on rc); worker dev-bugs on feat/engine/dev-bugs; ship in 0.26.1
 - run-4 — "check that an agent can E2E install msm and run the template"
 - shape-targets-followups — from worker 5155d9ce: hybrid case skipped MEGAHIT only by solver choice (no rule; same gap as consume-distinguishing-products); `when` on an input-only type gives an error that does not mention conditions; same target with two `when` lists duplicates; no GUI widget for `when` (yaml/json/Python only)
 - hint-fix — my search_exhausted hint claims every target is producible when one case cannot reach one (hybrid-solve V2/V3); gate it per case
@@ -43,6 +43,8 @@ template-build (worker running)
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- template-build — engcyc template + lane tables on feat/engine/template-build
+- dev-bugs — five engine/dev bug reports on feat/engine/dev-bugs
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
