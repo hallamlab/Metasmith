@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-(waiting on workers: pathofact-port, mp-faithful, lab-sifs; then template-build)
+(waiting on workers: mp-faithful, lab-sifs; then template-build)
 
 ## Waiting on the user
 
@@ -23,7 +23,8 @@ Decisions: docs/engcyc/DECISIONS.md
 - licensed-build-followups — from 717e28f8: build recipes unverified against real downloads (verify with the staged files in ~/licensed-staging); DeepLocPro is public CC BY-NC-SA on GitHub, so drop its licensed type and build from GitHub; fir apptainer build without root unknown (else build SIFs on altair); docker loads the whole archive per call (~4 GB PT); build steps run on login node; fir drivers pin agent image 0.24.2 (SIF copied into store, not run in place); no DeepTMHMM/DeepLocPro/Phobius consumer lanes yet
 - dram-port-followups — from bb2ede96: old dram_annotate_genes + buildDramDB (24 GB Pfam-A.full) overlap the port, retire (no rivals); IPS Pfam lacks version so Pfam ids never reach distill (no shipped form uses them); MEROPS via DIAMOND not mmseqs; rank only C/D/E (no reverse search); UniRef50 top hit lacks DRAM's bitscore>=60 cut; genome stats lack taxonomy/completeness/tRNA/rRNA; dbCAN/VOGDB descriptions written at merge, not chunk; nothing run end to end; comparison vs upstream DRAM on one CPE3 MAG (research/dram_port/README.md) not run
 - dramv-port-followups — from 48b395db: old dramv.py + viromics_survey_from_assembly still target annotation::dramv_distill (retire after comparison); annotation_table grouped by assembly so a multi-sample study builds duplicate frozen-set tables; every annotation_table now runs the RefSeq viral search; vMAG_stats VirSorter category/Circular/Prophage always empty (VirSorter1 name suffixes); reps without VirSorter2 calls score 5, no AMGs; template gate (-b) not run; comparison vs upstream DRAM-v not run; docker daemon hung on altair (stopped container dramvfix, /tmp/dramv_fix/sif)
-- wrapper-build-run — DRAM done (bb2ede96); DRAM-v done (48b395db); PathoFact running (decision in DECISIONS.md)
+- wrapper-build-run — DRAM done (bb2ede96); DRAM-v done (48b395db); PathoFact done (01488c91, merged e6c2a8ab)
+- pathofact-port-followups — from 01488c91: ported PathoFact 2.0 (bd5d527), not v1: MGE arm is geNomad (reused), no PlasFlow/MOB-suite/VirSorter/DVF — confirm with Tony; six env images digest-pinned but none pulled or run in a container; hmmsearch and DeepARG lanes never run; annotation table now needs 6 GB PathoFact DB + 1.9 GB DeepARG before it builds (make lanes deselectable); SignalP variant unsolvable until a signalp6_results producer exists (lab-sifs); run_port.py pathofact_amr now pulls the full table, old fir pathofact_db lacks source; ORFs Prodigal vs upstream pyrodigal-gv (50% overlap match); dereplication rep = first in FASTA; tool versions differ (RGI BLAST, AMRFinderPlus 4.2.7, geNomad 1.11); SignalP6->gff3 mapping from public code; deeparg image diamond version unconfirmed; fir comparison (research/pathofact_port/README.md) not run; delete /home/tony/scratch_pf (1.5 GB)
 - template-build — after pathofact-port, mp-faithful, lab-sifs land: merge them, then one worker builds the engcyc metagenomics template (every decided lane, deselectable), retires metagenomics_from_paired_reads, regenerates goldens
 - gpr-data-layout — test_gpr_schema::test_the_schema_covers_every_gpr_table_in_the_tree fails on untracked data/fabfos/runs/{fang,fuhrer_clones,keio}/gpr/*.parquet (pre-schema layout); regenerate or drop those tables
 - run-4 — "check that an agent can E2E install msm and run the template"
@@ -41,8 +42,7 @@ Decisions: docs/engcyc/DECISIONS.md
 ## Workers
 - mp-faithful — PathoLogic input as MP4 (names + MetaCyc hits + Swiss-Prot ECs, no CLEAN; UniRef90; pinned release; <60 aa skipped) + MP4 pathway table + fir recheck (feat/engine/mp-faithful)
 - lab-sifs — verify recipes on real downloads, build SIFs on altair into ~/licensed-staging/sif (downloads on fir /project/rpp-shallam/phyberos/licensed/{signalp_6.0,deeptmhmm_1.0,phobius_1.01}, md5 ok); then copy SIFs to fir
-- pathofact-port — PathoFact port on feat/engine/pathofact-port (from dramv-port)
-(Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 717e28f8, dramv-port incl. dram-port + annotation-aggregate. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
+(Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 717e28f8, dramv-port incl. dram-port + annotation-aggregate; pathofact-port e6c2a8ab. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
 - replace-old — merge finished branches now (done); template built after the last three ports, replacing the old one in the same commit
