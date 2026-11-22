@@ -155,3 +155,13 @@ def test_a_conditional_target_reaches_only_the_shapes_that_carry_its_given(tmp_p
 
     with pytest.raises(AssertionError, match=r"no target applies to the samples of shape \[.*assembly"):
         spec([{"type": "mock::h1", "when": "mock::reads"}]).Solve()
+
+
+def test_one_endpoint_fills_a_target_and_the_target_anchored_to_it(tmp_path: Path):
+    samples, tr_lib = _setup(tmp_path)
+    task = Spec(
+        input_library=samples, transform_libraries=[tr_lib],
+        target_types=["mock::bam", {"type": "mock::bam", "parents": [0]}],
+    ).Solve()
+    assert task.ok, task.plan.dropped_targets
+    assert len(task.plan.steps) == 1

@@ -4,16 +4,16 @@ import sys
 import _authoring as A
 from metasmith.python_api import DEFERRED, Spec
 
-NAME = "engcyc_metagenomics_from_reads"
+NAME = "engcyc_metagenomics"
 DESCRIPTION = """
 The Engcyc metagenomics workflow from reads, one sample per read set. Every lane is
 its own target; deselect a target to drop its lane. Sizes are each lane's reference
 download; a ~ marks an estimate.
 
 Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads; a hybrid sample
-(short + long reads) also gets the hybrid lane, MEGAHIT draft -> OPERA-MS.
-CAUTION a hybrid sample's downstream lanes read whichever assembly the planner
-picks, MEGAHIT, Flye or OPERA-MS: no target can yet steer them to OPERA-MS.
+(short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
+downstream lanes read the OPERA-MS assembly. CAUTION a hybrid sample does not
+yet solve with every target: the planner runs out of search budget.
 Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 at >= 50% complete and <= 10% contamination.
 Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan against GTDB r232
@@ -48,7 +48,9 @@ modelling::medium_name.
 
 ASSEMBLY = "sequences::assembly"
 # The hybrid lane goes to the samples that carry long reads beside their short reads.
-HYBRID = {"type": "sequences::opera_ms_assembly",
+# Anchored to the assembly, so a hybrid sample's assembly is its OPERA-MS assembly
+# and every lane hanging off the assembly reads it.
+HYBRID = {"type": "sequences::opera_ms_assembly", "parents": [0],
           "when": ["sequences::long_reads", "sequences::zipped_forward_short_reads"]}
 
 # Each entry hangs off the assembly (0), the ORFs (ORFS) or the DAS Tool bins (BINS).
@@ -101,12 +103,10 @@ TARGETS = [
     {"type": "modelling::carveme_model", "parents": _A},
     {"type": "modelling::memote_score", "parents": _A},
     # viral
-    "viromics::checkv_quality_summary",
-    "viromics::votu_cluster_table",
-    "annotation::dramv_amg_summary",
-    "viromics::cas_operons",
-    "viromics::vcontact3_assignments",
-    "viromics::host_prediction_genus",
+    *({"type": t, "parents": _A}
+      for t in ("viromics::checkv_quality_summary", "viromics::votu_cluster_table",
+                "annotation::dramv_amg_summary", "viromics::cas_operons",
+                "viromics::vcontact3_assignments", "viromics::host_prediction_genus")),
 ]
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
 assert TARGETS[BINS]["type"] == "sequences::das_tool_bin_fasta"
@@ -134,13 +134,21 @@ def short_sample(lib, study):
     add_sample(lib, study, "sample_1")
 
 
-def spec_for(name, samples, rebuild=False, targets=TARGETS) -> Spec:
+def _dtypes(library) -> dict[str, str]:
+    # A re-used template library comes back as its packed dict.
+    if isinstance(library, dict):
+        return {p: entry["type"] for p, entry in library["manifest"].items()}
+    return {str(p): dtype for p, dtype in library.manifest.items()}
+
+
+def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
     def inputs(lib):
         for tl in TYPE_LIBS:
             lib.AddTypeLibrary(A.TYPES / tl)
         study = lib.AddValue("contig_study.json", {"logistics": "contig study"},
                              "viromics::contig_study")
-        samples(lib, study)
+        if samples is not None:
+            samples(lib, study)
         for t in SHARED_REFS:
             lib.AddItem(DEFERRED, t)
         # Opts the run into eggNOG's fetch; its content is not read.
@@ -148,12 +156,11 @@ def spec_for(name, samples, rebuild=False, targets=TARGETS) -> Spec:
 
     input_library = A.deferred_inputs(name, inputs, rebuild=rebuild)
     shared = ["contig_study.json", "eggnog_source.json"] + sorted(
-        str(path) for path, dtype in getattr(input_library, "manifest", {}).items()
-        if dtype in SHARED_REFS)
+        path for path, dtype in _dtypes(input_library).items() if dtype in SHARED_REFS)
     return Spec(
         input_library=input_library,
-        sample_type="sequences::read_metadata",
-        shared_input_paths=shared,
+        sample_type=None if samples is None else "sequences::read_metadata",
+        shared_input_paths=[] if samples is None else shared,
         target_types=targets,
         transform_libraries=A.transforms(
             "logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics",

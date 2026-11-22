@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Solve engcyc_metagenomics_from_reads for a short-read sample, a hybrid sample and a mixed study.
+"""Solve engcyc_metagenomics for a short-read sample, a hybrid sample and a mixed study.
 
 Opens nothing and runs nothing. Prints, per study shape, whether it solved, its steps, its
 solve time and any dropped targets.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 MLIB = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(MLIB))
-import engcyc_metagenomics_from_reads as E  # noqa: E402
+import engcyc_metagenomics as E  # noqa: E402
 
 STUDIES = {
     "short": lambda lib, study: E.add_sample(lib, study, "short_1"),

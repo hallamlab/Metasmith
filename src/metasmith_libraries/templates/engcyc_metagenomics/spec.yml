@@ -1,4 +1,4 @@
-name: engcyc_metagenomics_from_reads
+name: engcyc_metagenomics
 description: 'The Engcyc metagenomics workflow from reads, one sample per read set.
   Every lane is
 
@@ -9,11 +9,11 @@ description: 'The Engcyc metagenomics workflow from reads, one sample per read s
 
   Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads; a hybrid sample
 
-  (short + long reads) also gets the hybrid lane, MEGAHIT draft -> OPERA-MS.
+  (short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
 
-  CAUTION a hybrid sample''s downstream lanes read whichever assembly the planner
+  downstream lanes read the OPERA-MS assembly. CAUTION a hybrid sample does not
 
-  picks, MEGAHIT, Flye or OPERA-MS: no target can yet steer them to OPERA-MS.
+  yet solve with every target: the planner runs out of search budget.
 
   Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 
@@ -78,6 +78,8 @@ sample_type: sequences::read_metadata
 target_types:
 - sequences::assembly
 - type: sequences::opera_ms_assembly
+  parents:
+  - 0
   when:
   - sequences::long_reads
   - sequences::zipped_forward_short_reads
@@ -159,12 +161,18 @@ target_types:
   parents: *id001
 - type: modelling::memote_score
   parents: *id001
-- viromics::checkv_quality_summary
-- viromics::votu_cluster_table
-- annotation::dramv_amg_summary
-- viromics::cas_operons
-- viromics::vcontact3_assignments
-- viromics::host_prediction_genus
+- type: viromics::checkv_quality_summary
+  parents: *id001
+- type: viromics::votu_cluster_table
+  parents: *id001
+- type: annotation::dramv_amg_summary
+  parents: *id001
+- type: viromics::cas_operons
+  parents: *id001
+- type: viromics::vcontact3_assignments
+  parents: *id001
+- type: viromics::host_prediction_genus
+  parents: *id001
 transform_libraries:
 - logistics
 - assembly

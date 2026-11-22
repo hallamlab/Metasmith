@@ -689,18 +689,18 @@ class WorkflowPlan:
             for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
                     if e not in target_endpoints: continue
-                    queue = ep_dep_queue.get(e)
-                    assert queue, f"no target dep matched produced endpoint [{e}]"
-                    d_target = queue.pop(0)
-                    dtname = dep_to_name[d_target]
-                    resolved_deps.add(d_target)
-                    t = _insts[(j, d, e)]
-                    target_meta[e] = target_meta.get(e, [])+[
+                    # One endpoint can fill several targets: an OPERA-MS
+                    # assembly is both the hybrid target and the assembly.
+                    deps = dict.fromkeys(ep_dep_queue.pop(e, ()))
+                    assert deps, f"no target dep matched produced endpoint [{e}]"
+                    resolved_deps |= deps.keys()
+                    target_meta[e] = target_meta.get(e, []) + [
                         WorkflowTarget(
-                            name=dtname,
-                            instance=t,
+                            name=dep_to_name[d_target],
+                            instance=_insts[(j, d, e)],
                             producing_step=step,
                         )
+                        for d_target in deps
                     ]
 
         def _collect_ancestor_endpoints(endpoints: set[Endpoint], pool: set[Endpoint]) -> set[Endpoint]:
