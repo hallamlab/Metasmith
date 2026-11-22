@@ -1,0 +1,11 @@
+# The geoquery runtime: one env that runs every adapter, plus the geoquery package.
+# PROJ and GDAL read their data from the env.
+FROM condaforge/miniforge3:25.3.0-3
+COPY env.yml /opt/env.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs mamba env create -n geoquery -f /opt/env.yml
+ENV PATH=/opt/conda/envs/geoquery/bin:$PATH
+# pyogrio looks for proj.db in the wrong place unless PROJ_DATA names it
+ENV PROJ_DATA=/opt/conda/envs/geoquery/share/proj
+COPY geoquery /opt/geoquery/geoquery
+ENV PYTHONPATH=/opt/geoquery
+RUN python -c "import geoquery.pipeline"

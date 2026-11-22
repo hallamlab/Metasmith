@@ -40,6 +40,7 @@ AUTHORS = (
     "gpr_table_from_assembly",
     "ecspr_results_from_gpr_table",
     "ecspr_survey_from_pooled_reads",
+    "geoquery_from_aoi_table",
 )
 
 BLOCKED = {

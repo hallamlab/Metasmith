@@ -1,0 +1,553 @@
+name: geoquery_from_aoi_table
+description: 'Geospatial features for a table of areas of interest (KML or GeoJSON
+  polygons)
+
+  from 75 public open-data sources: one table per source, the integrated long and
+
+  wide tables, an AOI by source coverage matrix, and every gap with its reason.'
+sample_type: geoquery::aoi_table
+target_types:
+- geoquery::aois
+- geoquery::source_table
+- geoquery::observations_long
+- geoquery::features_wide
+- geoquery::coverage
+- geoquery::gaps
+transform_libraries:
+- geoquery
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/2aea9ed3677247538b4c3d1c3177b413:
+      type: geoquery::aoi_table
+      instance_id: 1e20a379acb6d9f7b37e5be790e9397ee5da50f4675876bb488d6013f5494f1c84a3
+      origin: leaf
+    source_aafc_aci.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2055e248bc43d294733c99841888a3726d52ac5b0b248d0359a795a6352fd0cea5
+      origin: leaf
+    source_acs5_api.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20f117b49e2ee1efcaf7ed81a2e169970f1221957ee7f53d5f1ca2918021e5e991
+      origin: leaf
+    source_alos_palsar_mosaic.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205eb713e2389c2d483d73bcbbd9f4e4e49ed26d72bce777ba9044b02842ef7874
+      origin: leaf
+    source_alphaearth_v1_annual.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20fc4cc2d5a70500c74b360f0a3ad4bdd200908572a220d31912d6148c05283787
+      origin: leaf
+    source_bc_pmbc_parcel_fabric.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205efb07b351e0c2c4691a27500ae2d5d212b3370478030d1878fd106ef8ee2693
+      origin: leaf
+    source_bc_tantalis_crown.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20910cb325c72436fc06252597ff610aadebc1630de1daf5bff442d5ce8c9f90d7
+      origin: leaf
+    source_cams_open_meteo.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e202226f328ef0a8f32cae6ea3b3ac61b848f236b4f9a917cf791aec14fa94614d4
+      origin: leaf
+    source_cdc_nndss.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2048ad2d90a92c0afa00dba6550a7f19ac8cba734f855233b2ea0ecf31a895bae5
+      origin: leaf
+    source_cdc_nwss.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205281b5d3066a2dcbbe88fb7e8dd547ce8ca2b6b9a25a4d6e2b30760a8931263e
+      origin: leaf
+    source_cdc_places.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b506b2bf58c807594a72b9447f6fd177fe320ad4fa7c574fa7e329e0f5eb57a8
+      origin: leaf
+    source_clay_v0_embeddings.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20df875a4a69c1ac516490e4fddced7518ce06b3120644ff150212ac5ef18ad55f
+      origin: leaf
+    source_cop_dem_glo30.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20a0a9b673f212105af410ad8624ebd1aa717f7158e490432fd94466af7a903575
+      origin: leaf
+    source_donneesquebec_role.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20a75f6f6515a39227f51f2f13c380e0d903658a0fd821fdb4d30c89a349016f62
+      origin: leaf
+    source_eccc_ghgrp.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20cd0e5734cc72785458a31c50ccab039a60c9ebe6736cf5e0e471b408f9369c56
+      origin: leaf
+    source_eccc_naps.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b83b8d033e46325aa020c7689b2ccf013b294d5bf9030f9795ad4dbe167b6895
+      origin: leaf
+    source_eccc_npri.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2050e0866cb112695cbcfda22a6ac89bc2b6271cf6eb35ef77bb63a627d4df5420
+      origin: leaf
+    source_ena_geo.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20567e10132583794968dd0cd581b3633dd7074b5cc7b1f11cc3aad3c3181dfa46
+      origin: leaf
+    source_epa_aqs_airdata.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20c209ea8ebec28990c61b24fb44483d4b2b71d67e6aaf0331e7a6cb711b2beae8
+      origin: leaf
+    source_epa_echo.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e206a5e5d20e4fec618f1a54532f8f736a7bb99cb61fc7dda369932f440425a63a5
+      origin: leaf
+    source_epa_echo_tri.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e201a4c2b604a40bd7827619df7ff4ca3845a697c263ed9354220d6fd8ca07b1bbe
+      origin: leaf
+    source_epa_frs_sems.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b61c01fd5adcd37e37ddb35cfc9f95666855cef717f0f16ec295f13ea26edba1
+      origin: leaf
+    source_era5_open_meteo.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205a70ca7f911cc14a7ffbddd6df2c28ab30616aac02d6164d4f055827d4b49f44
+      origin: leaf
+    source_esa_worldcover.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20c619c172f79346afd03aa7ba528c8db1830af59aab80f0c4a60bcc04029597e6
+      origin: leaf
+    source_etopo_2022_30s_bed.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e203ddfb74dca0ae4c558aee70c917b4effa2f2113448a3538577d452019b284fe1
+      origin: leaf
+    source_gbif.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20920f3574e415667f616de223cf83b4ac06c1c0c4316c0c922cc7da9428271bd1
+      origin: leaf
+    source_ghs_pop_r2023a.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e207149c3cd6244358a56d5e14258595f367fd63f061264005b1176eb41fde47bd1
+      origin: leaf
+    source_ghs_smod_r2023a.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20fc5351625a28c8157129486195895a2c070354ef717e7cf1e01379b70f2af1fe
+      origin: leaf
+    source_gsc_surficial_1880a.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20e4f0b8379cbe16d5f7dda0cc14b0efc8a12afbc84a477b8e7e7c468d1de052db
+      origin: leaf
+    source_hansen_gfc_v1_13.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b1825efd91d3bfeb67ad2374098580235753f15debb614968f9660a3a2d3aeb6
+      origin: leaf
+    source_hgb.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20ff46bfb87c25894def9d2640ab6f16417582b20ef897d020aa50e70152469465
+      origin: leaf
+    source_io_lulc_annual_v02.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2009cff356f4ebca80c6f17a240f453d6bf3ee2759b89233b89a4ef2521396411e
+      origin: leaf
+    source_jrc_gsw.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b5b500a94b88321d5437ddec1d5384eb749848dbcfd715b79c2e862edfaae426
+      origin: leaf
+    source_landsat_c2l2_st.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20febb0dd744846e93614815aea0f05f7443d29c9c96cf3537cb404eb9aab5eac5
+      origin: leaf
+    source_lehd_lodes8.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e202a96af8a9a303ddb4b0c44d432fa5a16514bd41afc9df64711786218dbbd5e15
+      origin: leaf
+    source_macrostrat.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2012bc93f8e81bb43dd0d30d916f2ea69ba70dd299171a998c8f8b63cd3ca3cdaf
+      origin: leaf
+    source_mapillary_kartaview.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e204e6da4ba0ac1309d280897be05fdd41133c1ce6d83d8bedbdd567b9239581b6a
+      origin: leaf
+    source_mgnify.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20bafc5e4661a60a50f46f7b7cadcfaf356ab5dc67f7032da45de401dbdef80766
+      origin: leaf
+    source_modis_13q1.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20edc67222c4ca1c0c79f9ac9d8709e000bf6c65d508a094491a11c646a93e29a0
+      origin: leaf
+    source_mrdem_30.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2038c87b7386c057335ab41c423412e4b8579c76aa6a5ef76b59fbcc5a1741e4a8
+      origin: leaf
+    source_natural_earth_10m.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20944275c28ca83e9d43dfd7b814aed8f04d2cf16be34ebefae6668f1acc9ac001
+      origin: leaf
+    source_noaa_nsidc_sic_cdr.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205b8414fb82b5e878df7443075e5cc2228d0ce971750d4430cde22e95f9ea17a0
+      origin: leaf
+    source_nrcan_900a.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2040ff3f5bb9ba95726aa18f00b23df72f2ebb69d6630f4842a801a51617afd2e5
+      origin: leaf
+    source_nrcan_alta.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2061a9b744acf76e7c2e831ba97ab767ad06c8db9e93bd51e8cdf2e81e3d705098
+      origin: leaf
+    source_nrcan_landcover.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e2046b8986dbd67fb4efa928d046cbcd6992f0c0fcf683f97a731e16ea6e1aeb846
+      origin: leaf
+    source_nrcan_permafrost.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e206c7e4d0019a4540ba07c499d9489ee4a5a647a6b87c819fcf86d764c4abd35f5
+      origin: leaf
+    source_osm_overpass.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20eee3450dfccc27f5acbf64004748c2b9d4487a68daf49e3b387a907f4821786e
+      origin: leaf
+    source_overture_addresses.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b79cad01c1f9844b5dd9869902c649414341539d659db300870a1e231956b958
+      origin: leaf
+    source_overture_buildings.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b91309c8712ab431edf9f04e054be026cf76db1af6c50348091d7b2a88616120
+      origin: leaf
+    source_overture_communication.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e203c2abe360db41933f9708b2442816f626b8148435e62db2520dfb95520798439
+      origin: leaf
+    source_overture_divisions.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e208546d5e8f968954b98eb46f067e9123696b58e190b14aa4d7a902fbf361874d0
+      origin: leaf
+    source_overture_land_use.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20e0525c7c4530ba34158f49ce7e6d95a40f67799969208a0c39705b867c5aadd6
+      origin: leaf
+    source_overture_power.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b76ab457a27b932b8437ad5d28f15309a2d108b6fb45a004a7e84b1ab194fb05
+      origin: leaf
+    source_overture_power_plant.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20e18ba6eba9c0f39dadbf34526891e3e27d34cd781409871ab20b1bc32119c629
+      origin: leaf
+    source_overture_transportation.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e208a9fb3281ae2430534222dc0288b7e158070b9388ad1f8de925f3db7210e7468
+      origin: leaf
+    source_overture_utility.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20e332649624be14397fa5cda050f1104512630f8d008a3c81ab71492833e28340
+      origin: leaf
+    source_phac_rvdss.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20d5c8d760008444863ddd353f5dbf910b5a70c1dbcec398065f71f154808fb20c
+      origin: leaf
+    source_phac_wastewater.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e201d1d0cc394acf472815fc584dd2acac707aed82f9099da1a5a7ecab3440b5a95
+      origin: leaf
+    source_s2_signature_v1.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e204c2f150f94bf791b2bf7d73bfa154edadbc2ef4c0bf7494e60bbf5ff3c0326ed
+      origin: leaf
+    source_sentinel1_rtc.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e204119360c734fe70f91e3deb13f939277cfdc87b8bcac3bcad1030c735f4b0a7b
+      origin: leaf
+    source_sentinel2_l2a.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20c7ee2c7d21a4849b07a6657be906ddbfdd35af7d8ee24b11b5c490b646ea74b2
+      origin: leaf
+    source_statcan_csd_2016.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e208cf3b686e2a007ed02e43cda1c23a5e73cf507f1272e0ee3ebcfd5bdcc68c38d
+      origin: leaf
+    source_statcan_dwelling_value.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20abd9958812e421367c6375f33ca731419048c12ffd03b561ec7d7a4dc5727106
+      origin: leaf
+    source_statcan_odhf.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205a7438e327c81036012af93c7a7e26a63dc0080c6397586e20a31cf2ddc15c17
+      origin: leaf
+    source_statcan_wds_popest.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20224aa17eb86389303adeabea02e6165c7daa7cf756fad4e5d4e65fd49f796809
+      origin: leaf
+    source_tbs_fcsi.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e205d7178f4b756c2a682408032d0b78c36416b2d70667b0161e6c35e977b2f2e45
+      origin: leaf
+    source_tigerweb_aiannh.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20b1fa2781ce4b195bfb28c27b1c73637293cf40da6c2675238a84b36f0c358d99
+      origin: leaf
+    source_tigerweb_blocks2020.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e207f2e6bec8cfc66b2ab0321cb03adb59eb351cce26717de69f8d13a914cd28b01
+      origin: leaf
+    source_usda_cdl.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20ae7edc68c9efe529224e95868948ae28c2bd08ecbdad1f35e640e030c7d3c39f
+      origin: leaf
+    source_usda_csb_fiboa.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20643512197af6102024236b55121ba2fd3bf563391bf96948f7c403cb1f079aaf
+      origin: leaf
+    source_usgs_fdsn.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20fed76122419638bc6bde98dc95ca0847e910aa25e176690a0ad3bb6e787c0dc3
+      origin: leaf
+    source_usgs_mineplant.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20c6bff179f5290b650b1c7b9c582ccfbde462c1d9ee5390b79a56c234b3ca1b62
+      origin: leaf
+    source_usgs_namrad.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20887370d2a573a8aef0989fc7c07b08d06b26b244658310c15d30a498be6d5821
+      origin: leaf
+    source_wikidata_sparql.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20d54bbacd4a337a0ac331b245aba7c7dc108a9e055267baa2223149545ff76505
+      origin: leaf
+    source_wqp.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e203817db469de75a876c9725786f1743e71aca850133778c0fe01a55088c419e44
+      origin: leaf
+    source_wri_gppd.json:
+      type: geoquery::source
+      parents:
+        WZAI1SyGDlu3@/msm_deferred/2aea9ed3677247538b4c3d1c3177b413: geoquery::aoi_table
+      instance_id: 1e20895b5c888c9026355e692b6d8f720f58d3f6b26a1c78f373d22a60eff925b184
+      origin: leaf
+  values:
+    source_aafc_aci.json: '{"adapter": "aafc_aci"}'
+    source_acs5_api.json: '{"adapter": "acs5_api"}'
+    source_alos_palsar_mosaic.json: '{"adapter": "alos_palsar_mosaic"}'
+    source_alphaearth_v1_annual.json: '{"adapter": "alphaearth_v1_annual"}'
+    source_bc_pmbc_parcel_fabric.json: '{"adapter": "bc_pmbc_parcel_fabric"}'
+    source_bc_tantalis_crown.json: '{"adapter": "bc_tantalis_crown"}'
+    source_cams_open_meteo.json: '{"adapter": "cams_open_meteo"}'
+    source_cdc_nndss.json: '{"adapter": "cdc_nndss"}'
+    source_cdc_nwss.json: '{"adapter": "cdc_nwss"}'
+    source_cdc_places.json: '{"adapter": "cdc_places"}'
+    source_clay_v0_embeddings.json: '{"adapter": "clay_v0_embeddings"}'
+    source_cop_dem_glo30.json: '{"adapter": "cop_dem_glo30"}'
+    source_donneesquebec_role.json: '{"adapter": "donneesquebec_role"}'
+    source_eccc_ghgrp.json: '{"adapter": "eccc_ghgrp"}'
+    source_eccc_naps.json: '{"adapter": "eccc_naps"}'
+    source_eccc_npri.json: '{"adapter": "eccc_npri"}'
+    source_ena_geo.json: '{"adapter": "ena_geo"}'
+    source_epa_aqs_airdata.json: '{"adapter": "epa_aqs_airdata"}'
+    source_epa_echo.json: '{"adapter": "epa_echo"}'
+    source_epa_echo_tri.json: '{"adapter": "epa_echo_tri"}'
+    source_epa_frs_sems.json: '{"adapter": "epa_frs_sems"}'
+    source_era5_open_meteo.json: '{"adapter": "era5_open_meteo"}'
+    source_esa_worldcover.json: '{"adapter": "esa_worldcover"}'
+    source_etopo_2022_30s_bed.json: '{"adapter": "etopo_2022_30s_bed"}'
+    source_gbif.json: '{"adapter": "gbif"}'
+    source_ghs_pop_r2023a.json: '{"adapter": "ghs_pop_r2023a"}'
+    source_ghs_smod_r2023a.json: '{"adapter": "ghs_smod_r2023a"}'
+    source_gsc_surficial_1880a.json: '{"adapter": "gsc_surficial_1880a"}'
+    source_hansen_gfc_v1_13.json: '{"adapter": "hansen_gfc_v1_13"}'
+    source_hgb.json: '{"adapter": "hgb"}'
+    source_io_lulc_annual_v02.json: '{"adapter": "io_lulc_annual_v02"}'
+    source_jrc_gsw.json: '{"adapter": "jrc_gsw"}'
+    source_landsat_c2l2_st.json: '{"adapter": "landsat_c2l2_st"}'
+    source_lehd_lodes8.json: '{"adapter": "lehd_lodes8"}'
+    source_macrostrat.json: '{"adapter": "macrostrat"}'
+    source_mapillary_kartaview.json: '{"adapter": "mapillary_kartaview"}'
+    source_mgnify.json: '{"adapter": "mgnify"}'
+    source_modis_13q1.json: '{"adapter": "modis_13q1"}'
+    source_mrdem_30.json: '{"adapter": "mrdem_30"}'
+    source_natural_earth_10m.json: '{"adapter": "natural_earth_10m"}'
+    source_noaa_nsidc_sic_cdr.json: '{"adapter": "noaa_nsidc_sic_cdr"}'
+    source_nrcan_900a.json: '{"adapter": "nrcan_900a"}'
+    source_nrcan_alta.json: '{"adapter": "nrcan_alta"}'
+    source_nrcan_landcover.json: '{"adapter": "nrcan_landcover"}'
+    source_nrcan_permafrost.json: '{"adapter": "nrcan_permafrost"}'
+    source_osm_overpass.json: '{"adapter": "osm_overpass"}'
+    source_overture_addresses.json: '{"adapter": "overture_addresses"}'
+    source_overture_buildings.json: '{"adapter": "overture_buildings"}'
+    source_overture_communication.json: '{"adapter": "overture_communication"}'
+    source_overture_divisions.json: '{"adapter": "overture_divisions"}'
+    source_overture_land_use.json: '{"adapter": "overture_land_use"}'
+    source_overture_power.json: '{"adapter": "overture_power"}'
+    source_overture_power_plant.json: '{"adapter": "overture_power_plant"}'
+    source_overture_transportation.json: '{"adapter": "overture_transportation"}'
+    source_overture_utility.json: '{"adapter": "overture_utility"}'
+    source_phac_rvdss.json: '{"adapter": "phac_rvdss"}'
+    source_phac_wastewater.json: '{"adapter": "phac_wastewater"}'
+    source_s2_signature_v1.json: '{"adapter": "s2_signature_v1"}'
+    source_sentinel1_rtc.json: '{"adapter": "sentinel1_rtc"}'
+    source_sentinel2_l2a.json: '{"adapter": "sentinel2_l2a"}'
+    source_statcan_csd_2016.json: '{"adapter": "statcan_csd_2016"}'
+    source_statcan_dwelling_value.json: '{"adapter": "statcan_dwelling_value"}'
+    source_statcan_odhf.json: '{"adapter": "statcan_odhf"}'
+    source_statcan_wds_popest.json: '{"adapter": "statcan_wds_popest"}'
+    source_tbs_fcsi.json: '{"adapter": "tbs_fcsi"}'
+    source_tigerweb_aiannh.json: '{"adapter": "tigerweb_aiannh"}'
+    source_tigerweb_blocks2020.json: '{"adapter": "tigerweb_blocks2020"}'
+    source_usda_cdl.json: '{"adapter": "usda_cdl"}'
+    source_usda_csb_fiboa.json: '{"adapter": "usda_csb_fiboa"}'
+    source_usgs_fdsn.json: '{"adapter": "usgs_fdsn"}'
+    source_usgs_mineplant.json: '{"adapter": "usgs_mineplant"}'
+    source_usgs_namrad.json: '{"adapter": "usgs_namrad"}'
+    source_wikidata_sparql.json: '{"adapter": "wikidata_sparql"}'
+    source_wqp.json: '{"adapter": "wqp"}'
+    source_wri_gppd.json: '{"adapter": "wri_gppd"}'
