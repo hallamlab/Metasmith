@@ -478,4 +478,5 @@ only its reference downloads and builds, with no samples, so a user sets up the 
 before a run. Both share one target source, and the references have the same identity in both, so
 the main run reuses them from cache. Run 4 tests the full engcyc_metagenomics, preceded by prep.
 
-Landed: hybrid-viral-solve worker (rename + prep template).
+Landed: 8827fddb (rename), 9bef7c5b (prep: 29 targets, 40 steps, ~680 GB, every step identical to the
+main plan's), merged into rc as 891e4c34.
