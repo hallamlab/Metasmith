@@ -419,7 +419,10 @@ Design:
   tables, CarveMe's BiGG input) requires only the lane products it reads. It builds the
   standard-format rows in its own step with the shared annotation-table code. No per-consumer
   aggregate type sits between the lanes and the tool.
-- The every-lane annotation table stays, as one optional target.
+- The 4-lane GPR is one such consuming tool (Tony: "in this model, the 4-lane gpr is a
+  \"consuming tool\"").
+- The every-lane annotation table stays as an optional consuming tool (Tony: "we can also have a
+  full 20 lane aggregate transform as an optional \"consuming tool\"").
 - Deselecting a lane deselects only the tools that read it.
 
 Landed: template-build worker on feat/engine/template-build.
