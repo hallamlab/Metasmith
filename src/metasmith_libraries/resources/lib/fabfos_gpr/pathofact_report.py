@@ -1,10 +1,10 @@
 """Render PathoFact 2.0's reports for one contig sample from the library's own lanes.
 
 PathoFact's report rules (src/reports.py, reportwithMGE.py, Create_Summary.py,
-combined_summaries.py and get_bgc.py at commit bd5d527), applied to: the annotation table's
-pathofact_hmm and pathofact_ml lanes for its toxin and virulence-factor arms; DeepARG and
-AMRFinderPlus after argNorm, and RGI, for its AMR arm; geNomad's gene tables for its MGE
-markers; antiSMASH's CDS gene kinds for its BGC column. Rows are dereplicated proteins, as
+combined_summaries.py and get_bgc.py at commit bd5d527), applied to: the pathofact_hmm and
+pathofact_ml lane tables for its toxin and virulence-factor arms; the DeepARG, AMRFinderPlus
+(both carrying argNorm's AROs) and RGI lane tables for its AMR arm; geNomad's gene tables for
+its MGE markers; antiSMASH's CDS gene kinds, which no lane table carries, for its BGC column. Rows are dereplicated proteins, as
 PathoFact reports the representatives of its 100%-identity clusters.
 
     --signalp PREDICTIONS adds PathoFact's SignalP column to a finished combined report.
@@ -112,31 +112,34 @@ def arm(table, label, reps):
     return rows
 
 
-# ---- AMR arm (reports.py parse_deeparg, parse_rgi, parse_amrfinder)
+# ---- AMR arm (reports.py parse_deeparg, parse_rgi, parse_amrfinder), over the lane tables
 def _read(path):
     return pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False, quoting=3)
 
 
-def amr(deeparg, rgi, amrfinder, reps):
+def _lane(ev, path, cols):
+    return ev.read_parquet(path, columns=["orf", "score"] + cols).fillna("")
+
+
+def amr(ev, deeparg, rgi, amrfinder, reps):
     rows = defaultdict(dict)
-    d = _read(deeparg)
-    for orf, aro, name, prob, cut in zip(unprefix(d["read_id"], reps), d["ARO"], d["ARO_name"],
-                                         d["probability"], d["Cut_Off"]):
+    d = _lane(ev, deeparg, ["deeparg_aro", "deeparg_aro_name", "deeparg_cut_off"])
+    for orf, aro, name, prob, cut in zip(d["orf"], d["deeparg_aro"], d["deeparg_aro_name"],
+                                         d["score"], d["deeparg_cut_off"]):
         if orf in reps:
             rows[orf].update(zip(AMR_COLS[0:4], (aro, name, str(round(float(prob), 2)), cut)))
     # PathoFact runs RGI without --include_loose; the library's lane includes Loose hits.
-    r = _read(rgi)
-    r = r[r["Cut_Off"] != "Loose"]
-    for orf, aro, cut, family in zip(unprefix(r["ORF_ID"].str.split().str[0], reps),
-                                     r["ARO"], r["Cut_Off"], r["AMR Gene Family"]):
+    r = ev.read_parquet(rgi, columns=["orf", "term", "rgi_cut_off", "rgi_amr_gene_family"]).fillna("")
+    r = r[r["rgi_cut_off"] != "Loose"]
+    for orf, aro, cut, family in zip(r["orf"], r["term"], r["rgi_cut_off"], r["rgi_amr_gene_family"]):
         if orf in reps:
             rows[orf].update(zip(AMR_COLS[4:7], ("ARO:" + aro, cut, family)))
     # PathoFact runs AMRFinderPlus without --plus, which reports the core scope alone.
-    a = _read(amrfinder)
-    pid = "Protein id" if "Protein id" in a.columns else "Protein identifier"
-    a = a[a["Scope"] == "core"]
-    for orf, aro, name, cut in zip(unprefix(a[pid], reps), a["ARO"], a["ARO_name"],
-                                   a["Cut_Off"]):
+    a = _lane(ev, amrfinder, ["amrfinderplus_scope", "amrfinderplus_aro",
+                              "amrfinderplus_aro_name", "amrfinderplus_cut_off"])
+    a = a[a["amrfinderplus_scope"] == "core"]
+    for orf, aro, name, cut in zip(a["orf"], a["amrfinderplus_aro"], a["amrfinderplus_aro_name"],
+                                   a["amrfinderplus_cut_off"]):
         if orf in reps:
             rows[orf].update(zip(AMR_COLS[7:10], (aro, name, cut)))
     return rows
@@ -261,8 +264,7 @@ def build(a):
     others, orf_genes = proteins(a.orfs)
     reps = set(others)
     contigs = {g[0] for g in orf_genes.values()}
-    table = ev.read_parquet(a.annotation_table, columns=["orf", "lane", "namespace", "term", "score"],
-                            filters=[("lane", "in", ["pathofact_hmm", "pathofact_ml"])])
+    table = ev.read_lane_tables(a.annotation_table, columns=["orf", "lane", "namespace", "term", "score"])
     rep_genes = {o: g for o, g in orf_genes.items() if o in reps}
     mge = {
         "Plasmid_marker": match_genes(rep_genes, mge_genes(
@@ -282,7 +284,7 @@ def build(a):
         paths.append(high_out)
         print("[pathofact] " + label + ": " + str(len(high)) + " at probability "
               + str(threshold) + " or more, " + str(len(low)) + " ambiguous", flush=True)
-    df = _frame(amr(a.deeparg, a.rgi, a.amrfinderplus, reps), AMR_COLS, a.sample, others, mge)
+    df = _frame(amr(ev, a.deeparg, a.rgi, a.amrfinderplus, reps), AMR_COLS, a.sample, others, mge)
     write(df, a.out_amr)
     paths.append(a.out_amr)
     print("[pathofact] amr: " + str(len(df)) + " proteins", flush=True)
@@ -351,12 +353,12 @@ def main():
     p.add_argument("--report", help="a combined report this script wrote")
     p.add_argument("--out")
     p.add_argument("--ev-lib")
-    p.add_argument("--annotation-table")
+    p.add_argument("--annotation-table", nargs="+", help="the pathofact_hmm and pathofact_ml lane tables")
     p.add_argument("--orfs", help="the ORF FASTA the table was built on")
     p.add_argument("--sample", help="PathoFact's Sample column")
-    p.add_argument("--deeparg", help="deeparg_results after `argnorm deeparg`")
-    p.add_argument("--rgi")
-    p.add_argument("--amrfinderplus", help="amrfinderplus_results after `argnorm amrfinderplus`")
+    p.add_argument("--deeparg", help="the deeparg lane table")
+    p.add_argument("--rgi", help="the rgi lane table")
+    p.add_argument("--amrfinderplus", help="the amrfinderplus lane table")
     p.add_argument("--plasmid-summary", nargs="+", default=[])
     p.add_argument("--plasmid-genes", nargs="+", default=[])
     p.add_argument("--virus-summary", nargs="+", default=[])

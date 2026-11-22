@@ -6,7 +6,10 @@ import numpy as np
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-reads   = model.AddRequirement(lib.GetType("sequences::reads"))
+# One transform per read class: a requirement binds one concrete given type, so a generic
+# `sequences::reads` slot in a sample holding short and long reads takes the given long reads
+# and never the short reads interleaved from their pair, which BBDuk then cannot read.
+reads   = model.AddRequirement(lib.GetType("sequences::short_reads"))
 img_sqk = model.AddRequirement(lib.GetType("env::seqkit.env"))
 stats   = model.AddProduct(lib.GetType("sequences::read_qc_stats"))
 

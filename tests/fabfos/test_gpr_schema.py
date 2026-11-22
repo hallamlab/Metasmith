@@ -259,22 +259,35 @@ def _run(argv: list[str], work: Path) -> subprocess.CompletedProcess:
 GPR_LIB = MLIB / "resources" / "lib" / "fabfos_gpr"
 
 
-def _annotation_argv(kw: dict, out: Path, extra_lanes=()) -> list[str]:
+def _four_lanes(kw: dict):
+    return [("kofam", kw["kofam"], kw["kofam_descriptions"]), ("clean", kw["clean"]),
+            ("uniref50", kw["uniref"], kw["uniref_descriptions"]), ("pbert", kw["pbert_emb"])]
+
+
+def _annotation_argv(kw: dict, out: Path, lanes) -> list[str]:
     argv = [sys.executable, str(GPR_LIB / "annotation_table.py"),
             "--ev-lib", kw["ev_lib"], "--orfs", kw["orfs"], "--source", kw["source"],
-            "--landmarks", kw["landmarks"], "--threads", "1", "--out", str(out),
-            "--lane", "kofam", kw["kofam"], kw["kofam_descriptions"],
-            "--lane", "clean", kw["clean"],
-            "--lane", "uniref50", kw["uniref"], kw["uniref_descriptions"],
-            "--lane", "pbert", kw["pbert_emb"]]
-    for name, *paths in extra_lanes:
+            "--landmarks", kw["landmarks"], "--threads", "1", "--out", str(out)]
+    for name, *paths in lanes:
         argv += ["--lane", name, *map(str, paths)]
     return argv
 
 
-def _gpr_argv(kw: dict, table: Path, lane_set: str, out: Path) -> list[str]:
+def _lane_tables(kw: dict, work: Path, lanes) -> list[Path]:
+    # One lane step per lane, as the lane transforms run them.
+    out = []
+    for lane in lanes:
+        table = Path(work) / f"{lane[0]}_lane.parquet"
+        r = _run(_annotation_argv(kw, table, [lane]), work)
+        assert r.returncode == 0, f"{lane[0]} lane failed:\n{r.stdout}\n{r.stderr}"
+        out.append(table)
+    return out
+
+
+def _gpr_argv(kw: dict, table, lane_set: str, out: Path) -> list[str]:
+    tables = [str(t) for t in (table if isinstance(table, list) else [table])]
     return [sys.executable, str(GPR_LIB / "gpr_table.py"),
-            "--ev-lib", kw["ev_lib"], "--annotation-table", str(table),
+            "--ev-lib", kw["ev_lib"], "--annotation-table", *tables,
             "--orfs", kw["orfs"], "--bridge", kw["bridge"],
             "--calibration", kw["calibration"], "--lane-set", lane_set,
             "--source", kw["source"], "--out", str(out)]
@@ -291,10 +304,11 @@ def _run_chain(work: Path, *argvs) -> subprocess.CompletedProcess:
 
 
 def _run4(kw: dict, work: Path) -> subprocess.CompletedProcess:
-    # The two programs the `gpr_4lane` transform runs, in its order.
-    table = Path(work) / "annotation_chosen_4.parquet"
-    return _run_chain(work, _annotation_argv(kw, table),
-                      _gpr_argv(kw, table, "chosen_4", Path(kw["out"])))
+    # The four lane steps, then the program the `gpr_4lane` transform runs over their tables.
+    tables = [Path(work) / f"{lane[0]}_lane.parquet" for lane in _four_lanes(kw)]
+    return _run_chain(work, *[_annotation_argv(kw, t, [lane])
+                              for t, lane in zip(tables, _four_lanes(kw))],
+                      _gpr_argv(kw, tables, "chosen_4", Path(kw["out"])))
 
 
 def _check_table(out: Path, lane_set: str):
@@ -683,6 +697,7 @@ def _write_extra_lanes(work: Path) -> list:
     pd.DataFrame({
         "ORF_ID": [f"orfs~{ORFS[1]} # 1 # 300 # 1 # ID=1_2"], "Cut_Off": ["Strict"],
         "Best_Hit_Bitscore": ["512.3"], "Best_Hit_ARO": ["TEM-1"], "ARO": ["3000873"],
+        "AMR Gene Family": ["TEM beta-lactamase"],
     }).to_csv(w / "rgi.tsv", sep="\t", index=False)
     pd.DataFrame({
         "Protein id": [f"orfs~{ORFS[0]}"], "Element symbol": ["blaTEM-1"],
@@ -783,7 +798,7 @@ def _annotation_table(work: Path, rng):
     kw = _lanes(work, rng, seven=False)
     extra = _write_extra_lanes(work)
     table = work / "annotation.parquet"
-    r = _run(_annotation_argv(kw, table, extra), work)
+    r = _run(_annotation_argv(kw, table, _four_lanes(kw) + list(extra)), work)
     assert r.returncode == 0, f"aggregator failed:\n{r.stdout}\n{r.stderr}"
     return kw, table
 
@@ -792,7 +807,8 @@ def test_annotation_table_carries_every_lane_under_the_fastas_ids(tmp_path):
     at = _gpr_module("annotation_table")
     kw, table = _annotation_table(tmp_path, np.random.default_rng(40))
     df = pd.read_parquet(table)
-    assert list(df.columns) == at.ANNOTATION_COLS
+    assert list(df.columns[:len(at.ANNOTATION_COLS)]) == at.ANNOTATION_COLS
+    assert {"kofam_threshold", "rgi_cut_off", "dbcan_domain_score"} <= set(df.columns)
     # every lane given is a lane of the table, the hitless one included only by name
     assert set(df["lane"]) == set(at.LANES) - {"megares"}
     orf_rows = df[df["orf"].notna()]
@@ -915,13 +931,19 @@ def test_gpr_table_all_holds_every_reaction_lane(tmp_path):
 
 
 def test_chosen_4_is_the_all_reaction_table_cut_to_its_lanes(tmp_path):
-    # `gpr_4lane` builds from its four lanes alone so a fosmid pool reaches it from bare
-    # ORFs; it must still be exactly what a consumer gets by filtering the full table.
-    kw, table = _annotation_table(tmp_path, np.random.default_rng(42))
-    full = tmp_path / "gpr_all.parquet"
-    assert _run(_gpr_argv(kw, table, "all_reaction", full), tmp_path).returncode == 0
+    # `gpr_4lane` reads its four lane tables and `gpr_all_reaction` six; over the same four
+    # lanes their rows must agree. The six arrive here through the every-lane concatenation.
+    kw, _ = _annotation_table(tmp_path, np.random.default_rng(42))
     r = _run4(kw, tmp_path)
     assert r.returncode == 0, f"4-lane chain failed:\n{r.stdout}\n{r.stderr}"
+    extra = [lane for lane in _write_extra_lanes(tmp_path) if lane[0] in ("deepec", "eggnog")]
+    four = [tmp_path / f"{lane[0]}_lane.parquet" for lane in _four_lanes(kw)]
+    every = tmp_path / "every_lane.parquet"
+    assert _run([sys.executable, str(GPR_LIB / "annotation_table.py"), "--ev-lib", kw["ev_lib"],
+                 "--table", *map(str, four + _lane_tables(kw, tmp_path, extra)),
+                 "--out", str(every)], tmp_path).returncode == 0
+    full = tmp_path / "gpr_all.parquet"
+    assert _run(_gpr_argv(kw, every, "all_reaction", full), tmp_path).returncode == 0
     key = fe.GRAIN_KEY
     cut = pd.read_parquet(full)
     cut = cut[cut["channel"].isin(fe.LANE_SETS["chosen_4"])].drop(columns="lane_set")
@@ -946,10 +968,13 @@ def _pathofact_inputs(w: Path):
     pd.DataFrame({
         "ORF_ID": [f"orfs~{ORFS[0]} # 1 # 300 # 1", f"orfs~{ORFS[1]} # 1 # 300 # -1"],
         "Cut_Off": ["Strict", "Loose"], "ARO": ["3000873", "3000001"],
+        "Best_Hit_Bitscore": ["512.3", "80.1"], "Best_Hit_ARO": ["TEM-1", "some gene"],
         "AMR Gene Family": ["TEM beta-lactamase", "some family"],
     }).to_csv(w / "rgi.txt", sep="\t", index=False)
     pd.DataFrame({
         "Protein id": [f"orfs~{ORFS[1]}"], "Scope": ["plus"], "Element symbol": ["stxA"],
+        "Element name": ["Shiga toxin subunit A"], "% Identity to reference": ["98.0"],
+        "Closest reference accession": ["WP_000001.1"],
         "ARO": ["ARO:3003381"], "ARO_name": ["soxR"], "Cut_Off": ["Loose"],
     }).to_csv(w / "amrfinderplus_argnorm.tsv", sep="\t", index=False)
     # geNomad names the batch's contigs `<stem>~<contig>`. One plasmid passes --conservative
@@ -992,10 +1017,19 @@ def test_pathofact_report_applies_pathofacts_rules(tmp_path):
     outs = {k: tmp_path / f"{k}.tsv"
             for k in ("vf", "vf-ambiguous", "tox", "tox-ambiguous", "amr", "combined")}
     w = tmp_path
+    # The AMR lanes as their lane steps write them, DeepARG and AMRFinderPlus after argNorm.
+    lane = {}
+    for name, raw in (("deeparg", "deeparg_argnorm.tsv"), ("rgi", "rgi.txt"),
+                      ("amrfinderplus", "amrfinderplus_argnorm.tsv")):
+        lane[name] = w / f"{name}_lane.parquet"
+        r = _run([sys.executable, str(GPR_LIB / "annotation_table.py"), "--ev-lib", kw["ev_lib"],
+                  "--orfs", str(w / "pf_orfs.faa"), "--source", "asm", "--lane", name,
+                  str(w / raw), "--out", str(lane[name])], w)
+        assert r.returncode == 0, f"{name} lane failed:\n{r.stdout}\n{r.stderr}"
     r = _run([sys.executable, str(GPR_LIB / "pathofact_report.py"), "--ev-lib", kw["ev_lib"],
               "--annotation-table", str(table), "--orfs", str(w / "pf_orfs.faa"),
-              "--sample", "asm", "--deeparg", str(w / "deeparg_argnorm.tsv"),
-              "--rgi", str(w / "rgi.txt"), "--amrfinderplus", str(w / "amrfinderplus_argnorm.tsv"),
+              "--sample", "asm", "--deeparg", str(lane["deeparg"]),
+              "--rgi", str(lane["rgi"]), "--amrfinderplus", str(lane["amrfinderplus"]),
               "--plasmid-summary", str(w / "plasmid_summary.tsv"),
               "--plasmid-genes", str(w / "plasmid_genes.tsv"),
               "--virus-summary", str(w / "virus_summary.tsv"),

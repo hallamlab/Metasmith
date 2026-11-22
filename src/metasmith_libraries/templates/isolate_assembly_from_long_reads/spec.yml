@@ -13,6 +13,7 @@ target_types:
 transform_libraries:
 - logistics
 - assembly
+- isolate
 - metagenomics
 - functionalAnnotation
 resource_libraries:

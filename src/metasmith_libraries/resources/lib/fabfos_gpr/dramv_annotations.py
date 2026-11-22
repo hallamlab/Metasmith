@@ -70,7 +70,7 @@ def main():
     p.add_argument("--provenance", required=True)
     p.add_argument("--votu", required=True, help="the vOTU cluster table, representative first")
     p.add_argument("--orfs", required=True, help="the frozen set's ORF FASTA")
-    p.add_argument("--annotation-table", required=True, help="the table built on --orfs")
+    p.add_argument("--annotation-table", nargs="+", required=True, help="lane tables built on --orfs")
     p.add_argument("--affi", nargs="*", default=[], help="VirSorter2 affi-contigs tables")
     p.add_argument("--name", required=True, help="DRAM-v's `fasta` column")
     p.add_argument("--out-annotations", required=True)
@@ -86,7 +86,7 @@ def main():
     if genes.empty:
         raise SystemExit("[dramv] no ORF of " + a.orfs + " lies on any of " + str(len(prov))
                          + " vOTU representatives; the ORFs are not of this frozen set")
-    table = ev.read_parquet(a.annotation_table, filters=[("orf", "in", list(genes.index))])
+    table = ev.read_lane_tables(a.annotation_table, filters=[("orf", "in", list(genes.index))])
     out = render(table, genes, a.name, DRAMV_COLS)
     out.to_csv(a.out_annotations, sep="\t")
 

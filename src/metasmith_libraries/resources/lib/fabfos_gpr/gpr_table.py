@@ -17,7 +17,7 @@ from annotation_table import load_evidence, orf_ids
 def _args():
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--annotation-table", required=True)
+    p.add_argument("--annotation-table", nargs="+", required=True, help="lane tables")
     p.add_argument("--bridge", required=True)
     p.add_argument("--calibration", required=True)
     p.add_argument("--ev-lib", required=True)
@@ -156,7 +156,7 @@ def main():
     if unmapped:
         raise SystemExit("[gpr] lane set " + A.lane_set + " names " + repr(unmapped)
                          + ", which this mapper has no route to a reaction for")
-    ann = fe.read_parquet(A.annotation_table)
+    ann = fe.read_lane_tables(A.annotation_table)
     frames = [finish(REACTION_LANES[ch](ann[ann["lane"] == ch]), ch) for ch in lanes]
     gpr = pd.concat(frames, ignore_index=True)
     key = fe.GRAIN_KEY

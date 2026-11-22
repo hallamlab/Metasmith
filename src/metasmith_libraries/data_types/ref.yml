@@ -45,6 +45,25 @@ types:
     - reference_data
     properties:
       _: Directory of EC_map.<db>.tsv (columns AccID, EC) for swissprot, uniref50 and uniref90, as MetaPathways 4's build_db writes them from the same UniProt release as the searched databases
+  # UniProt 2025_04, the release MetaPathways 4's references were built from, pinned so the
+  # Swiss-Prot and UniRef90 searches and their EC maps agree with each other and with MP4.
+  uniprot_sprot_2025_04:
+    extends:
+    - reference_data
+    properties:
+      _: UniProt release 2025_04 uniprot_sprot-only2025_04.tar.gz, as downloaded
+      ext: tar.gz
+  uniref_2025_04:
+    extends:
+    - reference_data
+    properties:
+      _: UniProt release 2025_04 uniref2025_04.tar.gz (UniRef XML), as downloaded
+      ext: tar.gz
+  expasy_enzyme:
+    extends:
+    - reference_data
+    properties:
+      _: Directory holding ExPASy ENZYME's enzyme.dat and Expasy_reldate.txt, which MetaPathways 4 maps accessions to ECs with
   uniref50_fasta:
     extends:
     - reference_data

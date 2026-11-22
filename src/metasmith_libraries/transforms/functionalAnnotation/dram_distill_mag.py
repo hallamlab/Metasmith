@@ -9,7 +9,9 @@ dram    = model.AddRequirement(lib.GetType("env::dram.env"))
 python  = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 asm     = model.AddRequirement(lib.GetType("sequences::assembly"))
 orfs    = model.AddRequirement(lib.GetType("sequences::orfs"), parents={asm})
-table   = model.AddRequirement(lib.GetType("annotation::annotation_table"), parents={asm})
+# The lanes dram_annotations.render reads.
+lanes   = [model.AddRequirement(lib.GetType(f"annotation::{k}_lane_table"), parents={orfs})
+           for k in ("kofam", "uniref50", "interproscan", "refseq_viral", "dbcan", "merops", "vogdb")]
 mag     = model.AddRequirement(lib.GetType("binning_local::quality_bin_fasta"), parents={asm})
 sheets  = model.AddRequirement(lib.GetType("ref::dram_sheets"))
 gpr_lib = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
@@ -24,7 +26,7 @@ SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
           "function_heatmap_form")
 
 
-# The MAG takes the assembly's own annotation table on its contigs, the way pathologic_mag
+# The MAG takes the assembly's own lane tables on its contigs, the way pathologic_mag
 # does, so nothing is re-predicted and DRAM's distill reads the lanes every other consumer
 # reads. Distill needs only its four forms; the config names nothing else.
 def protocol(context: ExecutionContext):
@@ -46,7 +48,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(env=python, cmd=f"""
         python3 {context.Input(gpr_lib).container}/dram_annotations.py \
             --ev-lib {context.Input(ev_lib).container} \
-            --annotation-table {context.Input(table).container} \
+            --annotation-table {" ".join(str(context.Input(t).container) for t in lanes)} \
             --orfs {context.Input(orfs).container} \
             --mag {imag.container} --name {name} \
             --out {iann.container}

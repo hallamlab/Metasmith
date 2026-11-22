@@ -5,7 +5,7 @@ lib         = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model       = Transform()
 image       = model.AddRequirement(lib.GetType("env::pprodigal.env"))
 asm         = model.AddRequirement(lib.GetType("sequences::assembly"))
-cds         = model.AddProduct(lib.GetType("sequences::orfs"))
+cds         = model.AddProduct(lib.GetType("sequences::assembly_orfs"))
 gff         = model.AddProduct(lib.GetType("sequences::gff"))
 
 def _balanced_shard_sizes(total: int, cap: int) -> list[int]:

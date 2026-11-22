@@ -3,81 +3,35 @@ from metasmith.python_api import *
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-image     = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
-asm       = model.AddRequirement(lib.GetType("sequences::assembly"))
-orfs      = model.AddRequirement(lib.GetType("sequences::orfs"), parents={asm})
-landmarks = model.AddRequirement(lib.GetType("ref::label_transfer_landmarks"))
-ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
-gpr_lib   = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
+image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
+asm     = model.AddRequirement(lib.GetType("sequences::assembly"))
+orfs    = model.AddRequirement(lib.GetType("sequences::orfs"), parents={asm})
+ev_lib  = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
+gpr_lib = model.AddRequirement(lib.GetType("lib::fabfos_gpr"))
 
-# lane -> its product(s), in the order `annotation_table.py --lane` takes them. A fixed
-# set: a requirement cannot be optional, so this transform is the "every lane" table, and
-# a subset is a consumer filtering on `lane` (`gpr_from_annotation_table`, `gpr_4lane`).
-ORF_LANES = {
-    "kofam":         ("annotation::kofamscan_results", "annotation::kofamscan_descriptions"),
-    "clean":         ("annotation::clean_predictions",),
-    "uniref50":      ("annotation::diamond_uniref50_results",
-                      "annotation::diamond_uniref50_descriptions"),
-    "uniref90":      ("annotation::diamond_uniref90_results",
-                      "annotation::diamond_uniref90_descriptions"),
-    "swissprot":     ("annotation::diamond_swissprot_results",
-                      "annotation::diamond_swissprot_descriptions"),
-    "metacyc":       ("annotation::diamond_metacyc_results",
-                      "annotation::diamond_metacyc_descriptions"),
-    "pbert":         ("annotation::proteinbert_embeddings",),
-    "deepec":        ("annotation::deepec_predictions",),
-    "eggnog":        ("annotation::eggnog_results",),
-    "interproscan":  ("annotation::interproscan_results", "annotation::interproscan_descriptions"),
-    "mobileog":      ("annotation::mobileog_diamond_results",),
-    "megares":       ("annotation::megares_diamond_results",),
-    "bacmet":        ("annotation::bacmet_diamond_results",),
-    "vfdb":          ("annotation::vfdb_diamond_results",),
-    "bigg":          ("annotation::bigg_diamond_hits",),
-    "dbcan":         ("annotation::dbcan_hmmsearch_results", "annotation::dbcan_descriptions"),
-    "merops":        ("annotation::merops_diamond_results",),
-    "vogdb":         ("annotation::vogdb_hmmsearch_results", "annotation::vogdb_descriptions"),
-    "refseq_viral":  ("annotation::refseq_viral_diamond_results",),
-    "rgi":           ("annotation::rgi_results",),
-    "amrfinderplus": ("annotation::amrfinderplus_results",),
-    "pathofact_hmm": ("annotation::pathofact_tox_hmm", "annotation::pathofact_vf_hmm",
-                      "annotation::pathofact_hmm_descriptions"),
-    "pathofact_ml":  ("annotation::pathofact_tox_ml", "annotation::pathofact_vf_ml"),
-    "deeparg":       ("annotation::deeparg_results",),
-}
-# Read off the assembly by tools that call their own genes, so they name contigs.
-CONTIG_LANES = {
-    "bakta_nc":  ("annotation::bakta_tsv",),
-    "antismash": ("annotation::antismash_json",),
-}
-lanes = {
-    **{k: [model.AddRequirement(lib.GetType(t), parents={orfs}) for t in ts]
-       for k, ts in ORF_LANES.items()},
-    **{k: [model.AddRequirement(lib.GetType(t), parents={asm}) for t in ts]
-       for k, ts in CONTIG_LANES.items()},
-}
+# Every lane, so this is the one table a user selects to have them all. Each consuming tool
+# requires only the lane tables it reads instead.
+ORF_LANES = ("kofam", "clean", "uniref50", "uniref90", "swissprot", "metacyc", "pbert", "deepec",
+             "eggnog", "interproscan", "mobileog", "megares", "bacmet", "vfdb", "bigg", "dbcan",
+             "merops", "vogdb", "refseq_viral", "rgi", "amrfinderplus", "pathofact_hmm",
+             "pathofact_ml", "deeparg")
+CONTIG_LANES = ("bakta_nc", "antismash")
+tables = (
+    [model.AddRequirement(lib.GetType(f"annotation::{k}_lane_table"), parents={orfs})
+     for k in ORF_LANES]
+    + [model.AddRequirement(lib.GetType(f"annotation::{k}_lane_table"), parents={asm})
+       for k in CONTIG_LANES])
 out = model.AddProduct(lib.GetType("annotation::annotation_table"))
-
-THREADS = 8
 
 
 def protocol(context: ExecutionContext):
-    iorfs = context.Input(orfs)
-    iout  = context.Output(out)
-    lane_args = " ".join(
-        "--lane " + name + " " + " ".join(str(context.Input(d).container) for d in deps)
-        for name, deps in lanes.items())
-    cmd = f"""
-            python3 {context.Input(gpr_lib).container}/annotation_table.py \
+    iout = context.Output(out)
+    context.ExecWithEnv(env=image, cmd=f"""
+        python3 {context.Input(gpr_lib).container}/annotation_table.py \
             --ev-lib {context.Input(ev_lib).container} \
-            --orfs {iorfs.container} \
-            --source {iorfs.local.stem} \
-            --landmarks {context.Input(landmarks).container} \
-            --threads {THREADS} \
-            {lane_args} \
+            --table {" ".join(str(context.Input(t).container) for t in tables)} \
             --out {iout.container}
-    """
-    context.ExecWithEnv(env=image, cmd=cmd)
-
+    """)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists() and iout.local.stat().st_size > 0,
@@ -90,9 +44,5 @@ TransformInstance(
     # The assembly, not the ORFs: the contig lanes descend from it and not from the ORF
     # set, and a slot parented to anything but the key collects every candidate.
     group_by=asm,
-    resources=Resources(
-        cpus=THREADS,
-        memory=Size.GB(32),
-        duration=Duration(hours=4),
-    ),
+    resources=Resources(cpus=1, memory=Size.GB(16), duration=Duration(hours=1)),
 )

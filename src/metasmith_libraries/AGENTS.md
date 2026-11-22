@@ -121,7 +121,7 @@ runs on a shared login node, and a retry of it fetches everything again. The rea
 are deduped separately, so the only thing relating them is declared lineage:
 `context.SourceOf(item, other_slot)` answers which item of `other_slot` a given item
 descends from. `transforms/pangenome/ppanggolin.py` is the reference — it names each
-genome from the `ncbi::genome_name` its gbk descends from. `aggregator.py` shows the
+genome from the `ncbi::genome_name` its gbk descends from. `quality_mags.py` shows the
 older in-band alternative (join on a key present in both files) for the cases where no
 lineage relates them.
 
@@ -154,6 +154,20 @@ beside the `<type>_chunk`, merged with the keys deduplicated.
 asked for and nothing else, so a template naming `annotation::kofamscan_results` and not
 `annotation::kofamscan_descriptions` gets one of the two files.
 
+## A consumer reads lane tables, never a raw tool output
+
+Each annotation lane has one standardizing step, `transforms/functionalAnnotation/lanes/<lane>_lane.py`,
+after its search or merge. It writes `annotation::<lane>_lane_table`: the columns
+`ANNOTATION_COLS` in `lib::fabfos_gpr/annotation_table.py` names, then the lane's own fields as
+`<lane>_<field>` columns. A lane whose calls are motifs within the protein also writes
+`annotation::<lane>_hits`, one row per hit. A consuming tool requires only the lane tables it
+reads, so deselecting a lane deselects only its readers.
+
+- Add a lane's parsing to `annotation_table.py`. Do not parse a tool's output in a consumer.
+- Give a field a consumer needs as a lane extra. Prefix it `x_` in the parser.
+- **CAUTION** Do not make a consumer require `annotation::annotation_table`. It requires every
+  lane, the licensed MetaCyc lane included, so its reader plans every search.
+
 ## Templates
 
 A template is a starting point a user picks in the GUI: a `metasmith.Spec` whose input
@@ -175,7 +189,7 @@ Five rules, each quiet if you break it:
   the solver may satisfy it from any transform producing a subtype — so once a second
   producer joins a type (`spades_assembly` beside `megahit_assembly` under
   `sequences::assembly`), each unpinned target downstream is free to be answered from a
-  different one. `metagenomics_from_paired_reads` then ran both assemblers and split its
+  different one. The retired `metagenomics_from_paired_reads` then ran both assemblers and split its
   binning across them, and the search that found that took ~190s and 6 GB where the
   pinned form takes 3s. Neither symptom names its cause: the plan is valid, and the cost
   lands on whoever is waiting behind the GUI's plan lock. Write the shared ancestor as
@@ -227,20 +241,16 @@ its name suggests: it is bound to the deep-learning embedding target set through
   back as a `download*` step. Leave the sample type unset, list the entry in
   `shared_input_paths`, or parent the entry to the sample row. Reach for the last when the
   reference has no producer at all — `ref::mnxr_lookup` and `ref::label_transfer_landmarks`
-  are consumed by `gpr_4lane` and produced by nothing, so there is no `download*` step to
+  are consumed by `gpr_4lane` and the pbert lane and produced by nothing, so there is no `download*` step to
   fall back to and an invisible one takes the whole plan down.
 - To force all sibling transforms (e.g. all three binners), target a downstream that requires
-  them all (`binning_local::cluster_table`), or give each sibling's target a distinct parent.
-  `cluster_table` reaches `aggregator`, which requires checkm and gtdbtk once per binner under
-  distinct parents. That one target therefore plans three binners, three CheckM runs and three
-  GTDB-Tk runs, and adds `downloadGtdbDB` and its ~179 GB reference when no `ref::gtdb` is given.
-  An *unpinned* `taxonomy::gtdbtk` target is the trap it replaces: it binds to whichever single bin
-  type the search reaches first, and under an ambiguous `sequences::assembly` that is a second
-  assembler leg the aggregator never sees.
-- **The aggregator's own output cannot be scored.** `binning_local::quality_bin_fasta` carries no
-  `genome_scope`, so it does not satisfy `sequences::putative_genome`. CheckM and GTDB-Tk therefore
-  never run on the pooled quality MAGs, only on each binner's raw bins. `skani_dedup` is the sole
-  consumer of that type.
+  them all (`sequences::das_tool_bin_fasta`), or give each sibling's target a distinct parent.
+  An *unpinned* `taxonomy::checkm_stats` target binds to whichever single bin type the search
+  reaches first.
+- **The quality MAGs cannot be scored.** `binning_local::quality_bin_fasta` (`quality_mags.py`,
+  CheckM2 over DAS Tool's bins) carries no `genome_scope`, so it does not satisfy
+  `sequences::putative_genome`. CheckM2 and GTDB-Tk's generic transforms never run on it. The
+  `*_quality` copies take it instead.
 
 ## Layout
 

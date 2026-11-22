@@ -1,13 +1,12 @@
-# gtdbtk.py on the aggregator's pool of quality MAGs, which no binner's own bin type reaches.
+# gtdbtk.py on the pool of quality MAGs (quality_mags.py), which no binner's own bin type reaches.
 #
 # CAUTION a copy of gtdbtk.py with one requirement changed: keep the protocol and the
 # resources in step with it. A retype of the pool into a putative_genome cannot replace
 # this copy. Lineage matching is ancestral and the pool descends from every binner's
-# bins, so CheckM2 on a retyped pool satisfies the aggregator's own per-binner CheckM2
+# bins, so CheckM2 on a retyped pool satisfies quality_mags.py's own CheckM2
 # inputs, and the solve cycles.
 # The product is its own type, not taxonomy::gtdbtk: as a second producer of that type this
-# copy answered the per-binner GTDB-Tk targets of metagenomics_from_paired_reads, which
-# then no longer solved.
+# copy answered every per-binner GTDB-Tk target, and a template naming one no longer solved.
 # Run as the Cyanoverse AB48 classifications were (GTDB-Tk 2.7.2 on r232, the
 # arbutus-infra GTDB-Tk service): skani ANI pre-screen on, pplacer on one thread
 # and memory-mapped to --scratch_dir, everything else on every core. That run peaked

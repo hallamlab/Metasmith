@@ -196,9 +196,192 @@ types:
   # resources/lib/fabfos_gpr/annotation_table.py holds ANNOTATION_COLS and one parser per
   # lane. Lanes are kept as their tools wrote them, with no abstain, so the table is the
   # aggregate a consumer subsets by `lane`; the GPR tables below are two such subsets.
+  # One annotation lane's calls in the standard long format, one type per lane, so a
+  # consumer requires only the lanes it reads. Schema: ANNOTATION_COLS in
+  # lib::fabfos_gpr/annotation_table.py, then the lane's own `<lane>_<field>` columns.
+  # A lane whose calls are motifs within the protein also writes `<lane>_hits`, every
+  # hit one row, in that file's HITS_COLS.
+  kofam_lane_table:
+    properties:
+      _: the kofam lane in the standard annotation-table format
+      lane: kofam
+      Format: Parquet
+      ext: parquet
+  clean_lane_table:
+    properties:
+      _: the clean lane in the standard annotation-table format
+      lane: clean
+      Format: Parquet
+      ext: parquet
+  uniref50_lane_table:
+    properties:
+      _: the uniref50 lane in the standard annotation-table format
+      lane: uniref50
+      Format: Parquet
+      ext: parquet
+  uniref90_lane_table:
+    properties:
+      _: the uniref90 lane in the standard annotation-table format
+      lane: uniref90
+      Format: Parquet
+      ext: parquet
+  swissprot_lane_table:
+    properties:
+      _: the swissprot lane in the standard annotation-table format
+      lane: swissprot
+      Format: Parquet
+      ext: parquet
+  metacyc_lane_table:
+    properties:
+      _: the metacyc lane in the standard annotation-table format
+      lane: metacyc
+      Format: Parquet
+      ext: parquet
+  pbert_lane_table:
+    properties:
+      _: the pbert lane in the standard annotation-table format
+      lane: pbert
+      Format: Parquet
+      ext: parquet
+  deepec_lane_table:
+    properties:
+      _: the deepec lane in the standard annotation-table format
+      lane: deepec
+      Format: Parquet
+      ext: parquet
+  eggnog_lane_table:
+    properties:
+      _: the eggnog lane in the standard annotation-table format
+      lane: eggnog
+      Format: Parquet
+      ext: parquet
+  interproscan_lane_table:
+    properties:
+      _: the interproscan lane in the standard annotation-table format
+      lane: interproscan
+      Format: Parquet
+      ext: parquet
+  interproscan_hits:
+    properties:
+      _: every interproscan motif or domain hit within a protein, one row each
+      lane: interproscan
+      content: positional hits
+      Format: Parquet
+      ext: parquet
+  mobileog_lane_table:
+    properties:
+      _: the mobileog lane in the standard annotation-table format
+      lane: mobileog
+      Format: Parquet
+      ext: parquet
+  megares_lane_table:
+    properties:
+      _: the megares lane in the standard annotation-table format
+      lane: megares
+      Format: Parquet
+      ext: parquet
+  bacmet_lane_table:
+    properties:
+      _: the bacmet lane in the standard annotation-table format
+      lane: bacmet
+      Format: Parquet
+      ext: parquet
+  vfdb_lane_table:
+    properties:
+      _: the vfdb lane in the standard annotation-table format
+      lane: vfdb
+      Format: Parquet
+      ext: parquet
+  bigg_lane_table:
+    properties:
+      _: the bigg lane in the standard annotation-table format
+      lane: bigg
+      Format: Parquet
+      ext: parquet
+  dbcan_lane_table:
+    properties:
+      _: the dbcan lane in the standard annotation-table format
+      lane: dbcan
+      Format: Parquet
+      ext: parquet
+  dbcan_hits:
+    properties:
+      _: every dbcan motif or domain hit within a protein, one row each
+      lane: dbcan
+      content: positional hits
+      Format: Parquet
+      ext: parquet
+  merops_lane_table:
+    properties:
+      _: the merops lane in the standard annotation-table format
+      lane: merops
+      Format: Parquet
+      ext: parquet
+  vogdb_lane_table:
+    properties:
+      _: the vogdb lane in the standard annotation-table format
+      lane: vogdb
+      Format: Parquet
+      ext: parquet
+  vogdb_hits:
+    properties:
+      _: every vogdb motif or domain hit within a protein, one row each
+      lane: vogdb
+      content: positional hits
+      Format: Parquet
+      ext: parquet
+  refseq_viral_lane_table:
+    properties:
+      _: the refseq_viral lane in the standard annotation-table format
+      lane: refseq_viral
+      Format: Parquet
+      ext: parquet
+  rgi_lane_table:
+    properties:
+      _: the rgi lane in the standard annotation-table format
+      lane: rgi
+      Format: Parquet
+      ext: parquet
+  amrfinderplus_lane_table:
+    properties:
+      _: the amrfinderplus lane in the standard annotation-table format
+      lane: amrfinderplus
+      Format: Parquet
+      ext: parquet
+  pathofact_hmm_lane_table:
+    properties:
+      _: the pathofact_hmm lane in the standard annotation-table format
+      lane: pathofact_hmm
+      Format: Parquet
+      ext: parquet
+  pathofact_ml_lane_table:
+    properties:
+      _: the pathofact_ml lane in the standard annotation-table format
+      lane: pathofact_ml
+      Format: Parquet
+      ext: parquet
+  deeparg_lane_table:
+    properties:
+      _: the deeparg lane in the standard annotation-table format
+      lane: deeparg
+      Format: Parquet
+      ext: parquet
+  bakta_nc_lane_table:
+    properties:
+      _: the bakta_nc lane in the standard annotation-table format
+      lane: bakta_nc
+      Format: Parquet
+      ext: parquet
+  antismash_lane_table:
+    properties:
+      _: the antismash lane in the standard annotation-table format
+      lane: antismash
+      Format: Parquet
+      ext: parquet
+
   annotation_table:
     properties:
-      _: Every annotation lane's calls in one long table, one row per lane x ORF or contig feature x term. Schema in lib::fabfos_gpr/annotation_table.py::ANNOTATION_COLS
+      _: Every lane table concatenated, one row per lane x ORF or contig feature x term. Schema in lib::fabfos_gpr/annotation_table.py::ANNOTATION_COLS, then every lane's extra columns, null on other lanes' rows
       Format: Parquet
       ext: parquet
 
@@ -844,9 +1027,6 @@ types:
   # MetaPhlAn SGB marker DB (mpa_vJan25_CHOCOPhlAnSGB_202503) that produced the
   # metaphlan_sam upstream; sample2markers.py -d needs the matching .pkl to
   # reconstruct consensus markers. Bound read-only at /mpa_db by the transform.
-  metaphlan_db:
-    properties:
-      _: MetaPhlAn vJan25 CHOCOPhlAnSGB marker database (dir holding the .pkl)
   strainphlan_consensus_markers:
     properties:
       _: StrainPhlAn per-sample consensus markers from the MetaPhlAn SAM

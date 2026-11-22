@@ -23,7 +23,7 @@
 //! `relineage` rebuilds every step downstream of a swap, so a candidate costs
 //! O(steps) arena entries where it used to cost one, and nothing is released
 //! until the solve ends. On the real workflows that is free: the unpinned
-//! `metagenomics_from_paired_reads` arm is 0.83 s at `max_refine` 8 either way,
+//! arm of the since-retired `metagenomics_from_paired_reads` template is 0.83 s at `max_refine` 8 either way,
 //! and 1.31 s against 1.60 s at 256, for a plan two steps shorter. On a wide
 //! cyclic generated instance it is not: `sink-6807` enumerates 33,062 candidates
 //! and 169,332 rebuilds, which is 4.2 s at a budget of 8 and roughly 70 GB at

@@ -77,6 +77,10 @@ types:
     properties:
       src: ezpred_wrapper
       usage: command line
+  uniprot_ec_maps.py:
+    properties:
+      src: uniprot_ec_maps
+      usage: command line
   diamond_bsr.py:
     properties:
       src: diamond_bsr
