@@ -241,3 +241,22 @@ Decision:
   OPERA-MS "success" goes away for split studies. A study that stays one case still needs the check.
 
 Landed: worker shape-targets on feat/engine/shape-targets.
+
+## catalog-survey (2026-11-21)
+
+Question: in what order do the analyses outside the template come in, and what does the template
+take from cyanoverse and the Spanish lakes/rivers work?
+
+Decision:
+- Now: the engcyc template and run 4, with the E5 variants absorbed. Cyanoverse taxonomy is already
+  in (GTDB-Tk on quality MAGs + rRNA scan).
+- Spanish lakes/rivers resistome lanes join the template, each deselectable: RGI/CARD,
+  AMRFinderPlus, MEGARes, BacMet, VFDB, IntegronFinder, MobileElementFinder, inStrain,
+  MetaPhlAn/StrainPhlAn (beside PathoFact and mobileOG, already in).
+- FEAST is dropped (Tony: "ok, drop FEAST"). Its source table is Antonio's hand compilation with no
+  public download, and `feast.py` never reads the sample.
+- After run 4: the mature gaps one at a time (port-gaps).
+- Exploratory work stays in its projects. Tony: MS ordination and the compound-ID ensemble are
+  shortlisted to integrate "soon" once their sessions settle the method.
+
+Landed: this file; port order in STACK.md.
