@@ -6,10 +6,10 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-annotation-aggregate
+wrapper-build
 
 ## Waiting on the user
-- annotation-aggregate: two levels (annotation table of every lane -> GPR table of reaction lanes, 4-lane and BiGG as subsets) or one table?
+- wrapper-build: DRAM port = run only the DRAM search lanes we lack (dbCAN/CAZy, MEROPS, VOGDB) into the annotation table, reuse ours (KOfam, Pfam via IPS, UniRef50 for UniRef90), then DRAM distill from the annotation table?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -20,7 +20,6 @@ annotation-aggregate
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
-- annotation-aggregate — one table of every annotation lane; consumers subset it (4-lane, CarveMe BiGG lane, DRAM-port lanes)
 - wrapper-build — port DRAM, DRAM-v, PathoFact into parts in the standard annotation format; template waits
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
@@ -37,9 +36,11 @@ annotation-aggregate
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-(none running. Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8 — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
+- annotation-aggregate — annotation table + GPR table from it (feat/engine/annotation-aggregate)
+( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8 — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
 ## Closed
+- annotation-aggregate — two levels: annotation table (every lane) -> GPR table (reaction lanes); consumers subset
 - catalog-survey — template now (+ resistome lanes, FEAST dropped); mature gaps after run 4; MS ion ID + ordination join port-gaps
 - mixed-session — support now: targets carry the given types they need; each shape gets the targets it satisfies
 - read-types — short_reads and long_reads only; parity/platform in read_metadata; pe/se types deleted in stdlib

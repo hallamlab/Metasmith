@@ -261,3 +261,18 @@ Decision:
   after-run-4 port list (Tony, 2026-11-21: "fold them in with category 2, after the run").
 
 Landed: this file; port order in STACK.md.
+
+## annotation-aggregate (2026-11-21)
+
+Question: one aggregate table of every annotation lane, or two levels?
+
+Tony: "the 2 level tables work for me"
+
+Decision:
+- Level 1, annotation table: one row per ORF x lane x term, every lane (reaction-mapping or not:
+  Pfam/InterPro, CAZy, PathoFact, AMR, mobileOG, DRAM-port lanes, ...). Consumers subset it.
+- Level 2, GPR table: built from the annotation table, the lanes whose terms map to reactions, with
+  per-lane scores. It holds every reaction-mapping lane. The 4-lane GPR and CarveMe's BiGG lane are
+  subsets of it. Supersedes the 4-lane GPR as the target (gem-reopen).
+
+Landed: worker annotation-aggregate on feat/engine/annotation-aggregate.
