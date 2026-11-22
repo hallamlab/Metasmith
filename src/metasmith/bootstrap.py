@@ -153,8 +153,13 @@ def ExecuteStep(
 
     def _status(p: ContextPath):
         return "✓" if p.local.exists() else "X"
-    def _parse(p: Path, container_override=None):
-        return path_map.Parse(p, container_override=container_override)
+    def _staged(p: Path) -> ContextPath:
+        # Codegen replaced the staged symlink with a real copy when the task
+        # runs in scratch. Read that copy, not the source.
+        copy = ContextPath.ForOutput(p.name, path_map)
+        if copy.local.exists() and not copy.local.is_symlink():
+            return copy
+        return path_map.Parse(p)
     def _get_formatted_size(p: Path):
         if not p.exists():
             return "/"
@@ -198,7 +203,7 @@ def ExecuteStep(
             inst_names = {x.dtype_name for x in insts}
             Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
             file_names = files_by_dep_key.get(dep.key, [])
-            input_group = [_parse(Path(p)) for p in file_names]
+            input_group = [_staged(Path(p)) for p in file_names]
             for p in input_group:
                 if not p.local.exists():
                     missing_input = True

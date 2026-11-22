@@ -1,0 +1,76 @@
+source	family	observation_type
+aafc_aci	macrobiology	satellite
+acs5_api	socio-economic	survey
+alos_palsar_mosaic	spectral	satellite
+alphaearth_v1_annual	latent	satellite
+bc_pmbc_parcel_fabric	socio-economic	survey
+bc_tantalis_crown	socio-economic	survey
+cams_open_meteo	hazards	blended
+cdc_nndss	public health & microbiology	survey
+cdc_nwss	public health & microbiology	field sample
+cdc_places	public health & microbiology	survey
+clay_v0_embeddings	latent	satellite
+cop_dem_glo30	geology	satellite
+donneesquebec_role	socio-economic	survey
+eccc_ghgrp	hazards	survey
+eccc_naps	hazards	fixed sensor
+eccc_npri	hazards	survey
+ena_geo	public health & microbiology	field sample
+epa_aqs_airdata	hazards	fixed sensor
+epa_echo	infrastructure	survey
+epa_echo_tri	infrastructure	survey
+epa_frs_sems	infrastructure	survey
+era5_open_meteo	climate	blended
+esa_worldcover	macrobiology	satellite
+etopo_2022_30s_bed	geology	blended
+gbif	macrobiology	crowdsourced
+ghs_pop_r2023a	socio-economic	blended
+ghs_smod_r2023a	socio-economic	blended
+gsc_surficial_1880a	geology	survey
+hansen_gfc_v1_13	macrobiology	satellite
+hgb	macrobiology	satellite
+io_lulc_annual_v02	macrobiology	satellite
+jrc_gsw	water bodies	satellite
+landsat_c2l2_st	spectral	satellite
+lehd_lodes8	socio-economic	survey
+macrostrat	geology	survey
+mapillary_kartaview	infrastructure	surface vehicle
+mgnify	public health & microbiology	field sample
+modis_13q1	macrobiology	satellite
+mrdem_30	geology	blended
+natural_earth_10m	geology	survey
+noaa_nsidc_sic_cdr	climate	satellite
+nrcan_900a	infrastructure	survey
+nrcan_alta	socio-economic	survey
+nrcan_landcover	macrobiology	satellite
+nrcan_permafrost	geology	survey
+osm_overpass	infrastructure	crowdsourced
+overture_addresses	infrastructure	survey
+overture_buildings	infrastructure	blended
+overture_communication	infrastructure	crowdsourced
+overture_divisions	infrastructure	crowdsourced
+overture_land_use	infrastructure	crowdsourced
+overture_power	infrastructure	crowdsourced
+overture_power_plant	infrastructure	crowdsourced
+overture_transportation	infrastructure	crowdsourced
+overture_utility	infrastructure	crowdsourced
+phac_rvdss	public health & microbiology	survey
+phac_wastewater	public health & microbiology	field sample
+s2_signature_v1	spectral	satellite
+sentinel1_rtc	spectral	satellite
+sentinel2_l2a	spectral	satellite
+statcan_csd_2016	socio-economic	survey
+statcan_dwelling_value	socio-economic	survey
+statcan_odhf	public health & microbiology	survey
+statcan_wds_popest	socio-economic	survey
+tbs_fcsi	hazards	survey
+tigerweb_aiannh	socio-economic	survey
+tigerweb_blocks2020	socio-economic	survey
+usda_cdl	macrobiology	satellite
+usda_csb_fiboa	macrobiology	satellite
+usgs_fdsn	hazards	fixed sensor
+usgs_mineplant	infrastructure	survey
+usgs_namrad	geology	aerial
+wikidata_sparql	socio-economic	crowdsourced
+wqp	hazards	field sample
+wri_gppd	infrastructure	survey

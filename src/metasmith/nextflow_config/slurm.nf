@@ -117,7 +117,7 @@ workflow {
 
 process {
     cache = 'lenient'
-    stageInMode = 'symlink'                 // some inputs are large reference databases and must not be copied
+    stageInMode = 'symlink'                 // the generated script copies each input in scratch, per slot
 
     // A nested param (`params.process.cpus`) read outside a closure is fixed when the config is
     // parsed, before `-params-file` is merged, so a run's params never reached it. Every key a

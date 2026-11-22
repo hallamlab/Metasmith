@@ -1,0 +1,39 @@
+types:
+  aoi_table:
+    properties:
+      _: areas of interest as given, one feature per AOI
+      Format: KML or GeoJSON
+  aois:
+    properties:
+      _: normalised AOIs with aoi_id, aoi_name, aoi_class, country, area_km2
+      Format: GeoJSON
+      ext: geojson
+  source:
+    properties:
+      _: "one data source to query, as {\"adapter\": name}"
+      Format: JSON
+  source_table:
+    properties:
+      _: one source over every AOI, a row per AOI x feature found and a status row per AOI without
+      Format: CSV
+      ext: csv
+  observations_long:
+    properties:
+      _: every found value, one row per AOI x source x feature
+      Format: parquet
+      ext: parquet
+  features_wide:
+    properties:
+      _: AOI by feature matrix of found values
+      Format: parquet
+      ext: parquet
+  coverage:
+    properties:
+      _: AOI by source matrix of found, unavailable and not-attempted
+      Format: CSV
+      ext: csv
+  gaps:
+    properties:
+      _: every AOI x source pair that found nothing, with its gap reason
+      Format: CSV
+      ext: csv
