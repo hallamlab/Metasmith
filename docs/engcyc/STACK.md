@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-rival-audit
+lab-sifs
 
 ## Waiting on the user
 - lab-sifs: DTU academic licence downloads (SignalP 6, DeepTMHMM, DeepLocPro; Phobius via its own form) — Tony requests them; I build the lab SIFs from them and from the Pathway Tools installer on fir
@@ -21,7 +21,6 @@ rival-audit
 
 ## Stack
 - wrapper-build-run — start DRAM, DRAM-v, PathoFact port workers once annotation-aggregate lands (decision in DECISIONS.md)
-- rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
 - mp-port-ship — mp-fix landed on feat/engine/mp-fix (a5be461b, b91e3394, 846b4182): per-MAG overlap 0.49 -> 0.62-0.66, community 0.55 -> 0.63-0.69 (names + CLEAN conf >= 0.5). Decide: enough to ship, or pull the next lever (MetaCyc protein DB hits + Swiss-Prot ECs, as MP4)
@@ -33,6 +32,7 @@ rival-audit
 - port-gaps — mature gaps after run 4, one at a time: MS ion ID (pilot ok) + MS ordination (figures tuned, https://claude.ai/artifact/6EbejKytP9ZMrtv5Bt1n8V); MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
 - exploratory-gaps — stay in their projects until methods settle.
 - experiment-libs — fate of benchmark/library, beth_rnaseq/library, kalen mocklib, compound_id mock
+- rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape) (deferred by Tony 2026-11-21)
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
