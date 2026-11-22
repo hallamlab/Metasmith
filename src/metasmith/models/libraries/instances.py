@@ -669,6 +669,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
     def _calculate_key(self, _raw_override=None):
         src = _raw_override if _raw_override is not None else self.Pack()
         me_d = {k: v for k, v in src.items() if k not in self._KEY_EXCLUDED_TOP_LEVEL}
+        # A leaf's stamp is a witness for its id, not part of it: two checkouts
+        # holding the same ids key the same whatever their mtimes.
+        if "manifest" in me_d:
+            me_d["manifest"] = {
+                k: {f: x for f, x in v.items() if f != "stamp"} for k, v in me_d["manifest"].items()
+            }
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key

@@ -716,13 +716,21 @@ leaf is a file or a 300k-file directory. That is what a transform's own outputs 
 library carry. It is no longer what a *given* carries: a plan refuses a given whose identity the
 calling process minted, because the absolute path belongs to whichever host ran the stat and a
 path nothing can stat used to fall back to a fresh uuid4 per call. Two hosts holding identical
-bytes at different paths still do not agree, and a same-mtime in-place edit is still invisible.
+bytes at different paths still do not agree.
 `StageWorkflow` re-derives every remaining leaf id on the agent before compiling
 (`restat_leaf_ids`) and writes the plan back to `task.yml`, because `CollectResults` later joins
 the trace against that same plan. A change below the top node is invisible by construction, and
 `msm data invalidate` is the lever for it: it moves the mtime forward and re-mints through the
 same formula, so client and agent still agree. Invalidate refuses an imported item and says to
 import again, because an assigned identity has nothing to re-derive.
+
+**A recorded leaf id moves when its file changes.** Each minted leaf keeps a `stamp` beside its id
+in the index: the stat, plus a content digest for a file of 1 MiB or less. A load re-mints a leaf
+whose stamp no longer matches, so an edited `.oci` tag misses the cache instead of serving the old
+image's results. A small file is judged by its bytes alone, so a checkout or copy that only moves
+the mtime keeps the id. The stamp is excluded from the library key for the same reason. An index
+written before stamps existed keeps its ids, and each id gains a stamp at its next save if it still
+re-derives from the file.
 
 **A given's identity is a record, and the plan refuses one that is not.** `_mint_leaf_id` marks
 what it invented, `Pack` does not carry the mark, and `CollectSolverInputs` refuses anything that

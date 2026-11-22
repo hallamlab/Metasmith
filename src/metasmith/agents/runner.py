@@ -264,11 +264,11 @@ def RenderNextflowScript(
                         sleep 1
                     done
                     kill -KILL -$PID 2>/dev/null
-                    wait $PID 2>/dev/null
                     break
                 fi
                 sleep 1
             done
+            wait $PID 2>/dev/null
             """
 
 
@@ -647,6 +647,16 @@ def _post_run_step(name: str, failures: list[str], fn):
         return None
 
 
+def _nextflow_failure(code: int|None, nxf_log: Path) -> str:
+    try:
+        lines = nxf_log.read_text(errors="replace").splitlines()
+    except OSError:
+        lines = []
+    errors = [ln.split(" - ", 1)[1].strip() for ln in lines if " ERROR " in ln and " - " in ln]
+    errors = [e for e in errors if e and e != "@unknown"]
+    return f"nextflow exited [{code}]: " + (errors[0] if errors else f"see [{nxf_log}]")
+
+
 _FAILED_STATES = {"FAILED", "ABORTED"}
 
 
@@ -733,7 +743,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         with _Heartbeat(shell, workspace, task), _LineageReport(
             workspace, task, extern_home=Path(str(extern_home)), out_dir=workspace/log_dir,
         ):
-            shell.Exec(
+            nxf = shell.Exec(
                 RenderNextflowScript(
                     workspace=workspace, log_dir=log_dir, host=host,
                     results_folder=results_folder, nxf_report=nxf_report,
@@ -819,12 +829,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             lambda: _link_logs(output_path/f"{output._path_to_meta}", log_dir),
         )
 
-    if failed_steps or post_run_failures:
+    nxf_failure = None if nxf.exit_code == 0 else _nextflow_failure(nxf.exit_code, workspace/log_dir/"nxf.log")
+    if nxf_failure or failed_steps or post_run_failures:
         # Ignoring a dead step is the right strategy -- one dead annotator must
         # not destroy an eleven-sample run -- but the run is not a success, and
         # saying it completed is how a user is told their results are there when
         # the step that makes them never ran.
-        because = []
+        because = [nxf_failure] if nxf_failure else []
         if failed_steps:
             because.append(f"with [{len(failed_steps)}] ignored step(s): {', '.join(failed_steps)}")
         if post_run_failures:

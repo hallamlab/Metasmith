@@ -36,13 +36,14 @@ class _StoreTransfer:
                 payload = meta.get("lineage_payload")
                 if payload is not None:
                     d["lineage_payload"] = payload.hex()
+                if meta.get("stamp") is not None:
+                    d["stamp"] = meta["stamp"]
             if path in self.cases:
                 d["cases"] = list(self.cases[path])
             return d
         if not self.is_pinned:
             for _path, _dtype in self.manifest.items():
-                _meta = self.instance_meta.get(_path)
-                if _meta is not None and _meta.get("fork_id") != self.fork_id:
+                if _path in self.instance_meta:
                     self._resolve_instance_meta(_path, _dtype)
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
@@ -90,6 +91,8 @@ class _StoreTransfer:
                     # forked ids and stamping the fork back on is idempotent.
                     "fork_id": raw.get("fork_id"),
                 }
+                if v.get("stamp") is not None:
+                    instance_meta[Path(k)]["stamp"] = v["stamp"]
         lib = cls(
             location=location,
         )
