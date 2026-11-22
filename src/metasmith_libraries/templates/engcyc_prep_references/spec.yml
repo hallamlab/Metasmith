@@ -1,0 +1,93 @@
+name: engcyc_prep_references
+description: 'Fetches and builds every reference database and tool image that
+
+  engcyc_metagenomics needs, and takes no samples. Run it once on an agent before
+
+  the real run; engcyc_metagenomics then finds these products in the cache.
+
+
+  Its targets are the reference products of engcyc_metagenomics'' plan, so the two
+
+  templates name the same steps. Licensed packages are left out, as in
+
+  engcyc_metagenomics. The downloads total ~680 GB, ~350 GB of it iPHoP''s; see
+
+  engcyc_metagenomics'' description for each lane''s size.'
+sample_type: null
+target_types:
+- annotation::amrfinderplus_db
+- annotation::bacmet_diamond_db
+- annotation::bakta_db
+- annotation::card_db
+- annotation::eggnog_data
+- annotation::megares_diamond_db
+- annotation::mobileog_diamond_db
+- annotation::vfdb_diamond_db
+- annotation::virsorter2_db
+- ref::antismash
+- ref::checkv_db
+- ref::dbcan_hmm
+- ref::deeparg_db
+- ref::dram_sheets
+- ref::genomad
+- ref::gtdb
+- ref::gtdb_rrna
+- ref::interproscan_data
+- ref::iphop_db
+- ref::kofamscan_ko_list
+- ref::kofamscan_profiles
+- ref::merops_diamond_db
+- ref::metaphlan_db
+- ref::pathofact_db
+- ref::refseq_viral_diamond_db
+- ref::uniref50_diamond_db
+- ref::vcontact3_db
+- ref::vibrant_db
+- ref::vogdb_hmm
+transform_libraries:
+- logistics
+- assembly
+- metagenomics
+- functionalAnnotation
+- viromics
+- metabolicModelling
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/3207a1f02f0f4aac9d47dd07b59e2cb1:
+      type: modelling::medium_name
+      instance_id: 1e204a1fdf551f420aee5aec8927b51e3cdc558727e78e43436fe803cc04136a646a
+      origin: leaf
+    /msm_deferred/557c7e2bca2c42f485a7f7e2efbdb32a:
+      type: ref::lane_calibration
+      instance_id: 1e208b8b0386f4c8db7748723acdfd987e029ebbcb1f0b89357b0af2411e5477a7c1
+      origin: leaf
+    /msm_deferred/6380173a067b4f3690af85e75b947598:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e20632aef55a3aaa0029968835a7a9f5d6f381706b2cae7726af143522382c8b92d
+      origin: leaf
+    /msm_deferred/64809ec05df84976a0490182d1587b90:
+      type: ref::mnxr_lookup
+      instance_id: 1e208e9e69a89ad33c94aac0de12eb33cbc20fb7e908a7e7a34ec6f06be168cac9f4
+      origin: leaf
+    /msm_deferred/ce1c4b67522048d58d0b5151dd36cb88:
+      type: modelling::media
+      instance_id: 1e201f3af7cf2727e875002aaee38838a9be0604b61c75990ae6a76aa9f59cca3a97
+      origin: leaf
+    contig_study.json:
+      type: viromics::contig_study
+      instance_id: 1e202f446c0d1cff58a23a8fc62a73d5c053c56ccdd627e5a9cdbb0c165d0f011715
+      origin: leaf
+      value: true
+    eggnog_source.json:
+      type: annotation::eggnog_source
+      instance_id: 1e207c86f58ecb9d9c7e3d781ff76efab9d175638eeef5b1d9f0378e6845a3b76bd8
+      origin: leaf
+      value: true
+  values:
+    contig_study.json: '{"logistics": "contig study"}'
+    eggnog_source.json: '{"release": "emapperdb-5.0.2"}'

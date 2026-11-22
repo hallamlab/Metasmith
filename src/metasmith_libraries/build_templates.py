@@ -29,7 +29,8 @@ import _authoring as A
 
 AUTHORS = (
     "pangenome_heatmap_from_assembly",
-    "engcyc_metagenomics_from_reads",
+    "engcyc_metagenomics",
+    "engcyc_prep_references",
     "isolate_assembly_from_long_reads",
     "annotation_palette_from_assembly",
     "annotation_trio_from_assembly",
