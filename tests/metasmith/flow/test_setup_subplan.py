@@ -105,7 +105,7 @@ def test_a_sliced_step_keeps_the_full_plans_cache_slot(tmp_path, monkeypatch):
 
 
 def test_a_slice_after_a_sample_step_is_numbered_from_one(tmp_path, monkeypatch):
-    # On fir a setup run of metagenomics_from_paired_reads kept steps 1-5, 7 and 8: step 6
+    # On fir a setup run of a metagenomics template kept steps 1-5, 7 and 8: step 6
     # reads a sample. The bootstrap read step 7 as the slice's seventh step, so
     # buildUniRef50DB ran buildPhyloflashDB, and step 8 ran off the end of the list.
     task = _solve(tmp_path, {"fetch": FETCH, "annotate": ANNOTATE}, "mock::annotated")
