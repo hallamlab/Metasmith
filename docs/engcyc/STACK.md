@@ -27,18 +27,18 @@ catalog-survey
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
 - mp-port-ship — mp-fix landed on feat/engine/mp-fix (a5be461b, b91e3394, 846b4182): per-MAG overlap 0.49 -> 0.62-0.66, community 0.55 -> 0.63-0.69 (names + CLEAN conf >= 0.5). Decide: enough to ship, or pull the next lever (MetaCyc protein DB hits + Swiss-Prot ECs, as MP4)
+- shape-targets-followups — from worker d1feecd8: hybrid case skipped MEGAHIT only by solver choice (no rule; same gap as consume-distinguishing-products); `when` on an input-only type gives an error that does not mention conditions; same target with two `when` lists duplicates; no GUI widget for `when` (yaml/json/Python only)
 - hint-fix — my search_exhausted hint claims every target is producible when one case cannot reach one (hybrid-solve V2/V3); gate it per case
 - mixed-study-check — a study holding short and hybrid samples is one case; plan 'succeeds' with OPERA-MS for samples lacking long reads; fail it
 - type-traps — `_` description is a matched property; extends cannot cross namespaces; pool keeps a given's first parents (match by name)
 - cache-issues — from mp-fix: resource edits do not invalidate the cache; adding an env recompiles every env id and misses the whole cache; a rerun refuses on a stale lock of an exited driver; comparison.md section is hand-written over a generated file
-- port-gaps — mature gaps after run 4, one at a time: MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
-- exploratory-gaps — stay in their projects until methods settle
+- port-gaps — mature gaps after run 4, one at a time: FEAST (public source set e.g. EMP/MGnify + build the sink profile from the sample; current feast.py ignores the sample); MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
+- exploratory-gaps — stay in their projects until methods settle. Shortlist "soon": MS ordination and compound-ID ensemble, once their sessions settle the method
 - experiment-libs — fate of benchmark/library, beth_rnaseq/library, kalen mocklib, compound_id mock
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- shape-targets — per-shape targets through Spec and the GUI (feat/engine/shape-targets)
-(Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve)
+(none running. Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8 — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
 ## Closed
 - mixed-session — support now: targets carry the given types they need; each shape gets the targets it satisfies
