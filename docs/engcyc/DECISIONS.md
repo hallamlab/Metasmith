@@ -465,4 +465,5 @@ Undoing the edit restores the old ID and its cache. Equal text in two rows gives
 folder and pool leaves keep the stamp rule from fdd1630c (path + mtime, with a content check for
 small files).
 
-Landed: dev-bugs worker, feat/engine/dev-bugs (follow-up commit).
+Landed: 948f6929 on feat/engine/dev-bugs, merged into rc as 5d03cd86. Values minted before it keep
+their old ID until first edited, so existing caches survive.
