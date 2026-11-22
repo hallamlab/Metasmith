@@ -6,10 +6,9 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-mp-port-ship
+mp-outputs
 
 ## Waiting on the user
-- mp-port-ship: ship the PathoLogic lane at 0.62-0.66 overlap with MP4, or pull the next lever first?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -26,7 +25,7 @@ mp-port-ship
 - wrapper-build-run — DRAM done (bb2ede96); DRAM-v running; PathoFact next (decision in DECISIONS.md)
 - replace-old — retire metagenomics_from_paired_reads; goldens; touched tests
 - run-4 — "check that an agent can E2E install msm and run the template"
-- mp-port-ship — mp-fix landed on feat/engine/mp-fix (a5be461b, b91e3394, 846b4182): per-MAG overlap 0.49 -> 0.62-0.66, community 0.55 -> 0.63-0.69 (names + CLEAN conf >= 0.5). Decide: enough to ship, or pull the next lever (MetaCyc protein DB hits + Swiss-Prot ECs, as MP4)
+- mp-outputs — MP4 outputs the port lacks: KEGG/COG/SEED/MetaCyc hierarchy count tables per sample and MAG; per-ORF function+taxonomy table (taxonomy was LCA*, dropped); product-name gene merge
 - shape-targets-followups — from worker d1feecd8: hybrid case skipped MEGAHIT only by solver choice (no rule; same gap as consume-distinguishing-products); `when` on an input-only type gives an error that does not mention conditions; same target with two `when` lists duplicates; no GUI widget for `when` (yaml/json/Python only)
 - hint-fix — my search_exhausted hint claims every target is producible when one case cannot reach one (hybrid-solve V2/V3); gate it per case
 - mixed-study-check — a study holding short and hybrid samples is one case; plan 'succeeds' with OPERA-MS for samples lacking long reads; fail it
@@ -39,11 +38,13 @@ mp-port-ship
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- mp-faithful — PathoLogic input as MP4 (names + MetaCyc hits + Swiss-Prot ECs, no CLEAN; UniRef90; pinned release; <60 aa skipped) + fir recheck (feat/engine/mp-faithful)
 - lab-sifs — verify recipes on real downloads, build SIFs on altair into ~/licensed-staging/sif (downloads on fir /project/rpp-shallam/phyberos/licensed/{signalp_6.0,deeptmhmm_1.0,phobius_1.01}, md5 ok); then copy SIFs to fir
 - dramv-port — DRAM-v port on feat/engine/dramv-port (based on dram-port)
 ( Branches to merge later: feat/engine/mp-fix, feat/engine/hybrid-solve, feat/engine/shape-targets d1feecd8, feat/engine/annotation-aggregate 49112ec6, feat/engine/licensed-build 717e28f8, feat/engine/dram-port bb2ede96 (on annotation-aggregate) — research/hybrid_solve/solve.py add/add conflict with hybrid-solve; take shape-targets' copy)
 
 ## Closed
+- mp-port-ship — faithful to MP4: names + MetaCyc hits + Swiss-Prot ECs, CLEAN out of PathoLogic input; recheck then ship
 - licensed-tools — download is an input; a build step makes the image once (cached); lanes off by default; lab SIFs built from lab downloads
 - localization-lanes — DeepTMHMM + PSORTb lanes (DeepTMHMM licensed)
 - wrapper-build — DRAM/DRAM-v/PathoFact ported: run only lanes we lack, reuse ours, upstream rules over the annotation table

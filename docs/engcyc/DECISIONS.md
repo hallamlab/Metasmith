@@ -323,3 +323,24 @@ Decision:
   fir; the DTU tools need Tony's licence forms).
 
 Landed: worker licensed-build on feat/engine/licensed-build.
+
+## mp-port-ship (2026-11-22)
+
+Question: ship the PathoLogic lane at 0.62-0.66 per-MAG overlap with MetaPathways 4, or pull more
+levers first?
+
+Tony: "we just want to replicate the capabilities of metapathways... so i guess pull the lever" and
+"yes, lets try to be faithful to metapathways".
+
+Decision:
+- Feed PathoLogic what MP4 feeds it: UniRef product names, MetaCyc protein search hits with their
+  reactions (METACYC lines), and Swiss-Prot ECs. CLEAN comes out of the PathoLogic input (it stays
+  an annotation-table lane).
+- Also as MP4: search UniRef90 beside UniRef50, pin and record the UniProt release, skip proteins
+  under 60 aa for the PathoLogic input only (the annotation table keeps every protein).
+- Recheck on the three CPE3 assemblies on fir; ship at the overlap it reaches, documented in
+  comparison.md.
+- MP4 outputs not yet rebuilt (function hierarchy tables, per-ORF function+taxonomy table,
+  product-name merge) are a separate topic: mp-outputs.
+
+Landed: worker mp-faithful on feat/engine/mp-faithful (from feat/engine/mp-fix).
