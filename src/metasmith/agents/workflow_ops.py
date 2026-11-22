@@ -64,19 +64,27 @@ def _library_dispatch_floor(task) -> "tuple[int, int, int]|None":
     return None
 
 
+def _probe(sh_remote, cmd: str, what: str) -> list[str]:
+    # A cold agent's first call can sit silent past the idle timeout while it
+    # pulls or starts its image; a check that cannot read its answer is skipped.
+    try:
+        return sh_remote.Exec(
+            cmd, history=True, quiet=True, idle_timeout=PROBE_TIMEOUT, what=what,
+        ).out
+    except TimeoutError as e:
+        Log.Warn(f"{e}; staging continues without that check")
+        return []
+
+
 def _assert_engine_runs_library(sh_remote, task) -> None:
     floor = _library_dispatch_floor(task)
     if floor is None: return
-    res = sh_remote.Exec(
-        "./msm --version 2>&1", history=True, quiet=True,
-        idle_timeout=PROBE_TIMEOUT, what="reading the agent's engine version",
-    )
-    found = [_ENGINE_VERSION.search(ln) for ln in res.out]
-    found = [m for m in found if m]
+    out = _probe(sh_remote, "./msm --version 2>&1", "reading the agent's engine version")
+    found = [m for m in map(_ENGINE_VERSION.search, out) if m]
     if not found:
         Log.Warn(
             "could not read the agent's engine version, so the library's dispatch API "
-            f"was not checked against it: {res.out[-5:]}"
+            f"was not checked against it: {out[-5:]}"
         )
         return
     engine = tuple(int(x) for x in found[-1].groups())
@@ -88,6 +96,37 @@ def _assert_engine_runs_library(sh_remote, task) -> None:
         f"ExecWithEnv(env=, cmd=), which needs metasmith {need} or later; every task would "
         f"fail with a TypeError on the agent. Redeploy the agent with an image of {need} or "
         f"later, or stage the library release that matches {have}"
+    )
+
+
+def _assert_external_binds_exist(sh_remote, task, srcs: list[str]) -> None:
+    check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in srcs)
+    missing = [ln.split("MISSING::", 1)[1].strip()
+               for ln in _probe(sh_remote, check, "checking external binds") if "MISSING::" in ln]
+    if not missing: return
+    culprits: dict[str, list[str]] = {}
+    for inst in task.plan.given:
+        try:
+            p = inst.ResolvePath()
+        except Exception:
+            continue
+        if not p.is_absolute():
+            continue
+        for m in missing:
+            if p == Path(m) or p.is_relative_to(Path(m)):
+                culprits.setdefault(m, []).append(str(p))
+    lines = "\n".join(
+        f"  - {m}" + (f"  (from input: {', '.join(culprits[m])})" if culprits.get(m) else "")
+        for m in missing
+    )
+    raise FileNotFoundError(
+        f"cannot stage workflow [{task._key}]: {len(missing)} external "
+        f"input folder(s) must be bound into the remote container but do "
+        f"not exist on the remote host:\n{lines}\n"
+        f"External (absolute-path) inputs are bound verbatim into the "
+        f"remote container -- metasmith does NOT transfer them. Make these "
+        f"inputs resident on the remote agent host (or reference paths "
+        f"that exist there) before staging. [#240]"
     )
 
 
@@ -409,41 +448,7 @@ class _WorkflowOps:
             mock = self._get_mock_container(task)
             if len(mock.container.binds) > 0:
                 _srcs = [str(src) for src, _dst in mock.container.binds]
-                _check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in _srcs)
-                _res = sh_remote.Exec(
-                    _check, history=True, quiet=True,
-                    idle_timeout=PROBE_TIMEOUT, what="checking external binds",
-                )
-                _out = _res.out if isinstance(_res.out, str) else "\n".join(_res.out)
-                _missing = [ln.split("MISSING::", 1)[1].strip()
-                            for ln in _out.splitlines() if "MISSING::" in ln]
-                if _missing:
-                    _culprits: dict[str, list[str]] = {}
-                    for _inst in task.plan.given:
-                        try:
-                            _p = _inst.ResolvePath()
-                        except Exception:
-                            continue
-                        if not _p.is_absolute():
-                            continue
-                        for _m in _missing:
-                            _mp = Path(_m)
-                            if _p == _mp or _p.is_relative_to(_mp):
-                                _culprits.setdefault(_m, []).append(str(_p))
-                    _lines = "\n".join(
-                        f"  - {_m}" + (f"  (from input: {', '.join(_culprits[_m])})"
-                                       if _culprits.get(_m) else "")
-                        for _m in _missing
-                    )
-                    raise FileNotFoundError(
-                        f"cannot stage workflow [{task._key}]: {len(_missing)} external "
-                        f"input folder(s) must be bound into the remote container but do "
-                        f"not exist on the remote host:\n{_lines}\n"
-                        f"External (absolute-path) inputs are bound verbatim into the "
-                        f"remote container -- metasmith does NOT transfer them. Make these "
-                        f"inputs resident on the remote agent host (or reference paths "
-                        f"that exist there) before staging. [#240]"
-                    )
+                _assert_external_binds_exist(sh_remote, task, _srcs)
                 Log.Info(f"external binds {_srcs}")
             binds = mock.MakeBindsParam()
             _rootfs_arg = f" rootfs={rootfs.value}" if rootfs is not None else ""
