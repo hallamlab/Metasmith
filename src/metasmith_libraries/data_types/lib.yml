@@ -77,6 +77,10 @@ types:
     properties:
       src: ezpred_wrapper
       usage: command line
+  diamond_bsr.py:
+    properties:
+      src: diamond_bsr
+      usage: command line
   bsr_histogram.py:
     properties:
       src: bsr_histogram

@@ -13,6 +13,38 @@ types:
     properties:
       _: DIAMOND-formatted UniRef50 database
       ext: dmnd
+  swissprot_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted UniProtKB/Swiss-Prot
+      ext: dmnd
+  uniref90_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted UniRef90
+      ext: dmnd
+  # LICENSED. MetaCyc's protein sequences ship with Pathway Tools under SRI's licence; never
+  # publish or commit one. Obtain from a licensed Pathway Tools install: MetaPathways 4's
+  # `build_db --func metacyc` exports them (protseq.fsa) beside metacyc_monomer_reactions.
+  metacyc_protein_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted MetaCyc protein sequences (licensed, from Pathway Tools)
+      ext: dmnd
+  metacyc_monomer_reactions:
+    extends:
+    - reference_data
+    properties:
+      _: MetaCyc monomer to reaction pairs (TSV columns MC, RXN), as MetaPathways 4's build_db writes MetaCyc-monomer-rxn-pairs.tsv (licensed, from Pathway Tools)
+      ext: tsv
+  uniprot_ec_maps:
+    extends:
+    - reference_data
+    properties:
+      _: Directory of EC_map.<db>.tsv (columns AccID, EC) for swissprot, uniref50 and uniref90, as MetaPathways 4's build_db writes them from the same UniProt release as the searched databases
   uniref50_fasta:
     extends:
     - reference_data

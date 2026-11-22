@@ -20,7 +20,9 @@ cp /data/ptools-local/ptools-init.dat "$work"/ptools-local/
 cp "$input"/0.pf "$input"/genetic-elements.dat "$input"/organism-params.dat "$work"/ws/
 org=$(awk -F'\t' '$1=="ID"{print $2; exit}' "$work"/ws/organism-params.dat)
 
-options="-no-taxonomic-pruning -no-web-cel-overview -tip -no-patch-download -no-cel-overview -disable-metadata-saving -nologfile"
+# MetaPathways 4.0.3's options (pt_container.run_pgdb): transport inference on, taxonomic pruning
+# left at Pathway Tools' default (on) against organism-params' NCBI-TAXON-ID 131567.
+options="-no-web-cel-overview -tip -no-patch-download -no-cel-overview -disable-metadata-saving -nologfile"
 dump="(handler-case(progn(with-organism(:org-id'$org)(dump-frames-to-attribute-value-files(org-data-dir)))(exit))(error(c)(exit)))"
 SECONDS=0
 PTOOLS_LOCAL_PATH=$work HOME=$work/home "$launcher" $options -patho "$work"/ws > "$out.log" 2>&1 < /dev/null
@@ -32,10 +34,11 @@ if [ -z "$pgdb" ] || [ ! -s "$pgdb/data/reactions.dat" ]; then
     echo "[pathologic] $org: no PGDB after ${SECONDS}s, see $out.log" >&2
     exit 1
 fi
-# A build that dies part way still dumps every flat file, header-only, and exits 0.
+# A build that dies part way still dumps every flat file, header-only, and exits 0. A PGDB with
+# genes and no pathways is a result: pathway_table.py confirms it from the reports, as MP4 does.
 genes=$(grep -c '^UNIQUE-ID' "$pgdb/data/genes.dat" 2>/dev/null)
 pathways=$(grep -c '^UNIQUE-ID' "$pgdb/data/pathways.dat" 2>/dev/null)
-if [ "${genes:-0}" -eq 0 ] || [ "${pathways:-0}" -eq 0 ]; then
+if [ "${genes:-0}" -eq 0 ]; then
     echo "[pathologic] $org: PGDB holds ${genes:-0} genes and ${pathways:-0} pathways after ${SECONDS}s" >&2
     grep -inE "error|abort|unable|cannot" "$work"/ws/pathologic.log | head -40 >&2
     tail -60 "$work"/ws/pathologic.log >&2

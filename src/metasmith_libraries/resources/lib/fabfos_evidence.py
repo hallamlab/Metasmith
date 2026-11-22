@@ -1042,7 +1042,8 @@ def load_mnxr_lookup(path: Path, id_source: str) -> pd.DataFrame:
 # helpers
 # =====================================================================
 
-_BOILERPLATE_RE = re.compile(r"\s+(n=\d+|Tax=.+?|RepID=\S+)(?=\s|$)")
+# A UniRef title is "<name> n=<members> Tax=<taxon> TaxID=<id> RepID=<id>", and <taxon> has spaces.
+_BOILERPLATE_RE = re.compile(r"\s+n=\d+\s+Tax=.*$")
 
 
 def _clean_stitle(stitle: str) -> str:

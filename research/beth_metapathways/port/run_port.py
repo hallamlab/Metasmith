@@ -56,8 +56,17 @@ def load_samples():
 
 SAMPLES = load_samples()
 
+# The four protein references MetaPathways 4 searched, at its releases: UniProt 2025_04 (built by
+# build_mp4_refs.sbatch from the FASTAs behind MP4's FAST indexes) and MetaCyc 27.0, which is licensed.
+UNIPROT = Path("/scratch/phyberos/databases/uniprot_2025_04")
+LICENSED_PT = FIR_PROJECT / "licensed" / "pathway_tools_27.0"
 GLOBAL_REFS = {
-    "ref::uniref50_diamond_db": c.DB_PATHS["ref::uniref50_diamond_db"],
+    "ref::uniref50_diamond_db": UNIPROT / "uniref50.dmnd",
+    "ref::uniref90_diamond_db": UNIPROT / "uniref90.dmnd",
+    "ref::swissprot_diamond_db": UNIPROT / "swissprot.dmnd",
+    "ref::uniprot_ec_maps": UNIPROT / "ec_maps",
+    "ref::metacyc_protein_diamond_db": LICENSED_PT / "metacyc_proteins_27.0.dmnd",
+    "ref::metacyc_monomer_reactions": LICENSED_PT / "MetaCyc-monomer-rxn-pairs.tsv",
     "ref::kofamscan_profiles": c.DB_PATHS["ref::kofamscan_profiles"],
     "ref::kofamscan_ko_list": c.DB_PATHS["ref::kofamscan_ko_list"],
     "ref::metabuli_ref": Path("/home/phyberos/project-rpp/lib/metabuli/gtdb"),
@@ -83,6 +92,8 @@ EXTRA_REFS = {
     "annotation::vfdb_diamond_db": Path("/scratch/phyberos/databases/vfdb/vfdb.dmnd"),
     "annotation::tcdb_diamond_db": Path("/scratch/phyberos/databases/tcdb/tcdb.dmnd"),
     "annotation::pathofact_db": Path("/scratch/phyberos/databases/pathofact_db"),
+    # `rgi load` output (card.json + loaded_databases.json); annotation::annotation_table reads RGI.
+    "annotation::card_db": Path("/scratch/phyberos/databases/card"),
     # Copied from the workstation DVC cache (data/fabfos/processed). The leaf names differ from
     # ref::label_transfer_landmarks's `landmarks`, which nextflow would otherwise stage over.
     "ref::esm_c_600m_weights": PORT / "refs" / "esm_c_weights" / "esmc_600m.tgz",
@@ -284,6 +295,9 @@ GROUPS = {
     "mobileog_db": (flat_targets("annotation::mobileog_diamond_db"),
                     lambda: [load_lib("logistics", keep={"downloadMobileogDB.py"})], False),
     "mobileog": (flat_targets("annotation::mobileog_diamond_results"), annotation_transforms, False),
+    # The four searches PathoLogic's MetaPathways 4 input reads, without the rest of the annotation table.
+    "mp4lanes": (flat_targets(*(f"annotation::diamond_{db}_{kind}" for db in ("uniref50", "uniref90", "swissprot", "metacyc")
+                                for kind in ("results", "descriptions"))), annotation_transforms, False),
 }
 
 
@@ -306,7 +320,8 @@ def cmd_run(args):
     ensure = importing or not remote
     inputs = declare_sample(smith, args.sample, ensure)
     refs = declare_globals(smith, ensure)
-    extra = declare_extra_refs(smith, ensure) if importing or args.group != "mp" else None
+    # The mp group reaches every annotation lane through annotation::annotation_table.
+    extra = declare_extra_refs(smith, ensure)
     if importing:
         print(f"the pool at {smith.home.GetPath()} holds {args.sample}'s givens and the port references")
         return 0

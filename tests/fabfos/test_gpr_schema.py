@@ -690,7 +690,16 @@ def _write_extra_lanes(work: Path) -> list:
         {"id": CONTIGS[1], "areas": []},
     ]}))
     _write_deepec(w / "deepec.tsv")
+    header = ("qseqid\tsseqid\tpident\tlength\tmismatch\tgapopen\tqstart\tqend\tsstart\tsend\t"
+              "evalue\tbitscore\tbsr\n")
+    bsr_lanes = {"swissprot": "sp|P07327|ADH1A_HUMAN", "uniref90": "UniRef90_P07327",
+                 "metacyc": "gnl|META|MONOMER-1"}
+    for lane, sid in bsr_lanes.items():
+        (w / f"{lane}.tsv").write_text(header + f"orfs~{ORFS[0]}\t{sid}\t95.0\t300\t5\t0\t1\t300\t1\t300\t"
+                                       "1e-80\t410.0\t0.9\n")
+        (w / f"{lane}_descriptions.tsv").write_text(f"sseqid\tdescription\n{sid}\tAlcohol dehydrogenase\n")
     return [
+        *[(lane, w / f"{lane}.tsv", w / f"{lane}_descriptions.tsv") for lane in bsr_lanes],
         ("deepec", w / "deepec.tsv"), ("eggnog", w / "eggnog.tsv"),
         ("interproscan", w / "ips.csv", w / "ips_descriptions.csv"),
         *[(lane, w / f"{lane}.tsv") for lane in ("mobileog", "megares", "bacmet", "vfdb")],
