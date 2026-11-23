@@ -16,13 +16,15 @@ image = model.AddRequirement(lib.GetType("env::seqkit.env"))
 # The pangenome::pangenome shape: a contentless root the driver declares as a
 # shared input, so every sample's calls have one common ancestor to group under.
 study = model.AddRequirement(lib.GetType("viromics::contig_study"))
-pair  = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={study})
+# The sample: every sample has read metadata, whether its reads came as a FASTQ pair,
+# long reads or an SRA accession.
+sample = model.AddRequirement(lib.GetType("sequences::read_metadata"), parents={study})
 
 # One assembly, then batches of THAT assembly. Both lines are load-bearing.
 #
 # `asm` exists to pin the assembler. This is a collecting transform, so its batch
 # slot holds every batch in the group -- and with the constraint reaching only as
-# far as the read pair, batches from every assembler in the library qualify, so
+# far as the sample, batches from every assembler in the library qualify, so
 # the planner runs both of them and every per-sample step downstream twice.
 # Binding one `sequences::assembly` endpoint and hanging the batches off it is
 # what makes "one assembler" a property of the model instead of something each
@@ -31,7 +33,7 @@ pair  = model.AddRequirement(lib.GetType("sequences::read_pair"), parents={study
 #
 # `batch` rather than `asm` for the calls, because the batch is the contig set
 # the coordinates are on, so it is also what the merged intervals are cut from.
-asm   = model.AddRequirement(lib.GetType("sequences::assembly"), parents={pair})
+asm   = model.AddRequirement(lib.GetType("sequences::assembly"), parents={sample})
 batch = model.AddRequirement(lib.GetType("sequences::contig_batch"), parents={asm})
 
 # Three slots, not one, because a Dependency hashes over its properties and
@@ -113,9 +115,9 @@ def protocol(context: ExecutionContext):
     sample_of = {}
     for slot in (gn, vs, vb):
         for call_table in context.InputGroup(slot):
-            sample = context.SourceOf(call_table, pair)
-            assert sample is not None, (
-                f"no read_pair in the lineage of [{call_table.local.name}] -- the "
+            meta = context.SourceOf(call_table, sample)
+            assert meta is not None, (
+                f"no read_metadata in the lineage of [{call_table.local.name}] -- the "
                 "sample label is what namespaces contig ids across samples, and "
                 "without it the pooled set collides on bare k141_N"
             )
@@ -126,7 +128,7 @@ def protocol(context: ExecutionContext):
                 "without it"
             )
             key = contigs.local
-            sample_of[key] = Path(sample.local).stem
+            sample_of[key] = Path(meta.local).stem
             for contig_id, start, end, caller in _read_calls(call_table.local):
                 by_contigs[key][contig_id].append((start, end, caller))
 

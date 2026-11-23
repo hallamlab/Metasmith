@@ -115,7 +115,8 @@ assert TARGETS[BINS]["type"] == "sequences::das_tool_bin_fasta"
 SHARED_REFS = ("ref::mnxr_lookup", "ref::label_transfer_landmarks", "ref::lane_calibration",
                "modelling::media", "modelling::medium_name")
 TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml", "taxonomy.yml",
-             "binning.yml", "binning_local.yml", "viromics.yml", "modelling.yml", "licensed.yml")
+             "binning.yml", "binning_local.yml", "viromics.yml", "modelling.yml", "licensed.yml",
+             "ncbi.yml")
 
 
 def add_sample(lib, study, name, long_reads=False):
