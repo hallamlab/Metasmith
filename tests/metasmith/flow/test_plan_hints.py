@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from metasmith.models.workflow import Case
-import shutil
 import yaml
 from pathlib import Path
 
 import pytest
 
-from metasmith.models.libraries import (
-    DataInstanceLibrary,
-    DataTypeLibrary,
-    TransformInstanceLibrary,
-)
-from metasmith.models.solver import Endpoint, Transform
-from metasmith.models.workflow import PlanHint, WorkflowPlan
+from metasmith.models.libraries import DataInstanceLibrary, TransformInstanceLibrary
+from metasmith.models.solver import Transform
+from metasmith.models.workflow import WorkflowPlan
 from metasmith.testing.pool_fixtures import pool_backed
+
+from tests.metasmith.support import create_transform_library
 
 
 @pytest.fixture
@@ -34,39 +31,6 @@ def _write_types_yml(path: Path, types: dict):
         "types": types,
     }
     path.write_text(yaml.dump(payload))
-
-
-def _make_transform_lib(
-    temp_dir: Path, mock_types_path: Path, transforms: dict[str, str]
-) -> TransformInstanceLibrary:
-    tr_path = temp_dir / "transforms.xgdb"
-    tr_path.mkdir(parents=True, exist_ok=True)
-    meta_dir = tr_path / "_metadata"
-    types_dir = meta_dir / "types"
-    types_dir.mkdir(parents=True)
-    shutil.copy(mock_types_path, types_dir / "mock.yml")
-    (types_dir / "transforms.yml").write_text(
-        """schema: v1
-ontology:
-  name: EDAM
-  version: '1.25'
-  doi: https://doi.org/10.1093/bioinformatics/btt113
-  strict: false
-types:
-  transform:
-    properties:
-    - metasmith
-    - transform
-"""
-    )
-    manifest = {}
-    for name, code in transforms.items():
-        (tr_path / f"{name}.py").write_text(code)
-        manifest[f"{name}.py"] = {"type": "transforms::transform"}
-    (meta_dir / "index.yml").write_text(
-        yaml.dump({"manifest": manifest, "schema": "v1"})
-    )
-    return TransformInstanceLibrary.Load(tr_path)
 
 
 def _generate(inputs: DataInstanceLibrary, transforms: TransformInstanceLibrary, sample_type: str, target_type: str) -> WorkflowPlan:
@@ -105,7 +69,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -150,7 +114,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -219,7 +183,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     types_path2 = temp_dir / "extra.yml"
     _write_types_yml(types_path2, {
@@ -264,7 +228,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('a')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=reads)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -320,7 +284,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     extra_path = temp_dir / "extra.yml"
     _write_types_yml(extra_path, {"unrelated": {"properties": {"_": "other"}}})
@@ -366,7 +330,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=near)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     inputs_types = temp_dir / "inputs.yml"
     _write_types_yml(inputs_types, {
@@ -415,7 +379,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -460,7 +424,7 @@ def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(te
     }
     types["script"]["properties"]["obtain_from"] = "https://example.org/licence"
     _write_types_yml(types_path, types)
-    tr_lib = _make_transform_lib(temp_dir, types_path, {
+    tr_lib = create_transform_library(temp_dir, types_path, {
         "assemble": _transform(["reads"], "assembly"),
         "fetch_assembly": _transform(["accession"], "assembly"),
         "stats": _transform(["assembly"], "stats"),
@@ -499,7 +463,7 @@ def test_a_search_that_runs_out_names_no_dead_end(temp_dir):
         name: {"properties": {"_": name}}
         for name in ("reads", "assembly", "accession", "stats", "bins")
     })
-    tr_lib = _make_transform_lib(temp_dir, types_path, {
+    tr_lib = create_transform_library(temp_dir, types_path, {
         "assemble": _transform(["reads"], "assembly"),
         "fetch_assembly": _transform(["accession"], "assembly"),
         "stats": _transform(["assembly"], "stats"),

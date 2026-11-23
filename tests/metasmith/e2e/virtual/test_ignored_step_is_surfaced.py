@@ -23,7 +23,9 @@ from metasmith.ops.runtime import read_trace
 from metasmith.testing.mock_transforms import alignment_transform
 from metasmith.testing.virtual_runtime import FAIL_STEPS_ENV
 
-from .conftest import create_transform_library, stage_task
+from tests.metasmith.support import create_transform_library
+
+from .conftest import stage_task
 
 
 LOG_DIR = Path("_metasmith/logs.virtual")

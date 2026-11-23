@@ -7,7 +7,7 @@ from pathlib import Path
 
 from metasmith.constants import MODULE_PATH
 
-from .conftest import nxf_exec
+from tests.metasmith.support import nxf_exec
 
 pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
 

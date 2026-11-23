@@ -18,6 +18,8 @@ from pathlib import Path
 
 from metasmith.constants import MODULE_PATH
 
+from tests.metasmith.support import nxf_exec
+
 FIXTURES = Path(__file__).parent / "fixtures"
 ORCHESTRATOR_ENV = "MSM_TEST_ORCHESTRATOR"
 RUN_TIMEOUT_S = 240
@@ -263,19 +265,11 @@ class Workspace:
             "-ansi-log", "false",
         ]
         if self.container:
-            # The container mounts this tree at its own path. Killing the exec client leaves
-            # Nextflow running inside, so the in-container timeout is what stops it.
-            cmd = [
-                "docker", "exec", "-w", str(self.root), "-e", f"HOME={self.root}",
-                "-e", "NXF_DISABLE_CHECK_LATEST=true", self.container,
-                "timeout", "-s", "KILL", str(timeout), "nextflow", *nxf_args,
-            ]
-            kill = lambda proc: proc.kill()
+            cmd = [*nxf_exec(self.container, self.root, timeout), "nextflow", *nxf_args]
         else:
             nextflow = host_nextflow()
             assert nextflow is not None, "no nextflow on PATH or beside this python"
             cmd = [str(nextflow), *nxf_args, "-w", str(self.root / "work")]
-            kill = lambda proc: os.killpg(proc.pid, signal.SIGKILL)
         env = {**os.environ, "NXF_ANSI_LOG": "false"}
         proc = subprocess.Popen(
             cmd, cwd=self.root, env=env, text=True,
@@ -286,7 +280,7 @@ class Workspace:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            kill(proc)
+            os.killpg(proc.pid, signal.SIGKILL)
             stdout, stderr = proc.communicate()
         return RunResult(
             returncode=None if timed_out else proc.returncode,

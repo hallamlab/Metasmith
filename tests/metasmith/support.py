@@ -82,3 +82,14 @@ def create_transform_library(base_dir: Path, mock_types: Path, transforms: dict[
         yaml.dump({"manifest": manifest, "schema": "v1"}), encoding="utf-8",
     )
     return TransformInstanceLibrary.Load(tr_path)
+
+
+def nxf_exec(container: str, workdir: Path, timeout: int) -> list[str]:
+    # A timed-out client leaves its process running inside the container, so it carries its own limit.
+    return [
+        "docker", "exec", "-w", str(workdir),
+        "-e", f"HOME={workdir}",
+        "-e", f"NXF_HOME={workdir}/.nextflow",
+        "-e", "NXF_DISABLE_CHECK_LATEST=true",
+        container, "timeout", "-s", "KILL", str(timeout),
+    ]

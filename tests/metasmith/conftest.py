@@ -9,9 +9,11 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 # FULL_VERSION is read at import, and the docker lane's image is tagged with it; stamp first
-# so the host and the image agree about which source they came from.
+# so the host and the image agree about which source they came from. xdist workers start after
+# the controller has stamped.
 from metasmith._build_hash import write_build_hash
-write_build_hash()
+if "PYTEST_XDIST_WORKER" not in os.environ:
+    write_build_hash()
 
 from metasmith.constants import AgentPaths
 from metasmith.models.solver import Transform, Endpoint
@@ -98,7 +100,6 @@ def mock_samples(tmp_path, mock_types):
 @pytest.fixture
 def simple_workflow_task(mock_samples, mock_types, tmp_path):
     from metasmith.models.workflow import Case, WorkflowPlan, WorkflowTask
-    from metasmith.models.solver import Transform
     from metasmith.testing.mock_transforms import identity_transform
 
     transforms = identity_transform("mock::assembly", "mock::bam")

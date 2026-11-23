@@ -11,14 +11,13 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from metasmith.constants import MODULE_PATH
 from metasmith.models.workflow.payload import build_entry
 
-from .conftest import nxf_exec
+from tests.metasmith.support import nxf_exec
 
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 

@@ -4,6 +4,7 @@ A test file's group is its axis directory unless OVERRIDES names the file. This 
 imports nothing from metasmith, so dev/metasmith.sh reads it without collecting the suite:
 
     python tests/metasmith/_groups.py paths cache flow   # cheap-tier paths of those groups
+    python tests/metasmith/_groups.py paths              # the whole cheap tier
     python tests/metasmith/_groups.py smoke              # the smoke node ids
 """
 from __future__ import annotations
@@ -16,14 +17,10 @@ ROOT = Path(__file__).resolve().parent
 # The directories a merge check may run: no container, no host Nextflow, no wall-clock budget.
 CHEAP_DIRS = ["unit", "flow", "solver", "cache", "gui", "bootstrap", "audit", "e2e/virtual"]
 
+# An axis directory not named here is its own group.
+AXIS_DIRS = ["solver", "flow", "cache", "gui", "bootstrap", "audit", "perf"]
 DIR_GROUPS = {
-    "solver": "solver",
-    "flow": "flow",
-    "cache": "cache",
-    "gui": "gui",
-    "bootstrap": "bootstrap",
-    "audit": "audit",
-    "perf": "perf",
+    **{d: d for d in AXIS_DIRS},
     "deploy": "host",
     "lifecycle": "run",
     "e2e/docker": "docker",
@@ -78,6 +75,7 @@ OVERRIDES: dict[str, list[str]] = {
 }
 
 _FILE_GROUP = {f: g for g, files in OVERRIDES.items() for f in files}
+_DIRS_LONGEST_FIRST = sorted(DIR_GROUPS.items(), key=lambda kv: -len(kv[0]))
 
 # One to three cheap tests per group, plus one run through every layer.
 SMOKE = [
@@ -122,7 +120,7 @@ SMOKE = [
 def group_of(rel: str) -> str | None:
     if rel in _FILE_GROUP:
         return _FILE_GROUP[rel]
-    for dir_, group in sorted(DIR_GROUPS.items(), key=lambda kv: -len(kv[0])):
+    for dir_, group in _DIRS_LONGEST_FIRST:
         if rel.startswith(dir_ + "/"):
             return group
     return None
@@ -133,6 +131,8 @@ def groups() -> set[str]:
 
 
 def cheap_paths(names: list[str]) -> list[str]:
+    if not names:
+        return CHEAP_DIRS
     unknown = set(names) - groups()
     if unknown:
         raise SystemExit(f"unknown group(s) {sorted(unknown)}; known: {sorted(groups())}")

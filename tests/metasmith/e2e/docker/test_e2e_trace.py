@@ -9,20 +9,19 @@ from pathlib import Path
 from metasmith.agents import CollectResults
 from metasmith.constants import MODULE_PATH, AgentPaths
 from metasmith.env import Runtime
-from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView, DataTypeLibrary
-from metasmith.models.solver import Endpoint, Transform
+from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView
+from metasmith.models.solver import Transform
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask, NextflowGenContext
 from metasmith.testing.mock_transforms import (
     alignment_transform,
     binner_transforms,
     branching_transforms,
-    identity_transform,
     shared_input_transform,
 )
 
 from tests.metasmith.support import create_transform_library, write_mock_types
 
-from .conftest import nxf_exec
+from tests.metasmith.support import nxf_exec
 
 # its runs are shared through module and class fixtures, so --dist loadgroup keeps it on one worker
 pytestmark = [pytest.mark.docker, pytest.mark.slow, pytest.mark.xdist_group("e2e_trace")]

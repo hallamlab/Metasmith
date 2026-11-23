@@ -30,7 +30,9 @@ from metasmith.env import Runtime
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.telemetry import TraceIndex
 
-from .conftest import nxf_exec, promote_stub_tasks
+from tests.metasmith.support import nxf_exec
+
+from .conftest import promote_stub_tasks
 
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 

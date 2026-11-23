@@ -4,43 +4,13 @@ import shutil
 from pathlib import Path
 
 import pytest
-import yaml
 
 from metasmith.constants import AgentPaths, MODULE_PATH
 from metasmith.env import Runtime
-from metasmith.models.libraries import (
-    DataInstanceLibrary,
-    DataTypeLibrary,
-    TransformInstanceLibrary,
-)
+from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.remote import Source
-from metasmith.models.solver import Endpoint
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.testing.pool_fixtures import pool_backed
-from metasmith.testing.virtual_runtime import VirtualE2ERuntime
-
-from tests.metasmith.support import create_transform_library
-
-
-def configure_agent_paths(monkeypatch, home: Path) -> None:
-    monkeypatch.setattr(AgentPaths, "HOME_ROOT", home)
-    monkeypatch.setattr(AgentPaths, "WORK_ROOT", home / "_ws")
-
-
-@pytest.fixture
-def virtual_runtime(tmp_path, monkeypatch):
-    runtime = VirtualE2ERuntime(tmp_path / "virtual_rt", host="virt-host", force_bounce=False)
-    runtime.setup(monkeypatch)
-    configure_agent_paths(monkeypatch, runtime.home)
-    return runtime
-
-
-@pytest.fixture
-def virtual_runtime_bounce(tmp_path, monkeypatch):
-    runtime = VirtualE2ERuntime(tmp_path / "virtual_rt_bounce", host="virt-host", force_bounce=True)
-    runtime.setup(monkeypatch)
-    configure_agent_paths(monkeypatch, runtime.home)
-    return runtime
 
 
 @pytest.fixture

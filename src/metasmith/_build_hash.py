@@ -33,6 +33,8 @@ def compute_build_hash(root: Path = MODULE_PATH, *, also_exclude: frozenset[str]
 def write_build_hash(root: Path = MODULE_PATH) -> str:
     h = compute_build_hash(root)
     target = root / BUILD_HASH_FILE.name
+    if target.exists() and target.read_text() == h:
+        return h
     # Parallel test workers stamp concurrently; a reader must never see a truncated file.
     tmp = target.with_name(f".{target.name}.{os.getpid()}")
     tmp.write_text(h)

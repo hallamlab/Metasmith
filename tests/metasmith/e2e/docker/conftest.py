@@ -6,17 +6,6 @@ from pathlib import Path
 import pytest
 
 
-def nxf_exec(container: str, workdir: Path, timeout: int) -> list[str]:
-    # A timed-out client leaves its process running inside the container, so it carries its own limit.
-    return [
-        "docker", "exec", "-w", str(workdir),
-        "-e", f"HOME={workdir}",
-        "-e", f"NXF_HOME={workdir}/.nextflow",
-        "-e", "NXF_DISABLE_CHECK_LATEST=true",
-        container, "timeout", "-s", "KILL", str(timeout),
-    ]
-
-
 @pytest.fixture(scope="session")
 def docker_available():
     if shutil.which("docker") is None:

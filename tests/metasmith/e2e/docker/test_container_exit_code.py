@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import subprocess
 import time as _real_time
-from pathlib import Path
 
 import pytest
 

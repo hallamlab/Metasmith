@@ -43,18 +43,15 @@ def relay_kind() -> str:
     return "real" if all(_relay_path(REPO_ROOT, t).exists() for t in RELAY_TARGETS) else "stub"
 
 
-def image_exists(tag: str, relay: str|None = None) -> bool:
+def image_exists(tag: str, relay: str) -> bool:
     result = subprocess.run(
         ["docker", "image", "inspect", "--format", f'{{{{index .Config.Labels "{RELAY_LABEL}"}}}}', tag],
         capture_output=True, text=True, timeout=10,
     )
-    if result.returncode != 0:
-        return False
-    return relay is None or result.stdout.strip() == relay
+    return result.returncode == 0 and result.stdout.strip() == relay
 
 
 def _ensure_lib() -> None:
-    LIB.mkdir(exist_ok=True)
     tini = LIB / "tini"
     if not tini.exists():
         Log.Info("downloading tini v0.19.0")
@@ -89,7 +86,7 @@ def stage_build_context(dest: Path) -> None:
 def build_docker_image() -> str:
     LIB.mkdir(exist_ok=True)
     with FileLock(LIB / ".docker_build.lock"):
-        write_build_hash(PACKAGE)
+        build_hash = write_build_hash()
         version = get_full_version()
         tag = get_docker_tag(version)
         relay = relay_kind()
@@ -102,7 +99,7 @@ def build_docker_image() -> str:
             stage = Path(tmp)
             stage_build_context(stage)
             staged_hash = compute_build_hash(stage / "src/metasmith")
-            if staged_hash != version.rsplit("+", 1)[-1]:
+            if staged_hash != build_hash:
                 raise RuntimeError(f"staged package hashes to [{staged_hash}], checkout is [{version}]")
 
             result = subprocess.run([sys.executable, "-m", "build", "--wheel"], cwd=stage, capture_output=True, text=True)

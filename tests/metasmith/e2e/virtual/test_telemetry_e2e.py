@@ -4,7 +4,6 @@ import json
 import shutil
 from pathlib import Path
 
-import pytest
 
 from metasmith.models.lineage import (
     INVOCATION_EVENT_SCHEMA_VERSION,

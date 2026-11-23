@@ -11,11 +11,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
 
 from metasmith.agents.ceiling import cap_lines
 
-from .conftest import nxf_exec
+from tests.metasmith.support import nxf_exec
 
 
 PROCESS = '''

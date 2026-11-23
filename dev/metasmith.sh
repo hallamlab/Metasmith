@@ -423,6 +423,15 @@ sys.exit(EngineFor('solve') is None)" && return 0
 
 _groups() { python $HERE/tests/metasmith/_groups.py "$@"; }
 
+# Pinned, not prepended: a relative entry inherited from the caller's PYTHONPATH is
+# re-resolved against every cwd a test chdirs to, and resolves `metasmith` to some
+# other checkout when it is absolute.
+_test_env() {
+    cd $HERE
+    export PYTHONPATH=$HERE/src
+    _assert_test_engine
+}
+
 # CONDA=conda
 CONDA=mamba # https://mamba.readthedocs.io/en/latest/mamba-installation.html#mamba-install
 echo image: $DOCKER_IMAGE:$DOCKER_TAG
@@ -740,27 +749,17 @@ case $1 in
 
     -ts) # smoke: one to three tests per feature group, about a minute
         shift
-        cd $HERE
-        # Pinned, not prepended: a relative entry inherited from the caller's PYTHONPATH
-        # is re-resolved against every cwd a test chdirs to, and resolves `metasmith`
-        # to some other checkout when it is absolute.
-        export PYTHONPATH=$HERE/src
-        _assert_test_engine || exit 1
+        _test_env || exit 1
         pytest -q -n auto --dist loadfile $(_groups smoke) "$@"
     ;;
 
     -tm) # merge check: smoke plus the named groups' cheap tests; no group runs the whole cheap tier
         shift
-        cd $HERE
-        export PYTHONPATH=$HERE/src
-        _assert_test_engine || exit 1
+        _test_env || exit 1
         groups=()
         while [ $# -gt 0 ] && [[ $1 != -* ]]; do groups+=("$1"); shift; done
-        if [ ${#groups[@]} -eq 0 ]; then
-            targets=$(_groups paths $(_groups list)) || exit 1
-        else
-            targets="$(_groups smoke) $(_groups paths "${groups[@]}")" || exit 1
-        fi
+        targets=$(_groups paths "${groups[@]}") || exit 1
+        [ ${#groups[@]} -gt 0 ] && targets="$(_groups smoke) $targets"
         # loadfile keeps a module's shared run on one worker.
         pytest -q -n auto --dist loadfile $targets "$@"
     ;;
@@ -772,9 +771,7 @@ case $1 in
 
     -tr) # release set: image, then perf and lifecycle alone, then the docker lane beside the rest
         shift
-        cd $HERE
-        export PYTHONPATH=$HERE/src
-        _assert_test_engine || exit 1
+        _test_env || exit 1
         manual="not remote_host and not requires_apptainer and not requires_ssh_localhost and not requires_docker_dev_image"
         t0=$SECONDS
         python -c "from metasmith.testing.docker_builder import build_docker_image; print(build_docker_image())" || exit 1
@@ -788,7 +785,7 @@ case $1 in
         log=$(mktemp -t msm-tr-docker.XXXXXX.log)
         pytest -q -n 8 --dist loadgroup tests/metasmith/e2e/docker -m "$manual" "$@" > $log 2>&1 &
         docker_pid=$!
-        pytest -q -n 8 --dist loadfile $(_groups paths $(_groups list)) tests/metasmith/deploy tests/metasmith/e2e/nextflow -m "$manual" "$@" || rc=1
+        pytest -q -n 8 --dist loadfile $(_groups paths) tests/metasmith/deploy tests/metasmith/e2e/nextflow -m "$manual" "$@" || rc=1
         wait $docker_pid || rc=1
         echo "--- docker lane ($log)"
         tail -n 25 $log
