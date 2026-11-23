@@ -151,9 +151,11 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str):
 def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_only: bool, timeout: float):
     from metasmith.python_api import (Agent, DataInstanceLibrary, Runtime, Source, Template,
                                       TargetBuilder, TransformInstanceLibrary)
-    from metasmith.agents.templates import standard_library_root
+    from metasmith.gui.stdlib import clone_stdlib
 
-    root = standard_library_root()
+    # The installed package ships the library uncompiled; a clone is the compiled copy the GUI also plans from.
+    work.mkdir(parents=True, exist_ok=True)
+    root = Path(clone_stdlib(work)["path"])
     (template,) = [t for t in Template.Discover(root) if t.name == TEMPLATE]
     spec = template.spec
     adapters = [json.loads(v)["adapter"] for v in spec.input_library["values"].values()]
@@ -162,7 +164,6 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
         raise SystemExit(f"unknown sources: {sorted(unknown)}")
     adapters = [a for a in adapters if not sources or a in sources]
 
-    work.mkdir(parents=True, exist_ok=True)
     agent = Agent(home=Source.FromLocal(work / "msm_home"), runtime=Runtime.DOCKER)
     if not plan_only:
         agent.Deploy()
