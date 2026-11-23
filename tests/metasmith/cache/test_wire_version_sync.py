@@ -100,6 +100,13 @@ def test_groovy_zero_mark_matches_the_bootstrap():
     assert found == ZERO_MARK
 
 
+def test_groovy_ghosts_mark_matches_the_probe_gate():
+    from metasmith.caching.layout import GHOSTS_MARK
+
+    (found,) = re.findall(r'GHOSTS_MARK\s*=\s*"([^"]+)"', _orchestrator_source())
+    assert found == GHOSTS_MARK
+
+
 def test_reserved_keys_are_the_set_lineage_index_filters():
     assert LinPayload.RESERVED_KEYS == {
         LinPayload.FILES_KEY, LinPayload.PROV_KEY, LinPayload.KEY_KEY,

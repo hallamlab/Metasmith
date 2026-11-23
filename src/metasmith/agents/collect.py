@@ -177,7 +177,7 @@ def CollectResults(
         path = output.AddItem(
             path=_published_path(
                 abs_path, output_path, published,
-                warn=task.plan.publish_intermediates,
+                warn=task.plan.keep_intermediates,
             ),
             dtype=cinst.dtype_name,
             parents=parents,

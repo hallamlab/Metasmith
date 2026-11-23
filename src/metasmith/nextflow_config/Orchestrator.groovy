@@ -1,4 +1,8 @@
 import groovy.json.JsonOutput
+import java.nio.file.FileSystems
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
 
 class Orchestrator {
     // Reserved index key carrying a leaf's canonical instance_id from the
@@ -45,6 +49,11 @@ class Orchestrator {
     // still emits. _post records it as a zero post and posts nothing. Kept in
     // lockstep with payload.ZERO_MARK.
     public static final String ZERO_MARK = ".~0."
+    // Mirrors caching/layout.GHOSTS_MARK.
+    public static final String GHOSTS_MARK = ".ghosts"
+    // Where a product read off a manifest and never placed claims to live. No
+    // such directory exists, so nothing can read it or delete through it.
+    public static final String ABSENT_DIR = ".msm-absent"
 
     // Raised when a stream `classify()` proved to be a descendant of the
     // by-stream delivers an item whose index does not carry the by-key.
@@ -118,6 +127,23 @@ class Orchestrator {
     // counts such a post as delivered for that member's node.
     private Map zero_posts
     private volatile boolean sealed = false
+
+    // The run's footprint (`footprint`). A probe pass runs no process: every
+    // member is answered from its shard's manifest, or by a stand-in per output
+    // when it has none, and logged, so `caching.footprint.plan_skips` can tell
+    // which deleted products the real pass needs. A real pass deletes each
+    // product no target names once every step reading it has closed and every
+    // member that read it has delivered.
+    private boolean probing = false
+    private boolean deleting = false
+    private Map footprint_cfg = [:]
+    private Set keep_streams = [] as Set
+    private Map readers_of = [:]
+    private final Map products = new java.util.concurrent.ConcurrentHashMap()
+    private final Map products_of = new java.util.concurrent.ConcurrentHashMap()
+    private final Map pending_reads = new java.util.concurrent.ConcurrentHashMap()
+    private final Map inflight = new java.util.concurrent.ConcurrentHashMap()
+    private final Set closed_steps = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private static final String GROUP_BY_CONFLICT = "\u0000conflict"
     private static final Map NO_ROUTE = [:]
 
@@ -133,6 +159,27 @@ class Orchestrator {
         this.hash_cases = new java.util.concurrent.ConcurrentHashMap()
         this.post_cases = new java.util.concurrent.ConcurrentHashMap()
         this.zero_posts = new java.util.concurrent.ConcurrentHashMap()
+    }
+
+    // Called once, before any group. `cfg`:
+    //   probe        true for the probe pass
+    //   delete       false keeps every intermediate
+    //   keep         the streams whose items are never deleted (targets)
+    //   readers      each stream's reading steps, by order
+    //   cache_root   where the shards are, in this process's coordinates
+    //   skip         the skip file the real pass reads (`caching.footprint`)
+    //   probe_log, deleted_log
+    public void footprint(Map cfg) {
+        this._assertUnsealed("footprint")
+        this.footprint_cfg = cfg
+        this.probing = cfg.probe?.toString() == 'true'
+        this.deleting = cfg.delete == true && !this.probing
+        this.keep_streams = (cfg.keep ?: []) as Set
+        this.readers_of = cfg.readers ?: [:]
+    }
+
+    public boolean isProbing() {
+        return this.probing
     }
 
     // The last statement of the workflow body.
@@ -447,6 +494,7 @@ class Orchestrator {
                     group = written
                     def n = group.size()
                     def chain = index[SIBS_KEY]
+                    def producer = index[KEY_KEY]
                     return (0..<n).collect((i) -> {
                         def item = group[i]
                         // The batch position is where the member sat in the
@@ -457,6 +505,7 @@ class Orchestrator {
                         def out = [:] + index
                         out[name] = [v]
                         out.remove(SIBS_KEY)
+                        out.remove(KEY_KEY)
                         if (cases != null && !(out[CASES_KEY] instanceof List)) out[CASES_KEY] = cases
                         if (by != null) {
                             def prior = (chain instanceof List) ? chain : []
@@ -468,6 +517,7 @@ class Orchestrator {
                         }
                         if (out[CASES_KEY] instanceof List) this.hash_cases[v] = out[CASES_KEY]
                         this.registerIndexHistory(name, out)
+                        this._produced(v as String, item, name as String, producer, cname as String)
                         return [out, item]
                     })
                 })
@@ -1155,8 +1205,8 @@ class Orchestrator {
             throw new RuntimeException("cache helper failed (${proc.exitValue()}): ${err}")
         }
         def rows = out.toString().split("\n").findAll(l -> l.trim().size() > 0).collect(l -> {
-            def parts = l.trim().split(/\|/, 3) as List
-            while (parts.size() < 3) parts << ""
+            def parts = l.trim().split(/\|/, 4) as List
+            while (parts.size() < 4) parts << ""
             return parts
         })
         if (rows.size() != spec.members.size()) {
@@ -1165,6 +1215,10 @@ class Orchestrator {
         return rows
     }
 
+    // A member goes to one of three places: `miss`, the real process; `twin`,
+    // the `_cached` twin, which places a shard's files and touches the absent
+    // ones of a skipped ghost; `synth`, no process at all, its outputs named
+    // off the manifest (`_synthOuts`). A probe pass sends every member to synth.
     private def _decide(batch, cache) {
         def members = batch.collect(item -> item[0])
         def rows = null
@@ -1173,6 +1227,7 @@ class Orchestrator {
                 rows = probeMembers(cache.helper, [
                     tk: cache.tk, sig: cache.sig, slk: cache.slk,
                     cache_root: cache.cache_root, members: members,
+                    mode: this.probing ? 'probe' : 'run', skip: this.footprint_cfg.skip,
                 ])
             } catch (Exception e) {
                 System.err.println("[metasmith] step ${cache.step} (${cache.step_name}): ${e.message}; running every member")
@@ -1181,15 +1236,59 @@ class Orchestrator {
         }
         return [batch, (0..<batch.size())].transpose().collect((item, i) -> {
             def index = [:] + item[0]
-            def row = (rows == null) ? ["-", "-", ""] : rows[i]
+            def row = (rows == null) ? ["-", "-", "", ""] : rows[i]
+            def verdict = row[1]
             index[KEY_KEY] = row[0]
-            def hit = (row[1] == "hit")
-            if (hit) this._logHit(cache, row[0], row[2], index)
-            return [item: [index, *item[1..-1]], hit: hit, shard: row[2]]
+            if (verdict == "stale") {
+                throw new IllegalStateException(
+                    "step ${cache.step} (${cache.step_name}): member ${row[0]} must run but reads a "
+                    + "product this run skipped, so the probe pass and this pass disagree about the "
+                    + "cache. Run again: the next probe sees the cache as it is now."
+                )
+            }
+            def files = (row[3] ?: "").split(",").findAll(f -> f.size() > 1).collect(f -> [f.substring(1), f[0] == "+"])
+            def route = "miss"
+            if (this.probing) {
+                route = "synth"
+                if (files.isEmpty()) files = this._standIns(cache.outs, index)
+                this._logProbe(cache, row[0], verdict, index)
+            } else if (verdict == "hit" || verdict == "skip") {
+                route = (verdict == "skip" && files.every(f -> !f[1])) ? "synth" : "twin"
+                this._logHit(cache, row[0], row[2], index, verdict == "skip")
+            } else {
+                this._reading(index, cache.slk)
+            }
+            return [item: [index, *item[1..-1]], route: route, shard: row[2], files: files]
         })
     }
 
-    private synchronized void _logHit(cache, key, shard, index) {
+    // One output per slot for a member whose outputs nothing records. The
+    // token is not a member key's tail, so no shard ever consumed its id, and
+    // every member reading it is a miss.
+    private List _standIns(List outs, Map index) {
+        def key = index[KEY_KEY] as String
+        def token = (key && key != "-") ? key.substring(key.length() - 16) : JsonOutput.toJson(stripReserved(index).sort()).md5().substring(0, 16)
+        return outs.collect(o -> ["1-1-${o[0]}.u${token}${o[1]}" as String, false])
+    }
+
+    // The probe pass's form of a step with no inputs, which has no member to
+    // answer for: one stand-in per output.
+    public List unknowns(step, List outs) {
+        def token = "${step}".md5().substring(0, 16)
+        return outs.collect(o -> this.one_null.map(x -> [[:], Paths.get("/", ABSENT_DIR, "-", "1-1-${o[0]}.u${token}${o[1]}" as String)]))
+    }
+
+    private synchronized void _logProbe(cache, key, verdict, index) {
+        def f = new File(this.footprint_cfg.probe_log as String)
+        f.parentFile?.mkdirs()
+        def line = [
+            step: cache.step, key: key, verdict: verdict,
+            entry: index.findAll((k, v) -> k != FILES_KEY && k != SIBS_KEY && k != CASES_KEY),
+        ]
+        f << JsonOutput.toJson(line) << "\n"
+    }
+
+    private synchronized void _logHit(cache, key, shard, index, boolean skipped) {
         if (cache.hits_log == null) return
         def f = new File(cache.hits_log as String)
         f.parentFile?.mkdirs()
@@ -1197,41 +1296,161 @@ class Orchestrator {
             step: cache.step, step_name: cache.step_name, key: key, shard: shard,
             entry: index.findAll((k, v) -> k != FILES_KEY && k != SIBS_KEY && k != CASES_KEY),
         ]
+        if (skipped) line.skipped = true
         if (index[CASES_KEY] instanceof List) line.cases = index[CASES_KEY]
         f << JsonOutput.toJson(line) << "\n"
     }
 
+    // Each source is [position, shard file, name without its position]; an
+    // empty shard file is one a run deleted, which the twin touches.
     private def _collateHits(rows) {
         def collated = this._collateBatch(rows.collect(r -> r.item))
         def indexes = collated[0]
         def sources = []
         rows.eachWithIndex { r, i ->
-            def out = new File(r.shard as String, "out")
-            def files = out.listFiles() ?: []
-            files.sort { a, b -> a.name <=> b.name }.each { f ->
-                sources << [i + 1, f.absolutePath, f.name.replaceFirst(/^\d+-/, "")]
+            r.files.sort { a, b -> a[0] <=> b[0] }.each { f ->
+                def path = f[1] ? new File(new File(r.shard as String, "out"), f[0] as String).absolutePath : ""
+                sources << [i + 1, path, (f[0] as String).replaceFirst(/^\d+-/, "")]
             }
         }
         return [indexes, sources]
     }
 
+    // A batch of synth members in the shape a process emits, one channel per
+    // output slot: `outs` holds each slot's [branch, "-<dtype><ext>"], the glob
+    // codegen declares for it.
+    private List _synthOuts(decided, List outs) {
+        def batches = decided.map(rows -> rows.findAll(r -> r.route == "synth")).filter(rows -> rows.size() > 0)
+        return outs.collect(o -> {
+            def matcher = FileSystems.getDefault().getPathMatcher("glob:*-${o[0]}.*${o[1]}")
+            return batches.map(rows -> {
+                def indexes = this._collateBatch(rows.collect(r -> r.item))[0]
+                def files = []
+                rows.eachWithIndex { r, j ->
+                    r.files.each { f ->
+                        def name = "${j + 1}-" + (f[0] as String).replaceFirst(/^\d+-/, "")
+                        if (matcher.matches(Paths.get(name))) files << Paths.get("/", ABSENT_DIR, r.item[0][KEY_KEY] as String, name)
+                    }
+                }
+                return [indexes, files]
+            }).filter(t -> !t[1].isEmpty())
+        })
+    }
+
     public def _route(size, channel, cache) {
         def decided = channel.collate(size).map(batch -> this._decide(batch, cache))
+        if (this.deleting) decided.subscribe(onComplete: { this._closed(cache.step) })
         def misses = decided
-            .map(rows -> rows.findAll(r -> !r.hit))
+            .map(rows -> rows.findAll(r -> r.route == "miss"))
             .filter(rows -> rows.size() > 0)
             .map(rows -> this._collateBatch(rows.collect(r -> r.item)))
         def hits = decided
-            .map(rows -> rows.findAll(r -> r.hit))
+            .map(rows -> rows.findAll(r -> r.route == "twin"))
             .filter(rows -> rows.size() > 0)
             .map(rows -> this._collateHits(rows))
-        return [misses, hits]
+        return [misses, hits, this._synthOuts(decided, cache.outs ?: [])]
     }
 
-    // The outputs of a process and of its `_cached` twin, one mixed channel
-    // per output slot, so downstream sees one producer.
-    public List mixOuts(a, b) {
-        return [a, b].transpose().collect((x, y) -> x.mix(y))
+    // The outputs of a process, of its `_cached` twin and of its synth
+    // members, one mixed channel per output slot, so downstream sees one producer.
+    public List mixOuts(a, b, List c = null) {
+        def outs = [a, b].transpose().collect((x, y) -> x.mix(y))
+        return (c == null || c.isEmpty()) ? outs : [outs, c].transpose().collect((x, y) -> x.mix(y))
+    }
+
+    // The member a delivered output belongs to, the same at dispatch and at
+    // delivery: its key, or its lineage when it has none.
+    private static String _memberId(Map index) {
+        def key = index[KEY_KEY] as String
+        return (key && key != "-") ? key : "u" + JsonOutput.toJson(stripReserved(index).sort()).md5()
+    }
+
+    private void _reading(Map index, List slk) {
+        if (!this.deleting) return
+        def prov = index[PROV_KEY]
+        if (!(prov instanceof List)) return
+        def ids = new HashSet()
+        prov.eachWithIndex { items, s ->
+            items.each { it -> if (it[slk[s]] instanceof List) ids.addAll(it[slk[s]]) }
+        }
+        this.inflight[_memberId(index)] = ids
+        ids.each { id -> this.pending_reads.merge(id, 1, (a, b) -> a + b) }
+    }
+
+    private void _delivered(Map index) {
+        def ids = this.inflight.remove(_memberId(index))
+        if (ids == null) return
+        ids.each { id ->
+            this.pending_reads.merge(id, -1, (a, b) -> a + b)
+            this._maybeDelete(id as String)
+        }
+    }
+
+    private void _produced(String id, item, String stream, producer, String cname) {
+        if (!this.deleting || this.keep_streams.contains(stream)) return
+        this.products[id] = [path: item, stream: stream, key: producer, cname: cname, gone: false]
+        this.products_of.computeIfAbsent(stream, x -> Collections.synchronizedList(new ArrayList())).add(id)
+        this._maybeDelete(id)
+    }
+
+    private void _closed(step) {
+        this.closed_steps.add(step as Integer)
+        this.readers_of.each { stream, steps ->
+            if (!(steps as List).contains(step as Integer)) return
+            new ArrayList(this.products_of.getOrDefault(stream, [])).each { id -> this._maybeDelete(id as String) }
+        }
+    }
+
+    // A failed reader never delivers, so its inputs stay for the rerun.
+    private void _maybeDelete(String id) {
+        def p = null
+        synchronized (this.products) {
+            p = this.products.get(id)
+            if (p == null || p.gone) return
+            if ((this.pending_reads.get(id) ?: 0) > 0) return
+            if (!(this.readers_of.get(p.stream) ?: []).every(s -> this.closed_steps.contains(s as Integer))) return
+            p.gone = true
+        }
+        this._remove(id, p)
+    }
+
+    private void _remove(String id, Map p) {
+        if (p.path instanceof Path) _rmTree(p.path as Path)
+        def key = p.key as String
+        def root = this.footprint_cfg.cache_root as String
+        if (key && key != "-" && root) {
+            // Mirrors caching/layout.shard_dir.
+            def shard = Paths.get(root, key.substring(0, 2), key.substring(2))
+            if (_rmTree(shard.resolve("out").resolve(p.cname as String))) {
+                def mark = Paths.get(root, GHOSTS_MARK)
+                if (!Files.exists(mark)) Files.createFile(mark)
+            }
+        }
+        this._logDeleted([stream: p.stream, id: id, key: key, path: "${p.path}" as String])
+    }
+
+    // Renamed away first, so a driver killed mid-delete leaves the product
+    // absent rather than half there: a half-deleted shard directory would
+    // still probe as a hit. Never follows a link, so a product that links
+    // into a reference does not take the reference with it.
+    private static boolean _rmTree(Path path) {
+        if (!Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return false
+        def gone = path.resolveSibling(".msm-gone.${path.fileName}.${System.nanoTime()}" as String)
+        Files.move(path, gone, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        def walk = Files.walk(gone)
+        try {
+            walk.sorted(Comparator.reverseOrder()).forEach(x -> Files.deleteIfExists(x))
+        } finally {
+            walk.close()
+        }
+        return true
+    }
+
+    private synchronized void _logDeleted(Map line) {
+        if (this.footprint_cfg.deleted_log == null) return
+        def f = new File(this.footprint_cfg.deleted_log as String)
+        f.parentFile?.mkdirs()
+        f << JsonOutput.toJson(line) << "\n"
     }
 
     private def _collateBatch(batch) {
@@ -1272,7 +1491,8 @@ class Orchestrator {
                 // while index is a list of indexes
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
-                indexes = indexes.collect(index -> Orchestrator.stripReserved(index) + index.subMap([SIBS_KEY, CASES_KEY]).findAll((k, v) -> v != null))
+                if (this.deleting) indexes.each(index -> this._delivered(index as Map))
+                indexes = indexes.collect(index -> Orchestrator.stripReserved(index) + index.subMap([SIBS_KEY, CASES_KEY, KEY_KEY]).findAll((k, v) -> v != null))
                 bag = (bag instanceof List)? bag : [bag]
                 if (!is_batched) {
                     // Non-batched: return the single item directly without numeric-prefix parsing
@@ -1389,7 +1609,8 @@ class Orchestrator {
     // it, when another case also posts into that stream.
     public def publish(stream, List wanted = null) {
         def (name, _stream) = stream
-        def kept = (wanted == null) ? _stream : _stream.filter((index, item) -> this._casesOf(index as Map).any((c) -> c in wanted))
+        def kept = this.probing ? _stream.filter(x -> false)
+            : (wanted == null) ? _stream : _stream.filter((index, item) -> this._casesOf(index as Map).any((c) -> c in wanted))
         return kept.map((index, item) -> {
             return new Tuple2(JsonOutput.toJson(stripReserved(index)), item)
         })

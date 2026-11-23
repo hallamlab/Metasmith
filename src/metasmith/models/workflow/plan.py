@@ -334,11 +334,11 @@ class WorkflowPlan:
     dropped_targets: list[str] = field(default_factory=list)
     dropped_samples: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
-    # A run publishes its targets and nothing else. The per-step outputs stay in
-    # the work dir and the cache store, so what a collect copies back is what was
-    # asked for -- at the cost of a run that dies early leaving an empty results
-    # folder, where the per-step logs are then the only record.
-    publish_intermediates: bool = False
+    # A run keeps and publishes its targets and nothing else: a product no
+    # target names is deleted from the cache and the work dir once every step
+    # reading it has succeeded. On, nothing is deleted and every product is
+    # published, for debugging. Saved before the rename as `publish_intermediates`.
+    keep_intermediates: bool = False
     # Each solve behind the plan as (label, (given, transforms, target), result): one for
     # a single case, one per case and fork outcome for a merged plan.
     _solver_cases: list[tuple[str, tuple, SolverResult]] = field(default_factory=list)
@@ -406,7 +406,7 @@ class WorkflowPlan:
             given=[inst.Pack() for inst in self.given],
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
-            publish_intermediates=self.publish_intermediates,
+            keep_intermediates=self.keep_intermediates,
         )
         if self.streams:
             packed.update(streams=dict(self.streams))
@@ -490,7 +490,7 @@ class WorkflowPlan:
             given=given,
             targets=[_unpack_target(d) for d in raw["targets"]],
             steps=steps,
-            publish_intermediates=raw.get("publish_intermediates", False),
+            keep_intermediates=raw.get("keep_intermediates", raw.get("publish_intermediates", False)),
             cases=list(raw.get("cases", [])),
             streams=dict(raw.get("streams", {})),
             given_cases=dict(raw.get("given_cases", {})),

@@ -1,8 +1,9 @@
 """A shard that cannot serve every slot the member declares is never made or served.
 
 A member whose required branch produced nothing mints no shard. A shard one
-of whose listed files has gone is not a hit. A member with an empty optional
-branch is still whole.
+of whose listed files has gone is not a hit: it is a ghost, served only when
+the run's skip file names it. A member with an empty optional branch is still
+whole.
 """
 
 from __future__ import annotations
@@ -112,3 +113,42 @@ def test_a_manifest_without_sizes_is_still_served(tmp_path):
     path.write_bytes(cbor2.dumps(manifest))
     path.chmod(os_mode)
     assert probe(cache_root, bytes.fromhex(KEY)) == shard
+
+
+def _helper_rows(cache_root: Path, entry: dict, **spec) -> list:
+    from metasmith.caching.invocation import probe_members
+    return probe_members({
+        "tk": "trA", "sig": "sig", "slk": ["seed"], "cache_root": str(cache_root),
+        "members": [entry], **spec,
+    })
+
+
+def test_a_shard_a_run_deleted_from_is_a_ghost_the_helper_skips_only_when_told(tmp_path):
+    import json
+    from metasmith.caching.invocation import consumed_of, member_key, shard_state
+
+    entry = _entry()
+    key = member_key("trA", "sig", consumed_of(entry, ["seed"])).hex()
+    cwd = tmp_path / "task"
+    cwd.mkdir()
+    (cwd / "1-1-1.abcdef-out0.txt").write_text("payload")
+    cache_root = tmp_path / "task_cache"
+    promote_members(
+        cwd=cwd, entries=[{**entry, LinPayload.KEY_KEY: key}], meta=_meta(1),
+        cache_root=cache_root, successes=[True],
+    )
+    (shard_dir(cache_root, key) / "out" / "1-1-1.abcdef-out0.txt").unlink()
+
+    assert shard_state(cache_root, bytes.fromhex(key))[0] == "ghost"
+    assert probe(cache_root, bytes.fromhex(key)) is None
+    shard = str(shard_dir(cache_root, key))
+    assert _helper_rows(cache_root, entry, mode="probe") == [(key, "ghost", shard, [("1-1-1.abcdef-out0.txt", False)])]
+    assert _helper_rows(cache_root, entry)[0][1] == "miss"
+
+    skip = tmp_path / "skip.json"
+    skip.write_text(json.dumps({"skip": [key], "absent_ids": []}))
+    assert _helper_rows(cache_root, entry, skip=str(skip))[0][1] == "skip"
+
+    # A member that must run but reads what a skipped member left absent.
+    skip.write_text(json.dumps({"skip": [], "absent_ids": ["1e20aaaa"]}))
+    assert _helper_rows(cache_root, entry, skip=str(skip))[0][1] == "stale"

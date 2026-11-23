@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 
+from ...caching.footprint import DELETED_LOG, FOOTPRINT_FILE, PROBE_LOG, SKIP_FILE
 from ...caching.keys import LIN_PAYLOAD_VERSION
 from ...caching.layout import default_cache_root
 from ...constants import AgentPaths
@@ -72,7 +73,11 @@ def TwinHomeBash() -> str:
 
 
 def TwinPlaceBash(external_home: Path, src: str = TWIN_SRC, dst: str = TWIN_DST) -> str:
-    """Bash that places one shard product at `dst`, after `TwinHomeBash` set `h`."""
+    """Bash that places one shard product at `dst`, after `TwinHomeBash` set `h`.
+
+    An empty `src` is a product a run deleted from the shard: its readers all hit,
+    so an empty file under its name is all the twin owes downstream.
+    """
     # A driver container binds the agent home at its host path and again at /msm_home. The two
     # binds share a device, yet a hard link between them fails with EXDEV, so the shard is linked
     # through the bind the work dir sits on first. A directory cannot be hard linked, so its files
@@ -80,10 +85,12 @@ def TwinPlaceBash(external_home: Path, src: str = TWIN_SRC, dst: str = TWIN_DST)
     # bytes twice, so say so.
     return (
         f"m='{src}'; v=\"$h${{m#'{external_home}'}}\";"
+        f" if [ -z \"$m\" ]; then touch '{dst}'; else"
         f" ln -f \"$v\" '{dst}' 2>/dev/null || ln -f \"$m\" '{dst}' 2>/dev/null"
         f" || cp -al \"$v\" '{dst}' 2>/dev/null"
         f" || {{ rm -rf '{dst}'; cp -al \"$m\" '{dst}' 2>/dev/null; }}"
-        f" || {{ rm -rf '{dst}'; echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }}"
+        f" || {{ rm -rf '{dst}'; echo \"cache hit copied, not linked: $m\" >&2; cp -r \"$m\" '{dst}'; }};"
+        f" fi"
     )
 
 
@@ -285,6 +292,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
     ]
     HEADER = "\n".join([
         "params.testSpread=1",
+        "params.msm_probe=false",
         f"{_strip_var(context.external_home_var)} = '{context.external_home}'",
         f'{_strip_var(context.external_work_var)} = "{path_map.Render(context.external_work, dialect="groovy")}"',
     ]+bootstrap)
@@ -702,6 +710,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         json.dump(_lineage_file_data, f, separators=(',', ':'))
 
     target_streams = {stream(x.instance.dtype) for x in the_plan.targets}
+    readers: dict[str, set[int]] = {}
     src_process = []
     wf_main = []
     published_channels: dict[str, tuple[int, DataInstance]] = {}
@@ -737,6 +746,10 @@ def prepare_nextflow(task, context: NextflowGenContext):
             "[" + ", ".join(f"'{s}'" for s in produced_slot_ids) + "]"
         )
 
+        outs_literal = "[" + ", ".join(
+            f"[{branch+1}, '-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}']"
+            for branch, g in enumerate(produced_archetypes) for x in g
+        ) + "]"
         process_name, src, src_res = prepare_step(step)
         if step.order in pull_orders:
             src_res += PULL_RESOURCES
@@ -782,23 +795,32 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 f"cacheable: {'true' if cacheable else 'false'}, "
                 f"helper: {helper_literal}, "
                 f"hits_log: \"{hits_log_literal}\", "
+                f"outs: {outs_literal}, "
                 f"step: {step.order}, step_name: '{step.transform.name}']"
             )
             miss_var = f"__miss_{step.order}"
             hit_var = f"__hit_{step.order}"
+            synth_var = f"__synth_{step.order}"
             out_var = f"__out_{step.order}"
             wf_main.append(
-                f"({miss_var}, {hit_var}) = o.group('{gb}', [{using_symbols}], k, "
+                f"({miss_var}, {hit_var}, {synth_var}) = o.group('{gb}', [{using_symbols}], k, "
                 f"{step.transform.batch_size}, {cache_literal}{lanes_arg})"
             )
             wf_main.append(
                 f"{out_var} = o.mixOuts(o.asStreams({process_name}({miss_var})), "
-                f"o.asStreams({twin_name}({hit_var})))"
+                f"o.asStreams({twin_name}({hit_var})), {synth_var})"
             )
             streams_expr = out_var
             post_args = slot_ids_literal
+            for x in used_archetypes:
+                readers.setdefault(stream(x.dtype), set()).add(step.order)
         else:
-            streams_expr = f"o.asStreams({process_name}())"
+            out_var = f"__out_{step.order}"
+            wf_main.append(
+                f"if (o.isProbing()) {{ {out_var} = o.unknowns({step.order}, {outs_literal}) }}"
+                f" else {{ {out_var} = o.asStreams({process_name}()) }}"
+            )
+            streams_expr = out_var
             post_args = slot_ids_literal
             if the_plan.multi_case and set(step.cases) != set(the_plan.cases):
                 post_args += f", {groovy_strings(step.cases)}"
@@ -822,7 +844,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
                     f"_{name} = o.mix([{', '.join(to_mix)}])"
                 )
 
-        if the_plan.publish_intermediates:
+        if the_plan.keep_intermediates:
             to_pubish = [x for g in produced_archetypes for x in g]
         else:
             to_pubish = [x for g in produced_archetypes for x in g if stream(x.dtype) in target_streams]
@@ -866,10 +888,30 @@ def prepare_nextflow(task, context: NextflowGenContext):
         )
         f.write("\n")
 
+    published_slots = sorted(
+        cache_decisions[step.order]["out_instance_ids"].get((dep.key, g), "")
+        for step in the_plan.steps if step.order in cache_decisions
+        for g, dep_group in enumerate(step.transform.model.produces) for dep in dep_group
+        if any(stream(i.dtype) in published_channels for i in step.ProductsOf(g, dep))
+    )
+    with open(context.work_dir/FOOTPRINT_FILE, "w") as f:
+        json.dump({"published": published_slots}, f)
+
+    def groovy_map(d: dict[str, set[int]]) -> str:
+        return "[" + ", ".join(f"'{k}': {sorted(v)}" for k, v in sorted(d.items())) + "]" if d else "[:]"
+    footprint_literal = (
+        f"[probe: params.msm_probe, delete: {'false' if the_plan.keep_intermediates else 'true'}, "
+        f"keep: {groovy_strings(sorted(published_channels))}, readers: {groovy_map(readers)}, "
+        f"cache_root: \"{cache_root_literal}\", "
+        f"skip: \"{context.external_work_var}/{SKIP_FILE}\", "
+        f"probe_log: \"{context.external_work_var}/{PROBE_LOG}\", "
+        f"deleted_log: \"{context.external_work_var}/{DELETED_LOG}\"]"
+    )
+
     wf_output = []
     _s2target = {stream(x.instance.dtype):x for x in the_plan.targets}
     publish_filter: dict[str, list[str]] = {}
-    if the_plan.multi_case and not the_plan.publish_intermediates:
+    if the_plan.multi_case and not the_plan.keep_intermediates:
         for ch in published_channels:
             wanted = {x.case for x in the_plan.targets if stream(x.instance.dtype) == ch}
             if wanted != set(the_plan.cases):
@@ -898,6 +940,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         f"workflow"+" {",
         "main:",
         f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
+        f'o.footprint({footprint_literal})',
         f'_lf = new groovy.json.JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
         f'l = _lf.lineage',
         f'o.seedParents(_lf.child2parent)',

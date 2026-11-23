@@ -230,7 +230,7 @@ def test_a_slot_each_case_reads_from_its_own_lane_is_staged_as_a_lane(tmp_path):
     )
     groups = [ln for ln in body.splitlines() if "o.group(" in ln]
     (line,) = [ln for ln in groups if f"step: {align.order}," in ln]
-    assert line.startswith(f"(__miss_{align.order}, __hit_{align.order}) = o.group('{reads}', [_{reads}, _{asm}],")
+    assert line.startswith(f"(__miss_{align.order}, __hit_{align.order}, __synth_{align.order}) = o.group('{reads}', [_{reads}, _{asm}],")
     assert [ln for ln in groups if re.search(r"'\], \[[^\]]*\]\)$", ln)] == [line]
     assert line.endswith(f"'], ['{asm}'])")
 

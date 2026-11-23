@@ -1,6 +1,7 @@
 """Plan several cases: solve each alone, then merge the plans step by step."""
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -326,23 +327,39 @@ class _Merge:
                 out.append(n.transform)
         return out
 
-    def _order(self) -> list[_Node]|None:
+    def _succs(self) -> list[set[int]]:
         find = self.streams.find
-        made = {id(n): {find(e) for e in n.outputs.values()} for n in self.nodes}
-        preds = {
-            id(n): {id(m) for m in self.nodes if m is not n and made[id(m)] & {find(e) for e in n.slots.values()}}
-            for n in self.nodes
-        }
+        makers: dict[Endpoint, set[int]] = {}
+        for n in self.nodes:
+            for e in n.outputs.values():
+                makers.setdefault(find(e), set()).add(n.seq)
+        succs: list[set[int]] = [set() for _ in self.nodes]
+        for n in self.nodes:
+            for e in n.slots.values():
+                for m in makers.get(find(e), ()):
+                    if m != n.seq:
+                        succs[m].add(n.seq)
+        return succs
+
+    def _order(self) -> list[_Node]|None:
+        # Each round takes the ready node of least seq, so the order depends
+        # only on the graph and the merge order, never on set iteration.
+        succs = self._succs()
+        waiting = [0] * len(self.nodes)
+        for out in succs:
+            for s in out:
+                waiting[s] += 1
+        ready = [i for i, w in enumerate(waiting) if w == 0]
+        heapq.heapify(ready)
         order: list[_Node] = []
-        done: set[int] = set()
-        while len(order) < len(self.nodes):
-            ready = [n for n in self.nodes if id(n) not in done and preds[id(n)] <= done]
-            if not ready:
-                return None
-            nxt = min(ready, key=lambda n: n.seq)
-            order.append(nxt)
-            done.add(id(nxt))
-        return order
+        while ready:
+            i = heapq.heappop(ready)
+            order.append(self.nodes[i])
+            for s in succs[i]:
+                waiting[s] -= 1
+                if waiting[s] == 0:
+                    heapq.heappush(ready, s)
+        return order if len(order) == len(self.nodes) else None
 
 
 def PlanCases(

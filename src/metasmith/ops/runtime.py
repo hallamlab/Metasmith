@@ -17,11 +17,13 @@ from .agent import load_agent
 def stage(
     agent_path: str, task_ref: str, on_exist: str = "skip",
     workspace: str | None = None, idle_timeout: float | None = None,
-    rootfs: str | None = None,
+    rootfs: str | None = None, keep_intermediates: bool | None = None,
 ) -> dict:
     agent = load_agent(agent_path)
     task = _ws.load_task(workspace, task_ref)
     task.RefuseIfDeferred()
+    if keep_intermediates is not None:
+        task.plan.keep_intermediates = keep_intermediates
     agent.StageWorkflow(
         task, on_exist,
         idle_timeout=IDLE_TIMEOUT if idle_timeout is None else idle_timeout,
