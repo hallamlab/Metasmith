@@ -317,7 +317,7 @@ def solve_by_mcts(
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
-    max_iter: int=256,
+    max_iter: int=512,
     max_refine: int|None=None,
     fork_groups: Sequence[tuple[Transform, int]]=(),
     partial: Sequence[Transform]=(),

@@ -11,9 +11,7 @@ description: 'The Engcyc metagenomics workflow from reads, one sample per read s
 
   (short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
 
-  downstream lanes read the OPERA-MS assembly. CAUTION a hybrid sample does not
-
-  yet solve with every target: the planner runs out of search budget.
+  downstream lanes read the OPERA-MS assembly.
 
   Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 

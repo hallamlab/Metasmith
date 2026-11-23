@@ -371,7 +371,7 @@ class _WorkflowOps:
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         targets: TargetBuilder | list[str],
-        max_iter: int=256, max_refine: int|None=None, seed: int=42,
+        max_iter: int=512, max_refine: int|None=None, seed: int=42,
     ):
         return Spec.SolveViews(
             samples=samples, resources=resources, transforms=transforms,

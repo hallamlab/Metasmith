@@ -33,7 +33,7 @@ def solve_with_engine(
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
-    max_iter: int=256,
+    max_iter: int=512,
     max_refine: int=REFINER_BUDGET,
     fork_groups: Sequence[tuple[Transform, int]]=(),
     partial: Sequence[Transform]=(),

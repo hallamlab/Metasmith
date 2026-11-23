@@ -12,8 +12,7 @@ download; a ~ marks an estimate.
 
 Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads; a hybrid sample
 (short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
-downstream lanes read the OPERA-MS assembly. CAUTION a hybrid sample does not
-yet solve with every target: the planner runs out of search budget.
+downstream lanes read the OPERA-MS assembly.
 Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 at >= 50% complete and <= 10% contamination.
 Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan against GTDB r232

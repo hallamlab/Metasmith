@@ -502,7 +502,7 @@ class WorkflowPlan:
         cls,
         cases: list[Case],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
-        max_iter: int=256, max_refine: int|None=None, seed: int=42,
+        max_iter: int=512, max_refine: int|None=None, seed: int=42,
     ):
         _check_cases(cases)
         if len(cases) > 1:

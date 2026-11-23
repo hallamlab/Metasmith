@@ -26,7 +26,7 @@ STUDIES = {
 
 
 def main(argv):
-    max_iter = 256
+    max_iter = 512
     if argv[:1] == ["--max-iter"]:
         max_iter, argv = int(argv[1]), argv[2:]
     for name in argv or STUDIES:
