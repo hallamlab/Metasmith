@@ -5,20 +5,22 @@ description: 'Recover cloned fosmid inserts from pooled short reads: host filter
   and spades per pool, then backbone-anchored insert resolution and cross-pool
 
   dedup into a representative insert set.'
-sample_type: null
-target_types:
-- fabfos::putative_inserts
-- fabfos::insert_metadata
-- type: sequences::assembly_stats
-  parents:
-  - 0
 transform_libraries:
 - assembly
 - fabfos
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - fabfos::putative_inserts
+  - fabfos::insert_metadata
+  - type: sequences::assembly_stats
+    parents:
+    - 0
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

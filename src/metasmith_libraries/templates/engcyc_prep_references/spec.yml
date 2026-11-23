@@ -13,37 +13,6 @@ description: 'Fetches and builds every reference database and tool image that
   engcyc_metagenomics. The downloads total ~680 GB, ~350 GB of it iPHoP''s; see
 
   engcyc_metagenomics'' description for each lane''s size.'
-sample_type: null
-target_types:
-- annotation::amrfinderplus_db
-- annotation::bacmet_diamond_db
-- annotation::bakta_db
-- annotation::card_db
-- annotation::eggnog_data
-- annotation::megares_diamond_db
-- annotation::mobileog_diamond_db
-- annotation::vfdb_diamond_db
-- annotation::virsorter2_db
-- ref::antismash
-- ref::checkv_db
-- ref::dbcan_hmm
-- ref::deeparg_db
-- ref::dram_sheets
-- ref::genomad
-- ref::gtdb
-- ref::gtdb_rrna
-- ref::interproscan_data
-- ref::iphop_db
-- ref::kofamscan_ko_list
-- ref::kofamscan_profiles
-- ref::merops_diamond_db
-- ref::metaphlan_db
-- ref::pathofact_db
-- ref::refseq_viral_diamond_db
-- ref::uniref50_diamond_db
-- ref::vcontact3_db
-- ref::vibrant_db
-- ref::vogdb_hmm
 transform_libraries:
 - logistics
 - assembly
@@ -54,7 +23,40 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - annotation::amrfinderplus_db
+  - annotation::bacmet_diamond_db
+  - annotation::bakta_db
+  - annotation::card_db
+  - annotation::eggnog_data
+  - annotation::megares_diamond_db
+  - annotation::mobileog_diamond_db
+  - annotation::vfdb_diamond_db
+  - annotation::virsorter2_db
+  - ref::antismash
+  - ref::checkv_db
+  - ref::dbcan_hmm
+  - ref::deeparg_db
+  - ref::dram_sheets
+  - ref::genomad
+  - ref::gtdb
+  - ref::gtdb_rrna
+  - ref::interproscan_data
+  - ref::iphop_db
+  - ref::kofamscan_ko_list
+  - ref::kofamscan_profiles
+  - ref::merops_diamond_db
+  - ref::metaphlan_db
+  - ref::pathofact_db
+  - ref::refseq_viral_diamond_db
+  - ref::uniref50_diamond_db
+  - ref::vcontact3_db
+  - ref::vibrant_db
+  - ref::vogdb_hmm
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

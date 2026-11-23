@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "binning_and_gpr_from_assembly"
 DESCRIPTION = """
@@ -52,7 +52,7 @@ TARGETS = [
 ]
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         for tl in ("sequences.yml", "alignment.yml", "taxonomy.yml", "binning.yml",
                    "binning_local.yml", "ref.yml", "annotation.yml"):
@@ -72,10 +72,13 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks", parents={meta})
         lib.AddItem(DEFERRED, "ref::lane_calibration", parents={meta})
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type="sequences::read_metadata",
-        target_types=TARGETS,
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type="sequences::read_metadata",
+            target_types=TARGETS,
+        )],
         # Order decides which library answers a namespace, and metagenomics is
         # the only one carrying binning and binning_local.
         transform_libraries=A.transforms(

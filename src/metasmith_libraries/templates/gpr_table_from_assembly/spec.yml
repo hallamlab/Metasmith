@@ -4,9 +4,6 @@ description: 'Build the canonical chosen-4 GPR evidence table for an assembly: K
   CLEAN, DIAMOND UniRef50 and ProteinBERT folded into one gene-attributed
 
   annotation::gpr_table.'
-sample_type: null
-target_types:
-- annotation::gpr_table
 transform_libraries:
 - metagenomics
 - logistics
@@ -15,7 +12,12 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - annotation::gpr_table
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

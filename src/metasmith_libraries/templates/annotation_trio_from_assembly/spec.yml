@@ -3,21 +3,23 @@ description: 'Run the KOFAMSCAN, DIAMOND UniRef50 and InterProScan annotators ag
   an
 
   existing assembly.'
-sample_type: sequences::assembly
-target_types:
-- annotation::kofamscan_results
-- annotation::kofamscan_descriptions
-- annotation::diamond_uniref50_results
-- annotation::diamond_uniref50_descriptions
-- annotation::interproscan_results
-- annotation::interproscan_descriptions
 transform_libraries:
 - logistics
 - metagenomics
 - functionalAnnotation
 resource_libraries:
 - env
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: sequences::assembly
+  target_types:
+  - annotation::kofamscan_results
+  - annotation::kofamscan_descriptions
+  - annotation::diamond_uniref50_results
+  - annotation::diamond_uniref50_descriptions
+  - annotation::interproscan_results
+  - annotation::interproscan_descriptions
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

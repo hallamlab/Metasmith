@@ -12,7 +12,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "ecspr_survey_from_pooled_reads"
 DESCRIPTION = """
@@ -37,7 +37,7 @@ TARGETS = [
 ]
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         for tl in ("sequences.yml", "fabfos.yml", "algorithm.yml", "ref.yml",
                    "annotation.yml", "ecspr.yml"):
@@ -62,10 +62,13 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "ecspr::atom_pairs")
         lib.AddItem(DEFERRED, "ecspr::direction_ratios")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type=None,
-        target_types=TARGETS,
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type=None,
+            target_types=TARGETS,
+        )],
         transform_libraries=A.transforms(
             "assembly", "metagenomics", "logistics", "functionalAnnotation", "fabfos"),
         resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],

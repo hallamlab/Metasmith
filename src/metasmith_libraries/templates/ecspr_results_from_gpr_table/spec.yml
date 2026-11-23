@@ -4,14 +4,16 @@ description: 'Run an ECSPr ground-probe measurement over an existing GPR table: 
   conditions plus the frozen atom-pair / direction-ratio reference basis, folded
 
   into ecspr::results.'
-sample_type: null
-target_types:
-- ecspr::results
 transform_libraries:
 - fabfos
 resource_libraries:
 - env
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - ecspr::results
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

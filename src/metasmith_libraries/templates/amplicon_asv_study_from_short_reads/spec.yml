@@ -9,23 +9,25 @@ description: 'ASPIRE amplicon study from paired or single-end short reads: fastp
   analyses. Settings come from one aspire::params YAML; research/aspire/presets/
 
   holds a tool-defaults and an ASPIRE preset.'
-sample_type: null
-target_types:
-- amplicon::asv_table
-- amplicon::asv_taxonomy
-- aspire::counts_clean
-- aspire::read_fate
-- aspire::sankey_outputs
-- aspire::analysis_metadata
-- aspire::grouping_diagnostics_outputs
-- aspire::collectors_outputs
 transform_libraries:
 - aspire
 - logistics
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - amplicon::asv_table
+  - amplicon::asv_taxonomy
+  - aspire::counts_clean
+  - aspire::read_fate
+  - aspire::sankey_outputs
+  - aspire::analysis_metadata
+  - aspire::grouping_diagnostics_outputs
+  - aspire::collectors_outputs
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

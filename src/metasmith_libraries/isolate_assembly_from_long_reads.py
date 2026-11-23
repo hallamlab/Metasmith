@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "isolate_assembly_from_long_reads"
 DESCRIPTION = """
@@ -11,25 +11,28 @@ against UniRef50 and KOFAM.
 """
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         lib.AddTypeLibrary(A.TYPES / "sequences.yml")
         lib.AddTypeLibrary(A.TYPES / "ref.yml")
         lib.AddTypeLibrary(A.TYPES / "annotation.yml")
         lib.AddItem(DEFERRED, "sequences::long_reads")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type="sequences::long_reads",
-        target_types=[
-            "sequences::hifiasm_meta_assembly",
-            *({"type": t, "parents": [0]} for t in (
-                "annotation::diamond_uniref50_results",
-                "annotation::diamond_uniref50_descriptions",
-                "annotation::kofamscan_results",
-                "annotation::kofamscan_descriptions",
-            )),
-        ],
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type="sequences::long_reads",
+            target_types=[
+                "sequences::hifiasm_meta_assembly",
+                *({"type": t, "parents": [0]} for t in (
+                    "annotation::diamond_uniref50_results",
+                    "annotation::diamond_uniref50_descriptions",
+                    "annotation::kofamscan_results",
+                    "annotation::kofamscan_descriptions",
+                )),
+            ],
+        )],
         transform_libraries=A.transforms(
             "logistics", "assembly", "isolate", "metagenomics", "functionalAnnotation"),
         resource_libraries=[A.envs()],

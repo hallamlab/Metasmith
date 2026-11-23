@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "engcyc_metagenomics"
 DESCRIPTION = """
@@ -133,7 +133,8 @@ def _dtypes(library) -> dict[str, str]:
     return {str(p): dtype for p, dtype in library.manifest.items()}
 
 
-def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
+def template_for(name, samples=None, rebuild=False, targets=TARGETS,
+                 description=DESCRIPTION) -> Template:
     def inputs(lib):
         for tl in TYPE_LIBS:
             lib.AddTypeLibrary(A.TYPES / tl)
@@ -149,11 +150,14 @@ def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
     input_library = A.deferred_inputs(name, inputs, rebuild=rebuild)
     shared = ["contig_study.json", "eggnog_source.json"] + sorted(
         path for path, dtype in _dtypes(input_library).items() if dtype in SHARED_REFS)
-    return Spec(
-        input_library=input_library,
-        sample_type=None if samples is None else "sequences::read_metadata",
-        shared_input_paths=[] if samples is None else shared,
-        target_types=targets,
+    return Template(
+        name=name, description=description.strip(),
+        cases=[Spec(
+            input_library=input_library,
+            sample_type=None if samples is None else "sequences::read_metadata",
+            shared_input_paths=[] if samples is None else shared,
+            target_types=targets,
+        )],
         transform_libraries=A.transforms(
             "logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics",
             "metabolicModelling"),
@@ -161,8 +165,8 @@ def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
     )
 
 
-def build_spec(rebuild: bool = False) -> Spec:
-    return spec_for(NAME, short_sample, rebuild=rebuild)
+def build_template(rebuild: bool = False) -> Template:
+    return template_for(NAME, short_sample, rebuild=rebuild)
 
 
 if __name__ == "__main__":

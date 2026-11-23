@@ -1,16 +1,18 @@
 name: pangenome_heatmap_from_assembly
 description: Build a pangenome from NCBI assembly accessions and render it as a heatmap.
-sample_type: ncbi::assembly_accession
-target_types:
-- pangenome::heatmap
 transform_libraries:
 - logistics
 - pangenome
 resource_libraries:
 - env
 - lib
-shared_input_paths:
-- pangenome.json
+cases:
+- name: case
+  sample_type: ncbi::assembly_accession
+  target_types:
+  - pangenome::heatmap
+  shared_input_paths:
+  - pangenome.json
 input_library:
   schema: v1
   manifest:
