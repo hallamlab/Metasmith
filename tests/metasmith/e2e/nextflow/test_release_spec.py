@@ -238,7 +238,9 @@ def _chain_script(depth: int) -> str:
 
 @pytest.mark.parametrize(
     "depth,slow_hop",
-    [(1, "first"), (2, "first"), (2, "last"), (3, "first"), (3, "last"), (5, "first"), (5, "last")],
+    # depth 1 is test_a_sample_starts_when_its_own_input_is_done; the slow hop at either end of
+    # a short chain and at the end of a long one cover where the wait can go wrong
+    [(2, "first"), (2, "last"), (5, "last")],
 )
 def test_a_sample_starts_once_its_whole_subtree_is_done(ws, rng, depth, slow_hop):
     fans = _distinct_fans(rng, 3 if depth <= 3 else 2, depth, FAST)

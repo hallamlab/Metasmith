@@ -18,7 +18,7 @@ FIXTURES = {
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_baseline_fixture_workflows_produce_deterministic_outputs(
+def test_baseline_fixture_workflows_populate_the_cache_and_are_deterministic(
     name, tmp_path, virtual_runtime
 ):
     fixture = FIXTURES[name]
@@ -26,6 +26,14 @@ def test_baseline_fixture_workflows_produce_deterministic_outputs(
     task = fixture.build_task(tmp_path / "run1")
     snap1 = capture_run(virtual_runtime, task)
     assert snap1.result_fingerprints, f"fixture {name} produced no outputs"
+    assert snap1.cache_state != (), (
+        f"fixture {name}: cache_root was empty; the tasks promoted nothing and record_run "
+        f"deposit any entries"
+    )
+    rel_files = {relpath for relpath, _ in snap1.cache_state}
+    assert any(p.endswith("cache.sqlite") for p in rel_files), (
+        f"no cache.sqlite under task_cache/ for {name}; got {rel_files}"
+    )
 
     clear_trace(virtual_runtime)
 
@@ -37,18 +45,3 @@ def test_baseline_fixture_workflows_produce_deterministic_outputs(
     )
 
 
-@pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_cache_dir_populated_after_first_run(name, tmp_path, virtual_runtime):
-    fixture = FIXTURES[name]
-
-    task = fixture.build_task(tmp_path / "run1")
-    snap = capture_run(virtual_runtime, task)
-
-    assert snap.cache_state != (), (
-        f"fixture {name}: cache_root was empty; the tasks promoted nothing and record_run "
-        f"deposit any entries"
-    )
-    rel_files = {relpath for relpath, _ in snap.cache_state}
-    assert any(p.endswith("cache.sqlite") for p in rel_files), (
-        f"no cache.sqlite under task_cache/ for {name}; got {rel_files}"
-    )

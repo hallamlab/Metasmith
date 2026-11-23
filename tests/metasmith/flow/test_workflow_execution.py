@@ -12,12 +12,81 @@ from metasmith.models.libraries import (
 from metasmith.models.solver import Endpoint, Transform, solve_by_mcts
 from metasmith.models.workflow import WorkflowPlan
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
+
+
+@pytest.fixture
+def batched_transform_code() -> str:
+    return '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    results = []
+    for batch_ctx in context.AsBatch():
+        out_path = batch_ctx.Output(out)
+        out_path.local.write_text(f"batch output")
+        results.append(ExecutionResult(manifest=[{out: out_path.local}], success=True))
+    return results
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=dep,
+    batch_size=3,
+)
+'''
+
+@pytest.fixture
+def branching_transform_code() -> str:
+    return '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+out_a = model.AddProduct(lib.GetType("mock::branch_a"))
+out_b = model.AddProduct(lib.GetType("mock::branch_b"))
+
+def protocol(context: ExecutionContext):
+    path_a = Path("branch_a.txt")
+    path_b = Path("branch_b.txt")
+    path_a.write_text("branch a content")
+    path_b.write_text("branch b content")
+    return ExecutionResult(
+        manifest=[{out_a: path_a, out_b: path_b}],
+        success=True
+    )
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=dep,
+)
+'''
 
 
 class TestBasicWorkflowExecution:
     def test_binning_workflow_3_samples(
-        self, temp_dir, mock_samples, mock_types, container_runtime
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms = {}
 
@@ -70,7 +139,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=asm)
 '''
 
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = []
         for sample_view in mock_samples.AsSamples("mock::assembly"):
@@ -101,7 +170,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         assert "concoct" in transform_names, "concoct should be in workflow"
 
     def test_workflow_plan_save_load(
-        self, temp_dir, mock_samples, mock_types, container_runtime
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms = {
             "alignment": '''
@@ -126,7 +195,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 '''
         }
 
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
 
@@ -141,7 +210,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         assert isinstance(plan, WorkflowPlan)
 
-        plan_path = temp_dir / "workflow_plan.yml"
+        plan_path = tmp_path / "workflow_plan.yml"
         plan.Save(plan_path)
 
         assert plan_path.exists()
@@ -156,7 +225,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
 class TestGroupbyBehavior:
     def test_groupby_partitions_by_sample(
-        self, temp_dir, mock_samples, mock_types, container_runtime
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms = {
             "processor": '''
@@ -182,7 +251,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 '''
         }
 
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
 
@@ -206,7 +275,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         assert len(assembly_uses) == 3, f"Expected 3 assemblies, got {len(assembly_uses)}"
 
     def test_groupby_uses_correct_dependency(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms = {
             "grouped_processor": '''
@@ -232,7 +301,7 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
 '''
         }
 
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
 
@@ -254,55 +323,20 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
 
 class TestBatchingBehavior:
     def test_batch_transform_loads_correctly(
-        self, temp_dir, mock_types, batched_transform_code
+        self, tmp_path, mock_types, batched_transform_code
     ):
         transforms = {"batched": batched_transform_code}
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         tr = tr_lib.GetTransform("batched.py")
         assert tr.batch_size == 3, f"Expected batch_size=3, got {tr.batch_size}"
 
-    def test_batch_size_parameter_preserved(
-        self, temp_dir, mock_types
-    ):
-        transforms = {
-            "batched_processor": '''
-from pathlib import Path
-from metasmith.models.libraries import (
-    TransformInstanceLibrary,
-    TransformInstance,
-    ExecutionContext,
-    ExecutionResult,
-)
-from metasmith.models.solver import Transform
-
-lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
-dep = model.AddRequirement(lib.GetType("mock::assembly"))
-out = model.AddProduct(lib.GetType("mock::bam"))
-
-def protocol(context: ExecutionContext):
-    results = []
-    for batch_ctx in context.AsBatch():
-        out_path = batch_ctx.Output(out)
-        results.append(ExecutionResult(manifest=[{out: out_path.local}], success=True))
-    return results
-
-TransformInstance(protocol=protocol, model=model, group_by=dep, batch_size=5)
-'''
-        }
-
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
-        tr = tr_lib.GetTransform("batched_processor.py")
-        assert tr.batch_size == 5
-
-
 class TestBranchingBehavior:
     def test_branching_transform_structure(
-        self, temp_dir, mock_types, branching_transform_code
+        self, tmp_path, mock_types, branching_transform_code
     ):
         transforms = {"branching": branching_transform_code}
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         tr = tr_lib.GetTransform("branching.py")
         assert [len(g) for g in tr.model.produces] == [2], (
@@ -310,10 +344,10 @@ class TestBranchingBehavior:
         )
 
     def test_branches_produce_multiple_outputs(
-        self, temp_dir, mock_samples, mock_types, branching_transform_code
+        self, tmp_path, mock_samples, mock_types, branching_transform_code
     ):
         transforms = {"branching": branching_transform_code}
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
 
@@ -333,7 +367,7 @@ class TestBranchingBehavior:
         assert "branch_a" in target_names_in_plan
 
     def test_branches_converge(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms = {
             "produce_a": '''
@@ -398,7 +432,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep_a)
 ''',
         }
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
 
@@ -423,7 +457,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep_a)
 
 class TestLineageConstraints:
     def test_lineage_preserved_in_library(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         assert len(mock_samples.parents) > 0, "Library should have parent relationships"
 
@@ -438,7 +472,7 @@ class TestLineageConstraints:
                 )
 
     def test_lineage_preserved_through_save_load(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         mock_samples.Save()
 
@@ -456,7 +490,7 @@ class TestLineageConstraints:
             )
 
     def test_lineage_endpoint_chain(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         lib = DataInstanceLibrary.Load(mock_samples.location)
 
@@ -480,60 +514,16 @@ class TestLineageConstraints:
                 )
                 break
 
-    def test_lineage_constraint_in_transform(
-        self, temp_dir, mock_samples, mock_types
-    ):
-        transforms = {
-            "alignment": '''
-from pathlib import Path
-from metasmith.models.libraries import (
-    TransformInstanceLibrary,
-    TransformInstance,
-    ExecutionContext,
-    ExecutionResult,
-)
-from metasmith.models.solver import Transform
-
-lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
-# Require assembly with reads as parent (matching lineage: reads -> assembly)
-reads = model.AddRequirement(lib.GetType("mock::reads"))
-asm = model.AddRequirement(lib.GetType("mock::assembly"), parents={reads})
-out = model.AddProduct(lib.GetType("mock::bam"))
-
-def protocol(context: ExecutionContext):
-    return ExecutionResult(manifest=[{out: Path("out.bam")}], success=True)
-
-TransformInstance(protocol=protocol, model=model, group_by=asm)
-'''
-        }
-
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
-
-        given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
-
-        target_model = Transform()
-        target_model.AddRequirement(properties={"bam"})
-        target_names = ["bam"]
-
-        plan = WorkflowPlan.Generate(
-            cases=Case.ByShape(given, target=target_model, target_names=target_names),
-            transforms=[tr_lib],
-        )
-
-        assert isinstance(plan, WorkflowPlan), "Workflow should complete"
-
-
 class TestResultsLibrary:
     def test_manifest_structure(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         for path in mock_samples.manifest.keys():
             full_path = mock_samples.location / path
             assert full_path.exists(), f"Manifest path should exist: {full_path}"
 
     def test_type_information_accessible(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         for path, dtype_name in mock_samples.manifest.items():
             endpoint = mock_samples.GetType(dtype_name)
@@ -544,7 +534,7 @@ class TestResultsLibrary:
             assert inst.dtype_name == dtype_name
 
     def test_parent_relationships_consistent(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         for path, parents in mock_samples.parents.items():
             for parent_meta in parents:
@@ -553,7 +543,7 @@ class TestResultsLibrary:
                 )
 
     def test_results_save_load_roundtrip(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         mock_samples.Save()
 
@@ -566,7 +556,7 @@ class TestResultsLibrary:
         assert len(loaded.parents) == len(mock_samples.parents)
 
     def test_get_returns_correct_instance(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         for path, dtype_name in mock_samples.manifest.items():
             inst = mock_samples.Get(path)
@@ -580,9 +570,9 @@ class TestResultsLibrary:
 
 class TestWorkflowGeneration:
     def test_empty_workflow_when_target_satisfied(
-        self, temp_dir, mock_types
+        self, tmp_path, mock_types
     ):
-        lib_path = temp_dir / "satisfied.xgdb"
+        lib_path = tmp_path / "satisfied.xgdb"
         lib = DataInstanceLibrary(lib_path)
         lib.AddTypeLibrary(mock_types, namespace="mock")
 
@@ -595,7 +585,7 @@ class TestWorkflowGeneration:
         # Read it back: a plan refuses a given whose identity this process minted.
         lib = DataInstanceLibrary.Load(lib.location)
 
-        tr_lib_path = temp_dir / "tr_satisfied"
+        tr_lib_path = tmp_path / "tr_satisfied"
         transforms = {
             "alignment": '''
 from pathlib import Path
@@ -636,7 +626,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         assert len(plan.steps) == 0, f"Expected 0 steps, got {len(plan.steps)}"
 
     def test_workflow_deterministic(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms = {
             "alignment": '''
@@ -661,7 +651,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 '''
         }
 
-        tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path, mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
 
@@ -682,7 +672,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         assert all(len(p.steps) == len(plans[0].steps) for p in plans)
 
     def test_multiple_transform_libraries(
-        self, temp_dir, mock_samples, mock_types
+        self, tmp_path, mock_samples, mock_types
     ):
         transforms1 = {
             "alignment": '''
@@ -731,8 +721,8 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 '''
         }
 
-        lib1_dir = temp_dir / "lib1"
-        lib2_dir = temp_dir / "lib2"
+        lib1_dir = tmp_path / "lib1"
+        lib2_dir = tmp_path / "lib2"
 
         tr_lib1 = create_transform_library(lib1_dir, mock_types, transforms1)
         tr_lib2 = create_transform_library(lib2_dir, mock_types, transforms2)

@@ -21,6 +21,23 @@ Pick the axis by what the test pins, not by what it uses. A test whose assertion
 about correctness and merely happens to use a large fixture belongs with the behaviour it
 pins. A GUI test that needs a docker daemon is an e2e test.
 
+## The group is a second declaration
+
+A file's group says which feature it checks, and a merge check runs the smoke set plus the
+groups a change touches. `_groups.py` holds the groups and the smoke set. It imports nothing
+from metasmith, so `dev/metasmith.sh` reads it without collecting the suite. A group defaults
+to the file's axis directory. `unit/` and `e2e/virtual/` mix features, so `OVERRIDES` names
+each of their files. A file in no group **fails collection**, the same as a file in no axis.
+
+The axis and the group answer different questions, so neither derives the other. The axis says
+what a test needs and costs: a container, the host's Nextflow, a wall-clock budget. The group
+says what it pins. A host-Nextflow grouping test belongs to `flow` but must stay out of the
+cheap tier. A `unit/` file is cheap whatever feature it pins.
+
+**CAUTION** A smoke entry is a node id, and a stale one makes `-ts` collect nothing under
+xdist rather than fail. `unit/test_marker_taxonomy.py` collects every smoke id to catch a
+rename.
+
 ## Writing one
 
 Reuse the shared stimuli rather than defining ad-hoc transforms per test, and assert through
@@ -28,9 +45,9 @@ telemetry — the lineage trace and its walks — rather than grepping generated
 work-dir filenames. When moving or renaming, update consumers in the same commit; never leave
 a stub file behind.
 
-Set `PYTHONPATH` to this worktree's `src/`, and do not merely unset it: metasmith is not
-installed into the environment, so the subprocess tests need it, and an ambient value resolves
-the import to some other checkout.
+Run the suite through `dev/metasmith.sh -ts`, `-tm` or `-tr`. They pin `PYTHONPATH` to this
+worktree's `src/`, which the subprocess tests need because metasmith is not installed into the
+environment.
 
 ## Traps
 
@@ -55,6 +72,22 @@ so an assertion there can be about what the shell *did*, not only about what was
 **A lifecycle test that fails partway leaves live processes behind.** Everything it spawns goes
 through the `spawner` fixture, which group-kills in teardown whatever the test asserted; a raw
 `subprocess.Popen` there hands the next test a process it will find and mistake for its own.
+
+**The docker lane execs into one container per xdist worker rather than starting one per run.**
+Creating a container on altair's daemon takes 11-17 s, and an exec takes a fraction of a second.
+The container mounts the worker's pytest tmp tree at the same path, so a path means the same
+thing on both sides, and no test may assume a fixed in-container path such as `/ws`. Its
+process runs as the host user, so its outputs are deletable without a chown. Killing the exec
+client leaves Nextflow running inside, so `nxf_exec` wraps the command in an in-container
+`timeout`.
+
+Share a run between tests with a module- or class-scoped fixture, and put an
+`xdist_group` mark on the module so `loadgroup` keeps the run on one worker.
+
+**The image under test is built from the checkout.** `docker_builder` stamps the build hash,
+builds from a staged copy under a file lock, and labels the image with whether its relays are
+real or stubs. A stub-relay image is rebuilt once a real relay exists. The root conftest stamps
+the hash before importing `metasmith.constants`, because `CONTAINER_TAG` is fixed at import.
 
 **Prefer the cheapest runtime that can answer the question.** When an e2e test asserts only on
 plan shape, channel wiring or DAG correctness, the contract runtime answers it; real execution

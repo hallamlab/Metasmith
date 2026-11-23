@@ -7,7 +7,9 @@ from metasmith.constants import AgentPaths
 from metasmith.models.solver import Transform
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask
 
-from .conftest import create_transform_library, stage_task
+from tests.metasmith.support import create_transform_library
+
+from .conftest import stage_task
 
 
 def _gpu_transform(name: str, out_type: str, toggle: str, gpu_memory: str) -> str:

@@ -8,9 +8,19 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+# FULL_VERSION is read at import, and the docker lane's image is tagged with it; stamp first
+# so the host and the image agree about which source they came from. xdist workers start after
+# the controller has stamped.
+from metasmith._build_hash import write_build_hash
+if "PYTEST_XDIST_WORKER" not in os.environ:
+    write_build_hash()
+
 from metasmith.constants import AgentPaths
 from metasmith.models.solver import Transform, Endpoint
 from metasmith.testing.virtual_runtime import VirtualE2ERuntime
+
+from ._groups import group_of
+from .support import create_transform_library, write_mock_samples, write_mock_types
 
 
 _TESTS_ROOT = Path(__file__).resolve().parent
@@ -36,9 +46,12 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
 
 def pytest_collection_modifyitems(config, items):
     unclaimed: list[str] = []
+    ungrouped: set[str] = set()
     for item in items:
         rel = Path(item.fspath).resolve().relative_to(_TESTS_ROOT)
         rel_str = rel.as_posix()
+        if group_of(rel_str) is None:
+            ungrouped.add(rel_str)
         for dir_prefix, markers in sorted(_DIR_MARKERS, key=lambda kv: -len(kv[0])):
             if rel_str.startswith(dir_prefix + "/"):
                 for m in markers:
@@ -60,11 +73,55 @@ def pytest_collection_modifyitems(config, items):
             "Move each into the directory naming what it is (unit / flow / cache / "
             "gui / bootstrap / deploy / e2e/*), or add a row to _DIR_MARKERS."
         )
+    if ungrouped:
+        listing = "\n  ".join(sorted(ungrouped))
+        raise pytest.UsageError(
+            "these test files belong to no group in tests/metasmith/_groups.py, so no "
+            f"merge check selects them:\n  {listing}\n"
+            "Add each to OVERRIDES under the feature it pins."
+        )
 
 
 def _configure_agent_paths(monkeypatch, home: Path) -> None:
     monkeypatch.setattr(AgentPaths, "HOME_ROOT", home)
     monkeypatch.setattr(AgentPaths, "WORK_ROOT", home / "_ws")
+
+
+@pytest.fixture
+def mock_types(tmp_path) -> Path:
+    return write_mock_types(tmp_path)
+
+
+@pytest.fixture
+def mock_samples(tmp_path, mock_types):
+    return write_mock_samples(tmp_path, mock_types)
+
+
+@pytest.fixture
+def simple_workflow_task(mock_samples, mock_types, tmp_path):
+    from metasmith.models.workflow import Case, WorkflowPlan, WorkflowTask
+    from metasmith.testing.mock_transforms import identity_transform
+
+    transforms = identity_transform("mock::assembly", "mock::bam")
+    tr_lib = create_transform_library(tmp_path / "simple_tr", mock_types, transforms)
+
+    given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
+    target_model = Transform()
+    target_model.AddRequirement(properties={"bam"})
+    target_names = ["bam"]
+
+    plan = WorkflowPlan.Generate(
+        cases=Case.ByShape(given, target=target_model, target_names=target_names),
+        transforms=[tr_lib],
+    )
+
+    assert isinstance(plan, WorkflowPlan)
+    return WorkflowTask(
+        ok=True,
+        plan=plan,
+        data_libraries=[mock_samples],
+        transform_libraries=[tr_lib],
+    )
 
 
 @pytest.fixture

@@ -9,20 +9,22 @@ from pathlib import Path
 from metasmith.agents import CollectResults
 from metasmith.constants import MODULE_PATH, AgentPaths
 from metasmith.env import Runtime
-from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView, DataTypeLibrary
-from metasmith.models.solver import Endpoint, Transform
+from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView
+from metasmith.models.solver import Transform
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask, NextflowGenContext
 from metasmith.testing.mock_transforms import (
     alignment_transform,
     binner_transforms,
     branching_transforms,
-    identity_transform,
     shared_input_transform,
 )
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library, write_mock_types
 
-pytestmark = [pytest.mark.docker, pytest.mark.slow]
+from tests.metasmith.support import nxf_exec
+
+# its runs are shared through module and class fixtures, so --dist loadgroup keeps it on one worker
+pytestmark = [pytest.mark.docker, pytest.mark.slow, pytest.mark.xdist_group("e2e_trace")]
 
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
@@ -50,7 +52,7 @@ def _assert_nxf_ok(result: subprocess.CompletedProcess) -> bool:
 def run_stub_workflow(
     task: WorkflowTask,
     work_dir: Path,
-    docker_image: str,
+    nxf_container: str,
     timeout: int = 180,
 ) -> DataInstanceLibrary:
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -70,15 +72,9 @@ def run_stub_workflow(
     lib_dir.mkdir(exist_ok=True)
     shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
 
-    tmp_root = work_dir
-    while tmp_root.parent != tmp_root and tmp_root.parent != Path("/tmp"):
-        tmp_root = tmp_root.parent
     result = subprocess.run(
         [
-            "docker", "run", "--rm",
-            "-v", f"{tmp_root}:{tmp_root}",
-            "-w", str(work_dir),
-            docker_image,
+            *nxf_exec(nxf_container, work_dir, timeout),
             "nextflow", "run", AgentPaths.NXF_WORKFLOW,
             "-stub",
             "-lib", "./lib",
@@ -89,14 +85,6 @@ def run_stub_workflow(
         timeout=timeout,
     )
     nxf_clean_exit = _assert_nxf_ok(result)
-
-    subprocess.run(
-        ["docker", "run", "--rm",
-         "-v", f"{tmp_root}:{tmp_root}",
-         docker_image,
-         "chmod", "-R", "a+rw", str(work_dir)],
-        capture_output=True, timeout=120,
-    )
 
     from metasmith.caching.promote import record_run
     from .conftest import promote_stub_tasks
@@ -230,20 +218,30 @@ def _make_task(
     )
 
 
+@pytest.fixture(scope="module")
+def module_types(tmp_path_factory) -> Path:
+    return write_mock_types(tmp_path_factory.mktemp("types"))
+
+
+@pytest.fixture(scope="module")
+def alignment_run(tmp_path_factory, module_types, nxf_container) -> tuple[DataInstanceLibrary, Path]:
+    root = tmp_path_factory.mktemp("alignment")
+    samples = _make_samples(root / "data", module_types, n_samples=3)
+    task = _make_task(
+        samples=samples,
+        mock_types=module_types,
+        temp_dir=root / "task",
+        transforms=alignment_transform(),
+        target_properties=[{"bam"}],
+        target_names=["bam"],
+    )
+    return run_stub_workflow(task, root / "ws", nxf_container), root / "ws"
+
+
 class TestTraceLinearChain:
     @pytest.fixture
-    def result_lib(self, tmp_path, mock_types, docker_image):
-        samples = _make_samples(tmp_path / "data", mock_types, n_samples=3)
-        transforms = alignment_transform()
-        task = _make_task(
-            samples=samples,
-            mock_types=mock_types,
-            temp_dir=tmp_path / "task",
-            transforms=transforms,
-            target_properties=[{"bam"}],
-            target_names=["bam"],
-        )
-        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+    def result_lib(self, alignment_run):
+        return alignment_run[0]
 
     def test_output_to_immediate_input(self, result_lib):
         pairs = list(result_lib.Trace("mock::bam", "mock::assembly"))
@@ -264,8 +262,9 @@ class TestTraceLinearChain:
 
 
 class TestTraceFanOutMerge:
-    @pytest.fixture
-    def result_lib(self, tmp_path, mock_types, docker_image):
+    @pytest.fixture(scope="class")
+    def result_lib(self, tmp_path_factory, module_types, nxf_container):
+        tmp_path, mock_types = tmp_path_factory.mktemp(type(self).__name__), module_types
         samples = _make_samples(
             tmp_path / "data", mock_types, n_samples=3,
             types=[("mock::assembly", "fa")],
@@ -279,7 +278,7 @@ class TestTraceFanOutMerge:
             target_properties=[{"merged"}],
             target_names=["merged"],
         )
-        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+        return run_stub_workflow(task, tmp_path / "ws", nxf_container)
 
     def test_merged_output_exists(self, result_lib):
         merged_items = [
@@ -326,8 +325,9 @@ class TestTraceFanOutMerge:
 
 
 class TestTraceMultiStepDiamond:
-    @pytest.fixture
-    def result_lib(self, tmp_path, mock_types, docker_image):
+    @pytest.fixture(scope="class")
+    def result_lib(self, tmp_path_factory, module_types, nxf_container):
+        tmp_path, mock_types = tmp_path_factory.mktemp(type(self).__name__), module_types
         samples = _make_samples(tmp_path / "data", mock_types, n_samples=3)
         transforms = alignment_transform() | binner_transforms()
         task = _make_task(
@@ -342,7 +342,7 @@ class TestTraceMultiStepDiamond:
             ],
             target_names=["metabat2_bins", "maxbin2_bins", "concoct_bins"],
         )
-        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+        return run_stub_workflow(task, tmp_path / "ws", nxf_container)
 
     def test_final_output_to_root(self, result_lib):
         for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
@@ -372,8 +372,9 @@ class TestTraceMultiStepDiamond:
 class TestTraceScaling:
     N_SAMPLES = 8
 
-    @pytest.fixture
-    def result_lib(self, tmp_path, mock_types, docker_image):
+    @pytest.fixture(scope="class")
+    def result_lib(self, tmp_path_factory, module_types, nxf_container):
+        tmp_path, mock_types = tmp_path_factory.mktemp(type(self).__name__), module_types
         samples = _make_samples(tmp_path / "data", mock_types, n_samples=self.N_SAMPLES)
         transforms = alignment_transform()
         task = _make_task(
@@ -384,7 +385,7 @@ class TestTraceScaling:
             target_properties=[{"bam"}],
             target_names=["bam"],
         )
-        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+        return run_stub_workflow(task, tmp_path / "ws", nxf_container)
 
     def test_many_samples_correct_count(self, result_lib):
         pairs = list(result_lib.Trace("mock::bam", "mock::assembly"))
@@ -399,18 +400,8 @@ class TestTraceScaling:
 
 class TestTracePersistence:
     @pytest.fixture
-    def result_lib(self, tmp_path, mock_types, docker_image):
-        samples = _make_samples(tmp_path / "data", mock_types, n_samples=3)
-        transforms = alignment_transform()
-        task = _make_task(
-            samples=samples,
-            mock_types=mock_types,
-            temp_dir=tmp_path / "task",
-            transforms=transforms,
-            target_properties=[{"bam"}],
-            target_names=["bam"],
-        )
-        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+    def result_lib(self, alignment_run):
+        return alignment_run[0]
 
     def test_trace_survives_save_load(self, result_lib, tmp_path):
         original_pairs = set(
@@ -453,8 +444,9 @@ class TestTracePersistence:
 class TestTraceSharedInputs:
     N_SAMPLES = 15
 
-    @pytest.fixture
-    def result_lib(self, tmp_path, mock_types, docker_image):
+    @pytest.fixture(scope="class")
+    def result_lib(self, tmp_path_factory, module_types, nxf_container):
+        tmp_path, mock_types = tmp_path_factory.mktemp(type(self).__name__), module_types
         samples = self._make_shared_input_samples(tmp_path / "data", mock_types)
         transforms = shared_input_transform()
         tr_lib = create_transform_library(
@@ -485,7 +477,7 @@ class TestTraceSharedInputs:
             data_libraries=[samples],
             transform_libraries=[tr_lib],
         )
-        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+        return run_stub_workflow(task, tmp_path / "ws", nxf_container)
 
     @staticmethod
     def _make_shared_input_samples(
@@ -517,7 +509,7 @@ class TestTraceSharedInputs:
         # Read it back: a plan refuses a given whose identity this process minted.
         return DataInstanceLibrary.Load(lib.location)
 
-    def test_trace_records_all_parent_keys(self, tmp_path, mock_types, docker_image):
+    def test_trace_records_all_parent_keys(self, tmp_path, mock_types, nxf_container):
         from metasmith.telemetry import TraceIndex
 
         samples = self._make_shared_input_samples(tmp_path / "mdata", mock_types)
@@ -551,7 +543,7 @@ class TestTraceSharedInputs:
         )
 
         work_dir = tmp_path / "mws"
-        run_stub_workflow(task, work_dir, docker_image, timeout=300)
+        run_stub_workflow(task, work_dir, nxf_container, timeout=300)
 
         trace_path = work_dir / "_metasmith" / "trace.jsonl"
         assert trace_path.exists(), f"no trace.jsonl at {trace_path}"
@@ -606,20 +598,8 @@ class TestStubTraceHasInvocationEvents:
     N_SAMPLES = 3
 
     @pytest.fixture
-    def workspace_after_stub_run(self, tmp_path, mock_types, docker_image):
-        samples = _make_samples(tmp_path / "data", mock_types, n_samples=self.N_SAMPLES)
-        transforms = alignment_transform()
-        task = _make_task(
-            samples=samples,
-            mock_types=mock_types,
-            temp_dir=tmp_path / "task",
-            transforms=transforms,
-            target_properties=[{"bam"}],
-            target_names=["bam"],
-        )
-        work_dir = tmp_path / "ws"
-        run_stub_workflow(task, work_dir, docker_image)
-        return work_dir
+    def workspace_after_stub_run(self, alignment_run):
+        return alignment_run[1]
 
     def test_trace_has_promote_events(self, workspace_after_stub_run):
         trace = workspace_after_stub_run / "_metasmith" / "trace.jsonl"

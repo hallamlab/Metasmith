@@ -11,9 +11,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
 
 from metasmith.agents.ceiling import cap_lines
+
+from tests.metasmith.support import nxf_exec
 
 
 PROCESS = '''
@@ -41,22 +42,21 @@ def _run(tmp_path: Path, image: str, request_gb: float, ceiling_gb: float) -> st
         + "\n"
     )
     res = subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
-         image, "nextflow", "run", "main.nf", "-stub", "-ansi-log", "false"],
+        [*nxf_exec(image, tmp_path, 600), "nextflow", "run", "main.nf", "-stub", "-ansi-log", "false"],
         capture_output=True, text=True, timeout=600,
     )
     assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]
     return res.stdout
 
 
-def test_a_request_under_the_ceiling_is_left_alone(tmp_path, docker_image):
-    assert "memory=8 GB" in _run(tmp_path, docker_image, 8.0, 50.0)
+def test_a_request_under_the_ceiling_is_left_alone(tmp_path, nxf_container):
+    assert "memory=8 GB" in _run(tmp_path, nxf_container, 8.0, 50.0)
 
 
-def test_a_request_over_the_ceiling_is_capped_to_it(tmp_path, docker_image):
+def test_a_request_over_the_ceiling_is_capped_to_it(tmp_path, nxf_container):
     # Attempt 1 already exceeds it here, which is the same arithmetic attempt 2
     # of a 30 GB step does -- and the reason no retry ever recovered.
-    assert "memory=50 GB" in _run(tmp_path, docker_image, 60.0, 50.0)
+    assert "memory=50 GB" in _run(tmp_path, nxf_container, 60.0, 50.0)
 
 
 LADDER_PROCESS = '''
@@ -96,17 +96,17 @@ def _run_ladder(tmp_path: Path, image: str) -> list[str]:
         "    }",
         "}",
     ]) + "\n")
-    subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
-         image, "nextflow", "run", "main.nf", "-ansi-log", "false"],
+    res = subprocess.run(
+        [*nxf_exec(image, tmp_path, 600), "nextflow", "run", "main.nf", "-ansi-log", "false"],
         capture_output=True, text=True, timeout=600,
     )
+    assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]
     rungs = tmp_path / "rungs.txt"
     return rungs.read_text().splitlines() if rungs.exists() else []
 
 
-def test_the_ladder_escalates_only_what_the_exit_code_names(tmp_path, docker_image):
-    rungs = set(_run_ladder(tmp_path, docker_image))
+def test_the_ladder_escalates_only_what_the_exit_code_names(tmp_path, nxf_container):
+    rungs = set(_run_ladder(tmp_path, nxf_container))
     # An OOM doubles memory, clamped to maxMemory, and leaves time alone.
     assert "137,137,0|2|1.5 GB|1h" in rungs, rungs
     assert "137,137,0|3|1.5 GB|1h" in rungs, rungs

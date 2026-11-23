@@ -12,8 +12,6 @@ here as a step count, long before anyone waits out the wall clock.
 """
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from metasmith.models.solver_engine import EngineFor
@@ -23,6 +21,8 @@ from metasmith.testing.solver_verification import (
     generate_problem,
     plan_fingerprint,
 )
+
+from ._cpu import cpu_seconds
 
 
 @pytest.fixture(scope="module")
@@ -63,9 +63,9 @@ SINK_178_S7_FINGERPRINT = "1d9079ba63569d3e1231a254"
 
 def test_a_full_refiner_budget_on_the_worst_of_them_is_cheap(engine):
     problem = generate_problem(178, dict(SWEEP_PROFILES)["sink"], name="sink")
-    t0 = time.perf_counter()
+    t0 = cpu_seconds()
     solution = problem.solve(seed=7, max_refine=256)
-    elapsed = time.perf_counter() - t0
+    elapsed = cpu_seconds() - t0
 
     verdict = check_plan(problem, solution)
     assert verdict.ok, verdict.violations
@@ -74,7 +74,7 @@ def test_a_full_refiner_budget_on_the_worst_of_them_is_cheap(engine):
     # for ONE iteration. A failure here is a regression of a different kind than
     # a moved fingerprint, so keep both assertions.
     assert elapsed < 2.0, (
-        f"a full refiner budget on sink-178/s7 took {elapsed:.1f}s -- either the"
+        f"a full refiner budget on sink-178/s7 took {elapsed:.1f}s CPU -- either the"
         " search handed it a longer plan or the per-state scratch in `scratch.rs`"
         " has been undone"
     )

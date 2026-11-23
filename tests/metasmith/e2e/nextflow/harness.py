@@ -1,8 +1,8 @@
 # Runs a hand-written workflow of mock steps against the real
 # Orchestrator.groovy and reads back what happened: the Nextflow trace, what
 # each task appended to the receive log, and the run's exit status and error
-# text. The workflow either runs on the host's Nextflow or, given an image,
-# inside that container with the workspace mounted at /ws.
+# text. The workflow either runs on the host's Nextflow or, given a running
+# container that mounts the workspace at its own path, inside it.
 #
 # Every timing claim a test makes is an ORDERING relation between trace times,
 # never an absolute threshold, so scheduler noise cannot flip it.
@@ -13,11 +13,12 @@ import shutil
 import signal
 import subprocess
 import sys
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from metasmith.constants import MODULE_PATH
+
+from tests.metasmith.support import nxf_exec
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ORCHESTRATOR_ENV = "MSM_TEST_ORCHESTRATOR"
@@ -196,10 +197,9 @@ def assert_slow_task_was_slow(result: RunResult, process: str, tag: str, seconds
 
 
 class Workspace:
-    def __init__(self, root: Path, image: str | None = None):
+    def __init__(self, root: Path, container: str | None = None):
         self.root = root
-        self.image = image
-        self.mount = "/ws" if image else str(root)
+        self.container = container
         self.lineage: dict[str, list[dict]] = {}
         self.child2parent: dict[str, set[str]] = {}
         self.cases: dict[str, list[str]] = {}
@@ -214,7 +214,7 @@ class Workspace:
         shutil.copytree(FIXTURES / "helpers", root / "helpers", dirs_exist_ok=True)
 
     def path(self, *parts: str) -> str:
-        return "/".join([self.mount, *parts])
+        return "/".join([str(self.root), *parts])
 
     def given(
         self, name: str, ids: list[str], parents: dict[str, str] | None = None,
@@ -264,19 +264,12 @@ class Workspace:
             "-params-file", "params.json",
             "-ansi-log", "false",
         ]
-        if self.image:
-            name = f"msm-early-release-{uuid.uuid4().hex[:12]}"
-            cmd = [
-                "docker", "run", "--rm", "--name", name,
-                "-v", f"{self.root}:/ws", "-w", "/ws",
-                self.image, "nextflow", *nxf_args,
-            ]
-            kill = lambda proc: subprocess.run(["docker", "kill", name], capture_output=True)
+        if self.container:
+            cmd = [*nxf_exec(self.container, self.root, timeout), "nextflow", *nxf_args]
         else:
             nextflow = host_nextflow()
             assert nextflow is not None, "no nextflow on PATH or beside this python"
             cmd = [str(nextflow), *nxf_args, "-w", str(self.root / "work")]
-            kill = lambda proc: os.killpg(proc.pid, signal.SIGKILL)
         env = {**os.environ, "NXF_ANSI_LOG": "false"}
         proc = subprocess.Popen(
             cmd, cwd=self.root, env=env, text=True,
@@ -287,7 +280,7 @@ class Workspace:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            kill(proc)
+            os.killpg(proc.pid, signal.SIGKILL)
             stdout, stderr = proc.communicate()
         return RunResult(
             returncode=None if timed_out else proc.returncode,

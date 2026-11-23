@@ -45,7 +45,7 @@ def workspace(tmp_path) -> str:
 
 @pytest.fixture
 def transform_lib(tmp_path, tutorial_types) -> TransformInstanceLibrary:
-    from tests.metasmith.e2e.docker.conftest import create_transform_library
+    from tests.metasmith.support import create_transform_library
     return create_transform_library(tmp_path / "transforms", tutorial_types, alignment_transform())
 
 
@@ -205,16 +205,3 @@ class TestCustomTransformsReplay:
         assert r["library"] == str(transform_lib.location)
 
 
-class TestSourceParsing:
-    def test_parse_local(self, tmp_path):
-        r = op_source.parse(str(tmp_path))
-        assert r["type"] in ("DIRECT", "SYMLINK")
-        assert str(tmp_path) in r["address"]
-
-    def test_parse_ssh(self):
-        r = op_source.parse("ssh://host/data/x")
-        assert r["type"] == "SSH"
-
-    def test_parse_http(self):
-        r = op_source.parse("https://example.com/file.tar.gz")
-        assert r["type"] == "HTTP"

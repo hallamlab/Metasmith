@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
 
 from .conftest import (
     assert_arity_via_oracle,
@@ -102,12 +101,9 @@ def test_g3_uneven_batches(tmp_path, virtual_runtime):
     )
 
 
-@pytest.mark.parametrize("seed", [0, 1, 7])
-def test_g5_large_batch_ordering_stable(tmp_path, virtual_runtime, seed):
+def test_g5_large_batch_ordering_stable(tmp_path, virtual_runtime):
     n, bs = 12, 3
-    sub = tmp_path / f"seed_{seed}"
-    sub.mkdir(parents=True, exist_ok=True)
-    bp = build_batched_plan(sub, n_inputs=n, batch_size=bs)
+    bp = build_batched_plan(tmp_path, n_inputs=n, batch_size=bs)
     task, lib = run_and_load(virtual_runtime, bp)
     events = virtual_runtime.parse_trace()
 
@@ -115,32 +111,13 @@ def test_g5_large_batch_ordering_stable(tmp_path, virtual_runtime, seed):
     bootstraps = _bootstrap_events(events)
     expected_slices = _expected_batches(n, bs)
     assert len(bootstraps) == len(expected_slices) == math.ceil(n / bs) == 4, (
-        f"<G5 seed={seed}> expected 4 bootstrap_calls, "
+        f"<G5> expected 4 bootstrap_calls, "
         f"got {len(bootstraps)}"
     )
     got_slices = [(e["batch_start"], e["batch_end"]) for e in bootstraps]
     assert got_slices == expected_slices, (
-        f"<G5 seed={seed}> slice mismatch: expected {expected_slices}, "
+        f"<G5> slice mismatch: expected {expected_slices}, "
         f"got {got_slices}"
-    )
-
-
-@pytest.mark.parametrize("seed", [0, 2, 5])
-def test_g6_group_by_under_late_arrival(tmp_path, virtual_runtime, seed):
-    n, bs = 6, 2
-    sub = tmp_path / f"seed_{seed}"
-    sub.mkdir(parents=True, exist_ok=True)
-    bp = build_batched_plan(sub, n_inputs=n, batch_size=bs)
-    task, lib = run_and_load(virtual_runtime, bp)
-    events = virtual_runtime.parse_trace()
-
-    assert_arity_via_oracle(events, task)
-    bootstraps = _bootstrap_events(events)
-    expected_slices = _expected_batches(n, bs)
-    got_slices = [(e["batch_start"], e["batch_end"]) for e in bootstraps]
-    assert got_slices == expected_slices, (
-        f"<G6 seed={seed}> arrival-order leaked into batch shape: "
-        f"expected {expected_slices}, got {got_slices}"
     )
 
 

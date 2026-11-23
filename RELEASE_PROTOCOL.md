@@ -19,46 +19,31 @@ have been exercised. Focus the verification on what a release actually changes.
 ### Run the suite
 
 ```
-PYTHONPATH="$PWD/src" mamba run -n msm python -m pytest tests/metasmith \
-    -m "not docker and not e2e_docker and not e2e_agentic and not nextflow \
-        and not remote_host and not requires_docker and not requires_apptainer \
-        and not requires_ssh_localhost and not requires_docker_dev_image"
+mamba run -n msm ./dev/metasmith.sh -tr
 ```
 
-This is the dependency-free tier — the gate that must be **0 failed** before
-anything is built. It covers the planner/solver, the path layer, library
-load/serialization, the CLI surface, the container/runtime command generation,
-the web GUI's API, and the virtual end-to-end pipeline
-(`tests/e2e/virtual/`, which runs plan→stage→run→collect with no real
-containers).
+`-tr` is the release set and the gate: it must report **0 failed** before
+anything is built. It builds the test image from the checkout, then runs perf
+and the lifecycle suite alone, then the docker lane beside the rest of the
+tree. `-ts` (smoke) and `-tm <group>` (merge check) are the development loops
+over the same tree. The groups and the smoke set live in
+`tests/metasmith/_groups.py`.
 
-`PYTHONPATH` must be **set**, not merely unset: metasmith is not installed into
-`msm`, so the subprocess tests spawn `python -m metasmith` and fail without it.
+**Budget 30 minutes.** Measured 2026-11-22 on altair, 16 cores: 13:35 with the
+image built. A cold image build adds about 17 minutes, mostly the conda solve.
+The source hash is part of the image tag, so any change under `src/metasmith/`
+forces that rebuild.
 
-Note this does **not** exclude `slow` — the `perf` axis (10k-item libraries) is
-a few minutes and belongs in a release gate. For the minute-by-minute dev loop
-use `-m fast`, and `./dev/metasmith.sh -tg` for the GUI alone.
+Run nothing heavy beside it. The docker lane runs 8 workers, each with one
+long-lived container, and container creation on a busy daemon takes 11-17 s.
 
-**Budget 30 minutes.** Measured 2026-08-30 on a 16-core box: 2088 selected, 311
-deselected, 27–29 min wall. `perf` and `flow` dominate, so run them last if you
-need to cut the sweep short. `pytest-timeout` is not in `msm`, so every
-`@pytest.mark.timeout` in the tree is inert and nothing bounds a hung test. Wrap
-the run in `timeout` if you are leaving it unattended.
+Three opt-in tiers stay outside `-tr` because they need infrastructure a
+release host may lack. Run the ones a release touches:
 
-Do not run a build or another lane beside it. The perf axis asserts wall clock,
-and `test_save_load_roundtrip_10k` fails at 62.7s against its 60s limit under a
-concurrent docker build while passing well inside it on a quiet box.
-
-### Exercise the gated tiers when relevant
-
-The marker tiers above are skipped in the fast sweep because they need
-infrastructure the dev box may lack. Run the ones a release touches:
-
-- **`docker` / `nextflow`** — real container + Nextflow execution. Run on a host
-  with a working Docker daemon when the change affects deploy, staging, or
-  workflow generation.
-- **`remote_host`** — remote-shell paths; needs `LIVESHELL_REMOTE_HOST`.
-- **`e2e_agentic`** — live agent-driven scenarios; opt-in, needs an API key and a
+- **`remote_host`** — remote-shell paths. Needs `LIVESHELL_REMOTE_HOST`.
+- **`requires_apptainer`, `requires_ssh_localhost`, `requires_docker_dev_image`**
+  — the host features their names state.
+- **`e2e_agentic`** — live agent-driven scenarios. Needs an API key and a
   compiled standard library (`dev/libraries.sh -b`).
 
 ### Collect the shipped library before you gate it
@@ -88,13 +73,9 @@ it.
 
 ### Focus areas
 
-- **Run the docker lane, not only the dependency-free tier.** It is where the
-  Groovy, the cached twin, publish and the trace actually run. Skipping it for a
-  few releases let three test-harness assumptions rot silently, and the first
-  run after the cache rewrite failed 5 of 191.
 - **Scope the depth to the change.** When `src/metasmith/` is unchanged from the
   last release, the version→tag chain tests (`test_container_tag`,
-  `test_dev_sh_tag`, `test_build_pip_version_split`, all under `tests/unit/`)
+  `test_dev_sh_tag`, `test_docker_build_context`, all under `tests/metasmith/unit/`)
   are sufficient. When code changed, run the full suite.
 - **The build hash covers the GUI bundle.** `src/metasmith/gui/static/` is
   inside the tree `_build_hash` walks, so the version depends on the frontend

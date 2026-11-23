@@ -18,7 +18,7 @@ from metasmith.models.workflow import (
 )
 from metasmith.testing.mock_transforms import pull_container_transform
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 
 
 _CONTAINER_SUBTYPES = {
@@ -29,20 +29,20 @@ _CONTAINER_SUBTYPES = {
 
 
 @pytest.fixture
-def container_types(temp_dir) -> Path:
+def container_types(tmp_path) -> Path:
     types = DataTypeLibrary()
     types["container"] = Endpoint(properties={"container"})
     for name, props in _CONTAINER_SUBTYPES.items():
         types[name] = Endpoint(properties=set(props))
     types["pulled"] = Endpoint(properties={"pulled_container"})
-    types_path = temp_dir / "container_types.yml"
+    types_path = tmp_path / "container_types.yml"
     types.Save(types_path)
     return types_path
 
 
 @pytest.fixture
-def container_inputs(temp_dir, container_types) -> DataInstanceLibrary:
-    lib = DataInstanceLibrary(temp_dir / "containers.xgdb")
+def container_inputs(tmp_path, container_types) -> DataInstanceLibrary:
+    lib = DataInstanceLibrary(tmp_path / "containers.xgdb")
     lib.AddTypeLibrary(container_types, namespace="mock")
     for name in _CONTAINER_SUBTYPES:
         tool = name.split("_", 1)[1]
@@ -54,9 +54,9 @@ def container_inputs(temp_dir, container_types) -> DataInstanceLibrary:
     return DataInstanceLibrary.Load(lib.location)
 
 
-def _make_plan(container_types, container_inputs, temp_dir, n: int) -> WorkflowPlan:
+def _make_plan(container_types, container_inputs, tmp_path, n: int) -> WorkflowPlan:
     tr_lib = create_transform_library(
-        temp_dir / "pull_tr", container_types, pull_container_transform()
+        tmp_path / "pull_tr", container_types, pull_container_transform()
     )
     samples = list(container_inputs.AsSamples("mock::container"))
     assert len(samples) >= n
@@ -101,9 +101,9 @@ def _group_calls(nxf: str) -> list[tuple[str, list[str]]]:
 
 @pytest.mark.parametrize("n", [2, 3])
 def test_multicontainer_group_by_collapses_to_one_dtype(
-    container_types, container_inputs, temp_dir, n
+    container_types, container_inputs, tmp_path, n
 ):
-    plan, _ = _make_plan(container_types, container_inputs, temp_dir, n)
+    plan, _ = _make_plan(container_types, container_inputs, tmp_path, n)
 
     assert len(plan.steps) == 1
     step = plan.steps[0]
@@ -120,16 +120,16 @@ def test_multicontainer_group_by_collapses_to_one_dtype(
 
 @pytest.mark.parametrize("n", [2, 3])
 def test_multicontainer_emits_valid_o_group(
-    container_types, container_inputs, temp_dir, n
+    container_types, container_inputs, tmp_path, n
 ):
-    plan, tr_lib = _make_plan(container_types, container_inputs, temp_dir, n)
+    plan, tr_lib = _make_plan(container_types, container_inputs, tmp_path, n)
     task = WorkflowTask(
         ok=True,
         plan=plan,
         data_libraries=[container_inputs],
         transform_libraries=[tr_lib],
     )
-    nxf = _stage(task, temp_dir / f"stage_{n}")
+    nxf = _stage(task, tmp_path / f"stage_{n}")
 
     calls = _group_calls(nxf)
     assert calls, "expected at least one o.group call"
@@ -141,16 +141,16 @@ def test_multicontainer_emits_valid_o_group(
 
 
 def test_multicontainer_single_input_channel(
-    container_types, container_inputs, temp_dir
+    container_types, container_inputs, tmp_path
 ):
-    plan, tr_lib = _make_plan(container_types, container_inputs, temp_dir, 3)
+    plan, tr_lib = _make_plan(container_types, container_inputs, tmp_path, 3)
     task = WorkflowTask(
         ok=True,
         plan=plan,
         data_libraries=[container_inputs],
         transform_libraries=[tr_lib],
     )
-    nxf = _stage(task, temp_dir / "stage_channel")
+    nxf = _stage(task, tmp_path / "stage_channel")
 
     postin_lines = [l for l in nxf.splitlines() if "o.postIn(" in l]
     assert len(postin_lines) == 1, (
@@ -161,7 +161,7 @@ def test_multicontainer_single_input_channel(
     (by, using), = _group_calls(nxf)
     assert by in using
 
-    inputs_dir = temp_dir / "stage_channel" / "inputs"
+    inputs_dir = tmp_path / "stage_channel" / "inputs"
     pooled = "\n".join(p.read_text() for p in inputs_dir.iterdir())
     for tool in ("bbtools", "megahit", "seqkit"):
         assert f"{tool}.oci" in pooled, f"{tool}.oci missing from pooled input channel"

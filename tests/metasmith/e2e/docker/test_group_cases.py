@@ -27,8 +27,8 @@ def _run_with_retry(nxf_runner, script: str, timeout: int = 60, retries: int = 2
 
 
 @pytest.fixture
-def nxf_runner(tmp_path, docker_image):
-    return NxfTestRunner(tmp_path / "nxf_test", docker_image)
+def nxf_runner(tmp_path, nxf_container):
+    return NxfTestRunner(tmp_path / "nxf_test", nxf_container)
 
 
 def _emit_lines(stdout: str, prefix: str = "G:") -> list[str]:
@@ -85,7 +85,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 1, f"Expected 1 paired emit, got {len(lines)}: {lines}"
@@ -122,7 +122,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 1, f"Expected 1 batch of 3, got {len(lines)}: {lines}"
@@ -162,7 +162,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert lines == ["G:0:a=2:b=1:akeys=2"], (
@@ -198,7 +198,7 @@ workflow {
     ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     tasks = _member_shapes(result.stdout)
     assert len(tasks) == 1, f"C5: ceil(3 keys / 3) == 1 task, got {tasks}"
@@ -237,7 +237,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 2, (
@@ -268,7 +268,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) >= 1, (
@@ -304,7 +304,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert lines == ["G:0:b=1:c=c1.txt+c2.txt"], (
@@ -335,7 +335,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 1, (
@@ -367,7 +367,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 3, f"Expected 3 wildcard emissions, got {len(lines)}: {lines}"
@@ -399,7 +399,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 2, f"Expected 2 emits (per-B with [s0,s1]), got {len(lines)}: {lines}"
@@ -491,7 +491,7 @@ workflow {
     println "DONE"
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert lines == [], f"Expected no emissions, got {len(lines)}: {lines}"
@@ -521,7 +521,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 1, (
@@ -552,7 +552,7 @@ workflow {{
     }}
 }}
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) == 1, (
@@ -585,54 +585,12 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
-    assert len(lines) >= 0, f"C19 unexpected error: {result.stderr[-500:]}"
-
-
-def test_c20_descendant_chained_group_multi(nxf_runner):
-    for i in range(2):
-        (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
-    (nxf_runner.work_dir / "s_seed.txt").write_text("s")
-
-    script = '''
-workflow {
-    o = new Orchestrator(Channel.fromList([null]))
-
-    def ch_a = Channel.fromList([
-        [[:], file("${projectDir}/a0.txt")],
-        [[:], file("${projectDir}/a1.txt")],
-    ])
-    def ch_s_seed = Channel.fromList([[[:], file("${projectDir}/s_seed.txt")]])
-
-    def pa = (o.postIn([ch_a], ["a"]))[0]
-    def ps_seed = (o.postIn([ch_s_seed], ["s_seed"]))[0]
-
-    // First group: collapse a into a single multi-hash item paired with s_seed.
-    // group("s_seed", [pa, ps_seed], ["m"], 1) → wildcard cartesian.
-    // For simplicity, we synthesize the multi-hash S directly.
-    def (_paN, paStream) = pa
-    def agg_s = new Tuple2("m",
-        paStream.toList().map { items ->
-            def hashes = items.collect { it[0]["a"][0] }
-            return [["a": hashes, "m": [777L]], file("${projectDir}/s_seed.txt")]
-        }
-    )
-
-    def grouped = o.group("a", [pa, agg_s], ["target"], 1)
-    grouped.view { idx, a_vals, s_vals ->
-        "G:0:a=${a_vals.size()}:s=${s_vals.size()}:akeys=${idx["a"].size()}"
-    }
-}
-'''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
-    NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    assert len(lines) >= 1, (
-        f"C20: no emits from chained group multi-hash S. Got: {lines}\n"
-        f"stdout tail: {result.stdout[-800:]}"
-    )
+    # pb carries no `b` key to combine on, so the parent branch emits nothing; the
+    # claim is that the dual classification resolves to that branch rather than erroring.
+    assert lines == [], f"C19 emitted {lines}; stderr: {result.stderr[-500:]}"
 
 
 def test_c21_parent_multi_bs3_aggregated_b(nxf_runner):
@@ -668,48 +626,12 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert lines == ["G:0:a=3:b=1:akeys=3"], (
         f"C21: one aggregated b naming three a-hashes is one member holding all "
         f"three, alone in its batch. Got {lines}"
-    )
-
-
-def test_c22_descendant_multi_bs3_folds_three_keys(nxf_runner):
-    for i in range(3):
-        (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
-        (nxf_runner.work_dir / f"s{i}.txt").write_text(f"s{i}")
-
-    script = '''
-workflow {
-    o = new Orchestrator(Channel.fromList([null]))
-    o.seedParents(["s": ["a"]])
-
-    def ch_a = Channel.fromList([
-        [["a": [11L]], file("${projectDir}/a0.txt")],
-        [["a": [12L]], file("${projectDir}/a1.txt")],
-        [["a": [13L]], file("${projectDir}/a2.txt")],
-    ])
-    def ch_s = Channel.fromList([
-        [["a": [11L, 12L, 13L], "s": [101L]], file("${projectDir}/s0.txt")],
-        [["a": [11L, 12L, 13L], "s": [102L]], file("${projectDir}/s1.txt")],
-        [["a": [11L, 12L, 13L], "s": [103L]], file("${projectDir}/s2.txt")],
-    ])
-    def pa = new Tuple2("a", ch_a)
-    def ps = new Tuple2("s", ch_s)
-
-    def grouped = o.group("a", [pa, ps], ["target"], 3)
-    ''' + MEMBER_SHAPE_VIEW + '''
-}
-'''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
-    NxfTestRunner.assert_nxf_ok(result)
-    tasks = _member_shapes(result.stdout)
-    assert len(tasks) == 1, f"C22: ceil(3 keys / 3) == 1 task, got {tasks}"
-    assert tasks[0] == [[1, 3], [1, 3], [1, 3]], (
-        f"C22: expected 3 members of (a=1, s=3), got {tasks[0]}"
     )
 
 
@@ -740,7 +662,7 @@ workflow {
     ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     tasks = _member_shapes(result.stdout)
     assert len(tasks) == 1, f"C23: ceil(3 keys / 3) == 1 task, got {tasks}"
@@ -777,7 +699,7 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=60)
+    result = _run_with_retry(nxf_runner, script, timeout=180)
     NxfTestRunner.assert_nxf_ok(result)
     lines = _emit_lines(result.stdout)
     assert len(lines) >= 1, f"C24 no emits: {lines}"

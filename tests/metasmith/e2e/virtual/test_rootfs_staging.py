@@ -11,7 +11,9 @@ from metasmith.models.solver import Transform
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask
 from metasmith.testing.mock_transforms import alignment_transform, binner_transforms
 
-from .conftest import create_transform_library, stage_task
+from tests.metasmith.support import create_transform_library
+
+from .conftest import stage_task
 
 
 def _stage(tmp_path, mock_samples, mock_types, rootfs=None):
