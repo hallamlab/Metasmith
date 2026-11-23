@@ -230,7 +230,7 @@ contig elsewhere is an off-target amplicon of genomic DNA and stays unpaired.
 Paired and single-end reads join at `sequences::short_reads`, the type the rest of
 the library already shares. A paired sample reaches it through
 `logistics/interleave_zipped_short_reads`. A single-end sample is given as
-`short_reads_se`, which already is one. `fastp_qc` and `merge_and_filter_reads` read the
+`short_reads` itself. `fastp_qc` and `merge_and_filter_reads` read the
 parity off `read_metadata` at run time.
 
 **A study has one parity.** In one sample view the solver reaches `short_reads`

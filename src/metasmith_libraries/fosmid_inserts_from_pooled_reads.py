@@ -30,7 +30,7 @@ def build_template(rebuild: bool = False) -> Template:
         meta = lib.AddValue("read_metadata.json",
                             {"parity": "paired", "length_class": "short"},
                             "sequences::read_metadata", parents={exp})
-        lib.AddItem(DEFERRED, "sequences::short_reads_pe", parents={meta})
+        lib.AddItem(DEFERRED, "sequences::short_reads", parents={meta})
         lib.AddItem(DEFERRED, "fabfos::vector_backbone", parents={exp})
         lib.AddItem(DEFERRED, "sequences::background_genome", parents={exp})
         lib.AddItem(DEFERRED, "algorithm::fabfos_recovery.py")

@@ -25,7 +25,7 @@ input_library:
   schema: v1
   manifest:
     /msm_deferred/0286d3072dcb4277ae0c552a559bde1f:
-      type: sequences::short_reads_pe
+      type: sequences::short_reads
       parents:
         aioP56cER0EF@read_metadata.json: sequences::read_metadata
       instance_id: 1e2064ee6ff773bc6dd5317dfb870aa9684490f055e28ed7e2388a465d0ff0b5fed1

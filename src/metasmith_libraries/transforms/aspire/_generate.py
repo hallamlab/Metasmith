@@ -240,7 +240,7 @@ def _r(var, dtype, *parents):
 # samples' metadata would be the same value. Parity is read at run time, as megahit.py does. A
 # paired sample's zipped halves reach `sequences::short_reads` through
 # logistics/interleave_zipped_short_reads.py; a single-end sample is given as
-# `sequences::short_reads_se`, which is one. That is the join, and everything from `fastp_qc`
+# `sequences::short_reads` itself. That is the join, and everything from `fastp_qc`
 # on is parity-blind at plan time.
 #
 # A paired half is three ancestors deep (study, metadata, read_pair). A fourth level loses the
