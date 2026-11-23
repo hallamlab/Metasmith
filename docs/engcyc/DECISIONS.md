@@ -513,7 +513,10 @@ Result: short 172 steps in 2.4 s, down from 80 s and 5.7 GB; hybrid 173 steps; i
 
 Landed: feat/engine/solver-fixes (a0e6507a, 7e444744, 8e3ae62c, cd485ff0), merged as 1e3f3ae7; budget change 911a5e4a.
 
-## read-taxonomy-ensemble (2026-11-23)
+## read-taxonomy-ensemble (2026-11-23) — DISCARDED
+
+Tony: "disregard aggregators. they prevent optional outputs, discard idea". Replaced by split SRA accessions plus long-read taxonomy lanes (sra-split). The long-read sources below still decide which tools get long-read lanes.
+
 
 Question: how should a template reach read-level taxonomy when a sample may carry short or long reads, as an SRA accession's fetch can return either?
 
