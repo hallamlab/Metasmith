@@ -11,7 +11,9 @@ reads, hybrid (short plus long reads) and long reads. Funnel each sample into th
 case for its reads; give an SRA run accession in place of a read set if you like (a
 short-read run, a long-read run, or one of each for hybrid). Delete a case you have
 no samples for. Every lane is its own target; deselect a target to drop its lane.
-Steps the cases share, such as every reference download, run once. Sizes are each
+A run keeps only its targets and deletes the rest once read. The built reference
+databases are the references case's targets, so a later run finds them in the cache;
+keep that case. Steps the cases share, such as every reference download, run once. Sizes are each
 lane's reference download; a ~ marks an estimate.
 
 Assembly: short, BBDuk -> MEGAHIT; hybrid, BBDuk -> MEGAHIT draft -> OPERA-MS;
@@ -56,9 +58,9 @@ modelling::medium_name.
 
 ASSEMBLY = "sequences::assembly"
 
-# Each entry hangs off the assembly (0), the ORFs (ORFS) or the DAS Tool bins (BINS).
-ORFS, BINS = 3, 5
-_A, _O, _B = [0], [ORFS], [BINS]
+# Each entry hangs off the assembly (0) or the ORFs (ORFS).
+ORFS = 3
+_A, _O = [0], [ORFS]
 TARGETS = [
     ASSEMBLY,                                                          # 0
     "sequences::read_qc_stats",                                        # 1
@@ -66,9 +68,8 @@ TARGETS = [
     {"type": "sequences::assembly_orfs", "parents": _A},               # 3
     {"type": "sequences::gff", "parents": _A},                         # 4
     # binning
-    {"type": "sequences::das_tool_bin_fasta", "parents": _A},          # 5
     {"type": "binning::das_tool_summary", "parents": _A},
-    {"type": "taxonomy::checkm_stats", "parents": _B},
+    {"type": "taxonomy::checkm_stats", "parents": _A},
     {"type": "binning_local::quality_bin_fasta", "parents": _A},
     # taxonomy
     {"type": "taxonomy::gtdbtk_quality", "parents": _A},
@@ -77,6 +78,10 @@ TARGETS = [
     *({"type": f"annotation::{lane}_lane_table", "parents": _O}
       for lane in ("uniref50", "kofam", "interproscan", "eggnog")),
     {"type": "annotation::interproscan_hits", "parents": _O},
+    # lane tables the GPR tables, DRAM, PathoFact and CarveMe read
+    *({"type": f"annotation::{lane}_lane_table", "parents": _O}
+      for lane in ("merops", "refseq_viral", "vogdb", "dbcan", "deepec", "deeparg",
+                   "pathofact_ml", "pathofact_hmm", "pbert", "clean", "bigg")),
     # GPR tables
     {"type": "annotation::gpr_table", "parents": _O},
     {"type": "annotation::gpr_table_all", "parents": _O},
@@ -111,7 +116,6 @@ TARGETS = [
                 "viromics::vcontact3_assignments", "viromics::host_prediction_genus")),
 ]
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
-assert TARGETS[BINS]["type"] == "sequences::das_tool_bin_fasta"
 METABULI = [{"type": t, "parents": _A} for t in ("taxonomy::metabuli", "taxonomy::metabuli_report")]
 SHORT_ONLY = {"annotation::instrain_genome_info"}
 SHORT_TARGETS = TARGETS + METABULI
@@ -130,6 +134,17 @@ HYBRID_TARGETS = [ASSEMBLY, {"type": "sequences::opera_ms_assembly", "parents": 
     t if isinstance(t, str) else t | {"parents": [p + (p >= 1) for p in t.get("parents", [])]}
     for t in SHORT_TARGETS[1:]
 ]
+# A run keeps only its targets, so the built reference databases are targets too: a later
+# run finds them in the cache. They take no sample, so they plan as a case of their own.
+REFERENCES = [f"annotation::{t}" for t in (
+    "amrfinderplus_db", "bacmet_diamond_db", "bakta_db", "card_db", "eggnog_data",
+    "megares_diamond_db", "mobileog_diamond_db", "vfdb_diamond_db", "virsorter2_db")] + [
+    f"ref::{t}" for t in (
+        "antismash", "checkv_db", "dbcan_hmm", "deeparg_db", "dram_sheets", "ganon2_db", "genomad",
+        "gtdb", "gtdb_rrna", "interproscan_data", "iphop_db", "kofamscan_ko_list",
+        "kofamscan_profiles", "kraken2_db", "merops_diamond_db", "metabuli_ref", "metaphlan_db",
+        "pathofact_db", "refseq_viral_diamond_db", "sylph_db", "uniref50_diamond_db", "vcontact3_db",
+        "vibrant_db", "vogdb_hmm")]
 CASE_TARGETS = {"short": SHORT_TARGETS, "long": LONG_TARGETS, "hybrid": HYBRID_TARGETS}
 
 # Consumed and produced by nothing, so they are given, and shared because they
@@ -240,6 +255,8 @@ def template_for(name, samples=None, rebuild=False, targets=None,
             shared_input_paths=shared,
             target_types=CASE_TARGETS[case] if targets is None else targets,
         ) for case in order]
+        cases.append(Spec(input_library=input_library, name="references", input_paths=shared,
+                          shared_input_paths=shared, target_types=REFERENCES))
     return Template(
         name=name, description=description.strip(),
         cases=cases,

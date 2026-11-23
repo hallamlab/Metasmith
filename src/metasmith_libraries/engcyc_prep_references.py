@@ -10,12 +10,12 @@ Fetches and builds every reference database and tool image that
 engcyc_metagenomics needs, and takes no samples. Run it once on an agent before
 the real run; engcyc_metagenomics then finds these products in the cache.
 
-Its targets are the reference products of engcyc_metagenomics' plan over all three
-of its cases, so the two templates name the same reference steps: the long-read
-lanes' references and the Metabuli database build included. Licensed packages are
-left out, as in engcyc_metagenomics. The downloads total ~950 GB: ~350 GB of it
-iPHoP's and 192 GB the Metabuli build's sources. See engcyc_metagenomics'
-description for each lane's size.
+Its targets are engcyc_metagenomics' references case, so the two templates name
+the same reference steps: the long-read lanes' references and the Metabuli database
+build included. Licensed packages are left out, as in engcyc_metagenomics. The plan
+summary shows the download total; the largest are iPHoP's 278 GB and the Metabuli
+build's 180 GB of sources. Each archive is deleted once its database is built. See
+engcyc_metagenomics' description for each lane's size.
 """
 
 
@@ -41,7 +41,11 @@ def build_template(rebuild: bool = False):
     main = M.build_template(rebuild=rebuild).Plan()
     assert main.ok, f"engcyc_metagenomics does not plan: {sorted(main.plan.dropped_targets)}"
     steps, targets = reference_side(main.plan)
-    template = M.template_for(NAME, rebuild=rebuild, targets=targets, description=DESCRIPTION)
+    assert set(targets) == set(M.REFERENCES), (
+        f"engcyc_metagenomics' samples read references its references case does not name: "
+        f"missing {sorted(set(targets) - set(M.REFERENCES))}, unread {sorted(set(M.REFERENCES) - set(targets))}"
+    )
+    template = M.template_for(NAME, rebuild=rebuild, targets=M.REFERENCES, description=DESCRIPTION)
     prep = template.Plan()
     assert prep.ok, f"{NAME} does not plan: {sorted(prep.plan.dropped_targets)}"
     mine, _ = reference_side(prep.plan)
