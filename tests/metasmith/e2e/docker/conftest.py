@@ -40,11 +40,12 @@ def docker_image(docker_available):
 def nxf_container(docker_image, tmp_path_factory):
     # One container per worker, exec'd into for every Nextflow run: creating a container costs
     # this daemon 11-17s, an exec well under one. It mounts the worker's whole tmp tree at the
-    # same path, so a test's paths mean the same thing on both sides.
+    # same path, so a test's paths mean the same thing on both sides. A killed worker never
+    # tears down, so the container's own lifetime is bounded and --rm removes it.
     base = tmp_path_factory.getbasetemp()
     cid = subprocess.run(
         ["docker", "run", "-d", "--rm", "-u", f"{os.getuid()}:{os.getgid()}",
-         "-v", f"{base}:{base}", "--entrypoint", "sleep", docker_image, "infinity"],
+         "-v", f"{base}:{base}", "--entrypoint", "sleep", docker_image, "10800"],
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     yield cid
