@@ -942,7 +942,27 @@ def create_workflow():
     if source:
         _adopt_preset(p, wf.name, source)
     _rows_of(wf.name)
+    if template is not None:
+        _cite_rows(p, wf.name)
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
+
+
+def _cite_rows(p, name: str) -> None:
+    # A template names a case's inputs by library path, and filling a row moves its
+    # item to the file's path, so the workflow names them by row as the page does.
+    rows = op_samples.read_record(str(p.input_library_path(name))).get("rows") or {}
+    row_of = {str(path): f"#{rid}" for rid, path in rows.items()}
+
+    def cite(refs):
+        return [row_of.get(r, r) for r in refs]
+
+    cases = []
+    for c in case_records(p.read_workflow(name).request):
+        c = dict(c, shared_input_paths=cite(c.get("shared_input_paths") or []))
+        if c.get("input_paths") is not None:
+            c["input_paths"] = cite(c["input_paths"])
+        cases.append(c)
+    p.write_request(name, {"cases": cases})
 
 
 @bp.put("/workflows/<name>")
