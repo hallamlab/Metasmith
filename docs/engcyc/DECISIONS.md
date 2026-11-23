@@ -555,7 +555,7 @@ Decided design:
 - engcyc becomes two cases: short reads to the engcyc targets; long reads to a modified set with the long-read taxonomy lanes (sra-split).
 - Known limit: each case picks its tools independently; steps merge only where the picks agree.
 
-Supersedes the `when` design from shape-targets (5155d9ce).
+Tony: "revert \"when\" entirely then. it is completely out of spec". 5155d9ce (shape-targets, 2026-11-21) is reverted as a unit, then any later use removed.
 
 Where it landed: worker plan-cases (feat/engine/plan-cases).
 
