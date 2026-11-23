@@ -480,3 +480,19 @@ the main run reuses them from cache. Run 4 tests the full engcyc_metagenomics, p
 
 Landed: 8827fddb (rename), 9bef7c5b (prep: 29 targets, 40 steps, ~680 GB, every step identical to the
 main plan's), merged into rc as 891e4c34.
+
+## metabuli-size — 2026-11-22
+
+Question: Metabuli's prebuilt gtdb232 database is 744 GB (every species representative, MAGs
+included). Cyanoverse used the R214.1 database, 101 GB (HQ complete/chromosome genomes only). How
+does Metabuli join engcyc?
+
+Tony: "I don't believe it's real" (the jump is the selection, not GTDB growth); then "Yes, and we can
+run downloads on fir compute."
+
+Design: build our own r232 database with the R214.1 rule (Complete Genome/Chromosome, CheckM
+>90%/<5%, plus human T2T) from GTDB's bulk species-representative archive and GTDB r232 taxonomy,
+so it matches GTDB-Tk r232. Build once on fir and host it. The library step downloads the hosted
+database. The GTDB-Tk package holds only skani sketches, not genomes, so it cannot be the source.
+
+Landed: worker metabuli-r232 (build and measure). Hosting site still open.
