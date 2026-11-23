@@ -386,6 +386,11 @@ pub fn generate_applications(
             };
             ar.appls[a as usize].produced = produced;
             viable.push(a);
+            // One target application ends the timeline, so the rest are never
+            // popped -- and requirements anchored only on a shared ancestor
+            // bind independently, so "the rest" is their whole cross product.
+            // The refiner still enumerates: rebinding the target is its job.
+            if tr == p.target_index && mint_from_transform { break; }
         }
         if reached_leaf || include_produced { return Ok(viable); }
     }
