@@ -21,7 +21,7 @@ from metasmith.ops import agent as op_agent
 from metasmith.ops import inputs as op_inputs
 from metasmith.ops import workspace as op_workspace
 
-from tests.metasmith.e2e.docker.conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 from metasmith.gui.api import _pool_resolver
 from metasmith.gui.store import ProjectError
 from metasmith.ops import data as op_data

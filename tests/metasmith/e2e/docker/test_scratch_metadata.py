@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -109,14 +107,6 @@ def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None, extra: list[s
 def _run(runner: NxfTestRunner, nf: str, work_dir: str) -> Path:
     (runner.work_dir / "seed.txt").write_text("seed")
     result = runner.run(nf, extra_args=["-work-dir", work_dir])
-    subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{runner.work_dir}:/ws",
-            runner.docker_image,
-            "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/ws",
-        ],
-        capture_output=True,
-    )
     NxfTestRunner.assert_nxf_ok(result)
     task_dirs = [
         p.parent for p in runner.work_dir.rglob(".command.sh")

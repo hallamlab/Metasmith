@@ -15,7 +15,7 @@ from metasmith.gui.store import Project
 from metasmith.ops import runtime as op_runtime
 from metasmith.ops.agent import load_agent
 
-from .test_e2e_gui_run import _ready_to_launch, _real_relay, gui  # noqa: F401
+from .test_e2e_gui_run import _ready_to_launch, _real_relay, gui_client
 
 pytestmark = pytest.mark.docker
 
@@ -25,6 +25,12 @@ STUB_DELAY_S = 180.0
 DRAIN_TIMEOUT_S = 180.0
 # How long the container may take to get from `run` returning to nextflow being up.
 LAUNCH_TIMEOUT_S = 120.0
+
+
+@pytest.fixture
+def gui(tmp_path, docker_image):
+    with gui_client(tmp_path, docker_image) as client:
+        yield client
 
 
 def _eventually(predicate, timeout: float, interval: float = 2.0) -> bool:
@@ -66,19 +72,6 @@ def _launch_stub_run(gui, tmp_path, docker_image) -> tuple[str, str]:
            "(./dev.sh -brc && ./dev.sh -br builds the real one)",
 )
 class TestStoppingARealRun:
-    def test_a_run_outlives_the_shell_that_launched_it(self, gui, tmp_path, docker_image):
-        # Never kill on disconnect: RunWorkflow returns as soon as start.sh has
-        # detached, and the shell it used is gone by the time we look.
-        agent_path, key = _launch_stub_run(gui, tmp_path, docker_image)
-        try:
-            report = op_runtime.ps(agent_path, key)
-            assert report["token"], f"start.sh recorded no run token: {report}"
-            assert not report["empty"], (
-                "the run did not survive the shell that launched it"
-            )
-        finally:
-            op_runtime.reap(agent_path, key)
-
     def test_cancel_leaves_nothing_running(self, gui, tmp_path, docker_image):
         agent_path, key = _launch_stub_run(gui, tmp_path, docker_image)
         try:
@@ -98,8 +91,12 @@ class TestStoppingARealRun:
 
     def test_reap_clears_a_run_nobody_cancelled(self, gui, tmp_path, docker_image):
         # The recovery surface: a run whose controller is long gone.
+        # Never kill on disconnect: RunWorkflow returns as soon as start.sh has
+        # detached, so a live run here also proves it outlived the launching shell.
         agent_path, key = _launch_stub_run(gui, tmp_path, docker_image)
-        assert not op_runtime.ps(agent_path, key)["empty"]
+        report = op_runtime.ps(agent_path, key)
+        assert report["token"], f"start.sh recorded no run token: {report}"
+        assert not report["empty"], "the run did not survive the shell that launched it"
 
         out = op_runtime.reap(agent_path, key)
 

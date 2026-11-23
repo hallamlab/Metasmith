@@ -18,6 +18,8 @@ import pytest
 from metasmith.constants import MODULE_PATH
 from metasmith.models.workflow.payload import build_entry
 
+from .conftest import docker_as_host_user
+
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
@@ -73,8 +75,7 @@ def test_groovy_and_python_agree_on_every_member_key(tmp_path, docker_image):
         "cache_root": str(tmp_path / "cache"), "members": members,
     }))
     res = subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
-         docker_image, "nextflow", "run", "main.nf", "-lib", "./lib", "-ansi-log", "false"],
+        [*docker_as_host_user(docker_image, tmp_path), "nextflow", "run", "main.nf", "-lib", "./lib", "-ansi-log", "false"],
         capture_output=True, text=True, timeout=600,
     )
     assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]

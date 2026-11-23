@@ -16,12 +16,12 @@ from metasmith.testing.mock_transforms import (
     binner_transforms,
 )
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 
 
-def _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates: bool):
+def _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates: bool):
     transforms = alignment_transform() | binner_transforms()
-    tr_lib = create_transform_library(temp_dir / "tr_publish", mock_types, transforms)
+    tr_lib = create_transform_library(tmp_path / "tr_publish", mock_types, transforms)
 
     given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
     target_model = Transform()
@@ -61,8 +61,8 @@ def _stage(task: WorkflowTask, work_dir: Path) -> str:
 
 
 class TestPublishIntermediates:
-    def test_enabled_publishes_all(self, mock_samples, mock_types, temp_dir):
-        task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=True)
+    def test_enabled_publishes_all(self, mock_samples, mock_types, tmp_path):
+        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=True)
         bam_order = None
         for step in task.plan.steps:
             for group in step.produces:
@@ -72,16 +72,16 @@ class TestPublishIntermediates:
                         break
         assert bam_order is not None, "fixture should produce mock::bam as intermediate"
 
-        nxf = _stage(task, temp_dir / "ws_default")
+        nxf = _stage(task, tmp_path / "ws_default")
 
         for tname in ("metabat2_bins", "maxbin2_bins", "concoct_bins"):
             assert f"path '{tname}'" in nxf, f"target {tname} should be published"
 
         assert f"path '{bam_order}_mock-bam'" in nxf
 
-    def test_disabled_only_targets(self, mock_samples, mock_types, temp_dir):
-        task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=False)
-        nxf = _stage(task, temp_dir / "ws_targets_only")
+    def test_disabled_only_targets(self, mock_samples, mock_types, tmp_path):
+        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=False)
+        nxf = _stage(task, tmp_path / "ws_targets_only")
 
         for tname in ("metabat2_bins", "maxbin2_bins", "concoct_bins"):
             assert f"path '{tname}'" in nxf
@@ -89,8 +89,8 @@ class TestPublishIntermediates:
         assert "_mock-bam" not in nxf
         assert "path 'mock-bam'" not in nxf
 
-    def test_pack_unpack_roundtrip_preserves_flag(self, mock_samples, mock_types, temp_dir):
-        task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=False)
+    def test_pack_unpack_roundtrip_preserves_flag(self, mock_samples, mock_types, tmp_path):
+        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=False)
         packed = task.plan.Pack()
         assert packed["publish_intermediates"] is False
 
@@ -99,8 +99,8 @@ class TestPublishIntermediates:
         restored = WorkflowPlan.Unpack(packed, libraries)
         assert restored.publish_intermediates is False
 
-    def test_default_is_targets_only(self, mock_samples, mock_types, temp_dir):
-        task = _binning_task(mock_samples, mock_types, temp_dir, publish_intermediates=True)
+    def test_default_is_targets_only(self, mock_samples, mock_types, tmp_path):
+        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=True)
         assert WorkflowPlan(given=[], targets=[], steps=[]).publish_intermediates is False
 
         # An index with no flag reads the way the dataclass defaults, so the two

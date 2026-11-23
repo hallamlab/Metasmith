@@ -60,6 +60,10 @@ def test_virtual_full_pipeline_and_oracle(virtual_runtime, tmp_path, mock_sample
     oracle = PlanExecutionOracle(staged)
     oracle.validate_trace(events)
 
+    last_bootstrap = max(i for i, e in enumerate(events) if e.get("type") == "bootstrap_call")
+    with pytest.raises(AssertionError):
+        oracle.validate_trace(events[:last_bootstrap] + events[last_bootstrap + 1:])
+
 
 def test_virtual_bounce_path_is_exercised(virtual_runtime_bounce, tmp_path, mock_samples, mock_types):
     task = _build_binning_task(tmp_path, mock_samples, mock_types)
@@ -72,20 +76,3 @@ def test_virtual_bounce_path_is_exercised(virtual_runtime_bounce, tmp_path, mock
     oracle.validate_trace(events)
 
 
-def test_oracle_detects_missing_bootstrap_event(virtual_runtime, tmp_path, mock_samples, mock_types):
-    task = _build_binning_task(tmp_path, mock_samples, mock_types)
-    _, staged = _run(task, virtual_runtime.host)
-
-    events = virtual_runtime.parse_trace()
-    trimmed = []
-    removed = False
-    for event in reversed(events):
-        if not removed and event.get("type") == "bootstrap_call":
-            removed = True
-            continue
-        trimmed.append(event)
-    trimmed = list(reversed(trimmed))
-
-    oracle = PlanExecutionOracle(staged)
-    with pytest.raises(AssertionError):
-        oracle.validate_trace(trimmed)

@@ -12,12 +12,12 @@ from metasmith.testing.mock_transforms import (
     provenance_transform,
 )
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 
 
 @pytest.fixture
-def agent_home(temp_dir) -> Path:
-    home = temp_dir / "msm_home"
+def agent_home(tmp_path) -> Path:
+    home = tmp_path / "msm_home"
     (home / "lib").mkdir(parents=True)
     Agent(
         home=Source.FromLocal(home),
@@ -75,12 +75,12 @@ def _alignment_inputs(samples_lib) -> tuple[Path, Path]:
 
 
 class TestRunTransformApi:
-    def test_smoke_success(self, mock_samples, mock_types, temp_dir, agent_home):
+    def test_smoke_success(self, mock_samples, mock_types, tmp_path, agent_home):
         tr_lib = create_transform_library(
-            temp_dir / "tr_smoke", mock_types, alignment_transform(),
+            tmp_path / "tr_smoke", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_smoke"
+        work = tmp_path / "work_smoke"
 
         result = RunTransform(
             data_library=mock_samples,
@@ -96,10 +96,10 @@ class TestRunTransformApi:
         assert (work / "aligned.bam").exists()
 
     def test_unknown_name_lists_the_bindable_ones(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_bad", mock_types, alignment_transform(),
+            tmp_path / "tr_bad", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
 
@@ -111,7 +111,7 @@ class TestRunTransformApi:
                     ("reads", reads),
                     ("assembly", asm),
                 ],
-                work_dir=temp_dir / "work_bad",
+                work_dir=tmp_path / "work_bad",
                 agent_home=agent_home,
             )
         msg = str(excinfo.value)
@@ -119,10 +119,10 @@ class TestRunTransformApi:
         assert "reads" in msg and "asm" in msg
 
     def test_a_product_is_not_bindable(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_out", mock_types, alignment_transform(),
+            tmp_path / "tr_out", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
 
@@ -131,16 +131,16 @@ class TestRunTransformApi:
                 data_library=mock_samples,
                 transform=tr_lib.location / "alignment.py",
                 inputs=[("reads", reads), ("asm", asm), ("out", asm)],
-                work_dir=temp_dir / "work_out",
+                work_dir=tmp_path / "work_out",
                 agent_home=agent_home,
             )
         assert "produced by" in str(excinfo.value)
 
     def test_missing_input_is_named(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_missing", mock_types, alignment_transform(),
+            tmp_path / "tr_missing", mock_types, alignment_transform(),
         )
         reads, _ = _alignment_inputs(mock_samples)
 
@@ -149,20 +149,20 @@ class TestRunTransformApi:
                 data_library=mock_samples,
                 transform=tr_lib.location / "alignment.py",
                 inputs=[("reads", reads)],
-                work_dir=temp_dir / "work_missing",
+                work_dir=tmp_path / "work_missing",
                 agent_home=agent_home,
             )
         assert "asm" in str(excinfo.value)
 
 
     def test_a_context_named_output_is_produced(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_ctx", mock_types, _context_output_transform(),
+            tmp_path / "tr_ctx", mock_types, _context_output_transform(),
         )
         reads, _ = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_ctx"
+        work = tmp_path / "work_ctx"
 
         result = RunTransform(
             data_library=mock_samples,
@@ -210,13 +210,13 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
 
 class TestRunTransformStaging:
     def test_a_retry_in_a_fresh_work_dir_finds_the_staging_dir(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
-        tr_lib = create_transform_library(temp_dir / "tr_stage", mock_types, _staging_transform())
+        tr_lib = create_transform_library(tmp_path / "tr_stage", mock_types, _staging_transform())
         reads, _ = _alignment_inputs(mock_samples)
         seen = []
         for attempt in ("work_a", "work_b"):
-            work = temp_dir / attempt
+            work = tmp_path / attempt
             result = RunTransform(
                 data_library=mock_samples,
                 transform=tr_lib.location / "stager.py",
@@ -232,10 +232,10 @@ class TestRunTransformStaging:
 
 
 class TestRunTransformAgent:
-    def test_no_agent_is_refused(self, mock_samples, mock_types, temp_dir, monkeypatch):
+    def test_no_agent_is_refused(self, mock_samples, mock_types, tmp_path, monkeypatch):
         monkeypatch.delenv("AGENT_HOME", raising=False)
         tr_lib = create_transform_library(
-            temp_dir / "tr_noagent", mock_types, alignment_transform(),
+            tmp_path / "tr_noagent", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
 
@@ -244,18 +244,18 @@ class TestRunTransformAgent:
                 data_library=mock_samples,
                 transform=tr_lib.location / "alignment.py",
                 inputs=[("reads", reads), ("asm", asm)],
-                work_dir=temp_dir / "work_noagent",
+                work_dir=tmp_path / "work_noagent",
             )
         assert "AGENT_HOME" in str(excinfo.value)
 
     def test_undeployed_home_is_refused(
-        self, mock_samples, mock_types, temp_dir,
+        self, mock_samples, mock_types, tmp_path,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_bare", mock_types, alignment_transform(),
+            tmp_path / "tr_bare", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        bare = temp_dir / "not_an_agent"
+        bare = tmp_path / "not_an_agent"
         bare.mkdir()
 
         with pytest.raises(ValueError) as excinfo:
@@ -263,20 +263,20 @@ class TestRunTransformAgent:
                 data_library=mock_samples,
                 transform=tr_lib.location / "alignment.py",
                 inputs=[("reads", reads), ("asm", asm)],
-                work_dir=temp_dir / "work_bare",
+                work_dir=tmp_path / "work_bare",
                 agent_home=bare,
             )
         assert "not a deployed agent" in str(excinfo.value)
 
     def test_agent_home_from_env(
-        self, mock_samples, mock_types, temp_dir, agent_home, monkeypatch,
+        self, mock_samples, mock_types, tmp_path, agent_home, monkeypatch,
     ):
         monkeypatch.setenv("AGENT_HOME", str(agent_home))
         tr_lib = create_transform_library(
-            temp_dir / "tr_env", mock_types, alignment_transform(),
+            tmp_path / "tr_env", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_env"
+        work = tmp_path / "work_env"
 
         result = RunTransform(
             data_library=mock_samples,
@@ -289,8 +289,8 @@ class TestRunTransformAgent:
 
 
 class TestRunTransformLibraryResolution:
-    def test_uncompiled_directory_says_so(self, mock_samples, temp_dir, agent_home):
-        loose = temp_dir / "loose"
+    def test_uncompiled_directory_says_so(self, mock_samples, tmp_path, agent_home):
+        loose = tmp_path / "loose"
         loose.mkdir()
         (loose / "alignment.py").write_text(alignment_transform()["alignment"])
 
@@ -299,7 +299,7 @@ class TestRunTransformLibraryResolution:
                 data_library=mock_samples,
                 transform=loose / "alignment.py",
                 inputs=[],
-                work_dir=temp_dir / "work_loose",
+                work_dir=tmp_path / "work_loose",
                 agent_home=agent_home,
             )
         msg = str(excinfo.value)
@@ -308,12 +308,12 @@ class TestRunTransformLibraryResolution:
 
 
 class TestRunTransformCli:
-    def test_cli_smoke(self, mock_samples, mock_types, temp_dir, agent_home, monkeypatch):
+    def test_cli_smoke(self, mock_samples, mock_types, tmp_path, agent_home, monkeypatch):
         tr_lib = create_transform_library(
-            temp_dir / "tr_cli", mock_types, alignment_transform(),
+            tmp_path / "tr_cli", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_cli"
+        work = tmp_path / "work_cli"
 
         argv = [
             "metasmith", "run",
@@ -371,12 +371,12 @@ TransformInstance(protocol=protocol, model=model, group_by=label)
 
 class TestRunTransformProvenance:
     def test_two_labels_two_items_pair_by_ancestry(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_prov", mock_types, _provenance_transform(),
+            tmp_path / "tr_prov", mock_types, _provenance_transform(),
         )
-        work = temp_dir / "work_prov"
+        work = tmp_path / "work_prov"
 
         result = RunTransform(
             data_library=mock_samples,
@@ -400,10 +400,10 @@ class TestRunTransformProvenance:
 
 class TestRunTransformBinding:
     def test_a_filesystem_path_is_refused(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_path", mock_types, alignment_transform(),
+            tmp_path / "tr_path", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
 
@@ -411,8 +411,8 @@ class TestRunTransformBinding:
             RunTransform(
                 data_library=mock_samples,
                 transform=tr_lib.location / "alignment.py",
-                inputs=[("reads", temp_dir / "elsewhere.fq"), ("asm", asm)],
-                work_dir=temp_dir / "work_path",
+                inputs=[("reads", tmp_path / "elsewhere.fq"), ("asm", asm)],
+                work_dir=tmp_path / "work_path",
                 agent_home=agent_home,
             )
         msg = str(excinfo.value)
@@ -420,13 +420,13 @@ class TestRunTransformBinding:
         assert "metasmith data import" in msg
 
     def test_an_absolute_path_inside_the_library_is_the_same_item(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_abs", mock_types, alignment_transform(),
+            tmp_path / "tr_abs", mock_types, alignment_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_abs"
+        work = tmp_path / "work_abs"
 
         result = RunTransform(
             data_library=mock_samples,
@@ -445,12 +445,12 @@ class TestRunTransformBinding:
 # A direct run's machine is the caller's to state, and the default is the smallest
 # legal one rather than a useful one.
 class TestRunTransformParams:
-    def test_defaults_are_one(self, mock_samples, mock_types, temp_dir, agent_home):
+    def test_defaults_are_one(self, mock_samples, mock_types, tmp_path, agent_home):
         tr_lib = create_transform_library(
-            temp_dir / "tr_params_default", mock_types, params_transform(),
+            tmp_path / "tr_params_default", mock_types, params_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_params_default"
+        work = tmp_path / "work_params_default"
 
         result = RunTransform(
             data_library=mock_samples,
@@ -463,13 +463,13 @@ class TestRunTransformParams:
         assert (work / "aligned.bam").read_text() == "cpus=1 memory=1 attempt=1"
 
     def test_cli_flags_reach_the_protocol(
-        self, mock_samples, mock_types, temp_dir, agent_home, monkeypatch,
+        self, mock_samples, mock_types, tmp_path, agent_home, monkeypatch,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_params_cli", mock_types, params_transform(),
+            tmp_path / "tr_params_cli", mock_types, params_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_params_cli"
+        work = tmp_path / "work_params_cli"
 
         argv = [
             "metasmith", "run",
@@ -495,13 +495,13 @@ class TestRunTransformParams:
 # unrunnable outside Nextflow.
 class TestRunTransformSiblingProvenance:
     def test_source_of_resolves_a_sibling_slot(
-        self, mock_samples, mock_types, temp_dir, agent_home,
+        self, mock_samples, mock_types, tmp_path, agent_home,
     ):
         tr_lib = create_transform_library(
-            temp_dir / "tr_sibling", mock_types, provenance_transform(),
+            tmp_path / "tr_sibling", mock_types, provenance_transform(),
         )
         reads, asm = _alignment_inputs(mock_samples)
-        work = temp_dir / "work_sibling"
+        work = tmp_path / "work_sibling"
 
         result = RunTransform(
             data_library=mock_samples,

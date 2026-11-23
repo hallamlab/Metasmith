@@ -15,6 +15,8 @@ import pytest
 
 from metasmith.agents.ceiling import cap_lines
 
+from .conftest import docker_as_host_user
+
 
 PROCESS = '''
 process hello {
@@ -41,8 +43,7 @@ def _run(tmp_path: Path, image: str, request_gb: float, ceiling_gb: float) -> st
         + "\n"
     )
     res = subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
-         image, "nextflow", "run", "main.nf", "-stub", "-ansi-log", "false"],
+        [*docker_as_host_user(image, tmp_path), "nextflow", "run", "main.nf", "-stub", "-ansi-log", "false"],
         capture_output=True, text=True, timeout=600,
     )
     assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]
@@ -96,11 +97,11 @@ def _run_ladder(tmp_path: Path, image: str) -> list[str]:
         "    }",
         "}",
     ]) + "\n")
-    subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
-         image, "nextflow", "run", "main.nf", "-ansi-log", "false"],
+    res = subprocess.run(
+        [*docker_as_host_user(image, tmp_path), "nextflow", "run", "main.nf", "-ansi-log", "false"],
         capture_output=True, text=True, timeout=600,
     )
+    assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]
     rungs = tmp_path / "rungs.txt"
     return rungs.read_text().splitlines() if rungs.exists() else []
 

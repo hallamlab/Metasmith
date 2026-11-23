@@ -100,24 +100,17 @@ def run_with_a_dead_step(virtual_runtime, tmp_path, mock_samples, mock_types, mo
     return workspace
 
 
-def test_the_dead_step_is_ignored_and_its_siblings_finish(run_with_a_dead_step):
-    # The setup, not the claim: this is the behaviour worth keeping. The run
-    # goes on past the failure and the healthy branch still lands.
+def test_a_dead_step_is_ignored_surfaced_and_named(run_with_a_dead_step):
+    # The run goes on past the failure and the healthy branch still lands.
     trace = read_trace(run_with_a_dead_step / LOG_DIR)
     assert trace["failed"] >= 1, trace
     assert trace["done"] >= 1, trace
 
-
-def test_a_run_with_a_dead_step_is_not_reported_completed(run_with_a_dead_step):
     log = (run_with_a_dead_step / LOG_DIR / AgentPaths.MAIN_LOG_FILE).read_text()
     assert "run completed at" not in log, (
         "the run reported plain completion with a step dead and its product "
         "missing; that is what the reporter was told"
     )
-
-
-def test_the_failed_step_is_named_in_the_run_log(run_with_a_dead_step):
-    log = (run_with_a_dead_step / LOG_DIR / AgentPaths.MAIN_LOG_FILE).read_text()
     assert "failing_binner" in log.split("calling nextflow from container")[-1], (
         "nothing after the nextflow call names the step that died"
     )

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from .conftest import (
     build_group_then_split_plan,
@@ -25,7 +24,7 @@ def _events_by_step_order(lib) -> dict[int, list]:
     return out
 
 
-def test_gs1_group_then_unfold(tmp_path, virtual_runtime):
+def test_gs1_group_then_unfold_resolves_through_the_trace(tmp_path, virtual_runtime):
     bp = build_group_then_split_plan(tmp_path)
     task, lib = run_and_load(virtual_runtime, bp)
 
@@ -59,47 +58,6 @@ def test_gs1_group_then_unfold(tmp_path, virtual_runtime):
             f"<GS1> unfold event {ev.task_hash} has empty consumes"
         )
 
-
-def test_gs2_unfold_per_sample_parents(tmp_path, virtual_runtime):
-    bp = build_group_then_split_plan(tmp_path)
-    task, lib = run_and_load(virtual_runtime, bp)
-
-    by_order = _events_by_step_order(lib)
-    unfold_events = by_order.get(2, [])
-    if len(unfold_events) < 2:
-        pytest.skip(
-            "<GS2> stimulus emits one grouped artifact, so AsBatch unfold "
-            "produces a single downstream artifact. Per-sample reattribution "
-            "requires a multi-row grouped output — extend "
-            "`mock_transforms.group_then_unfold` to fan-out N grouped rows "
-            "before this becomes observable. Behaviour pinned in GS1."
-        )
-
-    grouped_event = by_order[1][0]
-    grouped_parent_ids: set[str] = set()
-    for parents in grouped_event.consumes.values():
-        grouped_parent_ids.update(parents)
-    for ev in unfold_events:
-        per_event: set[str] = set()
-        for parents in ev.consumes.values():
-            per_event.update(parents)
-        assert per_event, f"<GS2> unfold event {ev.task_hash} has empty consumes"
-        assert per_event != grouped_parent_ids, (
-            f"<GS2> unfold event {ev.task_hash} consumes the full aggregate "
-            f"union {per_event}; expected a per-sample subset"
-        )
-
-
-def test_gs3_unfold_roundtrip_walk(tmp_path, virtual_runtime):
-    bp = build_group_then_split_plan(tmp_path)
-    task, lib = run_and_load(virtual_runtime, bp)
-
-    by_order = _events_by_step_order(lib)
-    unfold_events = by_order.get(2, [])
-    grouped_events = by_order.get(1, [])
-    assert unfold_events, "<GS3> no unfold (step_order=2) events in trace"
-    assert grouped_events, "<GS3> no group_aggregate (step_order=1) events in trace"
-
     grouped_produced_ids: set[str] = set()
     for ev in grouped_events:
         for prod in ev.produces:
@@ -125,3 +83,5 @@ def test_gs3_unfold_roundtrip_walk(tmp_path, virtual_runtime):
         f"<GS3> expected >=2 events in summary, got {summary['counts']}"
     )
     assert set(summary["by_status"]).issubset({"hit", "miss", "promoted", "fail"})
+
+

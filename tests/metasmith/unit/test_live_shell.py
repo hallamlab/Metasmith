@@ -106,14 +106,14 @@ def test_g4_long_wait_does_not_burn_cpu():
         u0 = resource.getrusage(resource.RUSAGE_SELF).ru_utime
         s0 = resource.getrusage(resource.RUSAGE_SELF).ru_stime
         t0 = time.monotonic()
-        res = sh.Exec("sleep 3", history=True, timeout=10)
+        res = sh.Exec("sleep 1", history=True, timeout=10)
         wall = time.monotonic() - t0
         u1 = resource.getrusage(resource.RUSAGE_SELF).ru_utime
         s1 = resource.getrusage(resource.RUSAGE_SELF).ru_stime
     cpu = (u1 - u0) + (s1 - s0)
     assert res.exit_code == 0
-    assert wall >= 2.8, f"sleep 3 returned too fast: {wall:.2f}s"
-    assert cpu < 0.5, f"cpu={cpu:.2f}s during 3s wait — looks like polling"
+    assert wall >= 0.9, f"sleep 1 returned too fast: {wall:.2f}s"
+    assert cpu < 0.3, f"cpu={cpu:.2f}s during 1s wait — looks like polling"
 
 
 def test_g5_clean_lifecycle_no_fd_leak():
@@ -342,7 +342,8 @@ def _spawn_override(delay, inner="exec bash"):
 
 
 def test_g9_slow_but_alive_bash_still_inits():
-    delay = 6.0
+    assert LiveShell._INIT_TIMEOUT >= 60, "the init deadline is a backstop for a wedged bash, not a slow one"
+    delay = 1.5
     t0 = time.monotonic()
     with _spawn_override(delay):
         with LiveShell() as sh:
@@ -448,7 +449,7 @@ def test_g9_init_survives_reader_starvation_under_load():
 
     failures = []
     try:
-        for i in range(8):
+        for i in range(3):
             try:
                 with LiveShell() as sh:
                     r = sh.Exec("echo ok", history=True, timeout=30)

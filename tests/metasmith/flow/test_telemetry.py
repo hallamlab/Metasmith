@@ -199,27 +199,7 @@ def test_empty_trace_index_safe_queries(tmp_path):
     assert s["counts"]["sessions"] == 0
 
 
-def test_t1_find_invocations_positive_and_negative(tmp_path, virtual_runtime):
-    from tests.metasmith.flow.conftest import build_linear_plan, run_and_load
-
-    bp = build_linear_plan(tmp_path, n_steps=2)
-    transform_keys = [s.transform.GetKey() for s in bp.plan.steps]
-    _task, lib = run_and_load(virtual_runtime, bp)
-
-    matched_any = False
-    for tk in transform_keys:
-        hits = lib.find_invocations(transform_key=tk)
-        if hits:
-            matched_any = True
-            break
-    assert matched_any, (
-        f"no events found for any plan transform_key={transform_keys!r}; "
-        f"summary={lib.summary()['by_transform']!r}"
-    )
-    assert lib.find_invocations(transform_key="no_such_transform_xyz") == []
-
-
-def test_t2_find_invocations_status_hit(tmp_path, virtual_runtime):
+def test_t2_find_invocations_by_transform_and_status_hit(tmp_path, virtual_runtime):
     from tests.metasmith.flow.conftest import build_linear_plan, run_and_load
 
     bp = build_linear_plan(tmp_path, n_steps=2)
@@ -227,6 +207,12 @@ def test_t2_find_invocations_status_hit(tmp_path, virtual_runtime):
     assert lib_cold.find_invocations(status="hit") == [], (
         f"unexpected hit rows on cold cache: {lib_cold.find_invocations(status='hit')!r}"
     )
+    transform_keys = [s.transform.GetKey() for s in bp.plan.steps]
+    assert any(lib_cold.find_invocations(transform_key=tk) for tk in transform_keys), (
+        f"no events found for any plan transform_key={transform_keys!r}; "
+        f"summary={lib_cold.summary()['by_transform']!r}"
+    )
+    assert lib_cold.find_invocations(transform_key="no_such_transform_xyz") == []
 
     bp2 = build_linear_plan(tmp_path, n_steps=2)
     _task2, lib_hot = run_and_load(virtual_runtime, bp2)
@@ -279,28 +265,3 @@ def test_t5_get_siblings_of_task_scope(tmp_path, virtual_runtime):
     assert len(siblings) >= 1
 
 
-def test_t6_get_logs_of_xfail_or_skip(tmp_path, virtual_runtime):
-    from tests.metasmith.flow.conftest import build_linear_plan, run_and_load
-
-    bp = build_linear_plan(tmp_path, n_steps=2)
-    _task, lib = run_and_load(virtual_runtime, bp)
-
-    sample_inst_id: str | None = None
-    for path in lib.manifest:
-        meta = lib.instance_meta.get(path)
-        if meta is not None:
-            sample_inst_id = meta["instance_id"]
-            break
-    if sample_inst_id is None:
-        pytest.skip("no tracked instances in library after virtual run")
-
-    bundle = lib.get_logs_of(sample_inst_id)
-    if getattr(bundle, "status", None) == "available":
-        return
-    pytest.skip(
-        reason=(
-            "virtual_runtime does not emit command shard; "
-            "covered by tests/e2e/docker/T6 (LogBundle.status="
-            f"{getattr(bundle, 'status', None)!r})"
-        )
-    )

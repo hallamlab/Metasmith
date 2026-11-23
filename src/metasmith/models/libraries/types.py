@@ -7,6 +7,9 @@ from pathlib import Path
 
 import yaml
 
+# libyaml parses a 40k-item library index ~10x faster than the pure-Python loader
+_SafeLoader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 from ...hashing import KeyGenerator
 from ...logging import Log
 from ._atomic import write_yaml_atomic
@@ -20,7 +23,7 @@ def yaml_safe_load(p: Path):
         try:
             with open(p) as f:
                 s = f.read()
-            d = yaml.safe_load(s)
+            d = yaml.load(s, Loader=_SafeLoader)
         except OSError as e:
             Log.Warn(f"{i+1} of {MAX}, error reading yaml [{p}]: {e}")
             time.sleep(1)

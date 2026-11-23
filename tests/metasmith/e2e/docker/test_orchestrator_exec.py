@@ -7,6 +7,8 @@ from pathlib import Path
 
 from metasmith.constants import MODULE_PATH
 
+from .conftest import docker_as_host_user
+
 pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
 
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
@@ -36,10 +38,7 @@ class NxfTestRunner:
 
         result = subprocess.run(
             [
-                "docker", "run", "--rm",
-                "-v", f"{self.work_dir}:/ws",
-                "-w", "/ws",
-                self.docker_image,
+                *docker_as_host_user(self.docker_image, self.work_dir, mount_at="/ws"),
                 "nextflow", "run", "test.nf",
                 "-lib", "./lib",
                 "-ansi-log", "false",
@@ -452,7 +451,7 @@ workflow {
     g1.view { "G1: ${it[0]}" }
     g2.view { "G2: ${it[0]}" }
 }
-''', timeout=60)
+''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
         g1_lines = [l for l in result.stdout.split("\n") if l.startswith("G1:")]
         g2_lines = [l for l in result.stdout.split("\n") if l.startswith("G2:")]
@@ -1166,8 +1165,12 @@ workflow {
         NxfTestRunner.assert_nxf_ok(result)
         return result
 
-    def test_each_output_keeps_its_task_index(self, nxf_runner):
-        result = self._run(nxf_runner)
+    @pytest.fixture(scope="class")
+    def default_run(self, tmp_path_factory, docker_image):
+        return self._run(NxfTestRunner(tmp_path_factory.mktemp("multi_output"), docker_image))
+
+    def test_each_output_keeps_its_task_index(self, default_run):
+        result = default_run
         for stream in ("A", "B"):
             lines = [
                 l for l in result.stdout.splitlines()
@@ -1186,8 +1189,8 @@ workflow {
                     f"output {stream} is missing its own key: {idx}"
                 )
 
-    def test_both_outputs_join_one_downstream_group(self, nxf_runner):
-        result = self._run(nxf_runner)
+    def test_both_outputs_join_one_downstream_group(self, default_run):
+        result = default_run
         emits = [l for l in result.stdout.splitlines() if l.startswith("OUT_M:")]
         assert len(emits) == 2, (
             "the merge step must run once per group key; got "

@@ -18,7 +18,7 @@ from metasmith.testing.mock_transforms import (
     failing_transform,
 )
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 
 
 def lin_line_of(metadata: str) -> str:
@@ -27,8 +27,8 @@ def lin_line_of(metadata: str) -> str:
     return line[4:]
 
 
-def _make_task(mock_samples, mock_types, temp_dir, transforms, target_props, target_name):
-    tr_lib = create_transform_library(temp_dir, mock_types, transforms)
+def _make_task(mock_samples, mock_types, tmp_path, transforms, target_props, target_name):
+    tr_lib = create_transform_library(tmp_path, mock_types, transforms)
     given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
     target_model = Transform()
     target_model.AddRequirement(properties=target_props)
@@ -48,15 +48,15 @@ def _make_task(mock_samples, mock_types, temp_dir, transforms, target_props, tar
 
 
 class TestHarnessBasic:
-    def test_simple_transform_produces_output(self, mock_samples, mock_types, temp_dir):
+    def test_simple_transform_produces_output(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "basic",
+            mock_samples, mock_types, tmp_path / "basic",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_basic",
+            work_dir=tmp_path / "work_basic",
         )
         result = harness.run()
         assert result.success
@@ -69,15 +69,15 @@ class TestHarnessBasic:
         )
         assert has_output, "Transform should produce at least one output file"
 
-    def test_metadata_format(self, mock_samples, mock_types, temp_dir):
+    def test_metadata_format(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "meta",
+            mock_samples, mock_types, tmp_path / "meta",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_meta",
+            work_dir=tmp_path / "work_meta",
         )
         meta_path = harness.write_metadata()
         assert meta_path.exists()
@@ -92,15 +92,15 @@ class TestHarnessBasic:
 
         assert isinstance(LinPayload.from_json(lin_line_of(content)).entries, list)
 
-    def test_input_files_accessible(self, mock_samples, mock_types, temp_dir):
+    def test_input_files_accessible(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "inp",
+            mock_samples, mock_types, tmp_path / "inp",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_inp",
+            work_dir=tmp_path / "work_inp",
         )
         input_map = harness.setup_inputs()
         assert len(input_map) > 0
@@ -109,15 +109,15 @@ class TestHarnessBasic:
             for p in paths:
                 assert p.exists() or p.is_symlink(), f"Input {p} should be accessible"
 
-    def test_output_path_convention(self, mock_samples, mock_types, temp_dir):
+    def test_output_path_convention(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "outpath",
+            mock_samples, mock_types, tmp_path / "outpath",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_outpath",
+            work_dir=tmp_path / "work_outpath",
         )
         harness.write_metadata()
         context = harness.build_context()
@@ -147,15 +147,15 @@ class TestHarnessBasic:
 
 
 class TestHarnessBatching:
-    def test_batched_context_iterates(self, mock_samples, mock_types, temp_dir):
+    def test_batched_context_iterates(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "batch",
+            mock_samples, mock_types, tmp_path / "batch",
             batched_transform(batch_size=3), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_batch",
+            work_dir=tmp_path / "work_batch",
         )
         harness.write_metadata()
         context = harness.build_context()
@@ -165,30 +165,30 @@ class TestHarnessBatching:
             batch_count += 1
         assert batch_count >= 1
 
-    def test_batch_outputs_per_item(self, mock_samples, mock_types, temp_dir):
+    def test_batch_outputs_per_item(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "batchout",
+            mock_samples, mock_types, tmp_path / "batchout",
             batched_transform(batch_size=3), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_batchout",
+            work_dir=tmp_path / "work_batchout",
         )
         result = harness.run()
         assert result.success or len(result.manifest) > 0
 
 
 class TestHarnessLineage:
-    def test_lineage_metadata_correct(self, mock_samples, mock_types, temp_dir):
+    def test_lineage_metadata_correct(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "lin",
+            mock_samples, mock_types, tmp_path / "lin",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_lin",
+            work_dir=tmp_path / "work_lin",
         )
         meta_path = harness.write_metadata()
         content = meta_path.read_text()
@@ -201,15 +201,15 @@ class TestHarnessLineage:
             assert isinstance(entry, dict)
             assert LinPayload.FILES_KEY in entry
 
-    def test_files_entry_correct(self, mock_samples, mock_types, temp_dir):
+    def test_files_entry_correct(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "files",
+            mock_samples, mock_types, tmp_path / "files",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_files",
+            work_dir=tmp_path / "work_files",
         )
         meta_path = harness.write_metadata()
         content = meta_path.read_text()
@@ -223,22 +223,22 @@ class TestHarnessLineage:
 
 
 class TestHarnessErrors:
-    def test_failing_transform(self, mock_samples, mock_types, temp_dir):
+    def test_failing_transform(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "fail",
+            mock_samples, mock_types, tmp_path / "fail",
             failing_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_fail",
+            work_dir=tmp_path / "work_fail",
         )
         result = harness.run()
         assert not result.success
 
-    def test_missing_work_dir_raises(self, mock_samples, mock_types, temp_dir):
+    def test_missing_work_dir_raises(self, mock_samples, mock_types, tmp_path):
         task = _make_task(
-            mock_samples, mock_types, temp_dir / "nowork",
+            mock_samples, mock_types, tmp_path / "nowork",
             alignment_transform(), {"bam"}, "bam",
         )
         harness = TransformHarness(
@@ -251,9 +251,9 @@ class TestHarnessErrors:
 
 
 class TestHarnessBranching:
-    def test_multi_product_groups(self, mock_samples, mock_types, temp_dir):
+    def test_multi_product_groups(self, mock_samples, mock_types, tmp_path):
         transforms = branching_transforms()
-        tr_lib = create_transform_library(temp_dir / "branch_tr", mock_types, transforms)
+        tr_lib = create_transform_library(tmp_path / "branch_tr", mock_types, transforms)
 
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
         target_model = Transform()
@@ -277,7 +277,7 @@ class TestHarnessBranching:
         harness = TransformHarness(
             task=task,
             step_index=1,
-            work_dir=temp_dir / "work_branch",
+            work_dir=tmp_path / "work_branch",
         )
         result = harness.run()
         assert result.success

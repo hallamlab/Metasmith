@@ -74,3 +74,19 @@ def test_no_test_files_at_the_tests_root():
     assert not strays, (
         f"test files at tests/ root belong under an axis directory: {strays}"
     )
+
+
+def test_every_smoke_id_names_a_test():
+    # Under xdist one id that names nothing empties the whole run without an error.
+    import subprocess
+    import sys
+
+    from tests.metasmith._groups import SMOKE
+
+    out = subprocess.run(
+        [sys.executable, "-m", "pytest", "--co", "-qq", "-p", "no:cacheprovider",
+         *(f"tests/metasmith/{n}" for n in SMOKE)],
+        cwd=REPO_ROOT, capture_output=True, text=True,
+    ).stdout
+    collected = {line.split("[")[0].removeprefix("tests/metasmith/") for line in out.splitlines() if "::" in line}
+    assert set(SMOKE) <= collected, sorted(set(SMOKE) - collected)

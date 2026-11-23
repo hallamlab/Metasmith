@@ -39,6 +39,11 @@ def test_each_item_of_a_grouped_slot_carries_its_own_index(
         "the collecting task carries no PROV -- nothing downstream can pair "
         "these slots"
     )
+    assert len(prov) == len(files), (
+        f"PROV has {len(prov)} slots, FILES has {len(files)}"
+    )
+    for i, (f, p) in enumerate(zip(files, prov)):
+        assert len(f) == len(p), f"slot {i}: {len(f)} files but {len(p)} maps"
     labels, label_prov = files[1], prov[1]
     assert {Path(f).name for f in labels} == {
         f"sample_{i:02d}.label" for i in range(3)
@@ -57,20 +62,6 @@ def test_each_item_of_a_grouped_slot_carries_its_own_index(
         f"no channel in {chans} gives the three labels distinct ids; their "
         f"index maps are {label_prov}"
     )
-
-
-def test_provenance_stays_aligned_with_the_files_it_describes(
-    virtual_runtime, tmp_path
-):
-    plan = build_labelled_collection_plan(tmp_path, n_samples=3)
-    workspace, _ = _stage_and_run(virtual_runtime, plan)
-    payload, _ = _wire(workspace)
-    files, prov = payload.file_groups(0), payload.provenance_groups(0)
-    assert len(prov) == len(files), (
-        f"PROV has {len(prov)} slots, FILES has {len(files)}"
-    )
-    for i, (f, p) in enumerate(zip(files, prov)):
-        assert len(f) == len(p), f"slot {i}: {len(f)} files but {len(p)} maps"
 
 
 def test_provenance_is_stripped_before_it_reaches_a_result(virtual_runtime, tmp_path):
