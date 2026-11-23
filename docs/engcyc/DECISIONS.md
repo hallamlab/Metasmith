@@ -571,3 +571,13 @@ Decided design:
 - Each lane is an optional target of engcyc's long-read case (plan-cases).
 
 Where it landed: worker sra-split (feat/engine/sra-split); engcyc's two cases after plan-cases lands.
+
+## metabuli-in-pipeline — 2026-11-23
+
+Question: Metabuli's r232 database is archived on chinook, which is not public. Does the Metabuli lane block 0.26.1, and how does a user get the database?
+
+Tony: "our metabuli db was built, so we can just make that part of the pipeline... it did finish within a day so I dont really see anything wrong with this?"
+
+Design: the library builds the database itself, with no hosted copy. Transforms download GTDB r232's species-representative genomes and taxonomy, human T2T and RefSeq viral. A selection step applies the R214.1 rule (Complete Genome/Chromosome, CheckM >90%/<5%). Then `metabuli build` runs. The fir build took 34 min on 64 CPUs, with a peak of 203 GB on disk and a 192 GB download. The steps run in engcyc_prep_references, and the Metabuli lane goes into engcyc_metagenomics. This replaces the hosted download from metabuli-size. Metabuli is in 0.26.1.
+
+Landed: worker metabuli-build (library transforms); template wiring in T4.
