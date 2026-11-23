@@ -512,3 +512,16 @@ Decided design: three solver fixes, not a template split.
 Result: short 172 steps in 2.4 s, down from 80 s and 5.7 GB; hybrid 173 steps; isolate unchanged.
 
 Landed: feat/engine/solver-fixes (a0e6507a, 7e444744, 8e3ae62c, cd485ff0), merged as 1e3f3ae7; budget change 911a5e4a.
+
+## read-taxonomy-ensemble (2026-11-23)
+
+Question: how should a template reach read-level taxonomy when a sample may carry short or long reads, as an SRA accession's fetch can return either?
+
+Tony: "short reads should reallly be SR -> read level taxonomy tools -> read-level taxonomy aggregator that asks for the ensemble. then we need a similar one for long reads." / "That's why I proposed a separate read-level taxonomy aggregator. This way we can have separate aggregators for short read and long reads that target the specific set of tools. Then when EngSec does the target, it just asks for read-level taxonomy."
+
+Decided design:
+- A read-level taxonomy supertype is the target. Templates such as engcyc target only that type, not the individual tools.
+- Two aggregators produce it, one per read class. Each requires its own tool set: short reads -> short-read tools, long reads -> long-read-capable tools with their long-read settings.
+- Short-read-only tools (inStrain, StrainPhlAn) sit under the short-read aggregator only. A long-read outcome reaches the target through its own aggregator, so the getSraReads fork routes every outcome, and the SRA accession solves without typed accessions.
+
+Where it landed: pending (ensemble membership, then a worker).
