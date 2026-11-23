@@ -177,7 +177,7 @@ def templates_corpus(root: Path) -> Iterator[tuple[str, SolverProblem, str]]:
     from ..agents import Template
 
     for template in Template.Discover(root):
-        task = template.spec.Solve()
+        task = template.Plan()
         result = getattr(task.plan, "_solver_result", None)
         problem = problem_of_plan(task.plan, name=template.name)
         if problem is None or result is None:

@@ -931,11 +931,8 @@ def _make_template(project_root: Path) -> str:
     Template(
         name="assembly_to_bam",
         description="an assembly in, a bam out",
-        spec=Spec(
-            input_library=lib,
-            target_types=["mock::bam"],
-            transform_libraries=[mlib / "transforms" / "transforms.xgdb"],
-        ),
+        cases=[Spec(input_library=lib, target_types=["mock::bam"])],
+        transform_libraries=[mlib / "transforms" / "transforms.xgdb"],
     ).Save(mlib)
     return "assembly_to_bam"
 
@@ -964,12 +961,14 @@ class TestTemplates:
             assert client.get(f"/api/templates/{name}/dag").status_code == 200
 
     def test_listing_reads_yaml_and_never_solves(self, client, template):
-        with mock.patch.object(Spec, "Solve", side_effect=AssertionError("solved")):
+        with mock.patch.object(Template, "Plan", side_effect=AssertionError("planned")):
             body = client.get("/api/templates").get_json()
         (entry,) = body
         assert entry["name"] == template
         assert entry["description"] == "an assembly in, a bam out"
-        assert entry["target_types"] == ["mock::bam"]
+        assert entry["cases"] == [
+            {"name": "case", "sample_type": None, "target_types": ["mock::bam"]}
+        ]
         assert entry["dag_ready"] is False
 
     def test_a_project_without_templates_lists_none(self, client):
@@ -1021,7 +1020,7 @@ class TestTemplates:
         name = r.get_json()["name"]
 
         detail = client.get(f"/api/workflows/{name}").get_json()
-        assert detail["request"]["target_types"] == ["mock::bam"]
+        assert [c["target_types"] for c in detail["request"]["cases"]] == [["mock::bam"]]
         assert [Path(p).name for p in detail["request"]["transform_libraries"]] == [
             "transforms.xgdb"
         ]
@@ -1075,7 +1074,7 @@ class TestSaveAsTemplate:
         assert r.status_code == 201, r.get_json()
         body = r.get_json()
         assert body["source"] == "user"
-        assert body["target_types"] == ["mock::bam"]
+        assert [c["target_types"] for c in body["cases"]] == [["mock::bam"]]
 
         spec_path = project_root / "user_templates" / "my-tpl" / "spec.yml"
         assert spec_path.is_file()
@@ -1362,7 +1361,10 @@ class TestWorkflowGenerateMore:
         assert result["success"] is False
         assert [g["type"] for g in result["given"]] == ["mock::assembly"] * 2
         assert all(g["path"] for g in result["given"])
-        assert result["targets"] == [{"type": "mock::unreachable", "parents": []}]
+        assert result["cases"] == [{
+            "name": "case", "sample_type": "mock::assembly",
+            "targets": [{"type": "mock::unreachable", "parents": []}],
+        }]
         assert client.get(f"/api/workflows/{name}").get_json()["result"]["given"]
 
     def test_a_result_carries_the_fingerprint_of_the_recipe_it_solved(self, client):
@@ -1394,6 +1396,21 @@ class TestWorkflowGenerateMore:
 
         with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #2"):
             TargetBuilder().AddAll([{"type": "mock::bam", "parents": [1]}])
+
+    def test_two_cases_take_their_own_rows_and_plan_once(self, client):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 2)
+        client.put(f"/api/workflows/{name}", json={"cases": [
+            {"name": "short", "sample_type": "mock::assembly",
+             "input_paths": ["#sample0"], "target_types": ["mock::bam"]},
+            {"name": "long", "sample_type": "mock::assembly",
+             "input_paths": ["#sample1"], "target_types": ["mock::bam"]},
+        ]})
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"], result
+        assert [c["name"] for c in result["cases"]] == ["short", "long"]
+        (step,) = result["steps"]
+        assert sorted(step["cases"]) == ["long", "short"]
 
     def test_generate_requires_a_target(self, client):
         r = client.post("/api/workflows", json={})
@@ -2578,8 +2595,9 @@ class TestShareWorkflows:
     def test_the_spec_travels_and_the_bookkeeping_does_not(self, client):
         name = self._recipe(client)
         body = _payload(client, "workflow", name)["body"]
-        assert body["spec"]["target_types"] == ["mock::bam"]
-        assert body["spec"]["sample_type"] == "mock::assembly"
+        (case,) = body["spec"]["cases"]
+        assert case["target_types"] == ["mock::bam"]
+        assert case["sample_type"] == "mock::assembly"
         for k in ("created_at", "forked_from", "schema"):
             assert k not in body and k not in body["spec"]
 

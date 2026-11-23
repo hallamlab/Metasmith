@@ -13,7 +13,7 @@ from pathlib import Path
 MLIB = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(MLIB))
 import _authoring as A  # noqa: E402
-from metasmith.python_api import DEFERRED, Spec  # noqa: E402
+from metasmith.python_api import DEFERRED, Plan, Spec  # noqa: E402
 
 TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml", "taxonomy.yml", "ncbi.yml")
 REFS = ("ref::metaphlan_db", "ref::sylph_db", "ref::kraken2_db", "ref::ganon2_db")
@@ -51,11 +51,10 @@ def main(argv):
             sample_type="sequences::read_metadata",
             shared_input_paths=[],
             target_types=CASES[kind],
-            transform_libraries=A.transforms("logistics", "assembly", "metagenomics"),
-            resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],
         )
         t0 = time.time()
-        task = spec.Solve(max_iter=512)
+        task = Plan([spec], transform_libraries=A.transforms("logistics", "assembly", "metagenomics"),
+                    resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"], max_iter=512)
         plan = task.plan
         print(f"[{kind}] ok={task.ok} steps={len(plan.steps)} solve={time.time() - t0:.1f}s dropped={sorted(plan.dropped_targets)}")
         print("  " + ", ".join(f"{k}x{v}" if v > 1 else k

@@ -3,8 +3,8 @@
 
 One pool holds two short-PE samples and two hybrid samples (short PE + Nanopore, E5's fences). E5's short lane
 (bbduk -> MEGAHIT) and hybrid lane (MEGAHIT draft -> OPERA-MS) load together, with assembly_stats, Prodigal and
-MetaBAT2 downstream. Each variant solves once and reports, per step, the cases it serves and the assembly type it
-reads. Build the library first: python -m metasmith build all -t src/metasmith_libraries/data_types
+MetaBAT2 downstream. Each variant plans once and reports, per step, the cases it serves and the assembly type it
+reads. A per-case variant plans the short samples and the hybrid samples as two cases, each with its own targets. Build the library first: python -m metasmith build all -t src/metasmith_libraries/data_types
 -t research/hybrid_solve/library/data_types -u research/hybrid_solve/library/resources/hyb -r <transforms/hyb or hyb_fenced>.
 Usage: [HS_ONLY=short|hybrid] solve.py [variant ...]
 """
@@ -19,6 +19,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "research" / "metasmith_benchmark" / "drivers"))
 
 import _common as c  # noqa: E402
+from metasmith.agents import CaseViews, plan_views  # noqa: E402
 from metasmith.python_api import (  # noqa: E402
     Agent, DataInstanceLibrary, Runtime, Source, TargetBuilder, TransformInstanceLibrary,
 )
@@ -44,7 +45,7 @@ def dummy(name):
 
 def declare_givens(smith, nano_type="hyb::nanopore_reads", hybrid_short_type="sequences::short_reads_pe", tag="base",
                    one_study=False, samples=None):
-    # A sample is everything under one root, so a study per shape gives one sample, and one case, per shape.
+    # A study per shape, or one study for every sample with one_study.
     givens = smith.PoolGivens()
     studies = {}
     for sid, hybrid in samples or SAMPLES:
@@ -101,11 +102,10 @@ def targets_both():
     return t
 
 
-def targets_conditional():
-    # Through Spec: the generic lane for every shape, OPERA-MS only where a shape carries Nanopore reads.
+def targets_generic_and_hybrid():
     t = TargetBuilder()
     downstream(t, t.Add("sequences::assembly"))
-    downstream(t, t.Add("hyb::opera_ms_assembly", when=["hyb::nanopore_reads"]))
+    downstream(t, t.Add("hyb::opera_ms_assembly"))
     return t
 
 
@@ -136,14 +136,16 @@ def report(name, task, dt):
         print(f"  givens used: {dict(Counter(i.dtype_name for i in plan.given))}")
 
 
-def solve(smith, name, inputs, trs, targets):
-    resources = [DataInstanceLibrary.Load(MLIB / "resources" / "env"),
-                 DataInstanceLibrary.Load(MLIB / "resources" / "lib"),
-                 DataInstanceLibrary.Load(LIB / "resources" / "hyb")]
+def resources():
+    return [DataInstanceLibrary.Load(MLIB / "resources" / "env"),
+            DataInstanceLibrary.Load(MLIB / "resources" / "lib"),
+            DataInstanceLibrary.Load(LIB / "resources" / "hyb")]
+
+
+def planned(name, plan):
     t0 = time.time()
     try:
-        task = smith.GenerateWorkflow(samples=list(inputs.AsSamples("sequences::read_metadata")),
-                                      resources=resources, transforms=trs, targets=targets)
+        task = plan()
     except Exception as e:  # a refusal is a result here
         print(f"\n### {name}: RAISED after {time.time() - t0:.1f}s: {type(e).__name__}: {e}")
         return None
@@ -151,41 +153,21 @@ def solve(smith, name, inputs, trs, targets):
     return task
 
 
-def target_model(trs, builder):
-    from metasmith.models.solver import Transform
-    model, deps, names = Transform(), {}, []
-    for spec in builder.resolve():
-        e = next(t.GetType(spec.dtype_name) for t in trs
-                 if spec.dtype_name.split("::")[1] in (t.types.get(spec.dtype_name.split("::")[0]) or {}))
-        deps[spec] = model.AddRequirement(example=e, parents={deps[p] for p in spec.parents})
-        names.append(spec.dtype_name)
-    return model, names
+def solve(smith, name, inputs, trs, targets):
+    return planned(name, lambda: smith.GenerateWorkflow(
+        samples=list(inputs.AsSamples("sequences::read_metadata")),
+        resources=resources(), transforms=trs, targets=targets))
 
 
 def solve_per_case(smith, name, inputs, trs, short_targets, hybrid_targets):
-    """One solve, two cases, each case with its own target: the Case API under SolveViews."""
-    from types import SimpleNamespace
-    from metasmith.models.libraries import DataInstanceLibraryView
-    from metasmith.models.workflow.plan import Case, WorkflowPlan
-    res = [DataInstanceLibraryView(DataInstanceLibrary.Load(p)) for p in
-           (MLIB / "resources" / "env", MLIB / "resources" / "lib", LIB / "resources" / "hyb")]
-    samples = [DataInstanceLibraryView(s) if not isinstance(s, DataInstanceLibraryView) else s
-               for s in inputs.AsSamples("sequences::read_metadata")]
-    t_short, n_short = target_model(trs, short_targets())
-    t_hyb, n_hyb = target_model(trs, hybrid_targets())
-    cases = Case.ByShape([[s] + res for s in samples], target=t_short, target_names=n_short)
-    for case in cases:
-        if short_case(case.name) == "hybrid":
-            case.target, case.target_names = t_hyb, n_hyb
-    t0 = time.time()
-    try:
-        plan = WorkflowPlan.Generate(cases=cases, transforms=trs)
-    except Exception as e:
-        print(f"\n### {name}: RAISED after {time.time() - t0:.1f}s: {type(e).__name__}: {e}")
-        return None
-    task = SimpleNamespace(ok=bool(plan.steps) and not plan.dropped_targets, plan=plan)
-    report(name, task, time.time() - t0)
-    return task
+    by_shape = {"short": [], "hybrid": []}
+    for sample in inputs.AsSamples("sequences::read_metadata"):
+        hybrid = any(dtype == "hyb::nanopore_reads" for _, dtype, _ in sample.Iterate())
+        by_shape["hybrid" if hybrid else "short"].append(sample)
+    cases = [CaseViews(shape, samples, [], targets())
+             for (shape, samples), targets in zip(by_shape.items(), (short_targets, hybrid_targets))
+             if samples]
+    return planned(name, lambda: plan_views(cases, resources=resources(), transforms=trs))
 
 
 def targets_megahit():
@@ -203,9 +185,10 @@ VARIANTS = {
     # Each case its own target, still one solve.
     "V4a": dict(per_case=(targets_megahit, targets_hybrid)),
     "V4b": dict(per_case=(targets_generic, targets_hybrid)),
+    # One short sample and one hybrid sample as two cases: the generic lane for both, OPERA-MS for the hybrid.
+    "V5": dict(per_case=(targets_generic, targets_generic_and_hybrid),
+               givens=dict(samples=[("S1", False), ("H1", True)], tag="v5")),
     # One shared generic target; the hybrid sample's short reads sit behind a fence MEGAHIT cannot cross.
-    # One short sample, one hybrid sample, one TargetBuilder with a conditional hybrid target.
-    "V5": dict(targets=targets_conditional, givens=dict(samples=[("S1", False), ("H1", True)], tag="v5")),
     "V4c": dict(targets=targets_generic, transforms=dict(hyb_dir="hyb_fenced"),
                 givens=dict(hybrid_short_type="hyb::hybrid_short_reads", tag="fenced")),
 }

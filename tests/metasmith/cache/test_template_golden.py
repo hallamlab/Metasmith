@@ -29,7 +29,7 @@ def _normalized(path: Path, root: Path) -> str:
 
 
 def _staged_digests(template, tmp_path: Path) -> dict[str, str]:
-    ws = _stage(template.spec.Solve(), tmp_path)
+    ws = _stage(template.Plan(), tmp_path)
     out = {}
     for p in sorted([*ws.glob("*.nf"), *ws.glob("*.json"), *ws.glob("*.meta")]):
         text = _normalized(p, tmp_path)

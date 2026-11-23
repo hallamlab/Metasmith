@@ -1,6 +1,6 @@
 from collections import Counter
 
-from metasmith.python_api import DEFERRED, DataInstanceLibrary, Spec, record_library
+from metasmith.python_api import DEFERRED, DataInstanceLibrary, Plan, Spec, record_library
 
 from conftest import MLIB
 
@@ -21,21 +21,23 @@ def test_mags_from_metagenome_filters_once_and_never_polishes(tmp_path):
     inputs.AddValue("min_contig_length.txt", "2500", "sequences::min_contig_length")
     inputs.AddItem(DEFERRED, "ref::gtdb")
 
-    task = Spec(
-        input_library=record_library(inputs),
-        sample_type=None,
-        target_types=[
-            "sequences::megahit_assembly",
-            {"type": "sequences::filtered_assembly", "parents": [0]},
-            {"type": "sequences::metabat2_bin_fasta", "parents": [1]},
-            {"type": "taxonomy::checkm_stats", "parents": [2]},
-            {"type": "taxonomy::gtdbtk", "parents": [2]},
-            "sequences::fastqc_html_report",
-            "sequences::fastp_json_report",
-        ],
+    task = Plan(
+        [Spec(
+            input_library=record_library(inputs),
+            sample_type=None,
+            target_types=[
+                "sequences::megahit_assembly",
+                {"type": "sequences::filtered_assembly", "parents": [0]},
+                {"type": "sequences::metabat2_bin_fasta", "parents": [1]},
+                {"type": "taxonomy::checkm_stats", "parents": [2]},
+                {"type": "taxonomy::gtdbtk", "parents": [2]},
+                "sequences::fastqc_html_report",
+                "sequences::fastp_json_report",
+            ],
+        )],
         transform_libraries=[MLIB / "transforms" / g for g in ("logistics", "assembly", "metagenomics", "kbase")],
         resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
-    ).Solve()
+    )
 
     used = Counter(s.transform.name for s in task.plan.steps)
     assert task.ok, task.plan.dropped_targets

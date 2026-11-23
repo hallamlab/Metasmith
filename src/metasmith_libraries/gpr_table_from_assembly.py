@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "gpr_table_from_assembly"
 DESCRIPTION = """
@@ -12,7 +12,7 @@ annotation::gpr_table.
 """
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         lib.AddTypeLibrary(A.TYPES / "sequences.yml")
         lib.AddTypeLibrary(A.TYPES / "ref.yml")
@@ -22,10 +22,13 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
         lib.AddItem(DEFERRED, "ref::lane_calibration")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type=None,
-        target_types=["annotation::gpr_table"],
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type=None,
+            target_types=["annotation::gpr_table"],
+        )],
         transform_libraries=A.transforms(
             "metagenomics", "logistics", "functionalAnnotation", "fabfos"),
         resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],

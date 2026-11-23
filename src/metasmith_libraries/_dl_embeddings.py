@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from metasmith.python_api import DataInstanceLibrary, Spec
+from metasmith.python_api import DataInstanceLibrary, Spec, Template
 
 import _authoring as A
 
@@ -76,10 +76,13 @@ def add_inputs(lib: DataInstanceLibrary, orfs, weights: dict[str, object]) -> No
         lib.AddItem(path, WEIGHT_TYPES[key])
 
 
-def spec(input_library, target_keys: list[str]) -> Spec:
-    return Spec(
-        input_library=input_library,
-        target_types=[TARGETS[t][0] for t in target_keys],
+def template(name: str, description: str, input_library, target_keys: list[str]) -> Template:
+    return Template(
+        name=name, description=description.strip(),
+        cases=[Spec(
+            input_library=input_library,
+            target_types=[TARGETS[t][0] for t in target_keys],
+        )],
         transform_libraries=A.transforms("functionalAnnotation", "logistics"),
         resource_libraries=[A.envs()],
     )

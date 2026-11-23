@@ -16,7 +16,7 @@ _CHILD = textwrap.dedent(
 
     root, name = Path(sys.argv[1]), sys.argv[2]
     template = [t for t in Template.Discover(root) if t.name == name][0]
-    task = template.spec.Solve()
+    task = template.Plan()
     print("FINGERPRINT=" + plan_fingerprint(task.plan._solver_result))
     """
 )

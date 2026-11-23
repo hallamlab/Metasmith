@@ -13,10 +13,6 @@ description: 'Run every annotation lane against an existing assembly and collect
   Every lane includes MetaCyc, which is licensed: give the Pathway Tools installer
 
   (licensed::pathway_tools_package), from which the MetaCyc 27.0 references are built.'
-sample_type: null
-target_types:
-- annotation::annotation_table
-- annotation::gpr_table_all
 transform_libraries:
 - metagenomics
 - logistics
@@ -25,7 +21,13 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - annotation::annotation_table
+  - annotation::gpr_table_all
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

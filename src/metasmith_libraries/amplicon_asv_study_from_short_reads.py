@@ -19,7 +19,7 @@ import importlib.util
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "amplicon_asv_study_from_short_reads"
 DESCRIPTION = """
@@ -59,7 +59,7 @@ TARGETS = [
 ]
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     declared = {base for base, _ in _TOPOLOGY.POLICIES}
     unknown = set(SWITCHES) - declared
     missing = declared - set(SWITCHES)
@@ -87,10 +87,13 @@ def build_spec(rebuild: bool = False) -> Spec:
             lib.AddValue(f"policy_{base}.txt", arm, f"aspire::{base}_{arm}",
                          parents={study})
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type=None,
-        target_types=TARGETS,
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type=None,
+            target_types=TARGETS,
+        )],
         transform_libraries=A.transforms("aspire", "logistics"),
         resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],
     )

@@ -7,37 +7,6 @@ description: 'Recover fosmid inserts from pooled reads, build their canonical ch
   inserts, the per-lane annotations and the GPR table as outputs alongside the
 
   final ecspr::results.'
-sample_type: null
-target_types:
-- fabfos::putative_inserts
-- fabfos::insert_metadata
-- type: sequences::assembly_stats
-  parents:
-  - 0
-- type: annotation::kofamscan_results
-  parents:
-  - 0
-- type: annotation::kofamscan_descriptions
-  parents:
-  - 0
-- type: annotation::clean_predictions
-  parents:
-  - 0
-- type: annotation::diamond_uniref50_results
-  parents:
-  - 0
-- type: annotation::diamond_uniref50_descriptions
-  parents:
-  - 0
-- type: annotation::proteinbert_embeddings
-  parents:
-  - 0
-- type: annotation::gpr_table
-  parents:
-  - 0
-- type: ecspr::results
-  parents:
-  - 0
 transform_libraries:
 - assembly
 - metagenomics
@@ -47,7 +16,40 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - fabfos::putative_inserts
+  - fabfos::insert_metadata
+  - type: sequences::assembly_stats
+    parents:
+    - 0
+  - type: annotation::kofamscan_results
+    parents:
+    - 0
+  - type: annotation::kofamscan_descriptions
+    parents:
+    - 0
+  - type: annotation::clean_predictions
+    parents:
+    - 0
+  - type: annotation::diamond_uniref50_results
+    parents:
+    - 0
+  - type: annotation::diamond_uniref50_descriptions
+    parents:
+    - 0
+  - type: annotation::proteinbert_embeddings
+    parents:
+    - 0
+  - type: annotation::gpr_table
+    parents:
+    - 0
+  - type: ecspr::results
+    parents:
+    - 0
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

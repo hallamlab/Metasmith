@@ -93,7 +93,7 @@ def test_the_engine_solves_the_shipped_templates(engine):
     assert len(templates) >= 4, f"only {len(templates)} templates discovered"
     seen = 0
     for template in templates:
-        problem = problem_of_plan(template.spec.Solve().plan, name=template.name)
+        problem = problem_of_plan(template.Plan().plan, name=template.name)
         if problem is None: continue
         plan = _solve(engine, problem)
         assert plan.complete, template.name

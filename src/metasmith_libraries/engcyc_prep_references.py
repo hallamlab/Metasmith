@@ -35,10 +35,11 @@ def reference_targets(plan) -> list[str]:
     return sorted({t for i, t in ref_made.items() if i in consumed_by_samples})
 
 
-def build_spec(rebuild: bool = False):
-    main = M.build_spec(rebuild=rebuild).Solve()
-    assert main.ok, f"engcyc_metagenomics does not solve: {sorted(main.plan.dropped_targets)}"
-    return M.spec_for(NAME, rebuild=rebuild, targets=reference_targets(main.plan))
+def build_template(rebuild: bool = False):
+    main = M.build_template(rebuild=rebuild).Plan()
+    assert main.ok, f"engcyc_metagenomics does not plan: {sorted(main.plan.dropped_targets)}"
+    return M.template_for(NAME, rebuild=rebuild, targets=reference_targets(main.plan),
+                          description=DESCRIPTION)
 
 
 if __name__ == "__main__":

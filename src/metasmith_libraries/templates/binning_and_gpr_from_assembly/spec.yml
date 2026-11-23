@@ -10,38 +10,6 @@ description: 'Bin an existing assembly with three binners merged by DAS Tool, fi
   Takes the assembly and the long reads it was built from; the reads are what the
 
   coverage the binners need is computed from.'
-sample_type: sequences::read_metadata
-target_types:
-- sequences::assembly_stats
-- sequences::assembly_per_contig_coverage
-- sequences::assembly_per_bp_coverage
-- sequences::metabat2_bin_fasta
-- sequences::semibin2_bin_fasta
-- sequences::comebin_bin_fasta
-- binning_local::quality_bin_fasta
-- binning_local::cluster_table
-- binning::metabat2_contig_to_bin_table
-- binning::semibin2_contig_to_bin_table
-- binning::comebin_contig_to_bin_table
-- sequences::read_qc_stats
-- annotation::gpr_table
-- annotation::kofamscan_results
-- annotation::kofamscan_descriptions
-- annotation::clean_predictions
-- annotation::diamond_uniref50_results
-- annotation::diamond_uniref50_descriptions
-- annotation::proteinbert_embeddings
-- sequences::orfs
-- sequences::gff
-- type: taxonomy::checkm_stats
-  parents:
-  - 3
-- type: taxonomy::checkm_stats
-  parents:
-  - 4
-- type: taxonomy::checkm_stats
-  parents:
-  - 5
 transform_libraries:
 - metagenomics
 - assembly
@@ -51,7 +19,41 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: sequences::read_metadata
+  target_types:
+  - sequences::assembly_stats
+  - sequences::assembly_per_contig_coverage
+  - sequences::assembly_per_bp_coverage
+  - sequences::metabat2_bin_fasta
+  - sequences::semibin2_bin_fasta
+  - sequences::comebin_bin_fasta
+  - binning_local::quality_bin_fasta
+  - binning_local::cluster_table
+  - binning::metabat2_contig_to_bin_table
+  - binning::semibin2_contig_to_bin_table
+  - binning::comebin_contig_to_bin_table
+  - sequences::read_qc_stats
+  - annotation::gpr_table
+  - annotation::kofamscan_results
+  - annotation::kofamscan_descriptions
+  - annotation::clean_predictions
+  - annotation::diamond_uniref50_results
+  - annotation::diamond_uniref50_descriptions
+  - annotation::proteinbert_embeddings
+  - sequences::orfs
+  - sequences::gff
+  - type: taxonomy::checkm_stats
+    parents:
+    - 3
+  - type: taxonomy::checkm_stats
+    parents:
+    - 4
+  - type: taxonomy::checkm_stats
+    parents:
+    - 5
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

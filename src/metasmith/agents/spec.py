@@ -17,15 +17,7 @@ from .targets import TargetBuilder, TargetSpec
 
 DataLibRef = str | Path | dict | DataInstanceLibrary
 TransformLibRef = str | Path | TransformInstanceLibrary | TransformInstanceLibraryView
-
-
-def _as_data_lib(ref: DataLibRef) -> DataInstanceLibrary:
-    if isinstance(ref, DataInstanceLibrary):
-        return ref
-    if isinstance(ref, dict):
-        location = Path(tempfile.mkdtemp(prefix="msm-template-"))
-        return DataInstanceLibrary.FromInline(ref, location)
-    return DataInstanceLibrary.Load(Path(ref).resolve())
+LibView = DataInstanceLibraryView | DataInstanceLibrary
 
 
 def _as_transform_lib(ref: TransformLibRef):
@@ -40,216 +32,215 @@ def _location(ref) -> str:
     return str(ref.location) if hasattr(ref, "location") else str(ref)
 
 
+class _DataLibs:
+    def __init__(self) -> None:
+        self._loaded: dict = {}
+
+    def __call__(self, ref: DataLibRef) -> DataInstanceLibrary:
+        if isinstance(ref, DataInstanceLibrary):
+            return ref
+        key = id(ref) if isinstance(ref, dict) else str(Path(ref).resolve())
+        if key not in self._loaded:
+            if isinstance(ref, dict):
+                location = Path(tempfile.mkdtemp(prefix="msm-template-"))
+                self._loaded[key] = DataInstanceLibrary.FromInline(ref, location)
+            else:
+                self._loaded[key] = DataInstanceLibrary.Load(Path(key))
+        return self._loaded[key]
+
+
+def case_records(raw: dict) -> list[dict]:
+    if "cases" in raw:
+        return list(raw.get("cases") or [])
+    return [{k: raw[k] for k in Spec.FIELDS if k in raw and k != "name"}]
+
+
 @dataclass
 class Spec:
     input_library: DataLibRef
-    target_types: list[str | dict] = field(default_factory=list)
-    transform_libraries: list[TransformLibRef] = field(default_factory=list)
-    resource_libraries: list[DataLibRef] = field(default_factory=list)
+    target_types: list[str | dict] | TargetBuilder = field(default_factory=list)
     sample_type: str | None = None
+    input_paths: list[str] | None = None
     shared_input_paths: list[str] = field(default_factory=list)
+    name: str = "case"
 
-    FIELDS = (
-        "sample_type", "target_types", "transform_libraries",
-        "resource_libraries", "shared_input_paths",
-    )
+    FIELDS = ("name", "sample_type", "input_paths", "shared_input_paths", "target_types")
 
 
-    def Pack(self, relative_to: Path | str | None = None) -> dict:
-        root = Path(relative_to).resolve() if relative_to is not None else None
-
-        def loc(ref) -> str:
-            s = _location(ref)
-            if root is None: return s
-            p = Path(s)
-            if not p.is_absolute(): return s
-            try:
-                return str(p.resolve().relative_to(root))
-            except ValueError:
-                return s
-
-        def input_lib() -> str | dict:
-            ref = self.input_library
-            if isinstance(ref, DataInstanceLibrary) and root is not None:
-                return ref.PackInline(root)
-            if isinstance(ref, dict):
-                types = {ns: loc(p) for ns, p in ref.get("types", {}).items()}
-                return ref | {"types": types} if types else {
-                    k: v for k, v in ref.items() if k != "types"
-                }
-            return loc(ref)
-
-        return {
+    def Pack(self) -> dict:
+        out = {
+            "name": self.name,
             "sample_type": self.sample_type,
             "target_types": list(self.target_types),
-            "transform_libraries": [loc(x) for x in self.transform_libraries],
-            "resource_libraries": [loc(x) for x in self.resource_libraries],
             "shared_input_paths": [str(p) for p in self.shared_input_paths],
-            "input_library": input_lib(),
         }
+        if self.input_paths is not None:
+            out["input_paths"] = [str(p) for p in self.input_paths]
+        return out
 
     @classmethod
-    def Unpack(
-        cls, raw: dict, *,
-        input_library: DataLibRef | None = None,
-        root: Path | str | None = None,
-    ) -> "Spec":
-        base = Path(root).resolve() if root is not None else None
-
-        def resolve(ref):
-            if base is None or not isinstance(ref, (str, Path)): return ref
-            p = Path(ref)
-            return str(base / p) if not p.is_absolute() else str(ref)
-
-        def resolve_input_lib(ref):
-            if isinstance(ref, dict):
-                return ref | {"types": {ns: resolve(p) for ns, p in ref.get("types", {}).items()}}
-            return resolve(ref)
-
-        lib = input_library if input_library is not None else raw.get("input_library")
-        assert lib, "a spec needs an input library"
+    def Unpack(cls, raw: dict, input_library: DataLibRef) -> "Spec":
+        paths = raw.get("input_paths")
         return cls(
-            input_library=lib if input_library is not None else resolve_input_lib(lib),
+            input_library=input_library,
+            name=raw.get("name") or "case",
             target_types=list(raw.get("target_types") or []),
-            transform_libraries=[resolve(x) for x in (raw.get("transform_libraries") or [])],
-            resource_libraries=[resolve(x) for x in (raw.get("resource_libraries") or [])],
             sample_type=raw.get("sample_type"),
+            input_paths=None if paths is None else list(paths),
             shared_input_paths=list(raw.get("shared_input_paths") or []),
         )
 
 
-    def Solve(self, max_iter: int = 512, max_refine: int|None = None, seed: int = 42) -> WorkflowTask:
-        data_lib = _as_data_lib(self.input_library)
-        tr_libs = [_as_transform_lib(x) for x in self.transform_libraries]
-        res_libs = [_as_data_lib(x) for x in self.resource_libraries]
+    def _views(self, load: _DataLibs) -> tuple[list[DataInstanceLibraryView], list[DataInstanceLibraryView]]:
+        lib = load(self.input_library)
+        where = _location(self.input_library)
+        shared = {Path(p) for p in self.shared_input_paths}
+        missing = sorted(str(p) for p in shared - set(lib.manifest))
+        assert not missing, f"case [{self.name}]: shared inputs not in [{where}]: {', '.join(missing)}"
 
         if self.sample_type:
-            samples = list(data_lib.AsSamples(self.sample_type))
-            assert samples, (
-                f"no samples of type [{self.sample_type}] found in "
-                f"[{_location(self.input_library)}]"
-            )
-        else:
-            samples = [DataInstanceLibraryView(data_lib)]
+            samples = list(lib.AsSamples(self.sample_type, among=self.input_paths))
+            assert samples, f"case [{self.name}]: no samples of type [{self.sample_type}] found in [{where}]"
+            return samples, [DataInstanceLibraryView(lib, mask=shared)] if shared else []
 
-        resources: list = list(res_libs)
-        if self.shared_input_paths and self.sample_type:
-            shared = {Path(p) for p in self.shared_input_paths}
-            missing = sorted(str(p) for p in shared - set(data_lib.manifest))
-            assert not missing, (
-                f"shared inputs not in [{_location(self.input_library)}]: {', '.join(missing)}"
-            )
-            resources.append(DataInstanceLibraryView(data_lib, mask=shared))
+        if self.input_paths is None:
+            return [DataInstanceLibraryView(lib)], []
+        named = {Path(p) for p in self.input_paths}
+        missing = sorted(str(p) for p in named - set(lib.manifest))
+        assert not missing, f"case [{self.name}]: inputs not in [{where}]: {', '.join(missing)}"
+        mask, queue = named | shared, list(named | shared)
+        while queue:
+            for parent in lib.parents.get(queue.pop(), []):
+                if parent.path not in mask:
+                    mask.add(parent.path)
+                    queue.append(parent.path)
+        return [DataInstanceLibraryView(lib, mask=mask)], []
 
-        return self.SolveViews(
-            samples=samples,
-            resources=resources,
-            transforms=tr_libs,
-            targets=self.target_types,
-            max_iter=max_iter, max_refine=max_refine, seed=seed,
+
+@dataclass
+class CaseViews:
+    name: str
+    samples: list[LibView]
+    resources: list[LibView]
+    targets: TargetBuilder | list
+
+
+def Plan(
+    cases: Iterable[Spec],
+    transform_libraries: Iterable[TransformLibRef],
+    resource_libraries: Iterable[DataLibRef] = (),
+    max_iter: int = 512, max_refine: int|None = None, seed: int = 42,
+) -> WorkflowTask:
+    cases = list(cases)
+    assert cases, "a plan needs at least one case"
+    names = [c.name for c in cases]
+    duplicated = sorted({n for n in names if names.count(n) > 1})
+    assert not duplicated, f"case names must be unique; name each case: {duplicated}"
+    load = _DataLibs()
+    requests = []
+    for case in cases:
+        samples, resources = case._views(load)
+        requests.append(CaseViews(case.name, samples, resources, case.target_types))
+    return plan_views(
+        requests,
+        resources=[load(x) for x in resource_libraries],
+        transforms=[_as_transform_lib(x) for x in transform_libraries],
+        max_iter=max_iter, max_refine=max_refine, seed=seed,
+    )
+
+
+def _target_model(targets: TargetBuilder | list, transforms: list) -> tuple[Transform, list[str]]:
+    if not isinstance(targets, TargetBuilder):
+        tb = TargetBuilder()
+        tb.AddAll(targets)
+        targets = tb
+    assert len(targets) > 0, "[targets] can not be empty"
+
+    def _get_endpoint(dtype_name: str):
+        # By the type, not by its namespace: a library carries only the
+        # types its own transforms declare, so several hold `annotation`
+        # and only one of them holds `annotation::kofamscan_results`.
+        ns, name = dtype_name.split("::")
+        seen_namespace = False
+        for trlib in transforms:
+            tlib = trlib.types.get(ns)
+            if tlib is None: continue
+            seen_namespace = True
+            if name not in tlib: continue
+            lpath = trlib.location
+            loc = "..." + "/".join(lpath.parts[-3:]) if len(lpath.parts) > 3 else f"{lpath}"
+            Log.Info(f"[{dtype_name}] resolved by [{loc}]")
+            return trlib.GetType(dtype_name)
+        if seen_namespace:
+            raise AssertionError(
+                f"no transform library declares [{dtype_name}]; the"
+                f" namespace [{ns}] is present but nothing in it produces"
+                f" or consumes [{name}]"
+            )
+        raise AssertionError(f"no transforms had the namespace [{ns}]")
+
+    model = Transform()
+    deps: dict[TargetSpec, Dependency] = {}
+    names: list[str] = []
+    for spec in targets.resolve():
+        deps[spec] = model.AddRequirement(
+            example=_get_endpoint(spec.dtype_name),
+            parents={deps[p] for p in spec.parents},
         )
+        names.append(spec.dtype_name)
+    return model, names
 
-    @staticmethod
-    def SolveViews(
-        samples: Iterable[DataInstanceLibraryView | DataInstanceLibrary],
-        resources: Iterable[DataInstanceLibraryView | DataInstanceLibrary],
-        transforms: list[TransformInstanceLibrary | TransformInstanceLibraryView],
-        targets: TargetBuilder | list,
-        max_iter: int = 512, max_refine: int|None = None, seed: int = 42,
-    ) -> WorkflowTask:
-        if not isinstance(targets, TargetBuilder):
-            tb = TargetBuilder()
-            tb.AddAll(targets)
-            targets = tb
-        assert len(targets) > 0, "[targets] can not be empty"
 
-        def _get_endpoint(dtype_name: str):
-            # By the type, not by its namespace: a library carries only the
-            # types its own transforms declare, so several hold `annotation`
-            # and only one of them holds `annotation::kofamscan_results`.
-            ns, name = dtype_name.split("::")
-            seen_namespace = False
-            for trlib in transforms:
-                tlib = trlib.types.get(ns)
-                if tlib is None: continue
-                seen_namespace = True
-                if name not in tlib: continue
-                lpath = trlib.location
-                loc = "..." + "/".join(lpath.parts[-3:]) if len(lpath.parts) > 3 else f"{lpath}"
-                Log.Info(f"[{dtype_name}] resolved by [{loc}]")
-                return trlib.GetType(dtype_name)
-            if seen_namespace:
-                raise AssertionError(
-                    f"no transform library declares [{dtype_name}]; the"
-                    f" namespace [{ns}] is present but nothing in it produces"
-                    f" or consumes [{name}]"
-                )
-            raise AssertionError(f"no transforms had the namespace [{ns}]")
+def _view(lib: LibView) -> DataInstanceLibraryView:
+    return lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib)
 
-        specs = targets.resolve()
-        endpoints = {s.dtype_name: _get_endpoint(s.dtype_name) for s in specs}
-        conditions = {w: _get_endpoint(w) for s in specs for w in s.when}
-        models: dict[tuple[TargetSpec, ...], tuple[Transform, list[str]]] = {}
 
-        def target_for(shape: frozenset, label: str) -> tuple[Transform, list[str]]:
-            # A target whose parent is left out is left out too, so a child
-            # inherits its parent's condition without repeating it.
-            kept: list[TargetSpec] = []
-            for spec in specs:
-                if all(p in kept for p in spec.parents) and all(
-                    any(ep.IsA(conditions[w]) for ep in shape) for w in spec.when
-                ):
-                    kept.append(spec)
-            assert kept, (
-                f"no target applies to the samples of shape [{label}]: every target"
-                f" is conditional on a given type they do not have"
-            )
-            key = tuple(kept)
-            if key not in models:
-                model = Transform()
-                deps: dict[TargetSpec, Dependency] = {}
-                for spec in kept:
-                    deps[spec] = model.AddRequirement(
-                        example=endpoints[spec.dtype_name],
-                        parents={deps[p] for p in spec.parents},
-                    )
-                models[key] = model, [spec.dtype_name for spec in kept]
-            return models[key]
+def _original(lib: LibView) -> DataInstanceLibrary:
+    return lib._original if isinstance(lib, DataInstanceLibraryView) else lib
 
-        res_views = [
-            lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib)
-            for lib in resources
-        ]
-        _samples = [
-            s if isinstance(s, DataInstanceLibraryView) else DataInstanceLibraryView(s)
-            for s in samples
-        ]
-        plan = WorkflowPlan.Generate(
-            cases=Case.ByShape(
-                [[sample] + res_views for sample in _samples],
-                target=target_for,
-            ),
-            transforms=transforms,
-            max_iter=max_iter, max_refine=max_refine, seed=seed,
+
+def plan_views(
+    requests: list[CaseViews],
+    resources: Iterable[LibView],
+    transforms: list[TransformInstanceLibrary | TransformInstanceLibraryView],
+    max_iter: int = 512, max_refine: int|None = None, seed: int = 42,
+) -> WorkflowTask:
+    resources = list(resources)
+    common = [_view(lib) for lib in resources]
+    cases: list[Case] = []
+    for r in requests:
+        target, target_names = _target_model(r.targets, transforms)
+        own = common + [_view(lib) for lib in r.resources]
+        split = Case.ByShape(
+            [[_view(s)] + own for s in r.samples],
+            target=target, target_names=target_names, name=r.name,
         )
-        data_libs: list[DataInstanceLibrary] = []
-        seen: set[int] = set()
-        for lib in [v._original for v in _samples]:
+        if len(requests) > 1 and len(split) > 1:
+            for c in split:
+                c.name = f"{r.name}/{c.name}"
+        cases += split
+    plan = WorkflowPlan.Generate(
+        cases=cases, transforms=transforms,
+        max_iter=max_iter, max_refine=max_refine, seed=seed,
+    )
+
+    data_libs: list[DataInstanceLibrary] = []
+    seen: set[int] = set()
+
+    def add(libs):
+        for lib in map(_original, libs):
             if id(lib) in seen: continue
             seen.add(id(lib))
             data_libs.append(lib)
-        sample_library_count = len(data_libs)
-        for lib in [
-            lib if isinstance(lib, DataInstanceLibrary) else lib._original
-            for lib in resources
-        ]:
-            if id(lib) in seen: continue
-            seen.add(id(lib))
-            data_libs.append(lib)
-        return WorkflowTask(
-            ok=bool(plan.steps) and len(plan.dropped_targets) == 0,
-            plan=plan,
-            data_libraries=data_libs,
-            transform_libraries=transforms,
-            sample_library_count=sample_library_count,
-        )
+
+    add(s for r in requests for s in r.samples)
+    sample_library_count = len(data_libs)
+    add(resources)
+    add(lib for r in requests for lib in r.resources)
+    return WorkflowTask(
+        ok=bool(plan.steps) and len(plan.dropped_targets) == 0,
+        plan=plan,
+        data_libraries=data_libs,
+        transform_libraries=transforms,
+        sample_library_count=sample_library_count,
+    )

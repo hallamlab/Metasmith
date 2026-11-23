@@ -1,6 +1,6 @@
 import pytest
 
-from metasmith.python_api import DEFERRED, Spec, TransformInstanceLibrary, record_library
+from metasmith.python_api import DEFERRED, Plan, Spec, TransformInstanceLibrary, record_library
 
 from conftest import MLIB
 
@@ -63,13 +63,14 @@ def solve(inputs, transforms, targets):
     spec = Spec(
         input_library=inputs,
         target_types=list(targets),
-        transform_libraries=transforms,
-        resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
         # One study, one view. Splitting by sample would hand the collecting
         # transform one sample at a time.
         sample_type=None,
     )
-    return spec.Solve()
+    return Plan(
+        [spec], transform_libraries=transforms,
+        resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
+    )
 
 
 def picked(task, transforms):

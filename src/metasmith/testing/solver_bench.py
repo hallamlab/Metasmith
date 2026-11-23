@@ -205,7 +205,7 @@ def run_templates(root: Path | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for template in Template.Discover(root):
         t0 = time.perf_counter()
-        task = template.spec.Solve()
+        task = template.Plan()
         elapsed = time.perf_counter() - t0
         result = getattr(task.plan, "_solver_result", None)
         problem = problem_of_plan(task.plan, name=template.name)

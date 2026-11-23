@@ -322,13 +322,19 @@ map costs every member after the first, silently, with the unread files still st
 constant rather than restating it, because as two literals they desynced and failed every
 containerized task while the fast suite stayed green.
 
-**Everything the solver needs before it runs is one serializable object.** `agents/spec.py`'s
-`Spec` holds the input library, sample type, targets, transform and resource libraries and
-shared input paths, and `Spec.Solve()` is the only door through to `WorkflowPlan.Generate`.
-Two copies of those twenty lines existed and had already drifted on `shared_input_paths` and on
-positional target lineage. Collapsing them gives a plan a *before* representation as well as an
-after: the GUI's `request.yml` is the store envelope merged with a packed Spec, and a template
-is nothing but a Spec whose input paths are deferred.
+**A plan is a list of cases handed to one solve.** A case (`Spec` in `agents/spec.py`) is one
+ordinary request: an input library, a sample type, the inputs it reads (`input_paths`), shared
+inputs and targets. `Plan(cases, transform_libraries, resource_libraries)` is the only door
+through to `WorkflowPlan.Generate`, and `Agent.GenerateWorkflow` reaches the same `plan_views`.
+Transform and resource libraries belong to the plan, because one solve draws on one tool pool.
+The GUI's `request.yml` and a template's `spec.yml` both hold `cases`. A record without `cases`
+reads as one case (`case_records`), which keeps requests and templates written before cases
+valid. A single case keeps the name `case`, so its plan stages byte-identical to the plan from
+before cases existed.
+
+**CAUTION** Each case picks its tools on its own. Steps merge only where two cases bind the same
+transform to inputs of the same types. A short-read case and a hybrid case therefore share read
+QC but run DAS Tool twice, once over each assembly type.
 
 **`DEFERRED` is a path that is not known yet** (`models/paths.py`) — it plans, and refuses at
 stage, which is what lets a template ship without its author's absolute paths. Three properties
@@ -337,15 +343,15 @@ reads `is_absolute()` as "not library-owned". It is **minted once and persisted*
 identity derives from path and re-minting on load would give the same spec a different task key
 every time. And it is a value, not a flag — nothing downstream tests for a sentinel.
 
-**A sample type branches a plan; it is not a precondition for one.**
+**A sample type branches a plan. It is not a precondition for one.**
 `plan_workflow(sample_type=None)` plans the library as it stands, one sample holding
-everything; naming a type splits it into one run per item of that type. The GUI always passes
-`None`, sheet or no sheet, so a non-null value only comes from a request written directly.
-A sample's mask is one index item's lineage, so both directions of the shape matter: an index
-item with a *parent* puts that parent's whole subtree in every mask and collapses all samples
-into one view, while an item beside the index that nothing links to lands in no mask at all and
-the planner never sees it though it is still staged. `ops.samples.validate` refuses the first;
-`shared_input_paths` is the way out of the second.
+everything. Naming a type splits it into one run per item of that type. The GUI always passes
+`None`, so it funnels inputs into cases by `input_paths` (row references) instead. A sample is
+its index item, the item's descendants, its ancestors, and the ancestors' other descendants that
+no other sample's subtree claims. A study item parenting several samples is therefore shared
+context in each of them, not a merge. An item that no lineage links to the index lands in no
+sample, and the planner never sees it though it is still staged. List it in
+`shared_input_paths`.
 
 **Each case is solved alone, because one joint solve cannot be trusted to cover several.** A
 `Case` is a group of samples of one given shape with its own target. The solver forks one

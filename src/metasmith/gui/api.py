@@ -8,13 +8,13 @@ import re
 import shutil
 import threading
 import uuid
-from dataclasses import replace
 from fnmatch import fnmatch
 from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
+from ..agents.spec import case_records
 from ..agents.agent_lock import Busy
 from ..agents.workflow_ops import SlurmAccountProblem, SplitParamKeys
 from ..hashing import KeyGenerator
@@ -673,6 +673,15 @@ def _target_names(targets) -> list[str]:
     return [t if isinstance(t, str) else str(t.get("type") or "") for t in targets or []]
 
 
+# The keys of a workflow request that say what to plan. A request may instead
+# carry one case's keys at the top level, which `case_records` reads as one case.
+PLAN_FIELDS = ("cases", "transform_libraries", "resource_libraries", *Spec.FIELDS)
+
+
+def _plan_fields(body: dict) -> dict:
+    return {k: v for k, v in body.items() if k in PLAN_FIELDS}
+
+
 def _templates(p) -> dict[str, Template]:
     found = stdlib.discover(p.root)
     if not found["present"]:
@@ -726,8 +735,11 @@ def _template_summary(p, name: str, tmpl: Template, source: str, theme: str) -> 
     return {
         "name": name,
         "description": tmpl.description,
-        "sample_type": tmpl.spec.sample_type,
-        "target_types": _target_names(tmpl.spec.target_types),
+        "cases": [
+            {"name": c.name, "sample_type": c.sample_type,
+             "target_types": _target_names(c.target_types)}
+            for c in tmpl.cases
+        ],
         "source": source,
         "problems": list(tmpl.unresolved),
         "dag_ready": _template_dag_path(p, name, _template_version(p, name, source), theme).is_file(),
@@ -763,11 +775,10 @@ def _render_template_dag(p, tmpl: Template, name: str, source: str, theme: str) 
     _assert_resolved(name, tmpl)
     transforms, resources = _libraries_or_all(
         stdlib.discover(p.root),
-        tmpl.spec.transform_libraries, tmpl.spec.resource_libraries,
+        tmpl.transform_libraries, tmpl.resource_libraries,
     )
-    spec = replace(tmpl.spec, transform_libraries=transforms, resource_libraries=resources)
     with _plan_lock:
-        task = spec.Solve()
+        task = tmpl.Plan(transform_libraries=transforms, resource_libraries=resources)
     assert task.ok, (
         f"template [{name}] does not solve against this library: "
         f"dropped {sorted(task.plan.dropped_targets)}"
@@ -908,10 +919,13 @@ def create_workflow():
         template, _ = found
         _assert_resolved(b["template"], template)
 
-    request_fields = {k: v for k, v in b.items() if k in set(Spec.FIELDS)}
+    request_fields = _plan_fields(b)
     if template is not None:
-        packed = template.spec.Pack()
-        request_fields = {k: packed[k] for k in Spec.FIELDS} | request_fields
+        request_fields = {
+            "cases": [c.Pack() for c in template.cases],
+            "transform_libraries": [str(x) for x in template.transform_libraries],
+            "resource_libraries": [str(x) for x in template.resource_libraries],
+        } | request_fields
     wf = p.create_workflow(name=name, request=request_fields)
 
     types = b.get("type_libraries")
@@ -922,7 +936,7 @@ def create_workflow():
         op_data.create_library(lib_path, type_library_paths=types)
     else:
         op_data.materialize_template(
-            template.spec.input_library, lib_path, type_library_paths=types,
+            template.input_library, lib_path, type_library_paths=types,
         )
     source = _default_preset_source(p, b.get("agent"))
     if source:
@@ -1100,15 +1114,12 @@ def save_as_template(name):
         str(p.input_library_path(name)),
         type_library_paths=stdlib.discover(p.root)["data_types"],
     )
-    spec = Spec(
-        input_library=derived,
-        target_types=wf.request.get("target_types") or [],
+    tmpl = Template(
+        name=tmpl_name, description=b.get("description") or "",
+        cases=[Spec.Unpack(c, input_library=derived) for c in case_records(wf.request)],
         transform_libraries=list(wf.request.get("transform_libraries") or []),
         resource_libraries=list(wf.request.get("resource_libraries") or []),
-        sample_type=wf.request.get("sample_type"),
-        shared_input_paths=list(wf.request.get("shared_input_paths") or []),
     )
-    tmpl = Template(name=tmpl_name, spec=spec, description=b.get("description") or "")
     tmpl.Save(p.root, dirname=USER_TEMPLATES_DIRNAME)
     return jsonify(_template_summary(p, tmpl_name, tmpl, "user", _theme_arg())), 201
 
@@ -1164,17 +1175,13 @@ def generate_workflow(name):
     p = _project()
     wf = p.read_workflow(name)
     b = _body()
-    request_body = wf.request | {
-        k: v for k, v in b.items() if k in set(Spec.FIELDS)
-    }
-    wf = p.write_request(name, request_body)
+    wf = p.write_request(name, wf.request | _plan_fields(b))
 
     recipe_fingerprint = b.get("recipe_fingerprint")
 
-    sample_type = wf.request.get("sample_type")
-    shared_refs = list(wf.request.get("shared_input_paths") or [])
-    targets = wf.request.get("target_types") or []
-    assert targets, "at least one target type is required"
+    cases = case_records(wf.request)
+    for c in cases:
+        assert c.get("target_types"), f"case [{c.get('name') or 'case'}] needs at least one target type"
 
     found = stdlib.discover(p.root)
     transforms, resources = _libraries_or_all(
@@ -1196,15 +1203,24 @@ def generate_workflow(name):
 
             registered = synced["rows"]
             generated = synced["generated"]
-            shared: list[str] = []
-            for s in shared_refs:
-                if not s.startswith("#"):
-                    shared.append(s)
-                elif s[1:] in registered:
-                    shared.append(registered[s[1:]])
-                else:
-                    shared += list(dict.fromkeys(generated.get(s[1:], [])))
-            shared = shared or None
+
+            def paths(refs) -> list[str]:
+                out: list[str] = []
+                for s in refs:
+                    if not s.startswith("#"):
+                        out.append(s)
+                    elif s[1:] in registered:
+                        out.append(registered[s[1:]])
+                    else:
+                        out += list(dict.fromkeys(generated.get(s[1:], [])))
+                return out
+
+            specs = []
+            for c in cases:
+                resolved = dict(c, shared_input_paths=paths(c.get("shared_input_paths") or []))
+                if c.get("input_paths") is not None:
+                    resolved["input_paths"] = paths(c["input_paths"])
+                specs.append(Spec.Unpack(resolved, input_library=lib_path))
 
             stale_names = ("task.yml", "data", "transforms")
             stale_names += _dag_cache_names()
@@ -1218,17 +1234,12 @@ def generate_workflow(name):
             staging = wf.path / ".staging"
             if staging.exists():
                 shutil.rmtree(staging)
-            spec = Spec.Unpack(
-                wf.request | {
-                    "transform_libraries": list(transforms),
-                    "resource_libraries": list(resources),
-                    "shared_input_paths": shared or [],
-                },
-                input_library=lib_path,
-            )
             job.emit("PHASE:solving")
             with _plan_lock:
-                result, task = op_workflow.plan_spec(spec, workspace=str(staging), return_task=True)
+                result, task = op_workflow.plan_cases(
+                    specs, list(transforms), list(resources),
+                    workspace=str(staging), return_task=True,
+                )
                 if result.get("success"):
                     result["step_display"], result["plan_graph"] = _step_display_from_task(task, p.root)
             job.emit("PHASE:finishing")
@@ -1244,12 +1255,18 @@ def generate_workflow(name):
             result["transform_libraries"] = list(transforms)
             result["resource_libraries"] = list(resources)
             result["given"] = _given_summary(lib_path)
-            result["targets"] = [
-                {"type": t, "parents": []} if isinstance(t, str)
-                else {"type": t.get("type", ""), "parents": list(t.get("parents") or [])}
-                for t in targets
+            result["cases"] = [
+                {
+                    "name": c.get("name") or "case",
+                    "sample_type": c.get("sample_type"),
+                    "targets": [
+                        {"type": t, "parents": []} if isinstance(t, str)
+                        else {"type": t.get("type", ""), "parents": list(t.get("parents") or [])}
+                        for t in c.get("target_types") or []
+                    ],
+                }
+                for c in cases
             ]
-            result["sample_type"] = sample_type
             result["recipe_problems"] = op_inputs.problems(rows, table)
             p.write_result(name, result)
             return result

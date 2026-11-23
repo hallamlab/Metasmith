@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "annotation_table_from_assembly"
 DESCRIPTION = """
@@ -16,7 +16,7 @@ Every lane includes MetaCyc, which is licensed: give the Pathway Tools installer
 """
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         lib.AddTypeLibrary(A.TYPES / "sequences.yml")
         lib.AddTypeLibrary(A.TYPES / "ref.yml")
@@ -30,10 +30,13 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddValue("eggnog_source.marker", "trigger", "annotation::eggnog_source")
         lib.AddItem(DEFERRED, "licensed::pathway_tools_package")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type=None,
-        target_types=["annotation::annotation_table", "annotation::gpr_table_all"],
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type=None,
+            target_types=["annotation::annotation_table", "annotation::gpr_table_all"],
+        )],
         transform_libraries=A.transforms(
             "metagenomics", "logistics", "functionalAnnotation", "fabfos"),
         resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],

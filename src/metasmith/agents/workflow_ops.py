@@ -30,7 +30,7 @@ from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
 from .images import _check_image_store, _manifest_images, _materialise_images
 from .portability import _check_env_portability, _read_env_manifest, _read_env_manifest_doc
 from .shell import AgentShell
-from .spec import Spec
+from .spec import CaseViews, plan_views
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
 from .agent_lock import exclusive
 
@@ -373,9 +373,10 @@ class _WorkflowOps:
         targets: TargetBuilder | list[str],
         max_iter: int=512, max_refine: int|None=None, seed: int=42,
     ):
-        return Spec.SolveViews(
-            samples=samples, resources=resources, transforms=transforms,
-            targets=targets, max_iter=max_iter, max_refine=max_refine, seed=seed,
+        return plan_views(
+            [CaseViews("case", list(samples), [], targets)],
+            resources=resources, transforms=transforms,
+            max_iter=max_iter, max_refine=max_refine, seed=seed,
         )
 
     def _get_mock_container(self, task: WorkflowTask):

@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "engcyc_metagenomics"
 DESCRIPTION = """
@@ -10,9 +10,7 @@ The Engcyc metagenomics workflow from reads, one sample per read set. Every lane
 its own target; deselect a target to drop its lane. Sizes are each lane's reference
 download; a ~ marks an estimate.
 
-Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads; a hybrid sample
-(short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
-downstream lanes read the OPERA-MS assembly.
+Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads.
 Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 at >= 50% complete and <= 10% contamination.
 Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan against GTDB r232
@@ -46,24 +44,18 @@ modelling::medium_name.
 """
 
 ASSEMBLY = "sequences::assembly"
-# The hybrid lane goes to the samples that carry long reads beside their short reads.
-# Anchored to the assembly, so a hybrid sample's assembly is its OPERA-MS assembly
-# and every lane hanging off the assembly reads it.
-HYBRID = {"type": "sequences::opera_ms_assembly", "parents": [0],
-          "when": ["sequences::long_reads", "sequences::zipped_forward_short_reads"]}
 
 # Each entry hangs off the assembly (0), the ORFs (ORFS) or the DAS Tool bins (BINS).
-ORFS, BINS = 4, 6
+ORFS, BINS = 3, 5
 _A, _O, _B = [0], [ORFS], [BINS]
 TARGETS = [
     ASSEMBLY,                                                          # 0
-    HYBRID,                                                            # 1
-    "sequences::read_qc_stats",                                        # 2
-    {"type": "sequences::assembly_stats", "parents": _A},              # 3
-    {"type": "sequences::assembly_orfs", "parents": _A},               # 4
-    {"type": "sequences::gff", "parents": _A},                         # 5
+    "sequences::read_qc_stats",                                        # 1
+    {"type": "sequences::assembly_stats", "parents": _A},              # 2
+    {"type": "sequences::assembly_orfs", "parents": _A},               # 3
+    {"type": "sequences::gff", "parents": _A},                         # 4
     # binning
-    {"type": "sequences::das_tool_bin_fasta", "parents": _A},          # 6
+    {"type": "sequences::das_tool_bin_fasta", "parents": _A},          # 5
     {"type": "binning::das_tool_summary", "parents": _A},
     {"type": "taxonomy::checkm_stats", "parents": _B},
     {"type": "binning_local::quality_bin_fasta", "parents": _A},
@@ -110,6 +102,14 @@ TARGETS = [
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
 assert TARGETS[BINS]["type"] == "sequences::das_tool_bin_fasta"
 
+# A hybrid sample's case (short + long reads): the hybrid lane, MEGAHIT draft -> OPERA-MS,
+# anchored to the assembly, so its assembly is the OPERA-MS assembly and every lane hanging
+# off the assembly reads it.
+HYBRID_TARGETS = [ASSEMBLY, {"type": "sequences::opera_ms_assembly", "parents": [0]}] + [
+    t if isinstance(t, str) else t | {"parents": [p + (p >= 1) for p in t.get("parents", [])]}
+    for t in TARGETS[1:]
+]
+
 # Consumed and produced by nothing, so they are given, and shared because they
 # belong to no one sample.
 SHARED_REFS = ("ref::mnxr_lookup", "ref::label_transfer_landmarks", "ref::lane_calibration",
@@ -141,7 +141,8 @@ def _dtypes(library) -> dict[str, str]:
     return {str(p): dtype for p, dtype in library.manifest.items()}
 
 
-def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
+def template_for(name, samples=None, rebuild=False, targets=TARGETS,
+                 description=DESCRIPTION) -> Template:
     def inputs(lib):
         for tl in TYPE_LIBS:
             lib.AddTypeLibrary(A.TYPES / tl)
@@ -157,11 +158,14 @@ def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
     input_library = A.deferred_inputs(name, inputs, rebuild=rebuild)
     shared = ["contig_study.json", "eggnog_source.json"] + sorted(
         path for path, dtype in _dtypes(input_library).items() if dtype in SHARED_REFS)
-    return Spec(
-        input_library=input_library,
-        sample_type=None if samples is None else "sequences::read_metadata",
-        shared_input_paths=[] if samples is None else shared,
-        target_types=targets,
+    return Template(
+        name=name, description=description.strip(),
+        cases=[Spec(
+            input_library=input_library,
+            sample_type=None if samples is None else "sequences::read_metadata",
+            shared_input_paths=[] if samples is None else shared,
+            target_types=targets,
+        )],
         transform_libraries=A.transforms(
             "logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics",
             "metabolicModelling"),
@@ -169,8 +173,8 @@ def spec_for(name, samples=None, rebuild=False, targets=TARGETS) -> Spec:
     )
 
 
-def build_spec(rebuild: bool = False) -> Spec:
-    return spec_for(NAME, short_sample, rebuild=rebuild)
+def build_template(rebuild: bool = False) -> Template:
+    return template_for(NAME, short_sample, rebuild=rebuild)
 
 
 if __name__ == "__main__":

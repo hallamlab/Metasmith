@@ -72,14 +72,13 @@ def assembly_accession_input(tmp_inputs):
 
 
 def test_an_sra_accession_plans_one_fetch_for_its_read_class(base_resources, logistics_transforms, sra_input):
-    from metasmith.agents.spec import Spec
+    from metasmith.agents.spec import CaseViews, plan_views
     targets = TargetBuilder()
     targets.Add("sequences::reads")
-    task = Spec.SolveViews(
-        samples=list(sra_input.AsSamples("sequences::read_metadata")),
+    task = plan_views(
+        [CaseViews("case", list(sra_input.AsSamples("sequences::read_metadata")), [], targets)],
         resources=base_resources + [sra_input],
         transforms=logistics_transforms,
-        targets=targets,
     )
     assert task.ok, f"Workflow generation failed: {task}"
     (fetch,) = [s for s in task.plan.steps if s.transform.name.startswith("getSra")]

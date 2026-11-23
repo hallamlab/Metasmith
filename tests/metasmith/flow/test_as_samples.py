@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.solver import Endpoint
 
@@ -34,7 +36,7 @@ def test_as_samples_root_index_splits_per_item(tmp_path: Path):
     ]
 
 
-def test_as_samples_shared_ancestor_collapses_to_one(tmp_path: Path):
+def test_as_samples_shared_ancestor_is_context_not_a_merge(tmp_path: Path):
     lib = DataInstanceLibrary(tmp_path / "shared.xgdb")
     _types(lib)
     meta = lib.AddItem(Path("meta.json"), "t::meta")
@@ -43,8 +45,24 @@ def test_as_samples_shared_ancestor_collapses_to_one(tmp_path: Path):
         lib.AddItem(Path(f"s{i}/reads.fq"), "t::rd", parents={idx})
 
     masks = _masks(lib, "t::idx")
-    assert len(masks) == 1
-    assert masks[0] == set(str(p) for p in lib.manifest)
+    assert sorted(masks, key=sorted) == [
+        {"meta.json", f"s{i}/id.txt", f"s{i}/reads.fq"} for i in range(3)
+    ]
+
+
+def test_as_samples_among_picks_index_items(tmp_path: Path):
+    lib = DataInstanceLibrary(tmp_path / "among.xgdb")
+    _types(lib)
+    meta = lib.AddItem(Path("meta.json"), "t::meta")
+    lib.AddItem(Path("shared.fq"), "t::rd", parents={meta})
+    for i in range(3):
+        idx = lib.AddItem(Path(f"s{i}/id.txt"), "t::idx", parents={meta})
+        lib.AddItem(Path(f"s{i}/reads.fq"), "t::rd", parents={idx})
+
+    picked = [{str(p) for p in v._mask} for v in lib.AsSamples("t::idx", among=["s1/id.txt"])]
+    assert picked == [{"meta.json", "shared.fq", "s1/id.txt", "s1/reads.fq"}]
+    with pytest.raises(AssertionError, match="s1/reads.fq"):
+        list(lib.AsSamples("t::idx", among=["s1/reads.fq"]))
 
 
 def test_as_samples_root_index_deep_subtree(tmp_path: Path):

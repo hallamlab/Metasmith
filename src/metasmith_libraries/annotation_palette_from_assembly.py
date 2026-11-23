@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "annotation_palette_from_assembly"
 DESCRIPTION = """
@@ -12,7 +12,7 @@ Metabuli contig-level taxonomy.
 """
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         lib.AddTypeLibrary(A.TYPES / "sequences.yml")
         lib.AddTypeLibrary(A.TYPES / "ref.yml")
@@ -21,19 +21,22 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "sequences::assembly")
         lib.AddValue("eggnog_source.marker", "trigger", "annotation::eggnog_source")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type="sequences::assembly",
-        shared_input_paths=["eggnog_source.marker"],
-        target_types=[
-            "annotation::kofamscan_results",
-            "annotation::kofamscan_descriptions",
-            "annotation::diamond_uniref50_results",
-            "annotation::diamond_uniref50_descriptions",
-            "annotation::eggnog_results",
-            "annotation::proteinbert_embeddings",
-            "taxonomy::metabuli",
-        ],
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type="sequences::assembly",
+            shared_input_paths=["eggnog_source.marker"],
+            target_types=[
+                "annotation::kofamscan_results",
+                "annotation::kofamscan_descriptions",
+                "annotation::diamond_uniref50_results",
+                "annotation::diamond_uniref50_descriptions",
+                "annotation::eggnog_results",
+                "annotation::proteinbert_embeddings",
+                "taxonomy::metabuli",
+            ],
+        )],
         transform_libraries=A.transforms(
             "logistics", "metagenomics", "functionalAnnotation"),
         resource_libraries=[A.envs()],

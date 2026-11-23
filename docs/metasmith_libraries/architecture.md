@@ -87,9 +87,9 @@ conda package cache 27,000, and together they helped fill a one-million-inode qu
 
 ## Templates
 
-A template is a starting point a user picks in the GUI: a `Spec` whose input paths are
-`DEFERRED`, with its input library packed inline. **There is no template format** — it is the
-same object a stored workflow is, so a template validates the way a workflow does, by solving.
+A template is a starting point a user picks in the GUI: a list of cases over one input library
+whose paths are `DEFERRED`, packed inline. It is the same shape a stored workflow is, so a
+template validates the way a workflow does, by planning.
 Shipping them beside the transforms is what makes versioning free: a template arrives in the same
 commit as the transforms it names and cannot be older than the library it was found in.
 

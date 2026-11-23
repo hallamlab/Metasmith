@@ -38,6 +38,11 @@
     rowUniques = {},
     expansion = null,
     sharedPaths = [],
+    // the row references the open case reads, or null when there is one case
+    // and it reads every row
+    caseRows = null,
+    caseName = '',
+    oncase,
     // the agents this project has, and what each one's pool holds, for the
     // rows that cite a pool entry rather than name a path
     agentNames = [],
@@ -518,6 +523,20 @@
           {/if}
 
           {@render detail(row)}
+
+          {#if caseRows}
+            <div class="notes row wrap small">
+              <button
+                class="star"
+                class:on={caseRows.includes(row.key)}
+                aria-pressed={caseRows.includes(row.key)}
+                title={caseRows.includes(row.key)
+                  ? `case ${caseName} reads this row`
+                  : `funnel this row into case ${caseName}`}
+                onclick={() => oncase?.(row.key, !caseRows.includes(row.key))}
+              >in {caseName}</button>
+            </div>
+          {/if}
 
           {#if hasTable}
             <!-- With a sheet attached this row is one declaration, not N rows:
