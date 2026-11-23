@@ -22,7 +22,7 @@
 use serde::Deserialize;
 
 use crate::det::{self, Map, Set};
-use crate::model::{DepId, Deps, EpId, EpSig, Endpoints, Transform, TransformId, Types};
+use crate::model::{DepId, Deps, EpId, EpSig, Endpoints, Transform, TransformId, TypeId, Types};
 
 #[derive(Debug, Deserialize)]
 pub struct EncodedNode {
@@ -117,6 +117,9 @@ pub struct Problem {
     /// Per transform: 1.0 when applying it can re-enable itself with nothing
     /// gained. See `derive`.
     pub self_feed: Vec<f64>,
+    /// Product types the target can never bind to one of its lineage anchors.
+    /// See `derive_dead_anchors`.
+    pub dead_anchor: Set<TypeId>,
 }
 
 impl Problem {
@@ -273,6 +276,7 @@ impl Problem {
             free_transforms: Vec::new(),
             no_path_possible: false,
             self_feed: Vec::new(),
+            dead_anchor: det::set(),
         };
         p.derive();
         Ok((p, endpoints))
@@ -426,6 +430,7 @@ impl Problem {
             return;
         }
         self.max_distance = self.distance.values().copied().max().unwrap_or(0);
+        self.derive_dead_anchors();
 
         let mut rts: Set<TransformId> = self.relevant_transforms.iter().copied().collect();
         rts.insert(self.given_index);
@@ -444,5 +449,61 @@ impl Problem {
             .copied()
             .filter(|&t| self.transforms[t as usize].is_free())
             .collect();
+    }
+
+    /// Which product types can never fill a target requirement that other
+    /// target requirements name as a lineage parent.
+    ///
+    /// The endpoint bound to such an anchor has to be an ancestor of, or the
+    /// same endpoint as, whatever fills each requirement anchored on it. So a
+    /// type that conforms to the anchor is dead when, for some dependent, it
+    /// neither conforms to the dependent nor can be turned into something that
+    /// does by any chain of transforms. A hybrid sample's target anchors an
+    /// OPERA-MS assembly on "the assembly", and the MEGAHIT and Flye assemblies
+    /// conform to the anchor without ever feeding OPERA-MS; before this the
+    /// search built the whole pipeline on each of them first.
+    ///
+    /// Reachability is over types and ignores lineage, so it over-approximates
+    /// and "dead" is certain. What is done with it is still only a demotion
+    /// (`Policy`): a step fed by a dead anchor can be needed elsewhere.
+    ///
+    /// A given's descendants are declared rather than produced, which this walk
+    /// cannot see, so a type the givens supply is never dead.
+    fn derive_dead_anchors(&mut self) {
+        let reqs = &self.transforms[self.target_index as usize].requires;
+        let ty = |d: DepId| self.deps.ty(d);
+        let given: Set<TypeId> = self.transforms[self.given_index as usize]
+            .produces.iter().flatten().map(|&d| ty(d)).collect();
+        let mut dead: Set<TypeId> = det::set();
+        for &anchor in reqs {
+            let dependents: Vec<TypeId> = reqs
+                .iter()
+                .filter(|&&j| self.deps.parents(j).contains(&anchor))
+                .map(|&j| ty(j))
+                .collect();
+            if dependents.is_empty() { continue; }
+            for t in &self.transforms {
+                for &d in t.produces.iter().flatten() {
+                    let x = ty(d);
+                    if !self.types.is_a(x, ty(anchor)) || given.contains(&x) { continue; }
+                    let mut reach: Set<TypeId> = det::set();
+                    let mut todo = vec![x];
+                    while let Some(y) = todo.pop() {
+                        for (ci, c) in self.transforms.iter().enumerate() {
+                            if ci as TransformId == self.target_index { continue; }
+                            if !c.requires.iter().any(|&r| self.types.is_a(y, ty(r))) { continue; }
+                            for &z in c.produces.iter().flatten() {
+                                if reach.insert(ty(z)) { todo.push(ty(z)); }
+                            }
+                        }
+                    }
+                    let live = dependents.iter().all(|&j| {
+                        self.types.is_a(x, j) || reach.iter().any(|&y| self.types.is_a(y, j))
+                    });
+                    if !live { dead.insert(x); }
+                }
+            }
+        }
+        self.dead_anchor = dead;
     }
 }

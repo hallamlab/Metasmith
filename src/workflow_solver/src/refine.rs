@@ -498,6 +498,7 @@ pub fn refine(
                 [st.scores[0], if st.valid { 1.0 } else { 0.0 }]
             },
             |j| states[frontier[j]].swapped_in,
+            |_| 0.0,
         );
         let n = frontier.len() - 1;
         frontier.swap(idx, n);

@@ -69,6 +69,8 @@ pub type Group = Vec<(DepId, EpId)>;
 pub struct Appl {
     /// Which timeline this application was born into. `initial_timeline`.
     pub timeline: i64,
+    /// 1.0 when an input descends from a dead anchor (`Problem::dead_anchor`).
+    pub off_anchor: f64,
     pub transform: TransformId,
     pub used: Bindings,
     pub produced: Vec<Group>,
@@ -127,7 +129,7 @@ impl Arena {
         let sig = self.sign(p, transform, &used);
         let id = self.appls.len() as ApplId;
         self.appls.push(Appl {
-            timeline, transform, used, produced: Vec::new(),
+            timeline, off_anchor: 0.0, transform, used, produced: Vec::new(),
             score: [0.0, 0.0], iteration: -1, sig,
         });
         id
