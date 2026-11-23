@@ -9,8 +9,6 @@ Decisions: docs/engcyc/DECISIONS.md
 solver-investigation — cause found (Fable agent, 2026-11-22; prototypes in /home/tony/.claude/jobs/7892d031/tmp/solver-inv/crate, switches MSM_FWD/MSM_FIRST/MSM_ANCHOR). Three causes: (1) selection is lineage-blind (prior per transform, mcts.rs:127; visits per transform, policy.rs:495) so the MEGAHIT and Flye lanes get built in full though target 1 pins the assembly to OPERA-MS; assembly_stats x2 read classes x3 binners x prodigal/prodigal_gv GFF -> up to 16 das_tool per assembly; (2) target binding DFS (search.rs:298-312) checks lineage only on reaching a slot -> 1.58 M nodes per call, viable=0 (the 261 s); (3) once feasible the DFS mints the full cross product of target applications (short's 80 s / 5.5 GB; likely the 47 GB). Fixes: forward-check in DFS (order-preserving), first viable leaf for the target (re-pin corpus), dead-anchor prior (demotion, never loses a solution). All three: hybrid 47 targets solves at 256 (244 iters, 182 steps, 0.65 s, 13 MB), stock `check` accepts; short 0.17 s. Not run: fingerprint corpus, multi-sample, Python refine path; short plan 184 vs 182 steps undiffed. Then: solve-scenarios test (isolate, hybrid, short-from-SRA accession).
 
 ## Waiting on the user
-- Start a new Metabuli build worker? (old one stopped by the app; download 124/192 GB at 19:10, ~65 min left)
-- Implement the three solver fixes on a branch?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -48,7 +46,8 @@ solver-investigation — cause found (Fable agent, 2026-11-22; prototypes in /ho
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- (none; metabuli-r232 worker stopped by the app 2026-11-22, download still running on fir login2)
+- metabuli-r232 — new worker (Sonnet, medium) continues the fir build from the old worker's scripts
+- solver-fixes — Fable agent lands the three fixes on feat/engine/solver-fixes with targeted tests; Tony: accept if tests look good
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
