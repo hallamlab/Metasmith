@@ -118,7 +118,7 @@ Prodigal Example
 
 Prodigal accepts a contiguous nucleotide sequence or "contig" and produces a list of predicted ORFs as amino acid sequences in fasta format.
 Additionally, the container providing the prodigal itself is specified as an input. The syntax for running prodigal can be obtained
-from studying its `documentation <https://github.com/hyattpd/prodigal/wiki/Gene-Prediction-Modes#normal-mode>`_.
+from studying its `documentation <https://github.com/hyattpd/prodigal/wiki/Gene-Prediction-Modes#normal-mode>`__.
 
 .. code-block:: python
     :linenos:
@@ -159,7 +159,7 @@ BLAST Example
 
 Similarly, BLAST requires a query sequence and a database of sequences to compare against. For simplicity,
 another fasta file will be used instead of a true BLAST database. The syntax for running BLAST can also be 
-obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NBK279690/>`_.
+obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NBK279690/>`__.
 
 .. code-block:: python
     :linenos:

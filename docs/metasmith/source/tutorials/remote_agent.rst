@@ -27,7 +27,7 @@ Prerequisites
 - :ref:`Apptainer <Apptainer Install>` is installed on the remote, *or*
   someone with administrative access on the remote is willing to install
   it. The conda-forge build works but trades a slightly larger on-disk
-  footprint per container (see :ref:`apptainer-sandbox-note`).
+  footprint per container (see :ref:`the Apptainer sandbox note <apptainer-sandbox-note>`).
 - An absolute path on the remote that you can write to and that has
   enough free space for the Metasmith container plus any workflow
   container caches. Scratch on HPC, :bash:`$HOME` on a plain box.

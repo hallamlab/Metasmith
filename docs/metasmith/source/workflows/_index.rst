@@ -6,3 +6,4 @@ The standard library
 
    assembly_annotation
    engcyc_metagenomics
+   geoquery
