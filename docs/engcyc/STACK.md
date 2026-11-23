@@ -6,10 +6,11 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-serialized-meteor.md (T1-T17; todo list mirrors it). T1 done (rc merged feat/dev + release v0.26.0, 606f7113 + next). Plan-cases answers (Tony approved recommendations): libraries on Plan; GUI one input list with chips into case tabs; selector `input_paths`. T3 sra-split landed 7041cbe3. Metabuli: in 0.26.1, database built in the pipeline (decision metabuli-in-pipeline). Queued: short-reads-subtypes worker after plan-cases, before T4; url-smoke worker after T4 (both decided). run-3 issues 4-5 in 0.26.1 as setup-as-steps (worker). metabuli-build landed f17fecba. T2 plan-cases landed 89f382eb (+ecc53d35 palette fix). short-reads-subtypes landed d12d03fa. T4 engcyc-cases landed 8ab6841f: short/hybrid/long cases, all 9 probes plan; long-only failed on inStrain (no long-read route). Open: 3-case plan takes ~40 s in case_merge (step order rebuilt per placement); engcyc_metagenomics.rst stale (T16).
+Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-serialized-meteor.md (T1-T17; todo list mirrors it). T1 done (rc merged feat/dev + release v0.26.0, 606f7113 + next). Plan-cases answers (Tony approved recommendations): libraries on Plan; GUI one input list with chips into case tabs; selector `input_paths`. T3 sra-split landed 7041cbe3. Metabuli: in 0.26.1, database built in the pipeline (decision metabuli-in-pipeline). Queued: short-reads-subtypes worker after plan-cases, before T4; url-smoke worker after T4 (both decided). run-3 issues 4-5 in 0.26.1 as setup-as-steps (worker). metabuli-build landed f17fecba. T2 plan-cases landed 89f382eb (+ecc53d35 palette fix). short-reads-subtypes landed d12d03fa. T4 engcyc-cases landed 8ab6841f: short/hybrid/long cases, all 9 probes plan; long-only failed on inStrain (no long-read route). setup-steps landed 4d7113a2 (pulls as setup steps, cap 3; download_size field, prep ~439 GB; references/ + envs/ publish; pulls rerun each time, not cached). Open: 3-case plan takes ~40 s in case_merge (step order rebuilt per placement); engcyc_metagenomics.rst stale (T16).
 engcyc-cases — after both workers land: engcyc template as two cases (short reads -> engcyc targets; long reads -> modified set incl. long-read taxonomy lanes), isolate/hybrid templates take accessions, probes short/hybrid/isolate/SRA-short/SRA-long/long-only/mixed two-case.
 
 ## Waiting on the user
+- fix the ~40 s 3-case plan time (case_merge step order rebuilt per placement) before run 4?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -46,9 +47,8 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- setup-steps (feat/engine/setup-steps, Opus): image pulls as setup steps + download size total; check xlocalx traps
-- plan-cases — Opus worker: Plan([cases]) API, template = list of cases, GUI tabs, drop `when`, AsSamples fix (feat/engine/plan-cases)
-- sra-split — Sonnet worker: short/long SRA accession types + fetch, drop getSraReads fork, long-read taxonomy transforms (feat/engine/sra-split)
+- url-smoke (feat/engine/url-smoke, Sonnet): standard URL declaration on download contracts + one release-gate network test
+- run3-inputs (feat/engine/run3-inputs, Opus): run-3 #2 URL file rows + errors on page, #3 local inputs copied to remote at staging
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
