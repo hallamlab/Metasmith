@@ -23,10 +23,12 @@ def build_spec(rebuild: bool = False) -> Spec:
         sample_type="sequences::long_reads",
         target_types=[
             "sequences::hifiasm_meta_assembly",
-            "annotation::diamond_uniref50_results",
-            "annotation::diamond_uniref50_descriptions",
-            "annotation::kofamscan_results",
-            "annotation::kofamscan_descriptions",
+            *({"type": t, "parents": [0]} for t in (
+                "annotation::diamond_uniref50_results",
+                "annotation::diamond_uniref50_descriptions",
+                "annotation::kofamscan_results",
+                "annotation::kofamscan_descriptions",
+            )),
         ],
         transform_libraries=A.transforms(
             "logistics", "assembly", "isolate", "metagenomics", "functionalAnnotation"),

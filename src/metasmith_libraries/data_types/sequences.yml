@@ -341,11 +341,6 @@ types:
     - assembly
     properties:
       method: spades
-  flye_raw_assembly:
-    extends:
-    - assembly
-    properties:
-      method: flye using raw reads
 # -----------------------------------------
 # assembly graphs -- the assembler's OWN representation of the assembly, kept
 # because the contig FASTA is a lossy read-out of it. A contig FASTA cannot say
