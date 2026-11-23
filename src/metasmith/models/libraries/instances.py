@@ -292,7 +292,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def AsSamples(self, index_types: str|Iterable[str], exact: bool=False):
+    def AsSamples(self, index_types: str|Iterable[str], exact: bool=False, among: Iterable[Path|str]|None=None):
         if isinstance(index_types, str):
             index_types=[index_types]
 
@@ -306,49 +306,54 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 model = self.GetType(name)
                 return any(model.IsA(e) for e in _wl)
 
-        def _get_all_ancestors(path: Path) -> set[Path]:
-            ancestors = set()
-            to_check = [path]
-            while to_check:
-                current = to_check.pop()
-                for p in self.parents.get(current, []):
-                    if p.path not in ancestors:
-                        ancestors.add(p.path)
-                        to_check.append(p.path)
-            return ancestors
-
         children_of: dict[Path, set[Path]] = {}
         for item_path, parent_list in self.parents.items():
             for pm in parent_list:
                 children_of.setdefault(pm.path, set()).add(item_path)
 
-        def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
-            descendants = set()
-            queue = list(ancestor_paths)
+        def _walk(start: Path, step) -> set[Path]:
+            seen: set[Path] = set()
+            queue = [start]
             while queue:
-                current = queue.pop()
-                for child in children_of.get(current, set()):
-                    if child not in descendants:
-                        descendants.add(child)
-                        queue.append(child)
-            return descendants
+                for nxt in step(queue.pop()):
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        queue.append(nxt)
+            return seen
 
-        _desc_cache: dict[frozenset[Path], set[Path]] = {}
-        _yielded_ancestors: set[frozenset[Path]] = set()
-        for path, name in self.manifest.items():
-            if not _accept(name): continue
-            ancestors = _get_all_ancestors(path)
-            cache_key = frozenset(ancestors)
-            if ancestors:
-                if cache_key not in _desc_cache:
-                    _desc_cache[cache_key] = _get_all_descendants(ancestors)
-                siblings = _desc_cache[cache_key]
-            else:
-                siblings = _get_all_descendants({path})
-            if path in siblings and cache_key in _yielded_ancestors:
-                continue
-            _yielded_ancestors.add(cache_key)
-            yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
+        def _parents(path: Path):
+            return (p.path for p in self.parents.get(path, []))
+
+        def _children(path: Path):
+            return children_of.get(path, ())
+
+        index = {path for path, name in self.manifest.items() if _accept(name)}
+        ancestors_of = {path: _walk(path, _parents) for path in index}
+        # An index item nested under another belongs to the outer sample.
+        roots = [path for path in self.manifest if path in index and not ancestors_of[path] & index]
+        wanted = set(roots)
+        if among is not None:
+            wanted = {Path(p) for p in among}
+            stray = sorted(str(p) for p in wanted - set(roots))
+            assert not stray, (
+                f"not samples of type [{', '.join(index_types)}] in [{self.location}]: {', '.join(stray)}"
+            )
+        subtree = {path: _walk(path, _children) for path in roots}
+        claimed: dict[Path, set[Path]] = {}
+        for path in roots:
+            for item in subtree[path] | {path}:
+                claimed.setdefault(item, set()).add(path)
+        # A sibling is shared context unless another sample's subtree claims it.
+        context: dict[frozenset[Path], set[Path]] = {}
+        for path in roots:
+            if path not in wanted: continue
+            ancestors = frozenset(ancestors_of[path])
+            if ancestors not in context:
+                context[ancestors] = set().union(*(_walk(a, _children) for a in ancestors))
+            siblings = {x for x in context[ancestors] if not claimed.get(x, set()) - {path}}
+            yield DataInstanceLibraryView(
+                original=self, mask={path} | ancestors | subtree[path] | siblings,
+            )
 
     def Trace(self, from_type: str, to_type: str):
         children_of: dict[Path, list[Path]] = {}
