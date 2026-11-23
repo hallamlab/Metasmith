@@ -65,7 +65,6 @@ def build_inputs(agent, work: Path, *, experiment: str, reads: list[Path],
 
     exp = givens.Value(f"{experiment}/experiment", experiment, "fabfos::experiment")
 
-    read_type = "sequences::short_reads_pe" if parity == "paired" else "sequences::short_reads_se"
     for i, r in enumerate(reads):
         meta = givens.Value(
             f"{experiment}/read_metadata_{i}",
@@ -73,7 +72,7 @@ def build_inputs(agent, work: Path, *, experiment: str, reads: list[Path],
             "sequences::read_metadata",
             parents=[exp],
         )
-        givens.Add(Path(r).expanduser().resolve(), read_type,
+        givens.Add(Path(r).expanduser().resolve(), "sequences::short_reads",
                    name=f"{experiment}/reads_{i}", parents=[meta])
 
     givens.Add(Path(host).expanduser().resolve(), "sequences::background_genome",

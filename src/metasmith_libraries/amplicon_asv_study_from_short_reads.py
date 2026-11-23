@@ -9,7 +9,7 @@
 # The study is its sample sheet: the sample id first, then one categorical label per
 # column. Each sample is a read_metadata under it, naming the sample, with its reads
 # beneath that. The sample is paired. A single-end study registers
-# `sequences::short_reads_se` under the read_metadata in place of the read pair, and the same targets solve
+# `sequences::short_reads` under the read_metadata in place of the read pair, and the same targets solve
 # without the interleave step. A study has one parity: research/aspire/
 # aspire_asv_pipeline.py says why a mixed one cannot plan.
 #

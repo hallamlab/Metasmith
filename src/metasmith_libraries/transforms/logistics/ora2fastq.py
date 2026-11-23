@@ -7,7 +7,7 @@ r1      = model.AddRequirement(lib.GetType("sequences::forward_ora_reads"), pare
 r2      = model.AddRequirement(lib.GetType("sequences::reverse_ora_reads"), parents={pair})
 orad    = model.AddRequirement(lib.GetType("env::orad.env"))
 bbtools = model.AddRequirement(lib.GetType("env::bbtools.env"))
-out     = model.AddProduct(lib.GetType("sequences::short_reads_pe"))
+out     = model.AddProduct(lib.GetType("sequences::short_reads"))
 
 def protocol(context: ExecutionContext):
     ir1 = context.Input(r1)

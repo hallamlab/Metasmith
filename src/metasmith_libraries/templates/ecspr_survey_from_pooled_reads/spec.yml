@@ -82,7 +82,7 @@ input_library:
       instance_id: 1e2015748826b00bafe2188cc0435b44e22639b4bd91ba4b1a94b4eeb6d9e6012a3f
       origin: leaf
     /msm_deferred/bb75787fad1f4ea89d4f86a9fc0e6398:
-      type: sequences::short_reads_pe
+      type: sequences::short_reads
       parents:
         B3953eg5RMmC@read_metadata.json: sequences::read_metadata
       instance_id: 1e20f91732ede26fd9732240dfdd81a7ea668979bfbcb7788c2a42b677ed09b3ecb5

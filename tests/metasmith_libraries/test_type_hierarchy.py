@@ -63,12 +63,8 @@ def test_overriding_directional_halves_declare_unpaired_read_half_parent():
         assert "reads" not in ext, f"{name} must not extend `reads` directly"
 
 
-def test_short_reads_pe_isa_reads(sequences):
-    assert sequences["short_reads_pe"].IsA(sequences["reads"])
-
-
-def test_short_reads_se_isa_reads(sequences):
-    assert sequences["short_reads_se"].IsA(sequences["reads"])
+def test_short_reads_isa_reads(sequences):
+    assert sequences["short_reads"].IsA(sequences["reads"])
 
 
 def test_long_reads_isa_reads(sequences):

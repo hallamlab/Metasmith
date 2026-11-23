@@ -41,7 +41,7 @@ def aspire_inputs(tmp_inputs):
                 inputs.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
                 inputs.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
             else:
-                inputs.AddItem(DEFERRED, "sequences::short_reads_se", parents={meta})
+                inputs.AddItem(DEFERRED, "sequences::short_reads", parents={meta})
 
         for dtype in references:
             inputs.AddItem(DEFERRED, dtype)

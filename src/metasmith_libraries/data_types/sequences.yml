@@ -60,16 +60,6 @@ types:
     - reads
     properties:
       read_length: short
-  short_reads_pe:
-    extends:
-    - short_reads
-    properties:
-      parity: interleaved
-  short_reads_se:
-    extends:
-    - short_reads
-    properties:
-      parity: single
   read_pair:
     properties:
       atomic: a pair of read files
@@ -134,16 +124,6 @@ types:
     - discarded_reads
     properties:
       read_length: short
-  clean_short_reads_pe:
-    extends:
-    - clean_short_reads
-    properties:
-      parity: interleaved
-  clean_short_reads_se:
-    extends:
-    - clean_short_reads
-    properties:
-      parity: single
   host_filtered_short_reads:
     extends:
     - clean_short_reads

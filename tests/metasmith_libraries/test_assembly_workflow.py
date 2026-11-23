@@ -38,7 +38,7 @@ def short_reads_input(tmp_inputs, test_data_dir):
         {"parity": "single", "length_class": "short"},
         "sequences::read_metadata",
     )
-    inputs.AddItem(reads_path, "sequences::short_reads_se", parents={meta})
+    inputs.AddItem(reads_path, "sequences::short_reads", parents={meta})
     inputs.LocalizeContents()
     inputs.Save()
 
