@@ -153,7 +153,7 @@ and the planner prepares a separate route below each group. A tool that writes s
 at once but declares them as groups gets a plan in which no route reads two of them together.
 A fork's manifest holds one dict per group it wrote, and each dict names every product of that
 group. The bootstrap fails a task whose dict is not one whole declared group.
-`transforms/logistics/getSraReads.py` is the reference.
+`tests/metasmith/flow/test_forks.py` holds the worked fixtures.
 
 ## An annotator emits its hits and its descriptions
 
