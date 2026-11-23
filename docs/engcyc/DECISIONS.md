@@ -581,3 +581,23 @@ Tony: "our metabuli db was built, so we can just make that part of the pipeline.
 Design: the library builds the database itself, with no hosted copy. Transforms download GTDB r232's species-representative genomes and taxonomy, human T2T and RefSeq viral. A selection step applies the R214.1 rule (Complete Genome/Chromosome, CheckM >90%/<5%). Then `metabuli build` runs. Tony: "need to split into 2 contracts to better utilize resources: download and actual build". So the route is two transforms: a download (small CPU, long, network) that yields the selected sources, and a build (64 CPUs, short). The fir build took 34 min on 64 CPUs, with a peak of 203 GB on disk and a 192 GB download. The steps run in engcyc_prep_references, and the Metabuli lane goes into engcyc_metagenomics. This replaces the hosted download from metabuli-size. Metabuli is in 0.26.1.
 
 Landed: worker metabuli-build (library transforms); template wiring in T4.
+
+## url-smoke — 2026-11-23
+
+Question: how does a test catch a stale download link without copying the URL out of the transform?
+
+Tony: "dumber than that. have some system/standard for exposing teh url of download contracts. smoke test it all in 1 go make sure these urls are still responsive as part of release gate"
+
+Design: every download transform declares its sources in one module-level `URLS` list of complete URLs, and its protocol reads them from there. One test reads `URLS` from every transform file, checks them all at once, and fails on any that does not answer. A transform that downloads but has no `URLS` fails the test. The test is part of the release gate.
+
+Landed: worker after T4 (it edits the same transform files as metabuli-build).
+
+## short-reads-subtypes — 2026-11-23
+
+Question: when do `short_reads_pe`/`se` and `clean_short_reads_pe`/`se` go?
+
+Tony: "I really want to clean up the short_reads_pe and se types..." Then yes to a worker of its own.
+
+Design: delete the four subtypes. Parity stays a property on `short_reads`. Port the transforms, templates, library entry points, the fabfos pipeline and tests. List the research drivers instead of porting them.
+
+Landed: worker after plan-cases lands, before T4.
