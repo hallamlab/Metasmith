@@ -496,3 +496,19 @@ so it matches GTDB-Tk r232. Build once on fir and host it. The library step down
 database. The GTDB-Tk package holds only skani sketches, not genomes, so it cannot be the source.
 
 Landed: worker metabuli-r232 (build and measure). Hosting site still open.
+
+## solver-investigation (2026-11-22)
+
+Question: why engcyc_metagenomics needed 255/256 iterations for short reads and failed for hybrid.
+
+Tony: "If the solver should work, something is going wrong. Can we investigate what is going wrong?" / "run targetted tests on the Fable fixes. if looks good, lets accept it"
+
+Decided design: three solver fixes, not a template split.
+- The binding DFS forward-checks anchored requirements.
+- The target transform mints one application, binding the oldest candidates; the refiner is unaffected.
+- Applications fed by a dead anchor are demoted through their own prior channel. A dead anchor is a product type that can never satisfy a target's anchored slots, such as MEGAHIT's assembly in a hybrid case. SOLVER_RNG_VERSION is 4; fingerprints did not move.
+- The default search budget is 512, because hybrid needs 313 iterations and a failed solve ends in under a second.
+
+Result: short 172 steps in 2.4 s, down from 80 s and 5.7 GB; hybrid 173 steps; isolate unchanged.
+
+Landed: feat/engine/solver-fixes (a0e6507a, 7e444744, 8e3ae62c, cd485ff0), merged as 1e3f3ae7; budget change 911a5e4a.
