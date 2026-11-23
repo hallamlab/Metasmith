@@ -115,15 +115,11 @@ def member_intact(shard: Path, entry: dict) -> bool:
     return True
 
 
+# A hit needs a manifest, every file it lists present at its recorded size, and
+# no tombstone. A ghost is a shard a run deleted products from: its manifest
+# still names every output, so a reader's key is computable without them, and
+# each listed file is intact or absent. Each file is `(name, present)`.
 def shard_state(cache_root: Path, key: bytes) -> tuple[str, Path, list[tuple[str, bool]]]:
-    """What the shard for `key` holds: `hit`, `ghost` or `miss`, and its files.
-
-    A hit needs a manifest, every file it lists present at its recorded size,
-    and no tombstone. A ghost is a shard a run deleted products from: the
-    manifest still names every output, so a consumer's key can be computed
-    without them, and each listed file is either intact or absent. Each file
-    is `(name, present)`, the name without its `out/` directory.
-    """
     shard = shard_dir(Path(cache_root), key.hex())
     if (shard / TOMBSTONE_NAME).exists():
         return "miss", shard, []
@@ -146,7 +142,6 @@ def probe(cache_root: Path, key: bytes) -> Optional[Path]:
 
 
 def read_skips(path) -> tuple[set[str], set[str]]:
-    """The ghost keys a run serves without running, and the file ids they leave absent."""
     if not path:
         return set(), set()
     try:

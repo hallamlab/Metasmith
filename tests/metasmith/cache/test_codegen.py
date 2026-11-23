@@ -69,7 +69,7 @@ def test_generated_config_has_no_process_cache_directive(tmp_path):
             )
 
 
-def test_every_grouped_step_gets_a_cached_twin_and_a_two_stream_group(tmp_path):
+def test_every_grouped_step_gets_a_cached_twin_and_a_three_way_group(tmp_path):
     from metasmith.models.workflow.nextflow_codegen import (
         CachedProcessName, NextflowProcessName,
     )
@@ -82,8 +82,9 @@ def test_every_grouped_step_gets_a_cached_twin_and_a_two_stream_group(tmp_path):
         name = NextflowProcessName(step.order, step.transform.name)
         twin = CachedProcessName(name)
         assert f"process {twin} {{" in body, f"no twin process for {name}"
-        assert f"(__miss_{step.order}, __hit_{step.order}) = o.group(" in body
-        assert f"o.mixOuts(o.asStreams({name}(__miss_{step.order})), o.asStreams({twin}(__hit_{step.order})))" in body
+        n = step.order
+        assert f"(__miss_{n}, __hit_{n}, __synth_{n}) = o.group(" in body
+        assert f"o.mixOuts(o.asStreams({name}(__miss_{n})), o.asStreams({twin}(__hit_{n})), __synth_{n})" in body
     assert "Channel.of(" not in body, "a hit is a task now, not a spliced channel"
     assert "publishDir" not in body, "no process publishes into the cache any more"
 

@@ -19,7 +19,7 @@ from metasmith.testing.mock_transforms import (
 from tests.metasmith.support import create_transform_library
 
 
-def _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates: bool):
+def _binning_task(mock_samples, mock_types, tmp_path, keep_intermediates: bool):
     transforms = alignment_transform() | binner_transforms()
     tr_lib = create_transform_library(tmp_path / "tr_publish", mock_types, transforms)
 
@@ -35,7 +35,7 @@ def _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates: boo
         transforms=[tr_lib],
     )
     assert isinstance(plan, WorkflowPlan)
-    plan.publish_intermediates = publish_intermediates
+    plan.keep_intermediates = keep_intermediates
 
     return WorkflowTask(
         ok=True,
@@ -60,54 +60,53 @@ def _stage(task: WorkflowTask, work_dir: Path) -> str:
     return (work_dir / AgentPaths.NXF_WORKFLOW).read_text()
 
 
-class TestPublishIntermediates:
-    def test_enabled_publishes_all(self, mock_samples, mock_types, tmp_path):
-        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=True)
-        bam_order = None
-        for step in task.plan.steps:
-            for group in step.produces:
-                for inst in group:
-                    if inst.dtype_name == "mock::bam":
-                        bam_order = step.order
-                        break
-        assert bam_order is not None, "fixture should produce mock::bam as intermediate"
+class TestKeepIntermediates:
+    def test_enabled_publishes_all_and_deletes_nothing(self, mock_samples, mock_types, tmp_path):
+        task = _binning_task(mock_samples, mock_types, tmp_path, keep_intermediates=True)
+        bam_order = next(
+            step.order for step in task.plan.steps for group in step.produces
+            for inst in group if inst.dtype_name == "mock::bam"
+        )
 
         nxf = _stage(task, tmp_path / "ws_default")
 
         for tname in ("metabat2_bins", "maxbin2_bins", "concoct_bins"):
             assert f"path '{tname}'" in nxf, f"target {tname} should be published"
-
         assert f"path '{bam_order}_mock-bam'" in nxf
+        assert "o.footprint([probe: params.msm_probe, delete: false," in nxf
 
-    def test_disabled_only_targets(self, mock_samples, mock_types, tmp_path):
-        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=False)
+    def test_disabled_publishes_and_keeps_only_targets(self, mock_samples, mock_types, tmp_path):
+        task = _binning_task(mock_samples, mock_types, tmp_path, keep_intermediates=False)
         nxf = _stage(task, tmp_path / "ws_targets_only")
 
         for tname in ("metabat2_bins", "maxbin2_bins", "concoct_bins"):
             assert f"path '{tname}'" in nxf
-
         assert "_mock-bam" not in nxf
         assert "path 'mock-bam'" not in nxf
+        assert "o.footprint([probe: params.msm_probe, delete: true," in nxf
 
     def test_pack_unpack_roundtrip_preserves_flag(self, mock_samples, mock_types, tmp_path):
-        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=False)
+        task = _binning_task(mock_samples, mock_types, tmp_path, keep_intermediates=True)
         packed = task.plan.Pack()
-        assert packed["publish_intermediates"] is False
+        assert packed["keep_intermediates"] is True
 
         libraries = {task.transform_libraries[0].GetKey(): task.transform_libraries[0]}
         libraries[mock_samples.GetKey()] = mock_samples
-        restored = WorkflowPlan.Unpack(packed, libraries)
-        assert restored.publish_intermediates is False
+        assert WorkflowPlan.Unpack(packed, libraries).keep_intermediates is True
+
+        # A plan saved before the rename carries the old key.
+        packed["publish_intermediates"] = packed.pop("keep_intermediates")
+        assert WorkflowPlan.Unpack(packed, libraries).keep_intermediates is True
 
     def test_default_is_targets_only(self, mock_samples, mock_types, tmp_path):
-        task = _binning_task(mock_samples, mock_types, tmp_path, publish_intermediates=True)
-        assert WorkflowPlan(given=[], targets=[], steps=[]).publish_intermediates is False
+        task = _binning_task(mock_samples, mock_types, tmp_path, keep_intermediates=True)
+        assert WorkflowPlan(given=[], targets=[], steps=[]).keep_intermediates is False
 
         # An index with no flag reads the way the dataclass defaults, so the two
-        # cannot drift into publishing different things for the same plan.
+        # cannot drift into keeping different things for the same plan.
         packed = task.plan.Pack()
-        packed.pop("publish_intermediates", None)
+        packed.pop("keep_intermediates", None)
         libraries = {task.transform_libraries[0].GetKey(): task.transform_libraries[0]}
         libraries[mock_samples.GetKey()] = mock_samples
         restored = WorkflowPlan.Unpack(packed, libraries)
-        assert restored.publish_intermediates is False
+        assert restored.keep_intermediates is False

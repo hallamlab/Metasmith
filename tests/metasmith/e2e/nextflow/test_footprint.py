@@ -61,10 +61,12 @@ with open(home / "ran.log", "a") as f:
         f.write(f"{meta.step_name} {e.get('KEY')}\n")
 if meta.step_name in (home / "fail").read_text().split():
     sys.exit(1)
+fan = 2 if meta.step_name in (home / "fan").read_text().split() else 1
 for i, e in enumerate(entries):
     for sf in meta.slot_files:
-        name = f"{i+1}-1-{sf['branch_idx']+1}.{member_token(e)}-{sf['dtype_key']}{sf['ext']}"
-        Path(name).write_text(f"{meta.step_name} {e.get('KEY')}\n")
+        for j in range(fan):
+            name = f"{i+1}-{j+1}-{sf['branch_idx']+1}.{member_token(e)}-{sf['dtype_key']}{sf['ext']}"
+            Path(name).write_text(f"{meta.step_name} {e.get('KEY')} {j}\n")
 promote_members(
     cwd=Path.cwd(), entries=entries, meta=meta,
     cache_root=default_cache_root(home), successes=[True] * len(entries),
@@ -98,9 +100,14 @@ class Agent:
         boot.write_text(f'#!/bin/bash\nexec {sys.executable} {self.home}/lib/fake_bootstrap.py {self.home} "$@"\n')
         boot.chmod(0o755)
         self.fail()
+        self.fan()
 
     def fail(self, *steps: str) -> None:
         (self.home / "fail").write_text(" ".join(steps))
+
+    def fan(self, *steps: str) -> None:
+        # Each member of `steps` writes two files per output, as a glob output can.
+        (self.home / "fan").write_text(" ".join(steps))
 
     def plan(self, n_steps: int, n_samples: int = 2) -> WorkflowTask:
         types = _build_type_lib(self.root / "types.yml")
@@ -136,7 +143,10 @@ class Agent:
 
         footprint.reset(ws)
         if not task.plan.keep_intermediates and footprint.has_ghosts(self.cache_root):
-            probe = self._nextflow(ws, "--msm_probe", "true", "-w", str(ws / "nxf_probe"))
+            probe = self._nextflow(
+                ws, "--msm_probe", "true", "-w", str(ws / "nxf_probe"),
+                env={"NXF_CACHE_DIR": str(ws / "nxf_probe" / ".nextflow")},
+            )
             assert probe.returncode == 0, probe.stdout[-3000:] + probe.stderr[-3000:]
             footprint.plan_skips(ws, self.cache_root)
         nxf = self._nextflow(ws, "-w", str(ws / "nxf_work"), "-with-trace", "trace.tsv", "-resume")
@@ -155,9 +165,9 @@ class Agent:
             task=task,
         )
 
-    def _nextflow(self, ws: Path, *args: str) -> subprocess.CompletedProcess:
+    def _nextflow(self, ws: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
         env = {
-            **os.environ, "NXF_ANSI_LOG": "false",
+            **os.environ, **(env or {}), "NXF_ANSI_LOG": "false",
             "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
             "PYTHONPATH": f"{REPO / 'src'}:{REPO}",
         }
@@ -237,8 +247,16 @@ def test_a_failed_reader_keeps_its_inputs_and_the_rerun_resumes_there(agent):
     assert _published(second.results) == {"branch_b"}
 
 
-def test_a_full_rerun_runs_nothing(agent):
-    assert agent.run(3, "ws").returncode == 0
+@pytest.mark.parametrize("fan", [False, True], ids=["one_file", "runtime_fan_out"])
+def test_a_full_rerun_runs_nothing(agent, fan):
+    # Fanned out, each of two samples' bam is two files and every step below
+    # runs once per file: a skipped member must still deliver every file its
+    # manifest names, or its readers form different members and miss.
+    if fan:
+        agent.fan("identity_bam")
+    first = agent.run(3, "ws")
+    assert first.returncode == 0, first.output
+    assert len(first.ran) == (10 if fan else 6), first.ran
     again = agent.run(3, "ws")
     assert again.returncode == 0, again.output
     assert again.ran == [], again.ran

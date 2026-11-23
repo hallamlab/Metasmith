@@ -1748,6 +1748,7 @@ def create_run():
         "params": params,
         "resource_overrides": _checked_overrides(b.get("resource_overrides")) if kind == "run" else None,
         "on_exist": b.get("on_exist", "update"),
+        "keep_intermediates": bool(b.get("keep_intermediates", False)) if kind == "run" else False,
         "launched_by": current_app.config.get("MSM_INSTANCE"),
     })
     run_name = rec.name
@@ -1756,6 +1757,7 @@ def create_run():
     def _launch_run() -> str:
         staged = op_runtime.stage(
             agent_path, str(wf.path), rec.record.get("on_exist", "update"), None,
+            keep_intermediates=bool(rec.record.get("keep_intermediates")),
         )
         p.update_run(workflow, run_name, {
             "state": "staged", "task_key": staged["task_key"],

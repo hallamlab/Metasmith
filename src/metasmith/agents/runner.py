@@ -280,6 +280,8 @@ def RenderProbeScript(*, workspace, log_dir, host: str) -> str:
     return f"""
             cd {workspace}
             export NXF_HOME=./.nextflow
+            # Its own session record, or the real pass would resume this one.
+            export NXF_CACHE_DIR=./nxf_probe/.nextflow
             export NXF_OFFLINE=TRUE
             export NXF_OPTS="-Xms256m -Xmx2g -XX:ActiveProcessorCount=1"
             nextflow \

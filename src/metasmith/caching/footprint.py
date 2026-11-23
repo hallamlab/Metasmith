@@ -42,7 +42,6 @@ def reset(workspace: Path) -> None:
 
 
 def plan_skips(workspace: Path, cache_root: Path) -> dict:
-    """Write the skip file for the real pass from the probe pass's log."""
     from ..models.lineage import LinPayload
     from .promote import read_step_meta
 

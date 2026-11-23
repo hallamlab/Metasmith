@@ -104,6 +104,7 @@
   let sharing = $state(false)
   let savingTemplate = $state(false)
   let launching = $state(false)
+  let keepIntermediates = $state(false)
   // Starts on the agent last used anywhere, not blank -- picking one every
   // time you open a workflow tab is a chore once you mostly run on one agent.
   let agentChoice = $state(ui.lastAgent)
@@ -1420,6 +1421,7 @@
         kind,
         params: Object.keys(params).length ? params : null,
         resource_overrides: kind === 'run' ? overridePayload() : null,
+        keep_intermediates: kind === 'run' ? keepIntermediates : false,
       }),
     )
     launching = false
@@ -2070,6 +2072,10 @@
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
           >{settingUp ? 'preparing…' : 'environments only'}</button>
         </div>
+        <label class="row small" title="a run deletes every product no target names once the steps reading it succeed; this keeps and publishes them all, for debugging">
+          <input type="checkbox" bind:checked={keepIntermediates} />
+          <span>keep intermediates</span>
+        </label>
         {#if envReport}
           <p class="small muted">
             environments:

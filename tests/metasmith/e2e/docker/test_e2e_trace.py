@@ -66,6 +66,9 @@ def run_stub_workflow(
         runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     )
+    # A stub task never promotes; these tests promote after Nextflow exits, so a run
+    # that deleted its intermediates would leave nothing to promote.
+    task.plan.keep_intermediates = True
     task.PrepareNextflow(context)
 
     lib_dir = work_dir / "lib"

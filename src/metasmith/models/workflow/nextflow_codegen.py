@@ -895,7 +895,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         if any(stream(i.dtype) in published_channels for i in step.ProductsOf(g, dep))
     )
     with open(context.work_dir/FOOTPRINT_FILE, "w") as f:
-        json.dump({"keep": the_plan.keep_intermediates, "published": published_slots}, f)
+        json.dump({"published": published_slots}, f)
 
     def groovy_map(d: dict[str, set[int]]) -> str:
         return "[" + ", ".join(f"'{k}': {sorted(v)}" for k, v in sorted(d.items())) + "]" if d else "[:]"

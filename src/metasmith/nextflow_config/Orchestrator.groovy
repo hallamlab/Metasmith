@@ -1429,10 +1429,15 @@ class Orchestrator {
         this._logDeleted([stream: p.stream, id: id, key: key, path: "${p.path}" as String])
     }
 
-    // Never follows a link: a product that links into a reference must not take the reference with it.
+    // Renamed away first, so a driver killed mid-delete leaves the product
+    // absent rather than half there: a half-deleted shard directory would
+    // still probe as a hit. Never follows a link, so a product that links
+    // into a reference does not take the reference with it.
     private static boolean _rmTree(Path path) {
         if (!Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return false
-        def walk = Files.walk(path)
+        def gone = path.resolveSibling(".msm-gone.${path.fileName}.${System.nanoTime()}" as String)
+        Files.move(path, gone, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        def walk = Files.walk(gone)
         try {
             walk.sorted(Comparator.reverseOrder()).forEach(x -> Files.deleteIfExists(x))
         } finally {
