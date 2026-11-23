@@ -118,6 +118,14 @@ Give the fetch `download_size=Size.GB(n)` with a trailing comment naming the sou
 number, on one line of its own. A setup run sums it into the size the user confirms before it
 starts. A fetch without it shows as unknown.
 
+Declare every address a download fetches in a module-level `URLS`, a dict from a name to a URL, or to a
+list of mirrors of one file, and read the protocol's fetches from it. `tests/metasmith/deploy/test_download_urls.py`
+probes each one in the release gate, so a moved link is fixed by editing `URLS`. `URLS` stays in the source
+hash on purpose: a different address can serve different bytes, so it re-fetches. A mirror override takes
+`Rebase(url, default_base, override)`. A name the run only learns from a listing (a part list, a taxgroup) is
+represented by one fixed file. A tool that fetches by its own means goes in `EXEMPT` in
+`tests/metasmith/unit/test_download_contracts.py`, with the reason.
+
 ## A task reads a copy of its inputs
 
 A task that runs in node-local scratch reads a private copy of every input, which the engine

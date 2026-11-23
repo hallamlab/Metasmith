@@ -20,5 +20,6 @@ markers = [
     "remote_host: requires LIVESHELL_REMOTE_HOST (ssh-reachable host) env var",
     "gui: the web GUI's own suite -- the inner loop while working on it (dev/metasmith.sh -tg)",
     "lifecycle: process lifecycle -- spawns real process trees and signals them (dev/metasmith.sh -tl)",
+    "network: reaches the internet; the declared download URLs of the transform library",
     "requires_relay: the msm_relay binary for this platform must be built (dev/metasmith.sh -br)",
 ]

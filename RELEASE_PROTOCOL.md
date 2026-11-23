@@ -37,6 +37,9 @@ forces that rebuild.
 Run nothing heavy beside it. The docker lane runs 8 workers, each with one
 long-lived container, and container creation on a busy daemon takes 11-17 s.
 
+`-tr` also probes every URL the download contracts declare (`network` marker, about 30 s). A dead link fails
+the gate; fix it in the transform's `URLS`, or re-run if the host is down for the day.
+
 Three opt-in tiers stay outside `-tr` because they need infrastructure a
 release host may lack. Run the ones a release touches:
 

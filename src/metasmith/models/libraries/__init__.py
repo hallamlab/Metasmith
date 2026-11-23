@@ -14,7 +14,7 @@ from .execution import (
     ExecutionFailed, ExecutionResult, ResolveEnvImage,
     _RESERVED_EXPORTS, _validate_exports,
 )
-from .fetching import FetchCommand
+from .fetching import FetchCommand, Rebase
 
 from ..paths import ContextPath, PathMap
 from ..solver import Dependency, Endpoint, Transform

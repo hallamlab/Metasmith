@@ -13,19 +13,16 @@ db    = model.AddProduct(lib.GetType("ref::checkv_db"))
 # build below is the step the tool runs after unpacking.
 DB_VERSION = "1.5"
 BASE_URL = "https://portal.nersc.gov/CheckV"
+URLS = {"checkv_db": f"{BASE_URL}/checkv-db-v{DB_VERSION}.tar.gz"}
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
-    version = context.params.get("checkv_db_version", DB_VERSION)
-    assert not isinstance(version, float), f"checkv_db_version [{version}] was read as a number; quote it, e.g. \"{version}\""
-    version = str(version)
-    base = context.params.get("checkv_base_url", BASE_URL).rstrip("/")
-    name = f"checkv-db-v{version}"
+    name = f"checkv-db-v{DB_VERSION}"
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/{name}.tar.gz", f"{name}.tar.gz", label=f"CheckV database v{version}"),
+        FetchCommand(Rebase(URLS["checkv_db"], BASE_URL, context.params.get("checkv_base_url")), f"{name}.tar.gz", label=f"CheckV database v{DB_VERSION}"),
         f"tar -xzf {name}.tar.gz",
         f"rm -f {name}.tar.gz",
     ])) != 0:
@@ -45,7 +42,7 @@ def protocol(context: ExecutionContext):
 
     dmnd = idb.local/"genome_db"/"checkv_reps.dmnd"
     n_hmm = len(list((idb.local/"hmm_db"/"checkv_hmms").glob("*.hmm")))
-    Log.Info(f"CheckV database v{version}: {n_hmm:,} HMM files")
+    Log.Info(f"CheckV database v{DB_VERSION}: {n_hmm:,} HMM files")
     return ExecutionResult(
         manifest=[{db: idb.local}],
         success=dmnd.is_file() and dmnd.stat().st_size > 0 and n_hmm > 0,

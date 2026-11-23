@@ -21,13 +21,18 @@ FILES = {
 }
 
 
-def fetch_repo(endpoint, repo, revision, files, into):
+URLS = {
+    f"{HF_REPO}/{path}": f"{HF_ENDPOINT}/{HF_REPO}/resolve/{REVISION}/{path}" for path in FILES
+}
+
+
+def fetch_repo(endpoint, repo, files, into):
     lines = []
     for path, sha in files.items():
         dest = f"{into}/{path}"
         lines += [
             f"mkdir -p {Path(dest).parent}",
-            FetchCommand(f"{endpoint}/{repo}/resolve/{revision}/{path}", dest, label=f"{repo}/{path}"),
+            FetchCommand(Rebase(URLS[f"{repo}/{path}"], HF_ENDPOINT, endpoint), dest, label=f"{repo}/{path}"),
         ]
         if sha is not None:
             lines.append(f'echo "{sha}  {dest}" | sha256sum -c --quiet - || {{ rm -f {dest}; exit 1; }}')
@@ -49,11 +54,11 @@ def packed(files, tarball, listing):
 
 def protocol(context: ExecutionContext):
     iweights = context.Output(weights)
-    endpoint = context.params.get("hf_endpoint", HF_ENDPOINT).rstrip("/")
+    endpoint = context.params.get("hf_endpoint")
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *fetch_repo(endpoint, HF_REPO, REVISION, FILES, "model"),
+        *fetch_repo(endpoint, HF_REPO, FILES, "model"),
         *pack(FILES, "model", iweights.local, "model.list"),
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)

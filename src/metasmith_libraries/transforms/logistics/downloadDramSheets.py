@@ -10,16 +10,17 @@ sheets = model.AddProduct(lib.GetType("ref::dram_sheets"))
 BASE_URL = "https://raw.githubusercontent.com/WrightonLabCSU/DRAM/v1.5.0/data"
 SHEETS = ("genome_summary_form", "module_step_form", "etc_module_database",
           "function_heatmap_form", "amg_database")
+URLS = {name: f"{BASE_URL}/{name}.tsv" for name in SHEETS}
 
 
 def protocol(context: ExecutionContext):
     isheets = context.Output(sheets)
     staged = context.StagingDir()
-    base = context.params.get("dram_sheets_base_url", BASE_URL).rstrip("/")
+    mirror = context.params.get("dram_sheets_base_url")
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(f"{base}/{name}.tsv", staged.local/f"{name}.tsv", label=f"DRAM {name}")
+        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/f"{name}.tsv", label=f"DRAM {name}")
           for name in SHEETS),
         f"mkdir -p {isheets.local}",
         *(f"mv {staged.local}/{name}.tsv {isheets.local}/" for name in SHEETS),

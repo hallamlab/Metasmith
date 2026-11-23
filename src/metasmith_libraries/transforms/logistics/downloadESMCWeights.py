@@ -27,13 +27,19 @@ REPOS = {
 }
 
 
-def fetch_repo(endpoint, repo, revision, files, into):
+URLS = {
+    f"{repo}/{path}": f"{HF_ENDPOINT}/{repo}/resolve/{revision}/{path}"
+    for repo, revision, files in REPOS.values() for path in files
+}
+
+
+def fetch_repo(endpoint, repo, files, into):
     lines = []
     for path, sha in files.items():
         dest = f"{into}/{path}"
         lines += [
             f"mkdir -p {Path(dest).parent}",
-            FetchCommand(f"{endpoint}/{repo}/resolve/{revision}/{path}", dest, label=f"{repo}/{path}"),
+            FetchCommand(Rebase(URLS[f"{repo}/{path}"], HF_ENDPOINT, endpoint), dest, label=f"{repo}/{path}"),
         ]
         if sha is not None:
             lines.append(f'echo "{sha}  {dest}" | sha256sum -c --quiet - || {{ rm -f {dest}; exit 1; }}')
@@ -58,13 +64,13 @@ def staging(repo):
 
 
 def protocol(context: ExecutionContext):
-    endpoint = context.params.get("hf_endpoint", HF_ENDPOINT).rstrip("/")
+    endpoint = context.params.get("hf_endpoint")
     outputs  = {w_300m: context.Output(w_300m), w_600m: context.Output(w_600m)}
 
     shell = ["set -euo pipefail"]
     for product, (repo, revision, files) in REPOS.items():
         shell += [
-            *fetch_repo(endpoint, repo, revision, files, staging(repo)),
+            *fetch_repo(endpoint, repo, files, staging(repo)),
             *pack(files, staging(repo), outputs[product].local, f"{staging(repo)}.list"),
         ]
     if context.LocalShell("\n".join(shell)) != 0:

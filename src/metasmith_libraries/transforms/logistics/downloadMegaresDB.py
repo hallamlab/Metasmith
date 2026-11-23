@@ -6,7 +6,7 @@ image   = model.AddRequirement(lib.GetType("env::diamond.env"))
 img_sqk = model.AddRequirement(lib.GetType("env::seqkit.env"))
 db      = model.AddProduct(lib.GetType("annotation::megares_diamond_db"))
 
-MEGARES_URL = "https://www.meglab.org/downloads/megares_v3.00/megares_database_v3.00.fasta"
+URLS = {"megares": "https://www.meglab.org/downloads/megares_v3.00/megares_database_v3.00.fasta"}
 
 
 def protocol(context: ExecutionContext):
@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
 
     context.ExecWithEnv(
         env=image,
-        cmd=f"wget -q --no-check-certificate {MEGARES_URL} -O megares.fasta",
+        cmd=f"wget -q --no-check-certificate {URLS['megares']} -O megares.fasta",
     )
 
     context.ExecWithEnv(

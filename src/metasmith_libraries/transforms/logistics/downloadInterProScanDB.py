@@ -5,7 +5,7 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 sources = model.AddProduct(lib.GetType("ref::interproscan_sources"))
 
-IPRSCAN_DATA_URL = "https://ftp.ebi.ac.uk/pub/databases/interpro/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz"
+URLS = {"interproscan": "https://ftp.ebi.ac.uk/pub/databases/interpro/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz"}
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
@@ -13,7 +13,7 @@ def protocol(context: ExecutionContext):
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(IPRSCAN_DATA_URL, staged.local/"interproscan-data.tar.gz"),
+        FetchCommand(URLS["interproscan"], staged.local/"interproscan-data.tar.gz"),
         f"mv {staged.local}/interproscan-data.tar.gz {isrc.local}",
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)

@@ -38,6 +38,9 @@ SOURCES = {
 }
 
 
+URLS = {key: url for key, (_, url) in SOURCES.items()}
+
+
 def fetch(src, name, key):
     """A source given as an absolute path is copied, gzipped when DRAM expects a .gz."""
     if not src.startswith("/"):
@@ -50,8 +53,8 @@ def fetch(src, name, key):
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     # Run params, so a moved upstream file is fixed at launch rather than by a release.
-    sources = {key: (name, context.params.get(f"dram_{key}_url", url))
-               for key, (name, url) in SOURCES.items()}
+    sources = {key: (name, context.params.get(f"dram_{key}_url", URLS[key]))
+               for key, (name, _) in SOURCES.items()}
 
     staged = context.StagingDir()
     # Fetch only: what each file is gets checked by buildDramDB on a compute node.

@@ -7,7 +7,7 @@ out   = model.AddProduct(lib.GetType("ref::ncbi_taxdump"))
 
 # A dated archive, because the live taxdump.tar.gz changes daily. merged.dmp
 # carries the renames, so UniRef TaxIDs older than the snapshot still resolve.
-URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump_archive/taxdmp_2026-10-01.zip"
+URLS = {"taxdump": "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump_archive/taxdmp_2026-10-01.zip"}
 KEEP = ["nodes.dmp", "names.dmp", "merged.dmp"]
 
 
@@ -18,7 +18,7 @@ def protocol(context: ExecutionContext):
         set -euo pipefail
         mkdir -p {iout.local}
         cd {iout.local}
-        wget -c --no-check-certificate -O taxdmp.zip "{URL}"
+        wget -c --no-check-certificate -O taxdmp.zip "{URLS['taxdump']}"
         unzip -o taxdmp.zip {" ".join(KEEP)}
         rm -f taxdmp.zip
     """)

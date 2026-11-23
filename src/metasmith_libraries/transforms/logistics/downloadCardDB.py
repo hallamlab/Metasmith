@@ -8,12 +8,12 @@ image = model.AddRequirement(lib.GetType("env::rgi.env"))
 db    = model.AddProduct(lib.GetType("annotation::card_db"))
 
 # CARD 4.0.2, which `https://card.mcmaster.ca/latest/data` served on 2026-10-17.
-CARD_URL = "https://card.mcmaster.ca/download/0/broadstreet-v4.0.2.tar.bz2"
+URLS = {"card": "https://card.mcmaster.ca/download/0/broadstreet-v4.0.2.tar.bz2"}
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
-    url = context.params.get("card_url", CARD_URL)
+    url = context.params.get("card_url", URLS["card"])
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",

@@ -7,13 +7,13 @@ sources = model.AddProduct(lib.GetType("ref::merops_sources"))
 
 # What DRAM-setup.py 1.5.0 fetches for `peptidase`. MEROPS has not released since 12.4,
 # so current_release has held this one file since 2023-02-22 (457.5 MB).
-URL = "https://ftp.ebi.ac.uk/pub/databases/merops/current_release/pepunit.lib"
+URLS = {"pepunit": "https://ftp.ebi.ac.uk/pub/databases/merops/current_release/pepunit.lib"}
 
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    url = context.params.get("merops_url", URL)
+    url = context.params.get("merops_url", URLS["pepunit"])
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",

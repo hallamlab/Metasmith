@@ -7,7 +7,7 @@ out   = model.AddProduct(lib.GetType("ref::gtdb_rrna"))
 
 # r232 publishes SSU only. The release has no 23S file, so LSU calls carry no
 # GTDB vote.
-SSU_URL = "https://data.ace.uq.edu.au/public/gtdb/data/releases/release232/232.0/genomic_files_all/ssu_all_r232.fna.gz"
+URLS = {"ssu": "https://data.ace.uq.edu.au/public/gtdb/data/releases/release232/232.0/genomic_files_all/ssu_all_r232.fna.gz"}
 
 
 def protocol(context: ExecutionContext):
@@ -17,7 +17,7 @@ def protocol(context: ExecutionContext):
         set -euo pipefail
         mkdir -p {iout.local}
         cd {iout.local}
-        wget -c --no-check-certificate -O ssu.fna.gz "{SSU_URL}"
+        wget -c --no-check-certificate -O ssu.fna.gz "{URLS['ssu']}"
         gunzip -f ssu.fna.gz
     """)
     ref = context.Mount(iout.local, "/ref")
