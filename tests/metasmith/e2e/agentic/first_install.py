@@ -35,22 +35,22 @@ GOALS = {
         "Then use the GUI the way a person would, through your browser tools, which drive a real browser. "
         "Do not call the GUI's HTTP API with curl and do not write Python for these steps. "
         "Through the GUI, deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
-        "with its home under {remote}. Run the engcyc_metagenomics workflow "
-        "with its default targets on {sample}. Collect the results back to ./results."
+        "with its home under {remote}. Run the engcyc_prep_references workflow to set up the reference databases, "
+        "then run the engcyc_metagenomics workflow with its default targets on {sample}. Collect the results back to ./results."
     ),
     "api": (
         "You are a new metasmith user. Using only the docs in ./docs, install metasmith and use its Python API "
         "as the docs describe. Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
-        "with its home under {remote}. Run the engcyc_metagenomics workflow "
-        "with its default targets on {sample}. Collect the results back to ./results. "
+        "with its home under {remote}. Run the engcyc_prep_references workflow to set up the reference databases, "
+        "then run the engcyc_metagenomics workflow with its default targets on {sample}. Collect the results back to ./results. "
         "For each API call you make, note in STEPS.md whether the docs made clear what it does, "
         "and whether it did what the docs said."
     ),
     "full": (
         "You are a new metasmith user. Install metasmith using only the docs in ./docs. "
         "Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
-        "with its home under {remote}. Run the engcyc_metagenomics workflow "
-        "with its default targets on {sample}. Collect the results back to ./results."
+        "with its home under {remote}. Run the engcyc_prep_references workflow to set up the reference databases, "
+        "then run the engcyc_metagenomics workflow with its default targets on {sample}. Collect the results back to ./results."
     ),
     "dry": (
         "You are a new metasmith user. Using only the docs in ./docs, install metasmith "
