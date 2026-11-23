@@ -234,6 +234,35 @@ fn satisfies_lineage(
     Ok(true)
 }
 
+/// Forward check: can every later requirement whose last lineage anchor was
+/// just bound at `di` still be bound?
+///
+/// Without it a dead branch is only discovered at the dead slot, after the
+/// search has enumerated every binding of the unrelated slots in between: one
+/// call walked 1.5M nodes to find no application on a 30-requirement target.
+/// It prunes only subtrees with no leaf, so the applications and their order
+/// are unchanged. An anchor required again further on gets rebound in place,
+/// so its dependents are left to the slot itself.
+fn anchored_slots_open(
+    p: &Problem, ar: &Arena, requires: &[DepId], matches: &Map<DepId, Vec<EpId>>,
+    di: usize, used: &Bindings,
+) -> Result<bool, String> {
+    let d = requires[di];
+    for j in (di + 1)..requires.len() {
+        let dj = requires[j];
+        let anchors = &p.dep_parents_ranked[dj as usize];
+        let settled = anchors.contains(&d)
+            && anchors.iter().all(|&a| used.get(a).is_some() && !requires[di + 1..j].contains(&a));
+        if !settled { continue; }
+        let mut open = false;
+        for &c in &matches[&dj] {
+            if satisfies_lineage(p, ar, dj, c, used)? { open = true; break; }
+        }
+        if !open { return Ok(false); }
+    }
+    Ok(true)
+}
+
 /// Every application of one transform that the current production allows.
 /// `generate_applications_of_transform`.
 ///
@@ -303,6 +332,7 @@ pub fn generate_applications(
             let d = requires[di];
             let used = used.with(d, e);
             if !satisfies_lineage(p, ar, d, e, &used)? { continue; }
+            if !anchored_slots_open(p, ar, &requires, &matches, di, &used)? { continue; }
             if di + 1 < requires.len() {
                 let next = di + 1;
                 for &ne in &matches[&requires[next]] {
