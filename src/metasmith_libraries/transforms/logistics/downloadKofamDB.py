@@ -37,6 +37,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(1.56),  # 2026-08-02 archives, software-suite README
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

@@ -32,6 +32,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.01),  # VFDB setB proteins
     resources=Resources(
         cpus=2,
         memory=Size.GB(8),

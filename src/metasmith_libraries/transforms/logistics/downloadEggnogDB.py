@@ -41,6 +41,7 @@ TransformInstance(
     model=model,
     group_by=src,
     labels=["local"],
+    download_size=Size.GB(12),  # emapperdb-5.0.2 packed, see above
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

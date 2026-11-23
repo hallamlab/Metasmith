@@ -85,6 +85,9 @@ def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
     return out
 
 
+_IMAGE_READY = "image-ready"
+
+
 def _materialised_test(env: Environment) -> str:
     sif, sandbox = env.GetLocalPath(), env.GetSandboxPath()
     sif_stamp, sandbox_stamp = env.GetLocalStampPath(), env.GetSandboxStampPath()
@@ -419,6 +422,32 @@ class ExecutionContext:
             )
         return code
 
+    def MaterialiseImage(self, env: Environment) -> bool:
+        """Whether `env`'s image is in the agent's store, fetching it first if not.
+
+        The one fetch a task and a setup run's pull share: the same command under the
+        same lock, judged by the same artifact-and-stamp test.
+        """
+        if env.runtime == Runtime.DOCKER and not env.native:
+            res = self.external_shell.Exec(env.MakeMaterialiseCommand(), timeout=None, history=True)
+            return res.exit_code == 0
+        sif = env.GetLocalPath()
+        if sif is None:
+            return False
+        ready = f'{_materialised_test(env)} && echo "{_IMAGE_READY}"'
+        if _IMAGE_READY in self.external_shell.Exec(ready, history=True).out:
+            return True
+        if env.runtime != Runtime.APPTAINER:
+            return False
+        materialise = env.MakeMaterialiseCommand().replace("'", "'\\''")
+        res = self.external_shell.Exec(
+            f'mkdir -p "{sif.parent}"; '
+            f'flock "{env.GetSandboxPath()}.lock" -c \'{materialise}\'; '
+            f'{ready}',
+            timeout=None, history=True,
+        )
+        return _IMAGE_READY in res.out
+
     def ExecWithEnv(
         self,
         env: Dependency,
@@ -443,30 +472,7 @@ class ExecutionContext:
     def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[Mount|tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
         env = self.GetContainerModel(image, binds, args)
         assert env.container.workdir is not None
-        use_cache = False
-        cached_path = env.GetLocalPath()
-        if cached_path is not None:
-            FLAG = "cached image exists"
-            res = self.external_shell.Exec(
-                f'{_materialised_test(env)} && echo "{FLAG}"',
-                history=True,
-            )
-            if FLAG in res.out:
-                use_cache = True
-
-        if (not use_cache and cached_path is not None
-                and env.runtime == Runtime.APPTAINER):
-            sandbox_path = env.GetSandboxPath()
-            FLAG = "transform-image-ready"
-            materialise = env.MakeMaterialiseCommand().replace("'", "'\\''")
-            res = self.external_shell.Exec(
-                f'mkdir -p "{cached_path.parent}"; '
-                f'flock "{sandbox_path}.lock" -c \'{materialise}\'; '
-                f'{_materialised_test(env)} && echo "{FLAG}"',
-                history=True,
-            )
-            if FLAG in res.out:
-                use_cache = True
+        use_cache = env.GetLocalPath() is not None and self.MaterialiseImage(env)
 
         cmd = RemoveLeadingIndent(cmd)
         Log.Info(f"executing container [{env.image}] using [{env.runtime.name}]")

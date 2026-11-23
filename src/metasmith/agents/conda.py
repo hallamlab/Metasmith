@@ -139,10 +139,10 @@ def _create_conda_envs(
 ) -> list[dict]:
     # Build every missing env on the agent's own host.
     #
-    # Idempotent the same way `_materialise_images` is: an env that already
-    # answers the wrapper is skipped, so a second run does nothing. `force`
-    # removes and rebuilds, which is what to reach for when an env is suspect
-    # rather than absent -- `env create` refuses an existing name outright.
+    # Idempotent: an env that already answers the wrapper is skipped, so a second
+    # run does nothing. `force` removes and rebuilds, which is what to reach for
+    # when an env is suspect rather than absent -- `env create` refuses an
+    # existing name outright.
     #
     # One env failing does not stop the rest: solving a large recipe is minutes,
     # and a caller who has to re-run from the top for each failure will not.

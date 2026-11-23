@@ -611,29 +611,43 @@ registry is unreachable, so a never-pushed dev image still works. This is not ga
 verifies the extracted relay binary's magic bytes and size, so a stub or corrupted relay fails
 precisely instead of as a bare missing-file assertion later.
 
-**Preparing a host is a verb, never part of a launch.** Tool images materialise inside the first
-task that needs one — right on a connected cluster, impossible on a compute node with no route to
-a registry. Moving the pulls onto every launch would make the connected case pay for the
-disconnected one, so the two halves are split: `SetupEnvironment` fetches and is asked for
-explicitly (`metasmith workflow setup-env`, the GUI's `setup environment`), and the launch path
-only reports what is missing. It dispatches on the agent's own runtime — the image store for a
-container agent, `mamba env create` from the library's per-tool recipes for a mamba or native one
-— and reads the stage-time env manifest rather than a transform library, because the launching
-host may hold neither the library nor the images. A tool whose env resource carries no `conda:`
-entry is reported by name with the container it does have, rather than guessed at: a package spec
-inferred from an image tag would produce a plausible env that is not the one the transform was
-written against.
+**Preparing a host is a run, never part of a launch.** Tool images materialise inside the first
+task that needs one. That is right on a connected cluster and impossible on a compute node with no
+route to a registry. A launch therefore only reports what the image store lacks, and a setup run
+fills it. A mamba or native agent has no store. `SetupEnvironment` builds its tool conda envs from
+the library's per-tool recipes instead, read off the stage-time env manifest. A tool whose env
+resource carries no `conda:` entry is reported by name, never guessed at.
 
-**A setup run prepares an agent before the real run.** `SetupWorkflow` prepares every
-environment the full plan names. Then it runs a slice of that plan: the steps whose inputs trace
-to no sample. Their products land in the agent's cache, and the real run serves them as hits.
-Two things must hold for those hits.
+**A setup run prepares an agent before the real run.** `SetupWorkflow` runs a slice of the full
+plan: the steps whose inputs trace to no sample. Their products land in the agent's cache, and the
+real run serves them as hits. Two things must hold for those hits.
 
 - **The slice keeps the solved steps.** A fresh solve could choose another producer or env,
   and its keys would miss. A member key hashes the transform, its protocol source and its
   inputs' lineage, never the task key or a step's position.
 - **The setup run and the real run use one agent home and one resource library record.** A new
   home has an empty cache, and a rebuilt library moves its leaf ids.
+
+**A container agent's setup run pulls its images as steps.** `setup_subplan` puts one
+`pullContainer` step per tool image of the full plan in front of the slice. It builds them after
+the solve, and no sliced step consumes their products, so no sliced key moves. Three rules keep
+them correct.
+
+- **A step that reads an env waits for that env's pull.** Codegen passes the env stream through
+  `Orchestrator.after`, which holds items without touching an index. A compute node with no
+  registry route then never starts before its image is in the store.
+- **A failed pull stops the run.** The preset's `xlocalx` block retries a local step once and then
+  ignores it, and an ignored pull would leave its waiting steps unstarted in a run that ends green.
+  The pull's `withName` block outranks it with `finish`.
+- **A pull is never cached or resumed.** Only the store knows an image is still there. A present
+  image costs one artifact-and-stamp test, the one `MaterialiseImage` shares with every task.
+
+A setup run publishes under `references/` and `envs/`. An `envs/` entry is a record of where the
+image lies in the store, never the image, because the store can sit on another filesystem.
+
+**A download contract declares `download_size`.** `SetupFootprint` sums it over the slice's local
+steps into the line the GUI plan and the CLI show before a setup starts. The loader strips that
+line before it hashes a transform's source, so a corrected estimate never moves a cache key.
 
 **CAUTION** The bootstrap and the runner find step N at `steps[N-1]`. The slice is therefore
 renumbered from one, on copies of the steps. A slice that kept the full plan's numbers ran the

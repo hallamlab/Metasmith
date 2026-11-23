@@ -34,6 +34,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.45),  # pepunit.lib 457.5 MB, see above
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

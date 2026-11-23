@@ -38,6 +38,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(8.55),  # uniref50.fasta.gz Content-Length 9,182,717,121 B, 2026-11-23
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

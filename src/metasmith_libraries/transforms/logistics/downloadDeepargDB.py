@@ -34,6 +34,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(1.75),  # deeparg.zip Content-Length 1,883,983,799 B, 2026-11-23
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

@@ -38,6 +38,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(2),  # VOGDB vog237 HMMs, template estimate
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

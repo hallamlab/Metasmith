@@ -353,6 +353,8 @@ class WorkflowPlan:
     cases: list[str] = field(default_factory=list)
     streams: dict[str, str] = field(default_factory=dict)
     given_cases: dict[str, list[str]] = field(default_factory=dict)
+    # A setup run's plan (`setup.setup_subplan`). It publishes under references/ and envs/.
+    setup: bool = False
 
     def __post_init__(self):
         self._update_hash()
@@ -413,6 +415,8 @@ class WorkflowPlan:
         )
         if self.streams:
             packed.update(streams=dict(self.streams))
+        if self.setup:
+            packed.update(setup=True)
         if self.multi_case:
             packed.update(cases=list(self.cases), given_cases=dict(self.given_cases))
         else:
@@ -495,6 +499,7 @@ class WorkflowPlan:
             cases=list(raw.get("cases", [])),
             streams=dict(raw.get("streams", {})),
             given_cases=dict(raw.get("given_cases", {})),
+            setup=raw.get("setup", False),
         )
 
     @classmethod

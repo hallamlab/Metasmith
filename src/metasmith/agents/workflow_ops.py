@@ -19,7 +19,7 @@ from ..models.libraries import (
 from ..models.remote import GlobusSource, Logistics, Source
 from ..models.solver import Dependency, Transform
 from ..models.workflow import WorkflowPlan, WorkflowTask
-from ..models.workflow.setup import setup_subplan
+from ..models.workflow.setup import SetupFootprint, setup_subplan
 from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
 from .conda import (
     NO_RECIPE, _conda_frontend, _create_conda_envs, _find_recipes, _manifest_envs, _recipe_roots,
@@ -27,7 +27,7 @@ from .conda import (
 from .ceiling import ResourceCeilingError, check_launch
 from .headroom import check_headroom, render_probe
 from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
-from .images import _check_image_store, _manifest_images, _materialise_images
+from .images import _check_image_store, _manifest_images
 from .portability import _check_env_portability, _read_env_manifest, _read_env_manifest_doc
 from .shell import AgentShell
 from .spec import Spec
@@ -488,59 +488,18 @@ class _WorkflowOps:
         assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
         return workspace
 
-    @exclusive("pulling images")
-    def MaterialiseImages(self, task: WorkflowTask|str, force: bool=False) -> dict:
-        # Fetch every tool image a staged task needs, onto this agent's host.
-        #
-        # The answer for a cluster whose compute nodes have no route to a
-        # registry: run this from the login node, which does, and every task then
-        # finds its image already in the store. It is idempotent -- a second run
-        # does nothing -- because each image is skipped on the same
-        # artifact-and-stamp test every task consults.
-        #
-        # `force` re-fetches regardless, which is what to reach for when a store
-        # is suspect rather than incomplete.
-        task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
-        with AgentShell(self) as sh_remote:
-            workspace = self._assert_staged(sh_remote, task_key)
-            doc = _read_env_manifest_doc(sh_remote, workspace)
-            images, unknown = _manifest_images(doc)
-            if unknown:
-                Log.Warn(
-                    f"could not tell which images [{len(unknown)}] step(s) need"
-                    f" (re-stage to record them): {', '.join(unknown)}"
-                )
-            agent_env = Environment(
-                image=self.container, runtime=self.runtime, native=self.native,
-                rootfs=self.rootfs,
-            )
-            report = _materialise_images(
-                sh_remote, images, agent_env, self.home.GetPath(),
-                rootfs=doc.get("rootfs"), force=force,
-            )
-        return {
-            "task_key": task_key,
-            "runtime": self.runtime.name,
-            "images": report,
-            "fetched": sum(1 for r in report if not r["skipped"]),
-            "already_present": sum(1 for r in report if r["skipped"]),
-            "unknown": unknown,
-        }
-
     @exclusive("setting up environments")
     def SetupEnvironment(
         self, task: WorkflowTask|str, force: bool=False, library: Path|str|None=None,
     ) -> dict:
-        # Prepare this agent's host to run a staged task, whatever it runs tools with.
-        #
-        # One verb over two mechanisms, because the user's question is the same in
-        # both cases and the answer is a property of the agent, not of them: a
-        # container agent needs its image store filled, a mamba or native agent
-        # needs its tool envs built. Both read the stage-time env manifest, and
-        # both are idempotent, so this is safe to press twice.
+        # Build the tool conda envs a staged task names, on a mamba or native agent.
+        # A container agent's images are pulled by the setup run's first steps.
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
-        if not (self.native or self.runtime == Runtime.MAMBA):
-            return self.MaterialiseImages(task_key, force=force) | {"mode": "container"}
+        if self._pulls_images():
+            raise ValueError(
+                f"a [{self.runtime.name}] agent's tool images are pulled by the setup run,"
+                f" so there are no environments to build outside it"
+            )
 
         with AgentShell(self) as sh_remote:
             workspace = self._assert_staged(sh_remote, task_key)
@@ -592,12 +551,17 @@ class _WorkflowOps:
         self, task: WorkflowTask, config_file: Path|None=None, params: dict|Path|str|None=None,
         is_local_preset: bool|None=None, force: bool=False, library: Path|str|None=None,
     ) -> dict:
-        # Every environment the full plan names, then a run of only its sample-free
-        # steps. Their products land in this agent's cache under the keys the full
-        # run will ask for, so the real run serves them as hits.
-        sub = setup_subplan(task)
-        self.StageWorkflow(task, "update")
-        environment = self.SetupEnvironment(task.GetKey(), force=force, library=library)
+        # A run of the full plan's sample-free steps. Their products land in this
+        # agent's cache under the keys the full run will ask for, so the real run
+        # serves them as hits. A container agent's run pulls every tool image of the
+        # full plan first, as steps of its own; a conda agent builds its envs here.
+        Log.Info(SetupFootprint.Of(task).line)
+        pulls = self._pulls_images()
+        sub = setup_subplan(task, pull_images=pulls)
+        environment = None
+        if not pulls:
+            self.StageWorkflow(task, "update")
+            environment = self.SetupEnvironment(task.GetKey(), force=force, library=library)
         self.StageWorkflow(sub, "update")
         self.RunWorkflow(sub.GetKey(), config_file=config_file, params=params, is_local_preset=is_local_preset)
         return {
@@ -606,6 +570,9 @@ class _WorkflowOps:
             "steps": [step.transform.name for step in sub.plan.steps],
             "environment": environment,
         }
+
+    def _pulls_images(self) -> bool:
+        return not (self.native or self.runtime == Runtime.MAMBA)
 
     @exclusive("launching a run")
     def RunWorkflow(
@@ -677,8 +644,8 @@ class _WorkflowOps:
             # fetching on purpose: lazy materialisation is right on a cluster
             # whose nodes can reach a registry, and moving pulls onto every
             # launch would be a regression for everyone. On a cluster whose
-            # compute nodes cannot, this is what says to run the pre-flight
-            # first -- and a workspace recording no images (an older stage) is
+            # compute nodes cannot, this is what says to run setup first --
+            # and a workspace recording no images (an older stage) is
             # simply nothing to check, exactly as above.
             _images, _unknown = _manifest_images(env_doc)
             _missing = _check_image_store(
@@ -690,7 +657,7 @@ class _WorkflowOps:
                     f"[{len(_missing)}] of [{len(_images)}] tool image(s) are not in this"
                     f" agent's store and will be fetched by the first task that needs each"
                     f" -- which fails on a compute node with no route to a registry."
-                    f" Run `metasmith workflow materialise` on a host that can fetch:\n  "
+                    f" A setup run (`msm workflow setup`) pulls them on this host first:\n  "
                     + "\n  ".join(_missing)
                 )
             if _unknown:

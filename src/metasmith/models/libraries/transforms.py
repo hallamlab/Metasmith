@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import threading
@@ -17,7 +18,7 @@ from ..remote import Source
 from ..solver import Dependency, Endpoint, Transform
 from .execution import ExecutionContext, ExecutionResult
 from .instances import DataInstanceLibrary, DataInstanceLibraryView
-from .resources import Resources
+from .resources import Resources, Size
 from .types import DataTypeLibrary
 
 
@@ -40,6 +41,9 @@ def _collect_dep_names(module, model: Transform) -> tuple[dict[str, Dependency],
     return names, ambiguous
 
 
+_DOWNLOAD_SIZE_LINE = re.compile(r"^[ \t]*download_size\s*=.*\n?", re.MULTILINE)
+
+
 @dataclass
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
@@ -50,6 +54,8 @@ class TransformInstance:
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
     cacheable: bool = True
+    # What a download contract fetches, summed into the setup footprint before a run.
+    download_size: Size|None = None
     output_signature: dict = field(default_factory=dict)
     _path: Path = field(default_factory=Path)
     _key: str = ""
@@ -124,6 +130,9 @@ class TransformInstance:
                 src_text = (parent_lib / definition).read_text(
                     encoding="utf-8", errors="replace"
                 )
+                # A size estimate says nothing about what the step makes, so writing or
+                # correcting one must not move the step's cache key and re-download it.
+                src_text = _DOWNLOAD_SIZE_LINE.sub("", src_text)
                 _, tr._protocol_source_hash = KeyGenerator.FromStr(src_text, l=12)
             except OSError:
                 tr._protocol_source_hash = ""

@@ -1,11 +1,7 @@
-# One verb, two mechanisms, chosen by the agent rather than by the person asking.
-#
-# `setup environment` is pressed on the workflow page next to the agent that will
-# run it, and what it has to do depends entirely on that agent: fill the image
-# store for a container runtime, build the conda envs the steps name for a mamba
-# or native one. These drive a real `Agent` against a fake shell, so what is
-# pinned is the dispatch and the report -- the fetching and building themselves
-# are pinned in the bootstrap axis, against the same free functions.
+# `setup environment` builds the conda envs a mamba or native agent's steps name.
+# A container agent's images are pulled by the setup run, so it refuses there. These
+# drive a real `Agent` against a fake shell, so what is pinned is the dispatch and
+# the report -- the building itself is pinned in the bootstrap axis.
 
 from __future__ import annotations
 
@@ -151,12 +147,8 @@ class TestAMambaAgentGetsEnvironments:
         assert shell.created() == []
 
 
-class TestAContainerAgentGetsImages:
-    def test_it_fills_the_image_store_instead(self, monkeypatch, home, library):
+class TestAContainerAgentHasNoEnvironments:
+    def test_it_points_at_the_setup_run_and_builds_nothing(self, monkeypatch, home, library):
         doc = {"schema": 2, "steps": _step(1, "kraken2", {"k.env": {"container": KRAKEN}})}
-        report, shell = _setup(
-            monkeypatch, home, doc, runtime=Runtime.APPTAINER, library=library,
-        )
-        assert report["mode"] == "container"
-        assert [r["image"] for r in report["images"]] == [KRAKEN]
-        assert shell.created() == []
+        with pytest.raises(ValueError, match="pulled by the setup run"):
+            _setup(monkeypatch, home, doc, runtime=Runtime.APPTAINER, library=library)

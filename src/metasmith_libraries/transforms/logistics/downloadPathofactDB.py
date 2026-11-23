@@ -42,6 +42,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(1.07),  # DATABASES.tar.gz Content-Length 1,144,511,329 B, 2026-11-23
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

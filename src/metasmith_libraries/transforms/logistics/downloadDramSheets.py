@@ -42,6 +42,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.01),  # five DRAM form sheets
     resources=Resources(
         cpus=1,
         memory=Size.GB(1),

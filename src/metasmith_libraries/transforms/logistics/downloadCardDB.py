@@ -49,6 +49,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.01),  # broadstreet-v4.0.2.tar.bz2 Content-Length 4,366,637 B, 2026-11-23
     resources=Resources(
         cpus=2,
         memory=Size.GB(8),
