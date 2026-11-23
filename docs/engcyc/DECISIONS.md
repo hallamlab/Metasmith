@@ -610,4 +610,6 @@ Tony: "can we move these into actual contracts? ... the 'setup' behaves a lot li
 
 Design: setup adds one `pullContainer` step per image after the plan is sliced, never as a solver requirement, so the solve and every existing cache key stay unchanged. Pulls run on the login node, use the execution path's materialise command and lock, and finish before any compute step in setup. The out-of-band image fetch goes. Download contracts declare a size estimate beside `URLS`. The plan sums the sizes into "setup: ~X GB of references, N images". The GUI shows the total in the plan summary and asks for confirmation at the setup button; the CLI prints it. Check against the past `xlocalx` traps: job arrays, scratch, the local CPU limit, queueSize, cache twins and stale presets. Also check that a failed pull does not pass silently under retry-then-ignore.
 
+Setup's results expose two folders: `references/<name>` (hard links or relative symlinks per the preset, as now) and `envs/<name>` (one small record per image: reference, digest, store path, not the SIF, because the store can be on another filesystem). Tony: "hopefully this doesnt copy a bunch of files uselessly on later runs". A later run serves both from cache as links.
+
 Landed: worker setup-steps (feat/engine/setup-steps). Both issues are in 0.26.1.
