@@ -21,7 +21,7 @@ from metasmith.ops import agent as op_agent
 from metasmith.ops import inputs as op_inputs
 from metasmith.ops import workspace as op_workspace
 
-from tests.metasmith.support import create_transform_library
+from tests.metasmith.support import create_transform_library, serve_directory
 from metasmith.gui.api import _pool_resolver
 from metasmith.gui.store import ProjectError
 from metasmith.ops import data as op_data
@@ -1362,6 +1362,31 @@ class TestWorkflowGenerateMore:
 
         wf_dir = Path(client.get(f"/api/workflows/{name}").get_json()["path"])
         assert op_workspace.load_task(None, str(wf_dir)).GetKey() == second["task_key"]
+
+    def test_a_url_row_is_downloaded_and_planned(self, client, tmp_path):
+        name = _make_workflow(client)
+        served = tmp_path / "served"
+        served.mkdir()
+        (served / "sample.fa").write_text(">contig\nACGT\n")
+        with serve_directory(served) as (base, _hits):
+            url = f"{base}/sample.fa"
+            r = client.put(f"/api/workflows/{name}", json={"input_drafts": [_row("u", url)]})
+            assert r.status_code == 200
+            result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"] is True
+        project = client.application.config["MSM_PROJECT"]
+        [given] = result["given"]
+        assert Path(given["path"]).is_relative_to(project.root / "downloads")
+        assert Path(given["path"]).read_text() == ">contig\nACGT\n"
+        assert [d["path"] for d in _rows_of(client, name)] == [url]
+
+    def test_an_input_error_fails_the_solve_job_with_its_message(self, client):
+        name = _make_workflow(client)
+        client.put(f"/api/workflows/{name}", json={"input_drafts": [_row("u", "reads.fa")]})
+        summary = client.post(f"/api/workflows/{name}/generate", json={}).get_json()
+        job = client.application.config["MSM_JOBS"].get(summary["id"])
+        assert job.wait(60)
+        assert job.status == "failed" and "relative path" in job.error
 
     def test_generate_failure_persists_hints(self, client):
         name = _make_workflow(client, targets=["mock::unreachable"])

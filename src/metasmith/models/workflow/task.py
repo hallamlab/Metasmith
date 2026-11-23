@@ -31,6 +31,10 @@ class WorkflowTask:
     # for a bundle written before it was recorded.
     sample_library_count: int|None = None
 
+    # Written beside task.yml by a client that copied absolute inputs to the
+    # agent: original path -> where the copy sits on the agent host.
+    RELOCATED_FILE = "relocated.yml"
+
     def __post_init__(self):
         self._update_hash()
 
@@ -69,8 +73,9 @@ class WorkflowTask:
             update(str(path))
         return [Path(p) for p in roots]
 
-    def GetCommonInputFolders(self, method="external"):
+    def GetCommonInputFolders(self, method="external", relocated: dict[Path, Path]|None=None):
         assert method in {"external", "internal", "all"}
+        relocated = relocated or {}
         def should_keep(inst: DataInstance):
             match(method):
                 case "external":
@@ -79,7 +84,10 @@ class WorkflowTask:
                     return not inst.path.is_absolute()
                 case "all":
                     return True
-        given = {inst.ResolvePath().parent for inst in self.plan.given if should_keep(inst)}
+        given = {
+            relocated.get(inst.ResolvePath(), inst.ResolvePath()).parent
+            for inst in self.plan.given if should_keep(inst)
+        }
         return self._get_common_folders(given)
 
     def DeferredInputs(self) -> list[DataInstance]:
@@ -215,6 +223,12 @@ class WorkflowTask:
                     return DataInstanceLibrary.Load(p)
             raise FileNotFoundError(f"could not find data library [{lib_key}], tried {_data_lib_paths}")
         data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
+        relocated_file = path/cls.RELOCATED_FILE
+        if relocated_file.exists():
+            with open(relocated_file) as f:
+                relocated = {Path(k): Path(v) for k, v in (yaml.safe_load(f) or {}).items()}
+            for lib in data_libs.values():
+                lib.relocated = relocated
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
         # A library key names the directory this bundle staged it into, so -- as

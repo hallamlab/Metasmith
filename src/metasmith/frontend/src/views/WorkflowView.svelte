@@ -84,6 +84,9 @@
   // otherwise the button would sit un-busy for the first leg of the round
   // trip, which is exactly the moment a second click is most tempting.
   let requestingSolve = $state(false)
+  // A failed solve's reason, kept on the page until the next solve: a toast
+  // fades before anyone reading the page later sees why nothing was planned.
+  let solveError = $state(null)
   let solving = $derived(requestingSolve || (jobKind === 'solve' && jobRunning))
   let showSolveBar = $derived(solving || (jobKind === 'solve' && jobStatus === 'failed'))
   let solveStage = $derived(Math.max(0, SOLVE_STAGES.indexOf(jobPhase)))
@@ -501,6 +504,7 @@
     }
     jobId = null
     jobStatus = null
+    solveError = null
     envReport = null
     focus = null
     drawing = null
@@ -1285,6 +1289,7 @@
     // has said anything at all.
     jobStatus = null
     jobPhase = null
+    solveError = null
     // Land the recipe first. `generate` takes the spec fields off this body but
     // builds the input library from the rows *on disk*, so a field left in the
     // same gesture that started the solve has to be written before the solve
@@ -1570,6 +1575,12 @@
           <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} tour="solve-progress" />
         {/if}
 
+        {#if solveError}
+          <p class="small solve-error" data-testid="solve-error">
+            <span class="tag bad">solve failed</span> {solveError}
+          </p>
+        {/if}
+
         {#if jobId}
           <!-- one log for both jobs this page starts: a solve and a bundle
                expand are the same shape of thing to watch, and only one of
@@ -1637,7 +1648,7 @@
                 table = fresh.table ?? { attached: false }
                 cacheWorkflow(name, { wf, items, table })
                 if (summary?.status === 'failed') {
-                  notify(summary?.error ?? 'solve failed', 'refused')
+                  solveError = summary?.error ?? 'solve failed'
                 }
               }}
             />
@@ -2226,6 +2237,7 @@
   .dag-scroll { overflow-x: auto; min-width: 0; flex: 0 1 auto; }
   /* the fixed-width half of the row; never shrinks */
   .res-body { flex: 0 0 auto; position: relative; }
+  .solve-error { margin: 0; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* the fold around the job log: a summary its own
      row with the status pill riding beside it, so a job's outcome reads
      without opening the scrollback that produced it */

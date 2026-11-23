@@ -743,6 +743,16 @@ the trace against that same plan. A change below the top node is invisible by co
 same formula, so client and agent still agree. Invalidate refuses an imported item and says to
 import again, because an assigned identity has nothing to re-derive.
 
+**A copied input keeps the id of the file it was copied from.** A client staging to an ssh agent
+copies each absolute input the agent host lacks to `<home>/inputs/<its local path>` and writes
+the mapping to `relocated.yml` beside `task.yml`. The manifest keeps the original path, so the
+library key and the task key do not move. `WorkflowTask.Load` hands the mapping to every data
+library, and `ResolvePath` answers with the copy, so codegen, binds and `CollectResults` all read
+the agent's path. `restat_leaf_ids` treats a relocated input as client-owned. Re-deriving it would
+mint an id from the copy's path and mtime, and every rerun through a copy would then miss what a
+run on the original banked. The copy goes over the rsync channel staging already uses. Its size
+and mtime are checked against the original, because a failed rsync still leaves a file behind.
+
 **A recorded leaf id moves when its file changes.** Each minted leaf keeps a `stamp` beside its id
 in the index: the stat, plus a content digest for a file of 1 MiB or less. A load re-mints a leaf
 whose stamp no longer matches, so an edited `.oci` tag misses the cache instead of serving the old

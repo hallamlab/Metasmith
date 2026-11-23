@@ -65,7 +65,10 @@ def _client_owned(inst) -> bool:
     # True when the client both had this file and staged it here, so the id it
     # arrived with is the authoritative one. A relative path is one the library
     # resolves, and a library with no `remote_src` is one the client built rather
-    # than pulled as a bare index.
+    # than pulled as a bare index. A relocated path is a copy the client made of
+    # the file it stat'd, so the copy's path and mtime are not the identity.
+    if inst.path in inst.parent_lib.relocated:
+        return True
     return not inst.path.is_absolute() and inst.parent_lib.remote_src is None
 
 

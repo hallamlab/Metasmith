@@ -40,6 +40,7 @@ class AgentPaths:
     CONDA_RECIPES = Path("env_recipes")
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
+    INPUTS = Path("inputs")
     TASK = Path("task")
     MAIN_LOG_FILE = "main.log"
     LAUNCHER_FILE = "start.sh"

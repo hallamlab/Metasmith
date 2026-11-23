@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import ast
 import re
+import contextlib
+import functools
+import http.server
 import shutil
+import threading
 from pathlib import Path
 
 import yaml
@@ -121,3 +125,26 @@ def library_transforms(libraries_root: Path):
         lib = TransformInstanceLibrary.Load(d)
         for key, tr in lib.IterateTransforms():
             yield f"{d.name}/{key}", tr, (d / tr._path).read_text()
+
+
+@contextlib.contextmanager
+def serve_directory(root: Path):
+    hits: list[str] = []
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            super().do_GET()
+
+        def log_message(self, *_):
+            pass
+
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(_Handler, directory=str(root)),
+    )
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", hits
+    finally:
+        server.shutdown()
+        server.server_close()
