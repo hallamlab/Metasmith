@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from ..models.dag_draw import DEFAULT_LABEL_CHARS, default_label
 from ..models.dag_renderer import DagRenderer, LabelMode, NodeKind
-from ..agents import Spec
+from ..agents import Plan, Spec
 from . import workspace as _ws
 
 
-def plan_spec(spec: Spec, workspace: str | None = None, return_task: bool = False) -> dict:
-    task = spec.Solve()
+def plan_cases(
+    cases: list[Spec],
+    transform_libraries: list[str],
+    resource_libraries: list[str] | None = None,
+    workspace: str | None = None,
+    return_task: bool = False,
+) -> dict:
+    task = Plan(cases, transform_libraries, resource_libraries or [])
     plan = task.plan
 
     if not plan.steps or plan.dropped_targets:
@@ -51,15 +57,15 @@ def plan_workflow(
     workspace: str | None = None,
     shared_input_paths: list[str] | None = None,
 ) -> dict:
-    return plan_spec(
-        Spec(
+    return plan_cases(
+        [Spec(
             input_library=data_library,
             target_types=list(target_types),
-            transform_libraries=list(transform_libraries),
-            resource_libraries=list(resource_libraries or []),
             sample_type=sample_type,
             shared_input_paths=list(shared_input_paths or []),
-        ),
+        )],
+        transform_libraries=list(transform_libraries),
+        resource_libraries=list(resource_libraries or []),
         workspace=workspace,
     )
 

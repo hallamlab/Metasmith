@@ -6,7 +6,9 @@ from pathlib import Path
 import yaml
 
 from ..constants import MODULE_PATH
-from .spec import Spec
+from ..models.libraries import DataInstanceLibrary
+from ..models.workflow import WorkflowTask
+from .spec import DataLibRef, Plan, Spec, TransformLibRef, _location, case_records
 
 TEMPLATES_DIR = "templates"
 VENDOR_DIRNAME = "vendor"
@@ -109,14 +111,43 @@ def _resolve_names(raw: dict, index: dict, root: Path) -> tuple[dict, list[str]]
     return out, unresolved
 
 
+def _relative(ref, root: Path | None) -> str:
+    s = _location(ref)
+    p = Path(s)
+    if root is None or not p.is_absolute(): return s
+    try:
+        return str(p.resolve().relative_to(root))
+    except ValueError:
+        return s
+
+
 @dataclass
 class Template:
     name: str
-    spec: Spec
+    cases: list[Spec]
+    transform_libraries: list[TransformLibRef] = field(default_factory=list)
+    resource_libraries: list[DataLibRef] = field(default_factory=list)
     description: str = ""
     root: Path | None = None
     unresolved: list[str] = field(default_factory=list)
 
+
+    @property
+    def input_library(self) -> DataLibRef:
+        libs = {id(c.input_library): c.input_library for c in self.cases}
+        assert len(libs) == 1, (
+            f"template [{self.name}] has cases over {len(libs)} input libraries;"
+            f" a template's cases share one input library"
+        )
+        return next(iter(libs.values()))
+
+    def Plan(self, transform_libraries=None, resource_libraries=None, **budget) -> WorkflowTask:
+        return Plan(
+            self.cases,
+            transform_libraries=self.transform_libraries if transform_libraries is None else transform_libraries,
+            resource_libraries=self.resource_libraries if resource_libraries is None else resource_libraries,
+            **budget,
+        )
 
     @staticmethod
     def PathIn(root: Path | str, name: str, dirname: str = TEMPLATES_DIR) -> Path:
@@ -124,27 +155,25 @@ class Template:
 
     def Save(self, root: Path | str, dirname: str = TEMPLATES_DIR) -> Path:
         root = Path(root).resolve()
-        packed = self.spec.Pack(relative_to=root)
-
-        lib = packed["input_library"]
+        lib = self.input_library
+        if isinstance(lib, DataInstanceLibrary):
+            lib = lib.PackInline(root)
         assert isinstance(lib, dict), (
             f"template [{self.name}] would ship a reference to an input library "
             f"directory [{lib}] instead of the library itself; a template's inputs "
             f"live inline in its own spec.yml"
         )
-        packed["input_library"] = {k: v for k, v in lib.items() if k != "types"}
-        for key in ("transform_libraries", "resource_libraries"):
-            packed[key] = [Path(v).name for v in packed[key]]
-
+        packed = {
+            "name": self.name,
+            "description": self.description,
+            "transform_libraries": [Path(_location(v)).name for v in self.transform_libraries],
+            "resource_libraries": [Path(_location(v)).name for v in self.resource_libraries],
+            "cases": [c.Pack() for c in self.cases],
+            "input_library": {k: v for k, v in lib.items() if k != "types"},
+        }
         out = self.PathIn(root, self.name, dirname=dirname)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(
-            yaml.safe_dump(
-                {"name": self.name, "description": self.description} | packed,
-                sort_keys=False,
-            ),
-            encoding="utf-8",
-        )
+        out.write_text(yaml.safe_dump(packed, sort_keys=False), encoding="utf-8")
         return out
 
     @classmethod
@@ -158,10 +187,23 @@ class Template:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         index = library_index(root) if libraries is None else libraries
         raw, unresolved = _resolve_names(raw, index, root)
+
+        def resolve(ref):
+            p = Path(ref)
+            return str(root / p) if not p.is_absolute() else str(ref)
+
+        lib = raw.get("input_library")
+        assert lib, f"template [{path}] has no input library"
+        if isinstance(lib, dict):
+            lib = lib | {"types": {ns: resolve(p) for ns, p in (lib.get("types") or {}).items()}}
+        else:
+            lib = resolve(lib)
         return cls(
             name=raw.get("name") or path.parent.name,
             description=raw.get("description") or "",
-            spec=Spec.Unpack(raw, root=root),
+            cases=[Spec.Unpack(c, input_library=lib) for c in case_records(raw)],
+            transform_libraries=[resolve(x) for x in raw.get("transform_libraries") or []],
+            resource_libraries=[resolve(x) for x in raw.get("resource_libraries") or []],
             root=root,
             unresolved=unresolved,
         )
@@ -182,6 +224,19 @@ class Template:
 
 
     def Pack(self) -> dict:
-        return {"name": self.name, "description": self.description} | self.spec.Pack(
-            relative_to=self.root
-        )
+        lib = self.input_library
+        if isinstance(lib, dict):
+            types = {ns: _relative(p, self.root) for ns, p in (lib.get("types") or {}).items()}
+            lib = lib | {"types": types} if types else {k: v for k, v in lib.items() if k != "types"}
+        elif isinstance(lib, DataInstanceLibrary) and self.root is not None:
+            lib = lib.PackInline(self.root)
+        else:
+            lib = _relative(lib, self.root)
+        return {
+            "name": self.name,
+            "description": self.description,
+            "transform_libraries": [_relative(x, self.root) for x in self.transform_libraries],
+            "resource_libraries": [_relative(x, self.root) for x in self.resource_libraries],
+            "cases": [c.Pack() for c in self.cases],
+            "input_library": lib,
+        }

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from metasmith.agents import Spec
+from metasmith.agents import CaseViews, plan_views
 from metasmith.constants import AgentPaths
 from metasmith.env import Runtime
 from metasmith.models.libraries import DataInstanceLibrary
@@ -59,11 +59,10 @@ def _solve(tmp_path: Path, transforms: dict[str, str], target: str, resources=Tr
     pool_backed(refs)
     refs.Save()
     tr_lib = _build_transform_lib(tmp_path / "tr", types_path, transforms)
-    return Spec.SolveViews(
-        samples=list(samples.AsSamples("mock::assembly")),
+    return plan_views(
+        [CaseViews("case", list(samples.AsSamples("mock::assembly")), [], [target])],
         resources=[refs] if resources else [],
         transforms=[tr_lib],
-        targets=[target],
     )
 
 

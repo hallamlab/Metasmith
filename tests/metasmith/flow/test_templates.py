@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from metasmith.agents import Spec, Template
+from metasmith.agents import Plan, Spec, Template
 from metasmith.agents.templates import library_index
 from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.paths import DEFERRED
@@ -14,7 +14,7 @@ from metasmith.testing import mock_transforms as mt
 from .conftest import _build_transform_lib, _build_type_lib
 
 
-def _repo(root: Path) -> tuple[Path, Spec]:
+def _repo(root: Path, description: str = "") -> tuple[Path, Template]:
     (root / "data_types").mkdir(parents=True, exist_ok=True)
     types_path = _build_type_lib(root / "data_types" / "mock.yml")
     tr_lib = _build_transform_lib(
@@ -28,10 +28,9 @@ def _repo(root: Path) -> tuple[Path, Spec]:
     inputs.AddItem(DEFERRED, "mock::assembly")
     inputs.Save()
 
-    return root, Spec(
-        input_library=inputs,
-        sample_type="mock::assembly",
-        target_types=["mock::bam"],
+    return root, Template(
+        name="assembly_to_bam", description=description,
+        cases=[Spec(input_library=inputs, sample_type="mock::assembly", target_types=["mock::bam"])],
         transform_libraries=[tr_lib],
     )
 
@@ -39,8 +38,8 @@ def _repo(root: Path) -> tuple[Path, Spec]:
 def test_a_saved_template_is_written_with_names_only(tmp_path: Path):
     import yaml
 
-    root, spec = _repo(tmp_path / "lib")
-    out = Template(name="assembly_to_bam", spec=spec, description="mock").Save(root)
+    root, template = _repo(tmp_path / "lib", description="mock")
+    out = template.Save(root)
     written = yaml.safe_load(out.read_text())
 
     assert written["transform_libraries"] == ["mock"]
@@ -62,8 +61,8 @@ def test_a_saved_template_is_written_with_names_only(tmp_path: Path):
 
 
 def test_a_library_the_repository_does_not_have_is_reported_not_raised(tmp_path: Path):
-    root, spec = _repo(tmp_path / "lib")
-    out = Template(name="assembly_to_bam", spec=spec).Save(root)
+    root, template = _repo(tmp_path / "lib")
+    out = template.Save(root)
     shutil.rmtree(root / "transforms" / "mock")
 
     template = Template.Load(out)
@@ -71,8 +70,8 @@ def test_a_library_the_repository_does_not_have_is_reported_not_raised(tmp_path:
 
 
 def test_a_template_solves_after_the_repository_moves(tmp_path: Path):
-    root, spec = _repo(tmp_path / "lib")
-    Template(name="assembly_to_bam", spec=spec, description="mock").Save(root)
+    root, template = _repo(tmp_path / "lib", description="mock")
+    template.Save(root)
 
     moved = tmp_path / "somewhere_else"
     shutil.copytree(root, moved)
@@ -80,14 +79,14 @@ def test_a_template_solves_after_the_repository_moves(tmp_path: Path):
 
     (template,) = Template.Discover(moved)
     assert template.name == "assembly_to_bam"
-    task = template.spec.Solve()
+    task = template.Plan()
     assert task.ok and task.plan.steps
 
 
 def test_a_template_resolves_against_a_repository_it_did_not_ship_in(tmp_path: Path):
-    root, spec = _repo(tmp_path / "lib")
+    root, template = _repo(tmp_path / "lib")
     elsewhere = tmp_path / "project"
-    out = Template(name="assembly_to_bam", spec=spec).Save(
+    out = template.Save(
         elsewhere, dirname="user_templates",
     )
 
@@ -97,7 +96,7 @@ def test_a_template_resolves_against_a_repository_it_did_not_ship_in(tmp_path: P
 
     template = Template.Load(out, libraries=library_index(root))
     assert not template.unresolved
-    task = template.spec.Solve()
+    task = template.Plan()
     assert task.ok and task.plan.steps
 
 
@@ -112,7 +111,7 @@ def test_every_shipped_template_still_solves(metasmith_libraries_root: Path):
     if not templates:
         pytest.skip(f"no templates in {metasmith_libraries_root}")
     for template in templates:
-        task = template.spec.Solve()
+        task = template.Plan()
         assert task.ok, (
             f"[{template.name}] dropped {sorted(task.plan.dropped_targets)}"
         )
@@ -134,17 +133,14 @@ def test_every_shipped_template_still_solves_once_the_gui_owns_it(
     for template in templates:
         lib_path = str(tmp_path / template.name / "input.xgdb")
         op_data.materialize_template(
-            template.spec.input_library, lib_path, type_library_paths=types,
+            template.input_library, lib_path, type_library_paths=types,
         )
         adopted = op_inputs.adopt(lib_path, [])
         op_samples.write_record(lib_path, adopted["record"])
         op_inputs.sync(lib_path, adopted["rows"], None)
-        spec = Spec.Unpack(
-            template.spec.Pack(relative_to=metasmith_libraries_root),
-            root=metasmith_libraries_root, input_library=lib_path,
-        )
-        spec.sample_type = None
-        task = spec.Solve()
+        cases = [Spec.Unpack(c.Pack() | {"sample_type": None}, input_library=lib_path)
+                 for c in template.cases]
+        task = Plan(cases, template.transform_libraries, template.resource_libraries)
         assert task.ok, (
             f"[{template.name}] dropped {sorted(task.plan.dropped_targets)} "
             f"from a recipe of {len(adopted['rows'])} rows"
@@ -179,8 +175,34 @@ def test_deriving_a_template_strips_paths_but_keeps_shape(tmp_path: Path):
 
 
 def test_the_same_template_reloads_to_the_same_task_key(tmp_path: Path):
-    root, spec = _repo(tmp_path / "lib")
-    Template(name="assembly_to_bam", spec=spec).Save(root)
+    root, template = _repo(tmp_path / "lib")
+    template.Save(root)
     (a,) = Template.Discover(root)
     (b,) = Template.Discover(root)
-    assert a.spec.Solve().plan._key == b.spec.Solve().plan._key
+    assert a.Plan().plan._key == b.Plan().plan._key
+
+
+def test_a_template_without_cases_loads_as_one_case(tmp_path: Path):
+    import yaml
+
+    root, template = _repo(tmp_path / "lib")
+    out = template.Save(root)
+    written = yaml.safe_load(out.read_text())
+    (case,) = written.pop("cases")
+    flat = written | {k: v for k, v in case.items() if k != "name"}
+    out.write_text(yaml.safe_dump(flat, sort_keys=False))
+
+    loaded = Template.Load(out)
+    assert [c.Pack() for c in loaded.cases] == [c.Pack() for c in template.cases]
+    assert loaded.Plan().plan._key == Template.Load(template.Save(root)).Plan().plan._key
+
+
+def test_a_template_saves_and_reloads_every_case(tmp_path: Path):
+    root, template = _repo(tmp_path / "lib")
+    template.cases.append(Spec(
+        input_library=template.cases[0].input_library, name="all_inputs",
+        target_types=["mock::bam"],
+    ))
+    template.cases[0].name = "per_sample"
+    loaded = Template.Load(template.Save(root))
+    assert [c.Pack() for c in loaded.cases] == [c.Pack() for c in template.cases]

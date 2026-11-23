@@ -73,7 +73,7 @@ def solve_trio(lib_root: Path, inputs, targets: list[str] | None = None,
                shared: list[str] | None = None,
                transform_roots: dict[str, Path] | None = None):
     """`transform_roots` swaps a namespace's library for another location."""
-    from metasmith.python_api import Spec
+    from metasmith.python_api import Plan, Spec
 
     roots = {n: lib_root / "transforms" / n for n in TRANSFORM_NAMESPACES}
     roots.update(transform_roots or {})
@@ -83,9 +83,11 @@ def solve_trio(lib_root: Path, inputs, targets: list[str] | None = None,
         sample_type="sequences::assembly",
         target_types=list(targets if targets is not None else TARGETS),
         shared_input_paths=list(shared or []),
+    )
+    task = Plan(
+        [spec],
         transform_libraries=[roots[n] for n in TRANSFORM_NAMESPACES],
         resource_libraries=[lib_root / "resources" / "env"],
     )
-    task = spec.Solve()
     assert task.ok, f"the trio did not solve: dropped={sorted(task.plan.dropped_targets)}"
     return task

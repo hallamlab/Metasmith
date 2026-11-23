@@ -89,7 +89,7 @@ def test_the_shipped_templates_satisfy_the_specification(engine):
 
     seen = 0
     for template in Template.Discover(root):
-        problem = problem_of_plan(template.spec.Solve().plan, name=template.name)
+        problem = problem_of_plan(template.Plan().plan, name=template.name)
         if problem is None:
             continue
         request, reply = _wire(engine, problem)

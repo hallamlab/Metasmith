@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .shell import AgentShell
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
-from .spec import Spec
+from .spec import CaseViews, Plan, Spec, plan_views
 from .templates import Template
 from .ceiling import ResourceCeilingError
 from .headroom import HomeHeadroomError

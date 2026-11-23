@@ -79,7 +79,7 @@ def test_the_engine_reads_the_shipped_templates(engine):
     seen = shipped = 0
     for template in Template.Discover(root):
         shipped += 1
-        task = template.spec.Solve()
+        task = template.Plan()
         problem = problem_of_plan(task.plan, name=template.name)
         if problem is None: continue
         encoded = encode_problem(
