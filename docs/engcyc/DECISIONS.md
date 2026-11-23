@@ -524,4 +524,16 @@ Decided design:
 - Two aggregators produce it, one per read class. Each requires its own tool set: short reads -> short-read tools, long reads -> long-read-capable tools with their long-read settings.
 - Short-read-only tools (inStrain, StrainPhlAn) sit under the short-read aggregator only. A long-read outcome reaches the target through its own aggregator, so the getSraReads fork routes every outcome, and the SRA accession solves without typed accessions.
 
-Where it landed: pending (ensemble membership, then a worker).
+Membership (Tony: "If they're documented to support long reads, go ahead. If not, then ... try and see. ... find some online source or literature citation"):
+- Short-read aggregator: MetaPhlAn, StrainPhlAn, inStrain, sylph, Metabuli, Kraken2, Centrifuger, ganon2.
+- Long-read aggregator, documented tools only:
+  - MetaPhlAn 4.2 `--long_reads` (minimap2) and StrainPhlAn 4.2 (detects minimap2 alignments): MetaPhlAn 4.2.1 and 4.2.2 release notes, zenodo 15591132 and 15594111.
+  - sylph: sylph-docs "can/cannot", nanopore and PacBio.
+  - Metabuli: README, "Short reads, long reads, and contigs".
+  - ganon2: release notes, "better support for long reads".
+  - Kraken2: Portik et al. 2022 (PMC9749362) benchmarked it on HiFi and ONT. It works, but short-read methods there needed heavy filtering for false positives.
+- Not in the long-read aggregator:
+  - Centrifuger: no long-read documentation found. Its parent Centrifuge was benchmarked in Portik 2022. Trial it ourselves.
+  - inStrain: the maintainer (inStrain issue #104) says HiFi (~Q30) works and error-prone long reads inflate SNV calls. The planner cannot tell HiFi from ONT, so it stays short-read only.
+
+Where it landed: pending (worker).
