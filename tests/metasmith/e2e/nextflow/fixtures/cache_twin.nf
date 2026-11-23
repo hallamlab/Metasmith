@@ -17,8 +17,8 @@ _asm = (o.post(o.asStreams(p01(o.group('reads', [_reads], k, 1))), k, ['slot-asm
 k = ['bins']
 (__miss_2, __hit_2) = o.group('reads', [_reads, _asm], k, 1, [
     tk: 'tk-p02', sig: 'sig-p02', slk: ['reads', 'asm'],
-    cache_root: "/ws/shards", cacheable: params.cacheable,
-    helper: params.helper, hits_log: "/ws/hits.jsonl",
+    cache_root: "${launchDir}/shards", cacheable: params.cacheable,
+    helper: params.helper, hits_log: "${launchDir}/hits.jsonl",
     step: 2, step_name: 'p02',
 ])
 __out_2 = o.mixOuts(o.asStreams(p02(__miss_2)), o.asStreams(p02_cached(__hit_2)))

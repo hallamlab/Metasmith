@@ -34,8 +34,8 @@ def assert_slow_task_was_slow(result, process: str, tag: str) -> None:
 
 
 @pytest.fixture
-def ws(tmp_path, docker_image) -> Workspace:
-    return Workspace(tmp_path / "ws", docker_image)
+def ws(tmp_path, nxf_container) -> Workspace:
+    return Workspace(tmp_path / "ws", container=nxf_container)
 
 
 

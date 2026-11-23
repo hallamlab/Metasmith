@@ -1,34 +1,19 @@
-from metasmith.models.workflow import Case
 import os
-import pytest
-import subprocess
 import shutil
-import yaml
+import subprocess
 from pathlib import Path
 
-from metasmith.models.libraries import (
-    DataInstanceLibrary,
-    DataTypeLibrary,
-    TransformInstanceLibrary,
-    TransformInstance,
-)
-from metasmith.models.solver import Endpoint, Transform
-from metasmith.env import Runtime
-
-from tests.metasmith.support import create_transform_library
+import pytest
 
 
-def docker_as_host_user(image: str, bind: Path, mount_at: Path|str|None = None, workdir: Path|str|None = None) -> list[str]:
-    mount_at = mount_at or bind
+def nxf_exec(container: str, workdir: Path, timeout: int) -> list[str]:
+    # A timed-out client leaves its process running inside the container, so it carries its own limit.
     return [
-        "docker", "run", "--rm",
-        "-u", f"{os.getuid()}:{os.getgid()}",
-        "-e", f"HOME={mount_at}",
-        "-e", f"NXF_HOME={mount_at}/.nextflow",
+        "docker", "exec", "-w", str(workdir),
+        "-e", f"HOME={workdir}",
+        "-e", f"NXF_HOME={workdir}/.nextflow",
         "-e", "NXF_DISABLE_CHECK_LATEST=true",
-        "-v", f"{bind}:{mount_at}",
-        "-w", str(workdir or mount_at),
-        image,
+        container, "timeout", "-s", "KILL", str(timeout),
     ]
 
 
@@ -49,6 +34,21 @@ def docker_image(docker_available):
     from metasmith.testing.docker_builder import build_docker_image
 
     return build_docker_image()
+
+
+@pytest.fixture(scope="session")
+def nxf_container(docker_image, tmp_path_factory):
+    # One container per worker, exec'd into for every Nextflow run: creating a container costs
+    # this daemon 11-17s, an exec well under one. It mounts the worker's whole tmp tree at the
+    # same path, so a test's paths mean the same thing on both sides.
+    base = tmp_path_factory.getbasetemp()
+    cid = subprocess.run(
+        ["docker", "run", "-d", "--rm", "-u", f"{os.getuid()}:{os.getgid()}",
+         "-v", f"{base}:{base}", "--entrypoint", "sleep", docker_image, "infinity"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    yield cid
+    subprocess.run(["docker", "kill", cid], capture_output=True)
 
 
 @pytest.fixture

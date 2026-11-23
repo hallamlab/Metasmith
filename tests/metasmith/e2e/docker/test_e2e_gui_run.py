@@ -12,7 +12,8 @@ import yaml
 from metasmith.gui.app import create_app
 from metasmith.gui.store import Project
 
-pytestmark = pytest.mark.docker
+# its runs are shared through module and class fixtures, so --dist loadgroup keeps it on one worker
+pytestmark = [pytest.mark.docker, pytest.mark.xdist_group("gui_run")]
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EXAMPLES = REPO_ROOT / "src" / "metasmith" / "examples"

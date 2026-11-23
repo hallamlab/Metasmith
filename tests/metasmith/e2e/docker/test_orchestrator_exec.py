@@ -7,7 +7,7 @@ from pathlib import Path
 
 from metasmith.constants import MODULE_PATH
 
-from .conftest import docker_as_host_user
+from .conftest import nxf_exec
 
 pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
 
@@ -15,9 +15,9 @@ ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
 
 class NxfTestRunner:
-    def __init__(self, work_dir: Path, docker_image: str):
+    def __init__(self, work_dir: Path, nxf_container: str):
         self.work_dir = work_dir
-        self.docker_image = docker_image
+        self.nxf_container = nxf_container
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
         lib_dir = self.work_dir / "lib"
@@ -27,7 +27,7 @@ class NxfTestRunner:
     def run(
         self,
         nxf_script: str,
-        timeout: int = 120,
+        timeout: int = 300,
         extra_lib: dict = None,
         extra_args: list = None,
     ) -> subprocess.CompletedProcess:
@@ -38,7 +38,7 @@ class NxfTestRunner:
 
         result = subprocess.run(
             [
-                *docker_as_host_user(self.docker_image, self.work_dir, mount_at="/ws"),
+                *nxf_exec(self.nxf_container, self.work_dir, timeout),
                 "nextflow", "run", "test.nf",
                 "-lib", "./lib",
                 "-ansi-log", "false",
@@ -68,8 +68,8 @@ class NxfTestRunner:
 
 
 @pytest.fixture
-def nxf_runner(tmp_path, docker_image):
-    return NxfTestRunner(tmp_path / "nxf_test", docker_image)
+def nxf_runner(tmp_path, nxf_container):
+    return NxfTestRunner(tmp_path / "nxf_test", nxf_container)
 
 
 class TestOrchestratorPost:
@@ -673,7 +673,7 @@ workflow {{
         return observed
 
     @staticmethod
-    def _assert_files_resolve(files: list[str]) -> None:
+    def _assert_files_resolve(files: list[str], launch_dir) -> None:
         from pathlib import Path
 
         from metasmith.bootstrap import _parse_path
@@ -681,7 +681,8 @@ workflow {{
 
         assert files, "no FILES paths to verify"
         task_key = "TEST"
-        for p in files:
+        # A deployed agent launches Nextflow in /ws; this runner launches it in its own work dir.
+        for p in (f"/ws/{Path(f).relative_to(launch_dir)}" for f in files):
             parsed = _parse_path(
                 Path(p),
                 agent_home="/host/scratch/agent",
@@ -700,11 +701,11 @@ workflow {{
 
     def test_batched_files_resolve_through_parse_path(self, nxf_runner):
         files = self._run_two_step_files_check(nxf_runner, batch_size=2)
-        self._assert_files_resolve(files)
+        self._assert_files_resolve(files, nxf_runner.work_dir)
 
     def test_unbatched_files_resolve_through_parse_path(self, nxf_runner):
         files = self._run_two_step_files_check(nxf_runner, batch_size=1)
-        self._assert_files_resolve(files)
+        self._assert_files_resolve(files, nxf_runner.work_dir)
 
     def test_batch_debatch_roundtrip(self, nxf_runner):
         for i in range(4):
@@ -888,7 +889,7 @@ workflow {
 
 
 class TestPathStringification:
-    def test_docker_emits_absolute_ws_prefix(self, nxf_runner):
+    def test_docker_emits_an_absolute_path_under_the_launch_dir(self, nxf_runner):
         result = nxf_runner.run('''
 process produce {
     output:
@@ -908,7 +909,7 @@ workflow {
         lines = [l for l in result.stdout.split("\n") if l.startswith("STRSHAPE:")]
         assert len(lines) == 1, f"expected exactly one STRSHAPE line, got: {lines}"
         rendered = lines[0].split("STRSHAPE: ", 1)[1]
-        assert rendered.startswith("/ws/"), (
+        assert rendered.startswith(f"{nxf_runner.work_dir}/"), (
             f"Docker emitted unexpected toString shape: {rendered!r}. "
             f"If this changes, `bootstrap._parse_path` case-1 (the inbox "
             f"#139 fix) needs to be re-validated."
@@ -1087,6 +1088,7 @@ class Ownership {
 '''
 
 
+@pytest.mark.xdist_group("multi_output")
 class TestMultiOutputProcess:
     _PROCESSES = '''
 process two_out {
@@ -1166,8 +1168,8 @@ workflow {
         return result
 
     @pytest.fixture(scope="class")
-    def default_run(self, tmp_path_factory, docker_image):
-        return self._run(NxfTestRunner(tmp_path_factory.mktemp("multi_output"), docker_image))
+    def default_run(self, tmp_path_factory, nxf_container):
+        return self._run(NxfTestRunner(tmp_path_factory.mktemp("multi_output"), nxf_container))
 
     def test_each_output_keeps_its_task_index(self, default_run):
         result = default_run

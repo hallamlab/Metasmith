@@ -15,7 +15,6 @@ task would have.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -31,22 +30,18 @@ from metasmith.env import Runtime
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.telemetry import TraceIndex
 
-from .conftest import docker_as_host_user, promote_stub_tasks
+from .conftest import nxf_exec, promote_stub_tasks
 
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
 
-def _bind_root(*paths: Path) -> Path:
-    return Path(os.path.commonpath([str(p.resolve()) for p in paths]))
-
-
 def run_cached_stub(
     task: WorkflowTask,
     work_dir: Path,
     agent_home: Path,
-    docker_image: str,
+    nxf_container: str,
     *,
     before_promote=None,
     timeout: int = 300,
@@ -77,10 +72,9 @@ def run_cached_stub(
     lib_dir.mkdir(exist_ok=True)
     shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
 
-    bind = _bind_root(work_dir, agent_home)
     result = subprocess.run(
         [
-            *docker_as_host_user(docker_image, bind, workdir=work_dir),
+            *nxf_exec(nxf_container, work_dir, timeout),
             "nextflow", "run", AgentPaths.NXF_WORKFLOW,
             "-stub",
             "-lib", "./lib",
@@ -162,16 +156,16 @@ def _task_rows(trace: Path) -> list[dict[str, str]]:
 
 class TestCacheHitPublishesResults:
     def test_a_rerun_is_all_hits_served_by_cached_twins_and_publishes_the_same_results(
-        self, simple_workflow_task, tmp_path, docker_image
+        self, simple_workflow_task, tmp_path, nxf_container
     ):
         home = tmp_path / "agent_home"
         run1, run2 = tmp_path / "run1", tmp_path / "run2"
 
-        first = run_cached_stub(simple_workflow_task, run1, home, docker_image)
+        first = run_cached_stub(simple_workflow_task, run1, home, nxf_container)
         assert "hit" not in _statuses(run1), "cold cache reported a hit"
 
         trace = run2 / "nxf_trace.tsv"
-        second = run_cached_stub(simple_workflow_task, run2, home, docker_image, trace=trace)
+        second = run_cached_stub(simple_workflow_task, run2, home, nxf_container, trace=trace)
         assert _statuses(run2) == {"hit"}, (
             f"second run was not fully served from cache: {_statuses(run2)}"
         )
@@ -190,19 +184,19 @@ class TestCacheHitPublishesResults:
 
 class TestDirectoryProducts:
     def test_a_directory_product_is_served_and_published(
-        self, simple_workflow_task, tmp_path, docker_image
+        self, simple_workflow_task, tmp_path, nxf_container
     ):
         home = tmp_path / "agent_home"
         names: list[str] = []
         run_cached_stub(
-            simple_workflow_task, tmp_path / "run1", home, docker_image,
+            simple_workflow_task, tmp_path / "run1", home, nxf_container,
             before_promote=lambda w, c: names.extend(
                 _make_one_product_a_directory(w, c)
             ),
         )
         run2 = tmp_path / "run2"
         second = run_cached_stub(
-            simple_workflow_task, run2, home, docker_image
+            simple_workflow_task, run2, home, nxf_container
         )
         assert _statuses(run2) == {"hit"}, (
             f"a shard holding a directory did not serve: {_statuses(run2)}"

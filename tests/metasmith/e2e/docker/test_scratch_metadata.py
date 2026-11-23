@@ -69,7 +69,7 @@ def _stage(root: Path):
     return task, workspace
 
 
-def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None, extra: list[str] | None = None) -> str:
+def _nf(gen: _Generated, root: Path, *, scratch: bool, publish_to: str | None, extra: list[str] | None = None) -> str:
     directives = []
     if scratch:
         directives.append("\tscratch true")
@@ -79,7 +79,7 @@ def _nf(gen: _Generated, *, scratch: bool, publish_to: str | None, extra: list[s
             "overwrite: true, pattern: '*'"
         )
     return "\n".join([
-        f'params.workspace = "/ws/staged"',
+        f'params.workspace = "{root}/staged"',
         "",
         "process meta_probe {",
         *directives,
@@ -118,18 +118,18 @@ def _run(runner: NxfTestRunner, nf: str, work_dir: str) -> Path:
 
 
 @pytest.fixture
-def staged(tmp_path, docker_image):
+def staged(tmp_path, nxf_container):
     root = tmp_path / "run"
     task, workspace = _stage(root)
     gen = _Generated((workspace / "workflow.nf").read_text())
-    runner = NxfTestRunner(root, docker_image)
+    runner = NxfTestRunner(root, nxf_container)
     return task, workspace, gen, runner
 
 
 def test_the_metadata_reaches_the_work_dir_under_scratch(staged):
     _task, _ws, gen, runner = staged
     task_dir = _run(
-        runner, _nf(gen, scratch=True, publish_to=None), "/ws/staged/nxf_work"
+        runner, _nf(gen, runner.work_dir, scratch=True, publish_to=None), f"{runner.work_dir}/staged/nxf_work"
     )
 
     meta = task_dir / ".command.metadata"
@@ -151,7 +151,7 @@ def test_the_metadata_reaches_the_work_dir_under_scratch(staged):
 def test_scratch_off_is_unchanged_and_silent(staged):
     _task, _ws, gen, runner = staged
     task_dir = _run(
-        runner, _nf(gen, scratch=False, publish_to=None), "/ws/staged/nxf_work"
+        runner, _nf(gen, runner.work_dir, scratch=False, publish_to=None), f"{runner.work_dir}/staged/nxf_work"
     )
 
     assert (task_dir / ".command.metadata").exists()
@@ -182,11 +182,11 @@ def test_the_cache_record_reaches_the_work_dir_under_scratch(staged):
         "lineage": {"seed": ["1e20aaaa"]},
     }
     copy_line = next(l for l in gen.full_script if CACHE_RECORD_FILE in l)
-    nf = _nf(gen, scratch=True, publish_to=None, extra=[
+    nf = _nf(gen, runner.work_dir, scratch=True, publish_to=None, extra=[
         f"echo '{json.dumps(record)}' >{CACHE_RECORD_FILE}",
         copy_line,
     ])
-    task_dir = _run(runner, nf, "/ws/staged/nxf_work")
+    task_dir = _run(runner, nf, f"{runner.work_dir}/staged/nxf_work")
     assert (task_dir / CACHE_RECORD_FILE).exists(), (
         "the task's cache record did not survive its scratch directory, so the "
         f"driver records nothing for it. work dir holds: {sorted(p.name for p in task_dir.iterdir())}"

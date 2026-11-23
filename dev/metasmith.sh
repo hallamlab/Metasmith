@@ -783,11 +783,12 @@ case $1 in
         # Wall-clock-sensitive, and lifecycle scans /proc and signals process trees: nothing beside them.
         pytest -q tests/metasmith/perf -m "$manual" "$@" || rc=1
         "$0" -tl || rc=1
-        # Worker counts sum to what altair has; the docker lane's workers mostly wait on containers.
+        # Each docker-lane worker execs its Nextflow runs into one long-lived container.
+        # loadgroup spreads its files test by test; xdist_group keeps a shared run on one worker.
         log=$(mktemp -t msm-tr-docker.XXXXXX.log)
-        pytest -q -n 6 --dist loadfile tests/metasmith/e2e/docker -m "$manual" "$@" > $log 2>&1 &
+        pytest -q -n 8 --dist loadgroup tests/metasmith/e2e/docker -m "$manual" "$@" > $log 2>&1 &
         docker_pid=$!
-        pytest -q -n 10 --dist loadfile $(_groups paths $(_groups list)) tests/metasmith/deploy tests/metasmith/e2e/nextflow -m "$manual" "$@" || rc=1
+        pytest -q -n 8 --dist loadfile $(_groups paths $(_groups list)) tests/metasmith/deploy tests/metasmith/e2e/nextflow -m "$manual" "$@" || rc=1
         wait $docker_pid || rc=1
         echo "--- docker lane ($log)"
         tail -n 25 $log
