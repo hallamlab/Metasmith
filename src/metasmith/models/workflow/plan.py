@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import yaml
 
@@ -105,15 +105,9 @@ class Case:
 
     @classmethod
     def ByShape(
-        cls, given: list[list[DataInstanceLibraryView]],
-        target: Transform|Callable[[frozenset[Endpoint], str], tuple[Transform, list[str]|None]],
+        cls, given: list[list[DataInstanceLibraryView]], target: Transform,
         target_names: list[str]|None = None, name: str = "case",
     ) -> list[Case]:
-        def for_shape(shape: frozenset) -> tuple[Transform, list[str]|None]:
-            if isinstance(target, Transform):
-                return target, target_names
-            return target(shape, labels.get(shape, name))
-
         shapes: dict[frozenset, list[list[DataInstanceLibraryView]]] = {}
         labels: dict[frozenset, str] = {}
         view_cache: dict[int, tuple[set[Endpoint], set[str]]] = {}
@@ -130,17 +124,15 @@ class Case:
             shapes.setdefault(frozenset(eps), []).append(sample)
             labels.setdefault(frozenset(eps), "+".join(sorted(names)))
         if len(shapes) <= 1:
-            t, n = for_shape(next(iter(shapes), frozenset()))
-            return [cls(name=name, given=list(given), target=t, target_names=n)]
+            return [cls(name=name, given=list(given), target=target, target_names=target_names)]
         out: list[Case] = []
         seen: dict[str, int] = {}
         for shape, samples in shapes.items():
             label = labels[shape]
             seen[label] = seen.get(label, 0) + 1
-            t, n = for_shape(shape)
             out.append(cls(
                 name=label if seen[label] == 1 else f"{label}#{seen[label]}",
-                given=samples, target=t, target_names=n,
+                given=samples, target=target, target_names=target_names,
             ))
         return out
 

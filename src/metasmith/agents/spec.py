@@ -186,35 +186,16 @@ class Spec:
                 )
             raise AssertionError(f"no transforms had the namespace [{ns}]")
 
-        specs = targets.resolve()
-        endpoints = {s.dtype_name: _get_endpoint(s.dtype_name) for s in specs}
-        conditions = {w: _get_endpoint(w) for s in specs for w in s.when}
-        models: dict[tuple[TargetSpec, ...], tuple[Transform, list[str]]] = {}
-
-        def target_for(shape: frozenset, label: str) -> tuple[Transform, list[str]]:
-            # A target whose parent is left out is left out too, so a child
-            # inherits its parent's condition without repeating it.
-            kept: list[TargetSpec] = []
-            for spec in specs:
-                if all(p in kept for p in spec.parents) and all(
-                    any(ep.IsA(conditions[w]) for ep in shape) for w in spec.when
-                ):
-                    kept.append(spec)
-            assert kept, (
-                f"no target applies to the samples of shape [{label}]: every target"
-                f" is conditional on a given type they do not have"
+        target_model = Transform()
+        _spec2dep: dict[TargetSpec, Dependency] = {}
+        target_names: list[str] = []
+        for spec in targets.resolve():
+            e = _get_endpoint(spec.dtype_name)
+            d = target_model.AddRequirement(
+                example=e, parents={_spec2dep[p] for p in spec.parents}
             )
-            key = tuple(kept)
-            if key not in models:
-                model = Transform()
-                deps: dict[TargetSpec, Dependency] = {}
-                for spec in kept:
-                    deps[spec] = model.AddRequirement(
-                        example=endpoints[spec.dtype_name],
-                        parents={deps[p] for p in spec.parents},
-                    )
-                models[key] = model, [spec.dtype_name for spec in kept]
-            return models[key]
+            _spec2dep[spec] = d
+            target_names.append(spec.dtype_name)
 
         res_views = [
             lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib)
@@ -227,7 +208,7 @@ class Spec:
         plan = WorkflowPlan.Generate(
             cases=Case.ByShape(
                 [[sample] + res_views for sample in _samples],
-                target=target_for,
+                target=target_model, target_names=target_names,
             ),
             transforms=transforms,
             max_iter=max_iter, max_refine=max_refine, seed=seed,

@@ -141,7 +141,7 @@ export function targetsFromWire(list, mint = mintTargetId) {
   const entries = (list ?? []).map((t) =>
     typeof t === 'string'
       ? { id: mint(), type: t, wire: [] }
-      : { id: mint(), type: t?.type ?? '', wire: t?.parents ?? [], when: t?.when },
+      : { id: mint(), type: t?.type ?? '', wire: t?.parents ?? [] },
   )
   return entries.map((e) => {
     const seen = new Set()
@@ -149,9 +149,7 @@ export function targetsFromWire(list, mint = mintTargetId) {
       const id = Number.isInteger(p) ? entries[p]?.id : undefined
       if (id !== undefined && id !== e.id) seen.add(id)
     }
-    const out = { id: e.id, type: e.type, parents: [...seen] }
-    if (e.when?.length) out.when = e.when
-    return out
+    return { id: e.id, type: e.type, parents: [...seen] }
   })
 }
 
@@ -173,10 +171,8 @@ export function targetsToWire(targets) {
   }))
   const ordered = topoOrder(rows)
   const at = new Map(ordered.map((r, i) => [r.key, i]))
-  // `when` only when set, so a recipe without conditions keeps its fingerprint.
   return ordered.map((r) => ({
     type: r.target.type ?? '',
     parents: r.parents.map((p) => at.get(p)).sort((a, b) => a - b),
-    ...(r.target.when?.length ? { when: r.target.when } : {}),
   }))
 }

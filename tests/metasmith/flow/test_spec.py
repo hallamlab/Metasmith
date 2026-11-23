@@ -5,9 +5,8 @@ from pathlib import Path
 import pytest
 
 from metasmith.agents import Spec
-from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView
+from metasmith.models.libraries import DataInstanceLibraryView
 from metasmith.testing import mock_transforms as mt
-from metasmith.testing.pool_fixtures import pool_backed
 
 from .conftest import _build_samples_lib, _build_transform_lib, _build_type_lib
 
@@ -25,7 +24,7 @@ def _setup(tmp_path: Path):
 def test_pack_unpack_round_trips(tmp_path: Path):
     spec = Spec(
         input_library="/data/input.xgdb",
-        target_types=["mock::bam", {"type": "mock::merged", "parents": [0], "when": ["mock::reads"]}],
+        target_types=["mock::bam", {"type": "mock::merged", "parents": [0]}],
         transform_libraries=["/lib/transforms.xgdb"],
         resource_libraries=["/lib/refs.xgdb"],
         sample_type="mock::reads",
@@ -116,45 +115,6 @@ def test_the_input_library_is_listed_once_when_it_is_also_shared(tmp_path: Path)
     ).Solve()
     locations = [lib.location for lib in task.data_libraries]
     assert len(locations) == len(set(locations)), locations
-
-
-def test_a_conditional_target_reaches_only_the_shapes_that_carry_its_given(tmp_path: Path):
-    types_path = _build_type_lib(tmp_path / "types.yml")
-    lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
-    lib.AddTypeLibrary(types_path, namespace="mock")
-    for sid, kinds in (("short", ["assembly"]), ("hybrid", ["assembly", "reads"])):
-        (lib.location / sid).mkdir(parents=True)
-        for f, text in (("meta.json", f'{{"id": "{sid}"}}'), *((f"{k}.txt", f">{sid}\nACGT\n") for k in kinds)):
-            (lib.location / sid / f).write_text(text, encoding="utf-8")
-        meta = lib.AddItem(Path(f"{sid}/meta.json"), "mock::sample_metadata")
-        for k in kinds:
-            lib.AddItem(Path(f"{sid}/{k}.txt"), f"mock::{k}", parents=[meta])
-    pool_backed(lib)
-    lib.Save()
-    tr_lib = _build_transform_lib(
-        tmp_path / "tr", types_path,
-        mt.identity_transform("mock::assembly", "mock::bam")
-        | mt.identity_transform("mock::reads", "mock::h1"),
-    )
-
-    def spec(targets):
-        return Spec(
-            input_library=lib, transform_libraries=[tr_lib],
-            sample_type="mock::sample_metadata", target_types=targets,
-        )
-
-    task = spec(["mock::bam", {"type": "mock::h1", "when": ["mock::reads"]}]).Solve()
-    assert task.ok, task.plan.dropped_targets
-    cases = {c: "reads" in c for c in task.plan.cases}
-    assert len(cases) == 2
-    by_product = {
-        next(i.dtype_name for g in s.produces for i in g): {cases[c] for c in s.cases}
-        for s in task.plan.steps
-    }
-    assert by_product == {"mock::bam": {True, False}, "mock::h1": {True}}
-
-    with pytest.raises(AssertionError, match=r"no target applies to the samples of shape \[.*assembly"):
-        spec([{"type": "mock::h1", "when": "mock::reads"}]).Solve()
 
 
 def test_one_endpoint_fills_a_target_and_the_target_anchored_to_it(tmp_path: Path):
