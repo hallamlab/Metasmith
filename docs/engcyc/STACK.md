@@ -6,6 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
+Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-serialized-meteor.md (T1-T17; todo list mirrors it). T1 done (rc merged feat/dev + release v0.26.0, 606f7113 + next). Plan-cases answers (Tony approved recommendations): libraries on Plan; GUI one input list with chips into case tabs; selector `input_paths`. Open: Metabuli lane blocks 0.26.1?; run-3 issues 4-5 may wait?
 engcyc-cases — after both workers land: engcyc template as two cases (short reads -> engcyc targets; long reads -> modified set incl. long-read taxonomy lanes), isolate/hybrid templates take accessions, probes short/hybrid/isolate/SRA-short/SRA-long/long-only/mixed two-case.
 
 ## Waiting on the user
