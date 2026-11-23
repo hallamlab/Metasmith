@@ -9,6 +9,7 @@ Decisions: docs/engcyc/DECISIONS.md
 solve-scenarios — isolate (11 steps), hybrid (173) and short (172) solve after the solver fixes (merged 1e3f3ae7; budget 512 911a5e4a). SRA accession: merge_candidate_calls now anchors on read_metadata and engcyc loads ncbi.yml (8ca8722b), but the solve still fails on the getSraReads fork (long-reads outcome cannot reach the targets; "no single plan within 247 iterations"). Fable agent diagnosing on feat/engine/sra-fork.
 
 ## Waiting on the user
+- sra-fork: A typed accessions (sra_short_accession / sra_long_accession, one fetch each; recommended) vs B drop unroutable fork outcomes vs C per-outcome target subsets. Cause: getSraReads' long outcome is solved first and cannot reach instrain/metaphlan/strainphlan; refusing is the documented contract (2 tests in tests/metasmith/flow/test_forks.py); short outcomes merge to 176 steps
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
