@@ -1,10 +1,10 @@
 #!/bin/bash
 # Build local artifacts so the e2e suite tests the *current* build instead of
 # pulling release versions:
-#   1. pip wheel    via dev.sh -bp
-#   2. conda pkg    via dev.sh -bc      (lands under ./conda_build/)
-#   3. docker image via dev.sh -bd      (tags quay.io/hallamlab/metasmith:<VER>)
-#   4. (optional) apptainer .sif via dev.sh -bs (only if --apptainer)
+#   1. pip wheel    via dev/metasmith.sh -bp
+#   2. conda pkg    via dev/metasmith.sh -bc      (lands under ./conda_build/)
+#   3. docker image via dev/metasmith.sh -bd      (tags quay.io/hallamlab/metasmith:<VER>)
+#   4. (optional) apptainer .sif via dev/metasmith.sh -bs (only if --apptainer)
 #
 # Per-test conda envs are created inside each test's ephemeral sandbox by the
 # harness — there is NO shared msm_env_test any more.
@@ -20,9 +20,13 @@ set -euo pipefail
 unset PYTHONPATH
 
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-PROJECT=$( cd "$HERE/../../.." &> /dev/null && pwd )
+PROJECT=$( cd "$HERE/../../../../.." &> /dev/null && pwd )
+DEV="$PROJECT/dev/metasmith.sh"
+# The build hash covers the GUI bundle and the vendored library, so stage both before stamping it.
+"$DEV" --build-gui
+"$DEV" --vendor-library
 # Stamp build_hash.txt so the tag we look up matches what the builders
-# (dev.sh / setup.py / constants.FULL_VERSION) actually produce.
+# (dev/metasmith.sh / setup.py / constants.FULL_VERSION) actually produce.
 PY=$(command -v python3 || command -v python)
 PYTHONPATH="$PROJECT/src" "$PY" -m metasmith._build_hash --write >/dev/null
 SEMVER=$(cat "$PROJECT/src/metasmith/version.txt")
@@ -56,7 +60,7 @@ echo "=== build_local_artifacts (version $VER) ==="
 WHEEL="$PROJECT/dist/metasmith-${VER}-py3-none-any.whl"
 if [ "$FORCE" = "1" ] || [ ! -f "$WHEEL" ]; then
     echo "[1/4] building pip wheel"
-    ./dev.sh -bp
+    "$DEV" -bp
 else
     echo "[1/4] wheel already present: $WHEEL"
 fi
@@ -64,7 +68,7 @@ fi
 # --- 2. conda package ------------------------------------------------------
 if [ "$FORCE" = "1" ] || ! find "$PROJECT/conda_build" -name "metasmith-${VER}*.tar.bz2" 2>/dev/null | grep -q .; then
     echo "[2/4] building conda package"
-    ./dev.sh -bc
+    "$DEV" -bc
 else
     echo "[2/4] conda package already present"
 fi
@@ -72,7 +76,7 @@ fi
 # --- 3. docker image -------------------------------------------------------
 if [ "$FORCE" = "1" ] || ! docker image inspect "$DOCKER_IMAGE" >/dev/null 2>&1; then
     echo "[3/4] building docker image $DOCKER_IMAGE"
-    ./dev.sh -bd
+    "$DEV" -bd
 else
     echo "[3/4] docker image already present: $DOCKER_IMAGE"
 fi
@@ -82,7 +86,7 @@ SIF="$PROJECT/metasmith.sif"
 if [ "$WANT_APPTAINER" = "1" ]; then
     if [ "$FORCE" = "1" ] || [ ! -f "$SIF" ] || [ "$SIF" -ot "$PROJECT/src/metasmith/version.txt" ] || [ "$SIF" -ot "$PROJECT/src/metasmith/build_hash.txt" ]; then
         echo "[4/4] building apptainer .sif from local docker image"
-        ./dev.sh -bs
+        "$DEV" -bs
     else
         echo "[4/4] apptainer .sif already present: $SIF"
     fi
