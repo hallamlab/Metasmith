@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from ..hashing import KeyGenerator
+from .solver_backend import SEARCH_BUDGET
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 
 class Node:
@@ -317,7 +318,7 @@ def solve_by_mcts(
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
-    max_iter: int=512,
+    max_iter: int=SEARCH_BUDGET,
     max_refine: int|None=None,
     fork_groups: Sequence[tuple[Transform, int]]=(),
     partial: Sequence[Transform]=(),

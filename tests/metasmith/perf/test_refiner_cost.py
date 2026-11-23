@@ -1,7 +1,7 @@
 """The refiner's cost is a function of the plan the search hands it.
 
 This file used to pin one instance that took 53s and roughly 70 GB at a full
-refiner budget, and 3.5s for a single iteration. It is 4 steps and unmeasurable
+refiner budget, and 3.5s for a single iteration. It is 6 steps and unmeasurable
 now, and so is every other instance that was expensive: the blow-up was never
 intrinsic to the refiner, it was the weighted rule settling on a 57-step plan and
 the refiner paying candidate-count times plan-length for it.
@@ -36,8 +36,10 @@ def engine():
 #: The instances that were expensive under the weighted rule, with the plan
 #: length each settles on now. `sink-6807` is the one the profiling report was
 #: written about: 57 steps, 33,062 candidates an iteration, ~70 GB at budget 256.
+#: It settled on 4 until a product group became one outcome of a fork: the 4-step
+#: plan had one step make both groups of a two-group transform.
 FORMERLY_EXPENSIVE = [
-    ("sink-6807", 6807, 4),
+    ("sink-6807", 6807, 6),
     ("sink-178", 178, 7),
     ("sink-9375", 9375, 9),
     ("sink-24", 24, 7),

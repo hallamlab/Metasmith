@@ -394,7 +394,7 @@ def PlanCases(
         r = job.root
         plan = plan_cls._Refuse(
             result=result, failed=failed, cases=index,
-            solver_inputs=(case_eps, list(transform2inst.keys()), cases[r].target),
+            solver_case=(cases[r].name, ([case_eps[r]], list(transform2inst.keys()), cases[r].target)),
             target_names=names[r], target_model=cases[r].target, **common,
         )
         plan.hints = hints + plan.hints
@@ -598,6 +598,10 @@ def PlanCases(
         targets=targets,
         steps=steps,
         _solver_result=combined,
+        _solver_cases=[
+            (cases[j.root].name + _describe(j, transform2inst), ([case_eps[j.root]], list(transform2inst.keys()), cases[j.root].target), r)
+            for j, r in zip(jobs, results)
+        ],
         dropped_targets=dropped_targets,
         cases=[c.name for c in cases],
         streams={

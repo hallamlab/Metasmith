@@ -17,7 +17,7 @@ from metasmith.testing.solver_verification import (
     forward_closure_solvable,
     generate_problem,
     plan_fingerprint,
-    problem_of_plan,
+    problems_of_plan,
 )
 
 
@@ -192,16 +192,17 @@ class TestProblemOfPlan:
         class _Bare:
             pass
 
-        assert problem_of_plan(_Bare()) is None
+        assert problems_of_plan(_Bare()) == []
 
     def test_the_reconstructed_problem_is_the_one_that_was_solved(self):
         source = generate_problem(3, GeneratorDials(n_types=6))
+        solved = source.solve()
 
         class _Plan:
-            _solver_inputs = (source.given, source.transforms, source.target)
+            _solver_cases = [("c", (source.given, source.transforms, source.target), solved)]
 
-        rebuilt = problem_of_plan(_Plan(), name="t")
-        assert rebuilt is not None
+        ((rebuilt, result),) = problems_of_plan(_Plan(), name="t")
+        assert result is solved
         assert rebuilt.target is source.target
         assert [set(g) for g in rebuilt.given] == [set(g) for g in source.given]
         assert list(rebuilt.transforms) == list(source.transforms)
@@ -212,7 +213,7 @@ class TestProblemOfPlan:
 
         from metasmith.models.workflow.plan import WorkflowPlan
 
-        assert "_solver_inputs" in {f.name for f in fields(WorkflowPlan)}
+        assert "_solver_cases" in {f.name for f in fields(WorkflowPlan)}
 
 
 class TestOracles:

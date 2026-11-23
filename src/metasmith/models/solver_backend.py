@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "REFINER_BUDGET",
+    "SEARCH_BUDGET",
     "Backend",
     "solve_with_engine",
 ]
@@ -27,13 +28,16 @@ __all__ = [
 #: Every layer above now forwards `None` and `solve_by_mcts` resolves it here.
 REFINER_BUDGET = 8
 
+#: Search iterations, the shipped default. A hybrid engcyc case needs about 313.
+SEARCH_BUDGET = 512
+
 
 def solve_with_engine(
     given: list[set[Endpoint]],
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
-    max_iter: int=512,
+    max_iter: int=SEARCH_BUDGET,
     max_refine: int=REFINER_BUDGET,
     fork_groups: Sequence[tuple[Transform, int]]=(),
     partial: Sequence[Transform]=(),

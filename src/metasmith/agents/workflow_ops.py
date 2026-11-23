@@ -18,6 +18,7 @@ from ..models.libraries import (
 )
 from ..models.remote import GlobusSource, Logistics, LogisticsResult, Source, SourceType
 from ..models.solver import Dependency, Transform
+from ..models.solver_backend import SEARCH_BUDGET
 from ..models.workflow import WorkflowPlan, WorkflowTask
 from ..models.workflow.setup import SetupFootprint, setup_subplan
 from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
@@ -407,7 +408,7 @@ class _WorkflowOps:
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         targets: TargetBuilder | list[str],
-        max_iter: int=512, max_refine: int|None=None, seed: int=42,
+        max_iter: int=SEARCH_BUDGET, max_refine: int|None=None, seed: int=42,
     ):
         return plan_views(
             [CaseViews("case", list(samples), [], targets)],

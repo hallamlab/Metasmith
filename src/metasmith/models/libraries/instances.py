@@ -343,20 +343,17 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 f"not samples of type [{', '.join(index_types)}] in [{self.location}]: {', '.join(stray)}"
             )
         subtree = {path: _walk(path, _children) for path in roots}
-        claimed: dict[Path, set[Path]] = {}
-        for path in roots:
-            for item in subtree[path] | {path}:
-                claimed.setdefault(item, set()).add(path)
-        # A sibling is shared context unless another sample's subtree claims it.
+        claimed = set(roots).union(*subtree.values())
+        # A sibling is shared context unless some sample's subtree claims it; a sibling this
+        # sample claims is already in its own subtree.
         context: dict[frozenset[Path], set[Path]] = {}
         for path in roots:
             if path not in wanted: continue
             ancestors = frozenset(ancestors_of[path])
             if ancestors not in context:
-                context[ancestors] = set().union(*(_walk(a, _children) for a in ancestors))
-            siblings = {x for x in context[ancestors] if not claimed.get(x, set()) - {path}}
+                context[ancestors] = set().union(*(_walk(a, _children) for a in ancestors)) - claimed
             yield DataInstanceLibraryView(
-                original=self, mask={path} | ancestors | subtree[path] | siblings,
+                original=self, mask={path} | ancestors | subtree[path] | context[ancestors],
             )
 
     def Trace(self, from_type: str, to_type: str):

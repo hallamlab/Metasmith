@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from metasmith.models.solver_backend import Backend
+from metasmith.models.solver_backend import SEARCH_BUDGET, Backend
 from metasmith.models.solver_engine import SOLVER_WIRE_VERSION, CallEngine, EngineFor
 from metasmith.models.solver_wire import encode_problem
 from metasmith.testing.solver_bench import CORPUS, STRESS_CORPUS, _libraries_root
 from metasmith.testing.solver_spec import CLAUSES, check_spec
 from metasmith.testing.witness_check import DECOYS, apply_decoy
-from metasmith.testing.solver_verification import generate_problem, problem_of_plan
+from metasmith.testing.solver_verification import generate_problem, problems_of_plan
 
 ALL_CASES = [(n, s, d) for n, s, d in CORPUS + STRESS_CORPUS]
 
@@ -21,12 +21,12 @@ def engine():
     return info
 
 
-def _wire(engine, problem):
+def _wire(engine, problem, max_iter=256):
     encoded = encode_problem(
         [set(g) for g in problem.given],
         list(problem.transforms),
         problem.target,
-        seed=42, max_iter=256, max_refine=256, wire_version=SOLVER_WIRE_VERSION,
+        seed=42, max_iter=max_iter, max_refine=256, wire_version=SOLVER_WIRE_VERSION,
     )
     return encoded.payload, CallEngine(engine, "solve", encoded.payload)
 
@@ -89,16 +89,15 @@ def test_the_shipped_templates_satisfy_the_specification(engine):
 
     seen = 0
     for template in Template.Discover(root):
-        problem = problem_of_plan(template.Plan().plan, name=template.name)
-        if problem is None:
-            continue
-        request, reply = _wire(engine, problem)
-        verdict = check_spec(request, reply)
-        assert verdict.ok, f"{template.name}: {verdict}"
-        assert _invariants(request, reply) == {
-            "two_producers": 0, "orphan_consumed": 0, "givens_missing_source": 0,
-        }, template.name
-        seen += 1
+        solves = problems_of_plan(template.Plan().plan, name=template.name)
+        for problem, _ in solves:
+            request, reply = _wire(engine, problem, max_iter=SEARCH_BUDGET)
+            verdict = check_spec(request, reply)
+            assert verdict.ok, f"{problem.name}: {verdict}"
+            assert _invariants(request, reply) == {
+                "two_producers": 0, "orphan_consumed": 0, "givens_missing_source": 0,
+            }, problem.name
+        seen += bool(solves)
     assert seen >= 4, f"only {seen} templates adjudicated"
 
 
