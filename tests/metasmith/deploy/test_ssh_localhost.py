@@ -3,10 +3,13 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from metasmith.agents import Agent, TargetBuilder
+from metasmith.agents.workflow_ops import _send_local_inputs
+from metasmith.coms.terminals import ShellResult
 from metasmith.constants import AgentPaths
 from metasmith.env import Runtime
 from metasmith.models.libraries import (
@@ -310,4 +313,36 @@ def test_ssh_deploy_runs_2_step_plan(
     workflow_nf = workspace / AgentPaths.NXF_WORKFLOW
     assert _ssh_test_exists(ssh_localhost, str(workflow_nf)), (
         f"workflow.nf missing at {workflow_nf} after StageWorkflow"
+    )
+
+
+def test_an_input_the_agent_lacks_is_copied_over_ssh_once(ssh_agent_home: Source, tmp_path: Path):
+    # localhost sees every local file, so the presence probe is told the input is
+    # missing; the copy itself goes through the real rsync-over-ssh channel.
+    reads = tmp_path / "local" / "r1.fq"
+    reads.parent.mkdir()
+    reads.write_bytes(b"@r\nACGT\n+\nIIII\n" * 1000)
+    home = ssh_agent_home.GetPath()
+
+    class _Host:
+        def Exec(self, cmd, what=None, **_):
+            if what == "checking the inputs on the agent host":
+                return ShellResult(out=[f"MISSING::{reads}"], err=[], exit_code=0)
+            res = subprocess.run(["ssh", "-o", "BatchMode=yes", "localhost", cmd], capture_output=True, text=True)
+            return ShellResult(out=res.stdout.splitlines(), err=[], exit_code=res.returncode)
+
+    given = [SimpleNamespace(path=reads, ResolvePath=lambda: reads)]
+    task = SimpleNamespace(_key="k", plan=SimpleNamespace(steps=[], given=given))
+
+    out = _send_local_inputs(_Host(), task, ssh_agent_home, home / "inputs")
+    copy = home / "inputs" / reads.relative_to("/")
+    assert out == {reads: copy}
+    assert copy.read_bytes() == reads.read_bytes()
+    assert int(copy.stat().st_mtime) == int(reads.stat().st_mtime)
+
+    before = copy.stat()
+    assert _send_local_inputs(_Host(), task, ssh_agent_home, home / "inputs") == out
+    after = copy.stat()
+    assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns), (
+        "an unchanged input was copied again"
     )

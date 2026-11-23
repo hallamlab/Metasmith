@@ -43,7 +43,7 @@ from .names import (
     slugify,
 )
 from .sshconfig import SshConfig, SshConfigError
-from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
+from .store import DOWNLOADS_DIRNAME, INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -1219,6 +1219,7 @@ def generate_workflow(name):
 
             synced = op_inputs.sync(
                 lib_path, rows, table, resolve_pool=_pool_resolver(p),
+                downloads=p.root / DOWNLOADS_DIRNAME,
             )
 
             registered = synced["rows"]

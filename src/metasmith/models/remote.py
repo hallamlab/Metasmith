@@ -595,7 +595,13 @@ class Logistics:
                 for src, dest in todo:
                     dest_path = Path(dest.address)
                     if dest_path.exists(): continue
-                    last_hash = shell.ExecAsync(f"mkdir -p {dest_path.parent} && curl --silent -L -o {dest_path} {src.address}")
+                    # A partial download must not take the final name: a present
+                    # file is what says this transfer is already done.
+                    part = dest_path.with_name(f".{dest_path.name}.part")
+                    last_hash = shell.ExecAsync(
+                        f'mkdir -p "{dest_path.parent}" && curl --fail --silent --show-error -L'
+                        f' -o "{part}" "{src.address}" && mv "{part}" "{dest_path}"'
+                    )
                 def _join():
                     if last_hash is not None:
                         shell.AwaitDone(_hash=last_hash, timeout=None)

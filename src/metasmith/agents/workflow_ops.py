@@ -16,7 +16,7 @@ from ..models.libraries import (
     DataInstanceLibrary, DataInstanceLibraryView, Gpu, LOCAL_LABEL, Resources,
     TransformInstanceLibrary, TransformInstanceLibraryView,
 )
-from ..models.remote import GlobusSource, Logistics, Source
+from ..models.remote import GlobusSource, Logistics, LogisticsResult, Source, SourceType
 from ..models.solver import Dependency, Transform
 from ..models.workflow import WorkflowPlan, WorkflowTask
 from ..models.workflow.setup import SetupFootprint, setup_subplan
@@ -99,35 +99,71 @@ def _assert_engine_runs_library(sh_remote, task) -> None:
     )
 
 
-def _assert_external_binds_exist(sh_remote, task, srcs: list[str]) -> None:
-    check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in srcs)
-    missing = [ln.split("MISSING::", 1)[1].strip()
-               for ln in _probe(sh_remote, check, "checking external binds") if "MISSING::" in ln]
-    if not missing: return
-    culprits: dict[str, list[str]] = {}
-    for inst in task.plan.given:
-        try:
-            p = inst.ResolvePath()
-        except Exception:
-            continue
-        if not p.is_absolute():
-            continue
-        for m in missing:
-            if p == Path(m) or p.is_relative_to(Path(m)):
-                culprits.setdefault(m, []).append(str(p))
-    lines = "\n".join(
-        f"  - {m}" + (f"  (from input: {', '.join(culprits[m])})" if culprits.get(m) else "")
-        for m in missing
-    )
-    raise FileNotFoundError(
-        f"cannot stage workflow [{task._key}]: {len(missing)} external "
-        f"input folder(s) must be bound into the remote container but do "
-        f"not exist on the remote host:\n{lines}\n"
-        f"External (absolute-path) inputs are bound verbatim into the "
-        f"remote container -- metasmith does NOT transfer them. Make these "
-        f"inputs resident on the remote agent host (or reference paths "
-        f"that exist there) before staging. [#240]"
-    )
+def _missing_on_agent(sh_remote, paths: list[Path]) -> list[Path]:
+    check = "\n".join(f'[ -e "{p}" ] || echo "MISSING::{p}"' for p in paths)
+    return [Path(ln.split("MISSING::", 1)[1].strip())
+            for ln in _probe(sh_remote, check, "checking the inputs on the agent host") if "MISSING::" in ln]
+
+
+def _remote_stats(sh_remote, paths: list[Path]) -> dict[Path, str]:
+    check = "\n".join(f'echo "STAT::{p}::$(stat -c "%s %Y" "{p}" 2>/dev/null)"' for p in paths)
+    out: dict[Path, str] = {}
+    for ln in _probe(sh_remote, check, "checking the copied inputs"):
+        if ln.startswith("STAT::"):
+            p, _, st = ln[len("STAT::"):].rpartition("::")
+            out[Path(p)] = st.strip()
+    return out
+
+
+def _send_local_inputs(sh_remote, task, home: Source|None, inputs_root: Path) -> dict[Path, Path]:
+    # Copies each absolute input the agent host lacks into `inputs_root`, mirroring
+    # its local path, and returns original -> copy. `home` is None when the agent
+    # cannot be copied to, which leaves a missing input an error.
+    given = sorted({inst.ResolvePath() for inst in task.plan.given if inst.path.is_absolute()})
+    missing = _missing_on_agent(sh_remote, given) if given else []
+    if not missing: return {}
+    copyable = [p for p in missing if home is not None and p.exists()]
+    gone = [p for p in missing if p not in copyable]
+    if gone:
+        lines = "\n".join(f"  - {p}" for p in gone)
+        if any(p.exists() for p in gone):
+            todo = (
+                "This agent's home cannot be copied to from here, so put each input on the "
+                "agent host yourself and point its row at the path there."
+            )
+        else:
+            todo = "They are not on this machine either, so there is nothing to copy. Point each row at a file that exists."
+        raise FileNotFoundError(
+            f"cannot stage workflow [{task._key}]: {len(gone)} input(s) do not exist on "
+            f"the agent host:\n{lines}\n{todo}"
+        )
+    relocated = {p: inputs_root/p.relative_to("/") for p in copyable}
+    Log.Info(f"copying [{len(relocated)}] input(s) to the agent at [{inputs_root}]")
+    mover = Logistics()
+    for p, q in relocated.items():
+        mover.QueueTransfer(src=Source(address=str(p), type=SourceType.DIRECT), dest=home.ReplacePathWith(q))
+    try:
+        res = mover.ExecuteTransfers(label="inputs", resolve_symlinks=True)
+    except Exception as e:
+        res = LogisticsResult(completed=[], errors=[f"{type(e).__name__}: {e}"])
+    done = {d.address for _, d in res.completed}
+    stats = _remote_stats(sh_remote, [q for p, q in relocated.items() if p.is_file()])
+    failed = []
+    for p, q in relocated.items():
+        if home.ReplacePathWith(q).address not in done:
+            failed.append(p)
+        elif p.is_file() and stats.get(q) != f"{p.stat().st_size} {int(p.stat().st_mtime)}":
+            failed.append(p)
+    if failed:
+        lines = "\n".join(f"  - {p} -> {relocated[p]}" for p in failed)
+        errors = "\n".join(res.errors[-10:])
+        raise RuntimeError(
+            f"cannot stage workflow [{task._key}]: copying {len(failed)} input(s) to the agent "
+            f"failed, or the copy differs from the file here:\n{lines}\n"
+            f"Check the agent host has space and the path is writable, delete any copy listed "
+            f"above, and stage again." + (f"\n{errors}" if errors else "")
+        )
+    return relocated
 
 
 # Keys the engine itself reads from a run's params, beside those the preset and
@@ -379,8 +415,8 @@ class _WorkflowOps:
             max_iter=max_iter, max_refine=max_refine, seed=seed,
         )
 
-    def _get_mock_container(self, task: WorkflowTask):
-        binds = task.GetCommonInputFolders(method="external")
+    def _get_mock_container(self, task: WorkflowTask, relocated: dict[Path, Path]|None=None):
+        binds = task.GetCommonInputFolders(method="external", relocated=relocated)
         mock = Environment(
             image=self.container,
             runtime=self.runtime,
@@ -440,17 +476,26 @@ class _WorkflowOps:
                         task_stage_partial = "transforms_only"
 
             _assert_engine_runs_library(sh_remote, task)
+            relocated = _send_local_inputs(
+                sh_remote, task,
+                home=self.home if self._is_ssh() else None,
+                inputs_root=Path(str(self.real_path or self.home.GetPath()))/AgentPaths.INPUTS,
+            )
             Log.Info(f"sending context for workflow [{task._key}]")
             task.SaveAs(
                 self.home.ReplacePathWith(remote_path),
                 partial=task_stage_partial, prune=prune_libraries,
             )
+            sh_remote.Exec(
+                f"cat > {remote_path/WorkflowTask.RELOCATED_FILE} <<'MSM_RELOCATED'\n"
+                f"{yaml.dump({str(p): str(q) for p, q in relocated.items()})}MSM_RELOCATED",
+                history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="recording the copied inputs",
+            )
             Log.Info(f"staging")
-            mock = self._get_mock_container(task)
+            mock = self._get_mock_container(task, relocated)
             if len(mock.container.binds) > 0:
-                _srcs = [str(src) for src, _dst in mock.container.binds]
-                _assert_external_binds_exist(sh_remote, task, _srcs)
-                Log.Info(f"external binds {_srcs}")
+                Log.Info(f"external binds {[str(src) for src, _dst in mock.container.binds]}")
             binds = mock.MakeBindsParam()
             _rootfs_arg = f" rootfs={rootfs.value}" if rootfs is not None else ""
             sres = sh_remote.Exec(f"""\

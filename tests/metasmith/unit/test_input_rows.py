@@ -9,6 +9,8 @@ from metasmith.models.solver import Endpoint
 from metasmith.ops import inputs as op_inputs
 from metasmith.ops import samples as op_samples
 
+from tests.metasmith.support import serve_directory
+
 
 @pytest.fixture
 def lib_path(tmp_path) -> Path:
@@ -233,6 +235,48 @@ def test_a_file_row_cannot_be_library_owned(lib_path, tmp_path):
     with pytest.raises(AssertionError, match="relative path"):
         op_inputs.sync(str(lib_path), [row("p", "reads.fa")])
     assert [str(p) for p in loaded(lib_path).manifest] == [str(f)]
+
+
+@pytest.fixture
+def served(tmp_path):
+    root = tmp_path / "served"
+    root.mkdir()
+    with serve_directory(root) as (base, hits):
+        yield root, base, hits
+
+
+def test_a_url_row_is_downloaded_once_and_registered(lib_path, tmp_path, served):
+    root, base, hits = served
+    (root / "reads_1.fastq.gz").write_bytes(b"reads")
+    url = f"{base}/reads_1.fastq.gz"
+    downloads = tmp_path / "downloads"
+
+    out = op_inputs.sync(str(lib_path), [row("u", url)], downloads=downloads)
+    at = Path(out["rows"]["u"])
+    assert at.is_absolute() and at.is_relative_to(downloads) and at.name == "reads_1.fastq.gz"
+    assert at.read_bytes() == b"reads"
+    before = ids(lib_path)
+
+    op_inputs.sync(str(lib_path), [row("u", url)], downloads=downloads)
+    assert hits == ["/reads_1.fastq.gz"], "a URL already downloaded was fetched again"
+    assert ids(lib_path) == before
+
+
+def test_a_url_keeps_its_double_slash_when_refused(lib_path):
+    url = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR965/008/SRR9658108/SRR9658108_1.fastq.gz"
+    with pytest.raises(AssertionError) as e:
+        op_inputs.sync(str(lib_path), [row("u", url)])
+    assert url in str(e.value) and "download" in str(e.value)
+    assert list(loaded(lib_path).manifest) == []
+
+
+def test_a_failed_download_registers_nothing(lib_path, tmp_path, served):
+    _root, base, _hits = served
+    downloads = tmp_path / "downloads"
+    with pytest.raises(AssertionError, match="could not download"):
+        op_inputs.sync(str(lib_path), [row("u", f"{base}/missing.fq")], downloads=downloads)
+    assert list(loaded(lib_path).manifest) == []
+    assert not [f for f in downloads.rglob("*") if f.is_file() and not f.name.endswith(".part")]
 
 
 def test_a_lineage_loop_is_refused(lib_path, tmp_path):

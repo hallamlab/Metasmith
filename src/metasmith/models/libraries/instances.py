@@ -81,7 +81,7 @@ class DataInstance:
 
     def ResolvePath(self):
         if self.path.is_absolute():
-            return self.path
+            return self.parent_lib.relocated.get(self.path, self.path)
         else:
             return self.parent_lib.location/self.path
 
@@ -150,6 +150,10 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self._endpoint_cache: dict[Path, Endpoint] = {}
         self.instance_meta: dict[Path, dict] = {}
         self.cases: dict[Path, list[str]] = {}
+        # Where an absolute entry's bytes sit on this host when staging copied
+        # them there. The manifest keeps the original path, which is what the
+        # library key and the entry's identity are about.
+        self.relocated: dict[Path, Path] = {}
         self._type_sources: dict[str, Path] = {}
         # The `pinned:` block from index.yml, or None for the overwhelming
         # majority of libraries. See pinned.py.

@@ -38,7 +38,9 @@ Two sources of identity:
   reuses cached results across runs. The absolute path belongs to the host
   that ran the stat, which is why staging re-derives: the client that
   registered a remote input cannot see it, and the agent that will read it
-  can. Two hosts holding identical bytes at different paths do not agree,
+  can. An input the agent host lacks is copied there at staging and keeps
+  the id the client derived, so where the copy lives never moves the
+  cache key. Two hosts holding identical bytes at different paths do not agree,
   and an in-place edit that restores mtime is invisible — the same
   asymmetry ``models/libraries/pinned.py`` spells out. Falls back to a
   unique-per-call random id where nothing can stat the path. Force the

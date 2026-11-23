@@ -28,6 +28,7 @@ OUTPUTS_DIRNAME = "outputs"
 INPUT_LIBRARY_DIRNAME = "input.xgdb"
 STDLIB_DIRNAME = "MetasmithLibraries"
 CACHE_DIRNAME = ".cache"
+DOWNLOADS_DIRNAME = "downloads"
 
 REQUEST_FILE = "request.yml"
 RESULT_FILE = "result.yml"

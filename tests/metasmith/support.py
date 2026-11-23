@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import functools
+import http.server
 import shutil
+import threading
 from pathlib import Path
 
 import yaml
@@ -93,3 +97,26 @@ def nxf_exec(container: str, workdir: Path, timeout: int) -> list[str]:
         "-e", "NXF_DISABLE_CHECK_LATEST=true",
         container, "timeout", "-s", "KILL", str(timeout),
     ]
+
+
+@contextlib.contextmanager
+def serve_directory(root: Path):
+    hits: list[str] = []
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            super().do_GET()
+
+        def log_message(self, *_):
+            pass
+
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(_Handler, directory=str(root)),
+    )
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", hits
+    finally:
+        server.shutdown()
+        server.server_close()

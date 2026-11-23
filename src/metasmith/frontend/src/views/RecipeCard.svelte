@@ -511,7 +511,7 @@
                 'path',
                 row.row.path,
                 row.row.column,
-                '/data/sample_01.fastq.gz',
+                '/data/sample_01.fastq.gz or https://…',
                 true,
                 (text) => onrow?.(row.id, { path: text }),
                 (col) => onrow?.(row.id, { column: col }),
