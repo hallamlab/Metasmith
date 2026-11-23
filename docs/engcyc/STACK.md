@@ -6,9 +6,11 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-solver-investigation — Tony: "If the solver should work, something is going wrong. Can we investigate what is going wrong?" Investigate why engcyc_metagenomics (47 targets) needs 255/256 iterations for short reads and fails for hybrid (even with competing assemblers hidden); 384 iterations -> 47 GB. Then: solve-scenarios test (isolate, hybrid, short-from-SRA accession must each solve; Tony 2026-11-22). Evidence and probes: /home/tony/.claude/jobs/7892d031/tmp/hybrid-solve/ (sub.py: target subsets + competitor hiding), research/metasmith_libraries/probe_engcyc_template.py short|hybrid|mixed. Raw-read Flye deleted (8c4ca696). Metabuli worker still running (archive download on fir login2, then build).
+solver-investigation — cause found (Fable agent, 2026-11-22; prototypes in /home/tony/.claude/jobs/7892d031/tmp/solver-inv/crate, switches MSM_FWD/MSM_FIRST/MSM_ANCHOR). Three causes: (1) selection is lineage-blind (prior per transform, mcts.rs:127; visits per transform, policy.rs:495) so the MEGAHIT and Flye lanes get built in full though target 1 pins the assembly to OPERA-MS; assembly_stats x2 read classes x3 binners x prodigal/prodigal_gv GFF -> up to 16 das_tool per assembly; (2) target binding DFS (search.rs:298-312) checks lineage only on reaching a slot -> 1.58 M nodes per call, viable=0 (the 261 s); (3) once feasible the DFS mints the full cross product of target applications (short's 80 s / 5.5 GB; likely the 47 GB). Fixes: forward-check in DFS (order-preserving), first viable leaf for the target (re-pin corpus), dead-anchor prior (demotion, never loses a solution). All three: hybrid 47 targets solves at 256 (244 iters, 182 steps, 0.65 s, 13 MB), stock `check` accepts; short 0.17 s. Not run: fingerprint corpus, multi-sample, Python refine path; short plan 184 vs 182 steps undiffed. Then: solve-scenarios test (isolate, hybrid, short-from-SRA accession).
 
 ## Waiting on the user
+- Start a new Metabuli build worker? (old one stopped by the app; download 124/192 GB at 19:10, ~65 min left)
+- Implement the three solver fixes on a branch?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -46,7 +48,7 @@ solver-investigation — Tony: "If the solver should work, something is going wr
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- metabuli-r232 — HQ GTDB r232 Metabuli DB build on fir
+- (none; metabuli-r232 worker stopped by the app 2026-11-22, download still running on fir login2)
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
