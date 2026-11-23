@@ -540,3 +540,34 @@ Membership. Tony: "If they're documented to support long reads, go ahead. If not
   - inStrain: the maintainer (inStrain issue #104) says HiFi (~Q30) works and error-prone long reads inflate SNV calls.
 
 Where it landed: pending (worker).
+
+## plan-cases (2026-11-23)
+
+Question: how does one template plan short reads and long reads with different target sets?
+
+Tony: "first we just have 2 normal solves from given and targets. these are short reads to all relavent engcyc targets, then another solve from long reads to a similar but modified set of targets. the solver should be handed these 2 together and it should merge steps when appropriate. This is the base case. this also lends itself well to tabs when dealing with grouped solves" / "template doesnt hold a set of named solves. it holds a list of specs that read like individual solve requests, but is solved once" / "inputs are given per solver spec/case ... This allows runs where each input can be funnelled into a specific case". Naming agreed: an entry is a **case**, the action is **plan**.
+
+Decided design:
+- A case is one classical request: its own inputs plus its own targets. `Plan([case, ...])` hands every case to the solver once and returns one merged plan (the engine's existing `WorkflowPlan.Generate(cases=...)` and case_merge). "Solve" stays an engine word.
+- A template holds a list of cases. The GUI shows one tab per case, each with its own samples and targets.
+- Inputs are given per case. The target `when` condition and the per-shape target callable are removed (they reversed this: one target list split by shape).
+- AsSamples is fixed so a sample is its own index item, its descendants and its ancestors, not its siblings (multi-sample-collapse). Needed so several samples inside one case fan out.
+- engcyc becomes two cases: short reads to the engcyc targets; long reads to a modified set with the long-read taxonomy lanes (sra-split).
+- Known limit: each case picks its tools independently; steps merge only where the picks agree.
+
+Supersedes the `when` design from shape-targets (5155d9ce).
+
+Where it landed: worker plan-cases (feat/engine/plan-cases).
+
+## sra-split (2026-11-23)
+
+Question: how does an SRA accession plan when its fetch can return short or long reads?
+
+Tony: "just splitting the long and short read accession is the simplest move here" / "add in the long read level taxonomy tools that are known to be supported" / "disregard aggregators. they prevent optional outputs, discard idea".
+
+Decided design:
+- Two accession types, short-read and long-read, each with its own fetch transform. getSraReads' three-group fork and the short_reads_pe/se types go.
+- Long-read read-level taxonomy lanes for documented tools only: MetaPhlAn 4.2 (--long_reads), StrainPhlAn 4.2, sylph, Kraken2, ganon2 (sources in read-taxonomy-ensemble). Not Metabuli, Centrifuger or inStrain.
+- Each lane is an optional target of engcyc's long-read case (plan-cases).
+
+Where it landed: worker sra-split (feat/engine/sra-split); engcyc's two cases after plan-cases lands.
