@@ -613,3 +613,20 @@ Design: setup adds one `pullContainer` step per image after the plan is sliced, 
 Setup's results expose two folders: `references/<name>` (hard links or relative symlinks per the preset, as now) and `envs/<name>` (one small record per image: reference, digest, store path, not the SIF, because the store can be on another filesystem). Tony: "hopefully this doesnt copy a bunch of files uselessly on later runs". A later run serves both from cache as links.
 
 Landed: worker setup-steps (feat/engine/setup-steps). Both issues are in 0.26.1.
+
+## prep-footprint — 2026-11-23
+
+Question: the full engcyc prep peaks above nibi's free 849 GB, because every download archive stays in the cache after its build step unpacks it. How do we keep only usable outputs?
+
+Tony: "by the end, we just get the usable versions and the rest is deleted?" / "maybe we should just delete all intermediates not specified by a target?" / "We can just have the template specify them as targets ... I think that's cleaner than having two things." / "if the whole thing is done and I rerun the whole thing, it should just not do anything". Then: "ask for each annotation lane directly", "add reference databases as targets (this also then would test cache hit on previous run's databases)", "quality mags only".
+
+Design:
+- A run deletes every product that is not a target once every step that reads it has succeeded. A failed reader keeps its inputs, so a rerun resumes.
+- One keep mark: a target. Templates name their checkpoints as targets. The docs, the public Read the Docs pages included, say that only targets are kept.
+- One plan toggle keeps every intermediate for debugging: `publish_intermediates` becomes `keep_intermediates` (keep and publish), shown in the GUI.
+- Skip rule: a step whose readers all hit the cache does not run, so a deleted intermediate does not rerun its producer, and a full rerun with every target cached runs nothing.
+- engcyc_metagenomics targets: every annotation lane table (adds merops, refseq_viral, vogdb, dbcan, deepec, deeparg, pathofact_ml, pathofact_hmm, pbert, clean, bigg); the built reference databases (prep's list, so run 4's main run tests a cache hit on prep's databases); quality MAGs only (DAS Tool bin FASTA is no longer a target). Aggregate annotation tables stay inside their consumers' workspaces.
+- Prior art: the cache projection from engine/direct-run (2026-09) plans from cached products but has no caller and works for local agents only.
+- The ~40 s three-case plan time (case_merge rebuilds step order per placement) is fixed in the same rebuild.
+
+Landed: workers prep-footprint-engine and prep-footprint-template (pending).
