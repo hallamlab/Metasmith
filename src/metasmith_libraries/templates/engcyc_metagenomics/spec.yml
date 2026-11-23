@@ -7,11 +7,7 @@ description: 'The Engcyc metagenomics workflow from reads, one sample per read s
   download; a ~ marks an estimate.
 
 
-  Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads; a hybrid sample
-
-  (short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
-
-  downstream lanes read the OPERA-MS assembly.
+  Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads.
 
   Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 
@@ -75,12 +71,6 @@ description: 'The Engcyc metagenomics workflow from reads, one sample per read s
 sample_type: sequences::read_metadata
 target_types:
 - sequences::assembly
-- type: sequences::opera_ms_assembly
-  parents:
-  - 0
-  when:
-  - sequences::long_reads
-  - sequences::zipped_forward_short_reads
 - sequences::read_qc_stats
 - type: sequences::assembly_stats
   parents: &id001
@@ -95,7 +85,7 @@ target_types:
   parents: *id001
 - type: taxonomy::checkm_stats
   parents:
-  - 6
+  - 5
 - type: binning_local::quality_bin_fasta
   parents: *id001
 - type: taxonomy::gtdbtk_quality
@@ -104,7 +94,7 @@ target_types:
   parents: *id001
 - type: annotation::uniref50_lane_table
   parents: &id002
-  - 4
+  - 3
 - type: annotation::kofam_lane_table
   parents: *id002
 - type: annotation::interproscan_lane_table

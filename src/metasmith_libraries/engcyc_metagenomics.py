@@ -10,9 +10,7 @@ The Engcyc metagenomics workflow from reads, one sample per read set. Every lane
 its own target; deselect a target to drop its lane. Sizes are each lane's reference
 download; a ~ marks an estimate.
 
-Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads; a hybrid sample
-(short + long reads) gets the hybrid lane, MEGAHIT draft -> OPERA-MS, and its
-downstream lanes read the OPERA-MS assembly.
+Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads.
 Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 at >= 50% complete and <= 10% contamination.
 Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan against GTDB r232
@@ -46,24 +44,18 @@ modelling::medium_name.
 """
 
 ASSEMBLY = "sequences::assembly"
-# The hybrid lane goes to the samples that carry long reads beside their short reads.
-# Anchored to the assembly, so a hybrid sample's assembly is its OPERA-MS assembly
-# and every lane hanging off the assembly reads it.
-HYBRID = {"type": "sequences::opera_ms_assembly", "parents": [0],
-          "when": ["sequences::long_reads", "sequences::zipped_forward_short_reads"]}
 
 # Each entry hangs off the assembly (0), the ORFs (ORFS) or the DAS Tool bins (BINS).
-ORFS, BINS = 4, 6
+ORFS, BINS = 3, 5
 _A, _O, _B = [0], [ORFS], [BINS]
 TARGETS = [
     ASSEMBLY,                                                          # 0
-    HYBRID,                                                            # 1
-    "sequences::read_qc_stats",                                        # 2
-    {"type": "sequences::assembly_stats", "parents": _A},              # 3
-    {"type": "sequences::assembly_orfs", "parents": _A},               # 4
-    {"type": "sequences::gff", "parents": _A},                         # 5
+    "sequences::read_qc_stats",                                        # 1
+    {"type": "sequences::assembly_stats", "parents": _A},              # 2
+    {"type": "sequences::assembly_orfs", "parents": _A},               # 3
+    {"type": "sequences::gff", "parents": _A},                         # 4
     # binning
-    {"type": "sequences::das_tool_bin_fasta", "parents": _A},          # 6
+    {"type": "sequences::das_tool_bin_fasta", "parents": _A},          # 5
     {"type": "binning::das_tool_summary", "parents": _A},
     {"type": "taxonomy::checkm_stats", "parents": _B},
     {"type": "binning_local::quality_bin_fasta", "parents": _A},
