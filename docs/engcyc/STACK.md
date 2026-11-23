@@ -9,8 +9,7 @@ Decisions: docs/engcyc/DECISIONS.md
 solve-scenarios — isolate (11 steps), hybrid (173) and short (172) solve after the solver fixes (merged 1e3f3ae7; budget 512 911a5e4a). SRA accession: merge_candidate_calls now anchors on read_metadata and engcyc loads ncbi.yml (8ca8722b), but the solve still fails on the getSraReads fork (long-reads outcome cannot reach the targets; "no single plan within 247 iterations"). Fable agent diagnosing on feat/engine/sra-fork.
 
 ## Waiting on the user
-- metabuli-r232: where to host the 77 GB db_final
-- sra-fork: A typed accessions (sra_short_accession / sra_long_accession, one fetch each; recommended) vs B drop unroutable fork outcomes vs C per-outcome target subsets. Cause: getSraReads' long outcome is solved first and cannot reach instrain/metaphlan/strainphlan; refusing is the documented contract (2 tests in tests/metasmith/flow/test_forks.py); short outcomes merge to 176 steps
+- sra-fork (reframed by Tony 2026-11-23: the gap is no long reads -> read-level taxonomy): how inStrain and StrainPhlAn reach a long-read outcome (both short-read-typed; MetaPhlAn 4.2.4 has --long_reads). Earlier options: A typed accessions (sra_short_accession / sra_long_accession, one fetch each; recommended) vs B drop unroutable fork outcomes vs C per-outcome target subsets. Cause: getSraReads' long outcome is solved first and cannot reach instrain/metaphlan/strainphlan; refusing is the documented contract (2 tests in tests/metasmith/flow/test_forks.py); short outcomes merge to 176 steps
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -21,6 +20,7 @@ solve-scenarios — isolate (11 steps), hybrid (173) and short (172) solve after
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
+- read-taxonomy-ensemble — Tony 2026-11-23: "short reads should reallly be SR -> read level taxonomy tools -> read-level taxonomy aggregator that asks for the ensemble. then we need a similar one for long reads." Library has kraken2, centrifuger, ganon2, sylph, metaphlan (all typed sequences::short_reads) and metabuli (typed on the assembly). Long-read capable: MetaPhlAn 4.2 (--long_reads, minimap2; we pin 4.2.4), sylph (nanopore/PacBio), Metabuli (seq-mode 3), Kraken2, Centrifuger; inStrain built for short-read BAMs; StrainPhlAn follows MetaPhlAn's alignments (unverified for long reads)
 - annotation-aggregate-followups — from 6504e5cb: research drivers reparse_run.py and scadc_metag_gpr_4lane.py call the deleted 4-lane lib (port them); PathoFact not in the table (no batch merge, unknown output, image unpullable) — goes with the PathoFact port; BiGG lane has no BiGG->MNXR crosswalk so it is not in the GPR tables, and carveme_from_orfs still runs its own search instead of reading bigg_diamond_hits; antiSMASH/RGI/AMRFinderPlus parsers written from docs, check on real output; lib::fabfos_gpr is a fabfos name for general code; annotation table needs an assembly (bare-ORF fosmid path keeps the 4-lane route); gpr_4lane still a separate producer of gpr_table (pinned equal to the all-lanes subset)
 - licensed-build-followups — recipes verified on real downloads (770ed56c, merged 01a47c9f); five SIFs in ~/licensed-staging/sif; on fir licensed/ and chinook archive (journal 24a54a65). Open: DeepLocPro has no env file or lane, public image push to quay needs Tony's ok (CC BY-NC-SA); test_built_image.py not rerun after last two recipe fixes; PT SIF drops xvfb/less (GUI mode untested); DeepTMHMM uses every CPU (cap threads in its lane); docker loads the whole archive per call (~4 GB PT); build steps run on login node; fir drivers pin agent image 0.24.2; no DeepTMHMM/DeepLocPro/Phobius consumer lanes yet; Phobius Perl warnings harmless
 - dram-port-followups — from 3abba16d: old dram_annotate_genes + buildDramDB (24 GB Pfam-A.full) overlap the port, retire (no rivals); IPS Pfam lacks version so Pfam ids never reach distill (no shipped form uses them); MEROPS via DIAMOND not mmseqs; rank only C/D/E (no reverse search); UniRef50 top hit lacks DRAM's bitscore>=60 cut; genome stats lack taxonomy/completeness/tRNA/rRNA; dbCAN/VOGDB descriptions written at merge, not chunk; nothing run end to end; comparison vs upstream DRAM on one CPE3 MAG (research/dram_port/README.md) not run
@@ -49,6 +49,7 @@ solve-scenarios — isolate (11 steps), hybrid (173) and short (172) solve after
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- metabuli-archive — Sonnet worker: Globus fir -> chinook Projects /Resources/references/metabuli/gtdb_r232_hq_t2t_viral/ (Tony 2026-11-23: archive for later use)
 - sra-fork — Fable agent: SRA accession solve (getSraReads fork) on feat/engine/sra-fork
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
