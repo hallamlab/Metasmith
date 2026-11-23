@@ -9,7 +9,7 @@ Decisions: docs/engcyc/DECISIONS.md
 solve-scenarios — isolate (11 steps), hybrid (173) and short (172) solve after the solver fixes (merged 1e3f3ae7; budget 512 911a5e4a). SRA accession: merge_candidate_calls now anchors on read_metadata and engcyc loads ncbi.yml (8ca8722b), but the solve still fails on the getSraReads fork (long-reads outcome cannot reach the targets; "no single plan within 247 iterations"). Fable agent diagnosing on feat/engine/sra-fork.
 
 ## Waiting on the user
-- inStrain under the SRA fork: it is short-read-only (maintainer: HiFi ok, ONT not) and still an engcyc target, so an SRA accession may still fail; keep it as a target, drop it from defaults, or make it short-read-only by another route?
+- sra-fork: Tony 2026-11-23 "just splitting the long and short read accession is the simplest move here" (option A). Confirm: read-taxonomy ensemble shelved?
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
@@ -49,7 +49,6 @@ solve-scenarios — isolate (11 steps), hybrid (173) and short (172) solve after
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- read-taxonomy — worker builds SR/LR read-level taxonomy aggregators (MetaPhlAn, StrainPhlAn, sylph, Kraken2, ganon2) on feat/engine/read-taxonomy and wires engcyc
 - metabuli-archive — Sonnet worker: Globus fir -> chinook Projects /Resources/references/metabuli/gtdb_r232_hq_t2t_viral/ (Tony 2026-11-23: archive for later use)
 - sra-fork — Fable agent: SRA accession solve (getSraReads fork) on feat/engine/sra-fork
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
