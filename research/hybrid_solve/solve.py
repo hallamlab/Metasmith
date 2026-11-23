@@ -43,7 +43,7 @@ def dummy(name):
     return p
 
 
-def declare_givens(smith, nano_type="hyb::nanopore_reads", hybrid_short_type="sequences::short_reads_pe", tag="base",
+def declare_givens(smith, nano_type="hyb::nanopore_reads", hybrid_short_type="sequences::short_reads", tag="base",
                    one_study=False, samples=None):
     # A study per shape, or one study for every sample with one_study.
     givens = smith.PoolGivens()
@@ -58,7 +58,7 @@ def declare_givens(smith, nano_type="hyb::nanopore_reads", hybrid_short_type="se
         meta = c.add_value(givens, f"{ns}/read_metadata",
                            {"sample": sid, "parity": "paired", "length_class": "short"},
                            "sequences::read_metadata", parents=[study])
-        short_type = hybrid_short_type if hybrid else "sequences::short_reads_pe"
+        short_type = hybrid_short_type if hybrid else "sequences::short_reads"
         c.add_file(givens, f"{ns}/reads/{short_type}", dummy(f"{sid}_R.fq.gz"), short_type, parents=[meta])
         if hybrid:
             c.add_file(givens, f"{ns}/long/{nano_type}", dummy(f"{sid}_ont.fq.gz"), nano_type, parents=[meta])
