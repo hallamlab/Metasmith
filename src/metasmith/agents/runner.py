@@ -12,6 +12,7 @@ from typing import Iterable
 import pandas as pd
 import yaml
 
+from ..caching.layout import default_cache_root
 from ..constants import AgentPaths, MODULE_PATH, VERSION
 from ..coms.terminals import LiveShell
 from ..env import Environment, Rootfs
@@ -270,6 +271,50 @@ def RenderNextflowScript(
             done
             wait $PID 2>/dev/null
             """
+
+
+def RenderProbeScript(*, workspace, log_dir, host: str) -> str:
+    # The footprint's probe pass (caching/footprint.py): the same workflow, no
+    # process, nothing published. It is over in the time nextflow takes to start
+    # and walk the channels, so it needs no supervisor.
+    return f"""
+            cd {workspace}
+            export NXF_HOME=./.nextflow
+            export NXF_OFFLINE=TRUE
+            export NXF_OPTS="-Xms256m -Xmx2g -XX:ActiveProcessorCount=1"
+            nextflow \
+                -config ./{AgentPaths.NXF_RES} \
+                -config ./{AgentPaths.NXF_CONFIG} \
+                -log {log_dir}/nxf_probe.log \
+                run ./{AgentPaths.NXF_WORKFLOW} \
+                -params-file ./{AgentPaths.NXF_PARAMS} \
+                --hostName "{host}" \
+                --output nxf_probe/results \
+                --msm_probe true \
+                -lib ./lib \
+                -ansi-log false \
+                -work-dir {workspace}/nxf_probe
+            """
+
+
+def _probe_footprint(shell, task, workspace: Path, log_dir: Path, host: str, cache_root: Path):
+    from ..caching import footprint
+    from ..models.workflow.cache_decisions import cache_enabled
+
+    footprint.reset(workspace)
+    if task.plan.keep_intermediates or not cache_enabled() or not footprint.has_ghosts(cache_root):
+        return
+    Log.Info("probing the cache for deleted products this run can do without")
+    probe = shell.Exec(RenderProbeScript(workspace=workspace, log_dir=log_dir, host=host), timeout=None)
+    if probe.exit_code != 0:
+        Log.Warn(f"cache probe failed (see [{log_dir}/nxf_probe.log]), so every deleted product a step reads is made again")
+        footprint.reset(workspace)
+        return
+    plan = footprint.plan_skips(workspace, cache_root)
+    Log.Info(
+        f"cache: [{len(plan['skip'])}] deleted member(s) skipped because every reader hits,"
+        f" [{len(plan['rerun'])}] made again"
+    )
 
 
 def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = None):
@@ -740,6 +785,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
+        _probe_footprint(shell, task, workspace, log_dir, host, default_cache_root(Path(str(extern_home))))
         with _Heartbeat(shell, workspace, task), _LineageReport(
             workspace, task, extern_home=Path(str(extern_home)), out_dir=workspace/log_dir,
         ):
@@ -777,7 +823,6 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         )
 
     try:
-        from ..caching.layout import default_cache_root
         from ..caching.promote import record_run
 
         cache_log: list = []

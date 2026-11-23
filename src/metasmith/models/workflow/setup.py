@@ -72,7 +72,7 @@ def setup_subplan(task: WorkflowTask, pull_images: bool = False) -> WorkflowTask
         given=[inst for inst in task.plan.given if inst.instance_id in consumed],
         targets=targets,
         steps=kept,
-        publish_intermediates=task.plan.publish_intermediates,
+        keep_intermediates=task.plan.keep_intermediates,
         setup=True,
     )
     return WorkflowTask(

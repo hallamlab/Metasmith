@@ -13,6 +13,7 @@ cost stays that of one interpreter.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -114,52 +115,90 @@ def member_intact(shard: Path, entry: dict) -> bool:
     return True
 
 
-def probe(cache_root: Path, key: bytes) -> Optional[Path]:
-    """The shard that can serve `key`, or None.
+def shard_state(cache_root: Path, key: bytes) -> tuple[str, Path, list[tuple[str, bool]]]:
+    """What the shard for `key` holds: `hit`, `ghost` or `miss`, and its files.
 
     A hit needs a manifest, every file it lists present at its recorded size,
-    and no tombstone.
+    and no tombstone. A ghost is a shard a run deleted products from: the
+    manifest still names every output, so a consumer's key can be computed
+    without them, and each listed file is either intact or absent. Each file
+    is `(name, present)`, the name without its `out/` directory.
     """
     shard = shard_dir(Path(cache_root), key.hex())
     if (shard / TOMBSTONE_NAME).exists():
-        return None
+        return "miss", shard, []
     manifest = read_manifest(shard)
-    if manifest is None:
-        return None
-    for f in manifest.get("files", []):
-        if not member_intact(shard, f):
-            return None
-    return shard
+    if manifest is None or not manifest.get("files"):
+        return "miss", shard, []
+    files: list[tuple[str, bool]] = []
+    for f in manifest["files"]:
+        present = os.path.lexists(shard / f["relpath"])
+        if present and not member_intact(shard, f):
+            return "miss", shard, []
+        files.append((Path(f["relpath"]).name, present))
+    return ("hit" if all(p for _, p in files) else "ghost"), shard, files
 
 
-def probe_members(spec: dict) -> list[tuple[str, str, str]]:
-    """One `(key_hex, verdict, shard)` per member; verdict is `-`, `hit` or `miss`."""
+def probe(cache_root: Path, key: bytes) -> Optional[Path]:
+    """The shard that can serve `key`, or None."""
+    verdict, shard, _ = shard_state(cache_root, key)
+    return shard if verdict == "hit" else None
+
+
+def read_skips(path) -> tuple[set[str], set[str]]:
+    """The ghost keys a run serves without running, and the file ids they leave absent."""
+    if not path:
+        return set(), set()
+    try:
+        doc = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return set(), set()
+    return set(doc.get("skip", [])), set(doc.get("absent_ids", []))
+
+
+Row = tuple[str, str, str, list[tuple[str, bool]]]
+
+
+def probe_members(spec: dict) -> list[Row]:
+    """One `(key_hex, verdict, shard, files)` per member.
+
+    In `probe` mode the verdict is `-`, `hit`, `ghost` or `miss`. In `run` mode
+    a ghost is `skip` when the run's skip file lists it and `miss` otherwise, and
+    a miss that would read a file a skipped ghost left absent is `stale`: the
+    probe and the run disagree, and running it would read a placeholder.
+    """
     tk = spec["tk"]
     sig = spec["sig"]
     slots = list(spec["slk"])
     cache_root = Path(spec["cache_root"])
-    rows: list[tuple[str, str, str]] = []
+    probing = spec.get("mode") == "probe"
+    skip, absent = (set(), set()) if probing else read_skips(spec.get("skip"))
+    rows: list[Row] = []
     for entry in spec["members"]:
         consumed = consumed_of(entry, slots)
         if consumed is None:
-            rows.append(("-", "-", ""))
+            rows.append(("-", "-", "", []))
             continue
         key = member_key(tk, sig, consumed)
-        shard = probe(cache_root, key)
-        if shard is None:
-            rows.append((key.hex(), "miss", ""))
+        verdict, shard, files = shard_state(cache_root, key)
+        if not probing and verdict == "ghost":
+            verdict = "skip" if key.hex() in skip else "miss"
+        if verdict == "miss":
+            if absent and any(i in absent for ids in consumed.values() for i in ids):
+                verdict = "stale"
+            rows.append((key.hex(), verdict, "", []))
         else:
-            rows.append((key.hex(), "hit", str(shard)))
+            rows.append((key.hex(), verdict, str(shard), files))
     return rows
 
 
 def main(argv: list[str] | None = None) -> int:
     spec = json.load(sys.stdin)
-    for key_hex, verdict, shard in probe_members(spec):
-        if verdict == "hit":
-            sys.stdout.write(f"{key_hex}|hit|{shard}\n")
-        else:
-            sys.stdout.write(f"{key_hex}|{verdict}\n")
+    for key_hex, verdict, shard, files in probe_members(spec):
+        line = f"{key_hex}|{verdict}"
+        if shard:
+            line += f"|{shard}|" + ",".join(("+" if present else "-") + name for name, present in files)
+        sys.stdout.write(line + "\n")
     return 0
 
 
