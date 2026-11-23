@@ -183,14 +183,15 @@ reads, so deselecting a lane deselects only its readers.
 
 ## Templates
 
-A template is a starting point a user picks in the GUI: a `metasmith.Spec` whose input
+A template is a starting point a user picks in the GUI: a `metasmith.Template` whose input
 paths are `DEFERRED`, saved as `templates/<name>/spec.yml` with the deferred input
-library packed inline. There is no template format — it is the same object a stored
-workflow is, so a template validates the way a workflow does, by solving. Shipping them
-beside the transforms is what makes versioning free: a template arrives in the same
-commit as the transforms it names and cannot be older than the library it was found in.
+library packed inline. It holds a list of cases, each with its own targets, over that one
+library. It is the same shape a stored workflow is, so a template validates the way a
+workflow does, by planning. Shipping them beside the transforms is what makes versioning
+free: a template arrives in the same commit as the transforms it names and cannot be older
+than the library it was found in.
 
-An author is a module here defining `NAME`, `DESCRIPTION` and `build_spec(rebuild=False)`,
+An author is a module here defining `NAME`, `DESCRIPTION` and `build_template(rebuild=False)`,
 listed in `build_templates.py`; `_authoring.py` owns the rest. Read
 `pangenome_heatmap_from_assembly.py` first — it is the smallest complete example. One
 that cannot ship stays listed in `BLOCKED` with the reason rather than being deleted, so
