@@ -105,10 +105,10 @@ class Spec:
 
         if self.input_paths is None:
             return [DataInstanceLibraryView(lib)], []
-        named = {Path(p) for p in self.input_paths} | shared
+        named = {Path(p) for p in self.input_paths}
         missing = sorted(str(p) for p in named - set(lib.manifest))
         assert not missing, f"case [{self.name}]: inputs not in [{where}]: {', '.join(missing)}"
-        mask, queue = set(named), list(named)
+        mask, queue = named | shared, list(named | shared)
         while queue:
             for parent in lib.parents.get(queue.pop(), []):
                 if parent.path not in mask:
