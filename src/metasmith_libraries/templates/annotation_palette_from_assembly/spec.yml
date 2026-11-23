@@ -10,6 +10,7 @@ transform_libraries:
 - functionalAnnotation
 resource_libraries:
 - env
+- lib
 cases:
 - name: case
   sample_type: sequences::assembly

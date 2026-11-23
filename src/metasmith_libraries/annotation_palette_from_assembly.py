@@ -39,7 +39,7 @@ def build_template(rebuild: bool = False) -> Template:
         )],
         transform_libraries=A.transforms(
             "logistics", "metagenomics", "functionalAnnotation"),
-        resource_libraries=[A.envs()],
+        resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],
     )
 
 
