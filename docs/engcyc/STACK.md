@@ -46,6 +46,7 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- prep-footprint-engine (feat/engine/prep-footprint, started 2026-11-23): delete non-targets after readers succeed, keep_intermediates toggle (GUI), skip rule, 40 s case_merge fix. Template half landed 268919af (lanes + 33 references as a references case, quality MAGs only; plan 47 s, 196 steps). Then: merge, regenerate golden, libraries -b, rebuild RC artifacts, run 4.
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
