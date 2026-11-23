@@ -102,6 +102,14 @@ TARGETS = [
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
 assert TARGETS[BINS]["type"] == "sequences::das_tool_bin_fasta"
 
+# A hybrid sample's case (short + long reads): the hybrid lane, MEGAHIT draft -> OPERA-MS,
+# anchored to the assembly, so its assembly is the OPERA-MS assembly and every lane hanging
+# off the assembly reads it.
+HYBRID_TARGETS = [ASSEMBLY, {"type": "sequences::opera_ms_assembly", "parents": [0]}] + [
+    t if isinstance(t, str) else t | {"parents": [p + (p >= 1) for p in t.get("parents", [])]}
+    for t in TARGETS[1:]
+]
+
 # Consumed and produced by nothing, so they are given, and shared because they
 # belong to no one sample.
 SHARED_REFS = ("ref::mnxr_lookup", "ref::label_transfer_landmarks", "ref::lane_calibration",
