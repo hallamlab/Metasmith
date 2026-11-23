@@ -601,3 +601,13 @@ Tony: "I really want to clean up the short_reads_pe and se types..." Then yes to
 Design: delete the four subtypes. Parity stays a property on `short_reads`. Port the transforms, templates, library entry points, the fabfos pipeline and tests. List the research drivers instead of porting them.
 
 Landed: worker after plan-cases lands, before T4.
+
+## setup-as-steps — 2026-11-23
+
+Question: run 3's issues 4 (no size warning before setup downloads) and 5 (images pull one at a time, no progress).
+
+Tony: "can we move these into actual contracts? ... the 'setup' behaves a lot like a reference download, build, or even an actual compute step". Then: "lets try. we need to make sure pullContainers: do not break the solver since they introduce complexity.... are able to work as local -> the nextflow config had trouble with mixing local and slurm executors when specifying certain parameters... check this explicitly".
+
+Design: setup adds one `pullContainer` step per image after the plan is sliced, never as a solver requirement, so the solve and every existing cache key stay unchanged. Pulls run on the login node, use the execution path's materialise command and lock, and finish before any compute step in setup. The out-of-band image fetch goes. Download contracts declare a size estimate beside `URLS`. The plan sums the sizes into "setup: ~X GB of references, N images". The GUI shows the total in the plan summary and asks for confirmation at the setup button; the CLI prints it. Check against the past `xlocalx` traps: job arrays, scratch, the local CPU limit, queueSize, cache twins and stale presets. Also check that a failed pull does not pass silently under retry-then-ignore.
+
+Landed: worker setup-steps (feat/engine/setup-steps). Both issues are in 0.26.1.
