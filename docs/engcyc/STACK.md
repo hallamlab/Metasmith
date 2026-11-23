@@ -59,7 +59,7 @@ Next after Tony confirms: dispatch one worker (worktree off feat/engine/rc) for 
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
 ## Closed
-- metabuli-archive — chinook Projects:/Resources/reference_databases_for_tools/metabuli/gtdb_r232_hq_t2t_viral/ (db_final 77 GB + meta, scripts, SHA256SUMS, README); Globus 579630a5 SUCCEEDED 2026-11-23 02:35 UTC-7, 26 files, 81.9 GB, checksum sync, 0 faults
+- metabuli-archive — chinook Projects:/Resources/reference_databases_for_tools/metabuli/gtdb_r232_hq_t2t_viral/ (db_final 77 GB + meta, scripts, SHA256SUMS, README); Globus 579630a5 SUCCEEDED 2026-11-23 02:35 UTC-7, 26 files, 81.9 GB, checksum sync, 0 faults; untar db_final/2026-11-22-20-52.tar inside db_final/ before use. fir build dir (build/db_final 77 GB, genomes/, archive/ staging) kept, deletable on Tony's say
 - solver-investigation — three causes (lineage-blind selection, DFS thrash on unsatisfiable late slot, full cross product of target applications); fixes merged 1e3f3ae7, budget 512 (911a5e4a); hybrid needs 313 iterations
 - replace-old — merge finished branches now (done); template built after the last three ports, replacing the old one in the same commit
 - mp-outputs — only MP4's pathway table (score, coverage, ORFs, report fields) replaces ours; other MP4 outputs not rebuilt
