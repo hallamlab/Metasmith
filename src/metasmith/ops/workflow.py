@@ -3,6 +3,7 @@ from __future__ import annotations
 from ..models.dag_draw import DEFAULT_LABEL_CHARS, default_label
 from ..models.dag_renderer import DagRenderer, LabelMode, NodeKind
 from ..agents import Plan, Spec
+from ..models.workflow.setup import SetupFootprint
 from . import workspace as _ws
 
 
@@ -44,6 +45,7 @@ def plan_cases(
         "steps": [step.Pack() for step in plan.steps],
         "targets": [t.Pack() for t in plan.targets],
         "step_count": len(plan.steps),
+        "setup": SetupFootprint.Of(task).Pack(),
     }
     return (result, task) if return_task else result
 

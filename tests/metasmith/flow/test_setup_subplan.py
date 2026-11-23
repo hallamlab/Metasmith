@@ -10,7 +10,7 @@ from metasmith.env import Runtime
 from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.remote import Source
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
-from metasmith.models.workflow.setup import NoSetupStepsError, setup_subplan
+from metasmith.models.workflow.setup import NoSetupStepsError, SetupFootprint, setup_subplan
 from metasmith.testing import mock_transforms as mt
 from metasmith.testing.pool_fixtures import pool_backed
 
@@ -49,6 +49,25 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 """
 
 
+# A download that runs its tool, so a setup run must pull that tool's image first.
+FETCH_WITH_TOOL = _HEADER + """
+from metasmith.models.libraries import Size
+src = model.AddRequirement(lib.GetType("mock::container"))
+db = model.AddProduct(lib.GetType("mock::h1"))
+
+def protocol(context: ExecutionContext):
+    context.ExecWithEnv(env=src, cmd="true")
+    Path("db.txt").write_text("db")
+    return ExecutionResult(manifest=[{db: Path("db.txt")}], success=True)
+
+TransformInstance(
+    protocol=protocol, model=model, group_by=src, labels=["local"],
+    download_size=Size.GB(150),
+)
+"""
+PULL = mt.pull_container_transform(pulled_type="mock::h4")
+
+
 def _solve(tmp_path: Path, transforms: dict[str, str], target: str, resources=True) -> WorkflowTask:
     types_path = _build_type_lib(tmp_path / "types.yml")
     samples = _build_samples_lib(tmp_path, types_path, n_samples=2, dtype="assembly")
@@ -66,7 +85,7 @@ def _solve(tmp_path: Path, transforms: dict[str, str], target: str, resources=Tr
     )
 
 
-def _slots(task: WorkflowTask, home: Path, monkeypatch) -> dict[str, list[str]]:
+def _stage(task: WorkflowTask, home: Path, monkeypatch) -> tuple[WorkflowTask, Path]:
     monkeypatch.setattr(AgentPaths, "HOME_ROOT", home)
     monkeypatch.setattr(AgentPaths, "WORK_ROOT", home / "_ws")
     task_path = AgentPaths.to_task(task.GetKey())
@@ -79,6 +98,11 @@ def _slots(task: WorkflowTask, home: Path, monkeypatch) -> dict[str, list[str]]:
         home_dir=home, external_home=home, runtime=Runtime.APPTAINER,
         resources_file=AgentPaths.NXF_RES, cache_root=home / "cache",
     ))
+    return staged, ws
+
+
+def _slots(task: WorkflowTask, home: Path, monkeypatch) -> dict[str, list[str]]:
+    staged, _ = _stage(task, home, monkeypatch)
     return {
         step.transform.name: sorted(i.instance_id for g in step.produces for i in g)
         for step in staged.plan.steps
@@ -143,3 +167,59 @@ def test_a_bundle_from_before_the_sample_record_is_refused(tmp_path):
     task.sample_library_count = None
     with pytest.raises(AssertionError, match="generate it again"):
         setup_subplan(task)
+
+
+def test_image_pulls_lead_the_slice_and_move_no_sliced_key(tmp_path, monkeypatch):
+    task = _solve(tmp_path, {"fetch": FETCH_WITH_TOOL, "annotate": ANNOTATE, **PULL}, "mock::annotated")
+    sub = setup_subplan(task, pull_images=True)
+    assert [(s.order, s.transform.name) for s in sub.plan.steps] == [(1, "pullContainer"), (2, "fetch")]
+    assert sorted(t.name for t in sub.plan.targets) == ["container", "mock::h1"]
+    full = _slots(task, tmp_path / "full_home", monkeypatch)
+    plain = _slots(setup_subplan(task), tmp_path / "plain_home", monkeypatch)
+    pulled = _slots(sub, tmp_path / "pull_home", monkeypatch)
+    assert pulled["fetch"] == plain["fetch"] == full["fetch"]
+
+
+def test_a_tool_step_waits_on_its_pull_and_a_failed_pull_stops_the_run(tmp_path, monkeypatch):
+    task = _solve(tmp_path, {"fetch": FETCH_WITH_TOOL, "annotate": ANNOTATE, **PULL}, "mock::annotated")
+    _, ws = _stage(setup_subplan(task, pull_images=True), tmp_path / "home", monkeypatch)
+    nf = (ws / AgentPaths.NXF_WORKFLOW).read_text().splitlines()
+    hold = next(i for i, x in enumerate(nf) if "o.after(" in x)
+    groups = [i for i, x in enumerate(nf) if "o.group(" in x]
+    assert groups[0] < hold < groups[1], "the pull reads the env as given; the fetch reads it held"
+    env = nf[hold].split(" = ")[0]
+    assert env in nf[groups[1]]
+    resources = (ws / AgentPaths.NXF_RES).read_text()
+    pull_block = resources.split("withName: 'p01__pullContainer' {")[1].split("withName")[0]
+    assert "'finish'" in pull_block and "'ignore'" not in pull_block
+    assert "cache = false" in pull_block, "a pull is never resumed; only the store knows"
+    text = "\n".join(nf)
+    assert "path 'envs/container'" in text and "path 'references/mock-h1'" in text
+
+
+def test_the_main_plan_publishes_where_it_always_did(tmp_path, monkeypatch):
+    task = _solve(tmp_path, {"fetch": FETCH_WITH_TOOL, "annotate": ANNOTATE, **PULL}, "mock::annotated")
+    _, ws = _stage(task, tmp_path / "home", monkeypatch)
+    nf = (ws / AgentPaths.NXF_WORKFLOW).read_text()
+    assert "o.after(" not in nf and "references/" not in nf and "envs/" not in nf
+
+
+def test_the_footprint_sums_declared_downloads_and_names_the_rest(tmp_path):
+    sized = _solve(tmp_path / "a", {"fetch": FETCH_WITH_TOOL, "annotate": ANNOTATE, **PULL}, "mock::annotated")
+    fp = SetupFootprint.Of(sized)
+    assert (fp.download_gb, fp.images, fp.unsized, fp.confirm) == (150, 1, [], True)
+    assert fp.line == "setup: ~150 GB of references, 1 image"
+    unsized = FETCH_WITH_TOOL.replace("    download_size=Size.GB(150),\n", "")
+    fp = SetupFootprint.Of(_solve(tmp_path / "b", {"fetch": unsized, "annotate": ANNOTATE}, "mock::annotated"))
+    assert (fp.download_gb, fp.unsized, fp.confirm) == (0, ["fetch"], False)
+    assert fp.line == "setup: <1 GB of references, 1 image (unknown size: fetch)"
+
+
+def test_a_size_estimate_does_not_move_the_cache_key(tmp_path):
+    with_size = _solve(tmp_path / "a", {"fetch": FETCH_WITH_TOOL, "annotate": ANNOTATE}, "mock::annotated")
+    unsized = FETCH_WITH_TOOL.replace("    download_size=Size.GB(150),\n", "")
+    without = _solve(tmp_path / "b", {"fetch": unsized, "annotate": ANNOTATE}, "mock::annotated")
+    def sig(task):
+        tr, = [s.transform for s in task.plan.steps if s.transform.name == "fetch"]
+        return tr._protocol_source_hash
+    assert sig(with_size) == sig(without)

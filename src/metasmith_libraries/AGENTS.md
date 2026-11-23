@@ -114,6 +114,10 @@ product. Unpack, index and check content in a second transform that runs on a co
 runs on a shared login node, and a retry of it fetches everything again. The reasons are in
 `docs/metasmith_libraries/architecture.md`.
 
+Give the fetch `download_size=Size.GB(n)` with a trailing comment naming the source of the
+number, on one line of its own. A setup run sums it into the size the user confirms before it
+starts. A fetch without it shows as unknown.
+
 ## A task reads a copy of its inputs
 
 A task that runs in node-local scratch reads a private copy of every input, which the engine

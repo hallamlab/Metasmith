@@ -1717,9 +1717,9 @@ RUN_KINDS = ("run", "setup")
 
 @bp.post("/runs")
 def create_run():
-    # kind `setup` runs only the steps that read no sample (the downloads), after
-    # preparing every environment the full plan names; the real run then finds
-    # their products in the agent's cache.
+    # kind `setup` runs the full plan's image pulls and the steps that read no
+    # sample (the downloads); the real run then finds their products in the
+    # agent's cache.
     b = _body()
     p = _project()
     workflow = b.get("workflow")

@@ -61,6 +61,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(37.4),  # bt2 + SGB tars, Content-Length 35,057,633,280 + 5,118,914,560 B, 2026-11-23
     resources=Resources(
         cpus=2,
         memory=Size.GB(4),

@@ -38,6 +38,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.08),  # ssu_all_r232.fna.gz Content-Length 79,837,906 B, 2026-11-23
     resources=Resources(
         cpus=2,
         memory=Size.GB(8),

@@ -64,6 +64,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(61),  # GTDB-Tk r232 package parts, software-suite README
     resources=Resources(
         cpus=2,
         memory=Size.GB(4),

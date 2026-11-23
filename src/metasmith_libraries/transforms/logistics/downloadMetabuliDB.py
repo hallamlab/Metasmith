@@ -68,6 +68,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(180),  # the 192 GB genome archive plus the small sources
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

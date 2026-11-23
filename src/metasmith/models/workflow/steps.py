@@ -17,6 +17,11 @@ from ..libraries import (
     DataInstance, DataInstanceLibrary, TransformInstance, TransformInstanceLibrary,
 )
 from ..solver import Dependency
+
+# The standard library's image fetch. A setup run gets one step of it per tool image.
+PULL_TRANSFORM = "pullContainer"
+
+
 @dataclass
 class WorkflowStep:
     order: int

@@ -19,7 +19,7 @@ from ..libraries import DataInstance, GPU_LABEL, ResolveEnvImage
 from ..lineage import LinPayload
 from ..paths import PathMap
 from ..solver import Endpoint
-from .steps import WorkflowStep
+from .steps import PULL_TRANSFORM, WorkflowStep
 
 
 METADATA_FILE = ".command.metadata"
@@ -171,6 +171,19 @@ def DownloadSteps(plan) -> list:
             found.append(step)
     return found
 
+
+# A setup run's image pulls, in the resources file. They run on the driver's host
+# (`xlocalx`), where a preset retries a failed step once and then ignores it. A pull
+# that fails must stop the run instead: every step that reads its env waits on it
+# (`Orchestrator.after`), and an ignored pull would end the run with those steps never
+# started. `finish` lets the downloads already running complete. A pull always runs,
+# never resumed, because only the store can say an image is still there; finding it
+# there costs one test. How many fetch at once is pullContainer's to cap, since each
+# pull is a process of its own.
+PULL_RESOURCES = [
+    "errorStrategy = { task.attempt < 2 ? 'retry' : 'finish' }",
+    "cache = false",
+]
 
 _SCRATCH_ONLY = '[ "\\$__msm_wd" = "\\$PWD" ] ||'
 
@@ -701,6 +714,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
     cache_root_literal = path_map.Render(context.cache_root, dialect="groovy")
     hits_log_literal = f"{context.external_work_var}/{CACHE_HITS_LOG}"
 
+    pull_orders = {
+        s.order for s in the_plan.steps if the_plan.setup and s.transform.name == PULL_TRANSFORM
+    }
     for step in the_plan.steps:
         decision = cache_decisions.get(step.order)
         used_archetypes, produced_archetypes = get_io_signature(step)
@@ -722,6 +738,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
         )
 
         process_name, src, src_res = prepare_step(step)
+        if step.order in pull_orders:
+            src_res += PULL_RESOURCES
         resources[process_name] = src_res
         src_process.append(src)
         if len(used_archetypes)>0:
@@ -792,6 +810,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
             wf_main.append(
                 f"({produced}) = o.post({streams_expr}, k, {post_args})"
             )
+        if step.order in pull_orders:
+            for x in used_archetypes:
+                wf_main.append(f"_{stream(x.dtype)} = o.after(_{stream(x.dtype)}, _{produced_names[0]})")
         if step.order in final_steps_for_merging:
             for e in final_steps_for_merging[step.order]:
                 names = to_merge_names[stream(e)]
@@ -865,6 +886,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
             out_name = _s2target[ch].name.replace(' ', '_').replace("::", "-")
         else:
             out_name = f"{step_order}_{spec_name}"
+        if the_plan.setup:
+            out_name = f"{'envs' if step_order in pull_orders else 'references'}/{out_name}"
         wf_output += [
             TAB+f"_{ch}"+"{",
             TAB+TAB+f"path '{out_name}'",

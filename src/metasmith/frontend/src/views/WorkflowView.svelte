@@ -1371,10 +1371,10 @@
     return Object.keys(out).length ? out : null
   }
 
-  // Prepare the chosen agent for this workflow: the images its steps need if it
-  // runs containers, the conda envs they name if it does not. The endpoint
-  // stages first, because the manifest that answers "which ones" is written by
-  // staging -- so pressing this and then `stage and run` does not stage twice.
+  // Build the conda envs this workflow's steps name on a mamba or native agent.
+  // The endpoint stages first, because the manifest that answers "which ones" is
+  // written by staging -- so pressing this and then `stage and run` does not
+  // stage twice.
   async function setupEnvironment(force = false) {
     requestingSetup = true
     jobKind = 'environment'
@@ -1388,8 +1388,23 @@
     if (job) jobId = job.id
   }
 
-  // `setup` runs only the steps that read no sample -- the downloads -- after
-  // preparing every environment, so the real run finds them in the cache.
+  // A large setup asks first, the way reset does: the first click arms the
+  // button with the size, a second within the window starts it.
+  let setupArmed = $state(false)
+  let setupTimer
+  function armSetup() {
+    if (!wf.result?.setup?.confirm || setupArmed) {
+      clearTimeout(setupTimer)
+      setupArmed = false
+      launch('setup')
+      return
+    }
+    setupArmed = true
+    setupTimer = setTimeout(() => (setupArmed = false), 4000)
+  }
+
+  // `setup` runs the image pulls and the steps that read no sample -- the
+  // downloads -- so the real run finds them in the cache.
   async function launch(kind = 'run') {
     launching = true
     const params = toParams(runParams)
@@ -1648,6 +1663,9 @@
               <span class="tag ok" data-tour="plan-ok">success</span>
             </div>
             <div class="row">
+              {#if wf.result?.setup}
+                <span class="tag" title="what a setup run fetches before the first sample step">{wf.result.setup.line}</span>
+              {/if}
               <span class="tag ok">{wf.step_count} step(s)</span>
               <button
                 class="tag mono copyable"
@@ -2028,14 +2046,16 @@
             {launching ? 'launching…' : 'stage and run'}
           </button>
           <button
-            onclick={() => launch('setup')}
-            title="pull every container and download every reference database this workflow needs, without running a sample"
+            onclick={armSetup}
+            title={setupArmed
+              ? `click again to confirm — ${wf.result?.setup?.line}`
+              : 'pull every container and download every reference database this workflow needs, without running a sample'}
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || paramProblems(runParams).length > 0 || !!liveRun}
-          >set up</button>
+          >{setupArmed ? `fetch ~${Math.round(wf.result.setup.download_gb)} GB?` : 'set up'}</button>
           <button
             class="small"
             onclick={() => setupEnvironment()}
-            title="pull containers or build conda envs only"
+            title="build conda envs only (a container agent's images are pulled by set up)"
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
           >{settingUp ? 'preparing…' : 'environments only'}</button>
         </div>
