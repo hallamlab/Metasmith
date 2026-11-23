@@ -6,7 +6,7 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-serialized-meteor.md (T1-T17; todo list mirrors it). T1 done (rc merged feat/dev + release v0.26.0, 606f7113 + next). Plan-cases answers (Tony approved recommendations): libraries on Plan; GUI one input list with chips into case tabs; selector `input_paths`. Open: Metabuli lane blocks 0.26.1?; run-3 issues 4-5 may wait?
+Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-serialized-meteor.md (T1-T17; todo list mirrors it). T1 done (rc merged feat/dev + release v0.26.0, 606f7113 + next). Plan-cases answers (Tony approved recommendations): libraries on Plan; GUI one input list with chips into case tabs; selector `input_paths`. T3 sra-split landed 7041cbe3. Metabuli: in 0.26.1, database built in the pipeline (decision metabuli-in-pipeline). Open: run-3 issues 4-5 may wait?; short-reads-subtypes as own worker after plan-cases, before T4?
 engcyc-cases — after both workers land: engcyc template as two cases (short reads -> engcyc targets; long reads -> modified set incl. long-read taxonomy lanes), isolate/hybrid templates take accessions, probes short/hybrid/isolate/SRA-short/SRA-long/long-only/mixed two-case.
 
 ## Waiting on the user
@@ -20,6 +20,7 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - 2026-11-19: keep as much as possible in one library. kbase may fold in. aspire and transcriptomics are covered too.
 
 ## Stack
+- short-reads-subtypes — Tony 2026-11-23: "I really want to clean up the short_reads_pe and se types..." Delete short_reads_pe/se and clean_short_reads_pe/se (parity stays a property); 2 transforms, 2 templates, 3 lib entry points, fabfos pipeline, 5 tests; research drivers listed not ported
 - read-taxonomy-ensemble — DISCARDED by Tony 2026-11-23 (aggregators prevent optional outputs). Was: Tony 2026-11-23: "short reads should reallly be SR -> read level taxonomy tools -> read-level taxonomy aggregator that asks for the ensemble. then we need a similar one for long reads." Library has kraken2, centrifuger, ganon2, sylph, metaphlan (all typed sequences::short_reads) and metabuli (typed on the assembly). Long-read capable: MetaPhlAn 4.2 (--long_reads, minimap2; we pin 4.2.4), sylph (nanopore/PacBio), Metabuli (seq-mode 3), Kraken2, Centrifuger; inStrain built for short-read BAMs; StrainPhlAn follows MetaPhlAn's alignments (unverified for long reads)
 - annotation-aggregate-followups — from 6504e5cb: research drivers reparse_run.py and scadc_metag_gpr_4lane.py call the deleted 4-lane lib (port them); PathoFact not in the table (no batch merge, unknown output, image unpullable) — goes with the PathoFact port; BiGG lane has no BiGG->MNXR crosswalk so it is not in the GPR tables, and carveme_from_orfs still runs its own search instead of reading bigg_diamond_hits; antiSMASH/RGI/AMRFinderPlus parsers written from docs, check on real output; lib::fabfos_gpr is a fabfos name for general code; annotation table needs an assembly (bare-ORF fosmid path keeps the 4-lane route); gpr_4lane still a separate producer of gpr_table (pinned equal to the all-lanes subset)
 - licensed-build-followups — recipes verified on real downloads (770ed56c, merged 01a47c9f); five SIFs in ~/licensed-staging/sif; on fir licensed/ and chinook archive (journal 24a54a65). Open: DeepLocPro has no env file or lane, public image push to quay needs Tony's ok (CC BY-NC-SA); test_built_image.py not rerun after last two recipe fixes; PT SIF drops xvfb/less (GUI mode untested); DeepTMHMM uses every CPU (cap threads in its lane); docker loads the whole archive per call (~4 GB PT); build steps run on login node; fir drivers pin agent image 0.24.2; no DeepTMHMM/DeepLocPro/Phobius consumer lanes yet; Phobius Perl warnings harmless
@@ -46,6 +47,7 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- metabuli-build (feat/engine/metabuli-build, Opus): library transforms that build the r232 Metabuli DB from public sources; no template edits
 - plan-cases — Opus worker: Plan([cases]) API, template = list of cases, GUI tabs, drop `when`, AsSamples fix (feat/engine/plan-cases)
 - sra-split — Sonnet worker: short/long SRA accession types + fetch, drop getSraReads fork, long-read taxonomy transforms (feat/engine/sra-split)
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
