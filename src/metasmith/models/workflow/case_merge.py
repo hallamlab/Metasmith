@@ -515,9 +515,10 @@ def PlanCases(
         for d, e in n.slots.items():
             members = streams.of(e)
             used_endpoints.update(members)
-            dep_map[d] = _dedupe_instances([
-                x for m in members for x in instance_map.get(m, []) if serves(x, n)
-            ])
+            pooled = [x for m in members for x in instance_map.get(m, []) if serves(x, n)]
+            if d is tr.group_by:
+                pooled = [x if x.dtype.key == e.key else x.WithDType(e) for x in pooled]
+            dep_map[d] = _dedupe_instances(pooled)
         fork = len(n.transform.produces) > 1
         groups: dict[str, list[int]] = {}
         for (d, g), e in sorted(n.outputs.items(), key=lambda x: x[0][1]):
