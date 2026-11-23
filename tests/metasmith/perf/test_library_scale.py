@@ -161,13 +161,14 @@ class TestDataInstanceLibraryPerformance:
         assert isinstance(plan, WorkflowPlan)
         assert elapsed < 10, f"Generate took {elapsed:.1f}s CPU (limit 10s)"
 
-    def test_as_samples_dedup_child_type(self, temp_dir, mock_types):
-        lib_path = self._build_single_parent_lib(temp_dir, mock_types, n=1000)
+    def test_as_samples_siblings_under_one_parent(self, temp_dir, mock_types):
+        lib_path = self._build_single_parent_lib(temp_dir, mock_types)
         loaded = DataInstanceLibrary.Load(lib_path)
 
+        start = cpu_seconds()
         samples = list(loaded.AsSamples("mock::assembly"))
-        assert len(samples) == 1, (
-            f"Expected 1 deduplicated view, got {len(samples)}"
-        )
+        elapsed = cpu_seconds() - start
 
-        assert len(samples[0]._mask) == 1001
+        assert len(samples) == 21000
+        assert all(len(s._mask) == 2 for s in samples)
+        assert elapsed < 30, f"AsSamples took {elapsed:.1f}s CPU (limit 30s)"

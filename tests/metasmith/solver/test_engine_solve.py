@@ -8,6 +8,7 @@ from metasmith.models.solver_engine import (
     packaged_engine_path,
     probe_engine,
 )
+from metasmith.models.solver_backend import SEARCH_BUDGET
 from metasmith.models.solver_wire import decode_plan, encode_problem
 from metasmith.testing.solver_bench import CORPUS, SWEEP_PROFILES
 from metasmith.testing.solver_verification import (
@@ -79,7 +80,7 @@ def test_a_problem_with_no_route_is_refused_rather_than_answered(engine):
 
 def test_the_engine_solves_the_shipped_templates(engine):
     from metasmith.testing.solver_bench import _libraries_root
-    from metasmith.testing.solver_verification import problem_of_plan
+    from metasmith.testing.solver_verification import problems_of_plan
 
     root = _libraries_root()
     if root is None:
@@ -93,13 +94,13 @@ def test_the_engine_solves_the_shipped_templates(engine):
     assert len(templates) >= 4, f"only {len(templates)} templates discovered"
     seen = 0
     for template in templates:
-        problem = problem_of_plan(template.Plan().plan, name=template.name)
-        if problem is None: continue
-        plan = _solve(engine, problem)
-        assert plan.complete, template.name
-        verdict = check_plan(problem, plan)
-        assert verdict.ok, f"{template.name}: {verdict.violations}"
-        seen += 1
+        solves = problems_of_plan(template.Plan().plan, name=template.name)
+        for problem, _ in solves:
+            plan = _solve(engine, problem, max_iter=SEARCH_BUDGET)
+            assert plan.complete, problem.name
+            verdict = check_plan(problem, plan)
+            assert verdict.ok, f"{problem.name}: {verdict.violations}"
+        seen += bool(solves)
     assert seen == len(templates), (
         f"adjudicated {seen} of {len(templates)} shipped templates -- the rest carry "
         "no solver inputs, so nothing judged the plans on them"

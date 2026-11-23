@@ -11,6 +11,7 @@ from ..models.libraries import (
     TransformInstanceLibrary, TransformInstanceLibraryView,
 )
 from ..models.solver import Dependency, Transform
+from ..models.solver_backend import SEARCH_BUDGET
 from ..models.workflow import Case, WorkflowPlan, WorkflowTask
 from .targets import TargetBuilder, TargetSpec
 
@@ -129,7 +130,7 @@ def Plan(
     cases: Iterable[Spec],
     transform_libraries: Iterable[TransformLibRef],
     resource_libraries: Iterable[DataLibRef] = (),
-    max_iter: int = 512, max_refine: int|None = None, seed: int = 42,
+    max_iter: int = SEARCH_BUDGET, max_refine: int|None = None, seed: int = 42,
 ) -> WorkflowTask:
     cases = list(cases)
     assert cases, "a plan needs at least one case"
@@ -203,7 +204,7 @@ def plan_views(
     requests: list[CaseViews],
     resources: Iterable[LibView],
     transforms: list[TransformInstanceLibrary | TransformInstanceLibraryView],
-    max_iter: int = 512, max_refine: int|None = None, seed: int = 42,
+    max_iter: int = SEARCH_BUDGET, max_refine: int|None = None, seed: int = 42,
 ) -> WorkflowTask:
     resources = list(resources)
     common = [_view(lib) for lib in resources]

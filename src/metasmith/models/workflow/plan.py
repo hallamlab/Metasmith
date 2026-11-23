@@ -15,6 +15,7 @@ from ..libraries import (
     DataInstance, DataInstanceLibrary, DataInstanceLibraryView,
     TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,
 )
+from ..solver_backend import SEARCH_BUDGET
 from ..solver import (
     Application, Dependency, Endpoint, Transform, solve_by_mcts,
     Solution as SolverResult,
@@ -338,7 +339,9 @@ class WorkflowPlan:
     # asked for -- at the cost of a run that dies early leaving an empty results
     # folder, where the per-step logs are then the only record.
     publish_intermediates: bool = False
-    _solver_inputs: tuple|None = None
+    # Each solve behind the plan as (label, (given, transforms, target), result): one for
+    # a single case, one per case and fork outcome for a merged plan.
+    _solver_cases: list[tuple[str, tuple, SolverResult]] = field(default_factory=list)
     # The case names, in declared order. Beyond one case a plan also records the
     # stream each produced or given endpoint posts to, and each given instance's
     # cases, which seed the runtime case tags.
@@ -499,7 +502,7 @@ class WorkflowPlan:
         cls,
         cases: list[Case],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
-        max_iter: int=512, max_refine: int|None=None, seed: int=42,
+        max_iter: int=SEARCH_BUDGET, max_refine: int|None=None, seed: int=42,
     ):
         _check_cases(cases)
         if len(cases) > 1:
@@ -539,7 +542,7 @@ class WorkflowPlan:
             )
         plan = cls._Assemble(
             result=result, inst2trlib=inst2trlib,
-            solver_inputs=(given_endpoints, list(transform2inst.keys()), target_model),
+            solver_case=(case.name, (given_endpoints, list(transform2inst.keys()), target_model)),
             given_map=given_map, transform2inst=transform2inst,
             transforms=transforms, target_names=target_names, target_model=target_model,
         )
@@ -553,7 +556,7 @@ class WorkflowPlan:
     @classmethod
     def _Refuse(
         cls, result, failed: dict[int, list[str]], cases: CaseIndex,
-        solver_inputs: tuple,
+        solver_case: tuple[str, tuple],
         given_map: dict[Endpoint, list[DataInstance]],
         transform2inst: dict[Transform, TransformInstance],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
@@ -581,7 +584,7 @@ class WorkflowPlan:
             targets=[],
             steps=[],
             _solver_result=result,
-            _solver_inputs=solver_inputs,
+            _solver_cases=[(*solver_case, result)],
             dropped_targets=list(target_names),
             dropped_samples=names,
             hints=hints,
@@ -591,7 +594,7 @@ class WorkflowPlan:
     def _Assemble(
         cls,
         result,
-        solver_inputs: tuple,
+        solver_case: tuple[str, tuple],
         given_map: dict[Endpoint, list[DataInstance]],
         transform2inst: dict[Transform, TransformInstance],
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary],
@@ -613,7 +616,7 @@ class WorkflowPlan:
                 targets=[],
                 steps=[],
                 _solver_result=result,
-                _solver_inputs=solver_inputs,
+                _solver_cases=[(*solver_case, result)],
                 dropped_targets=list(target_names),
                 hints=failure_hints,
             )
@@ -750,7 +753,7 @@ class WorkflowPlan:
             targets=[x for g in target_meta.values() for x in g],
             steps=built_steps,
             _solver_result=result,
-            _solver_inputs=solver_inputs,
+            _solver_cases=[(*solver_case, result)],
             dropped_targets=dropped_targets,
             hints=plan_hints,
         )

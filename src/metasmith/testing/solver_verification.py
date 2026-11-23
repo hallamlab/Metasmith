@@ -21,7 +21,7 @@ __all__ = [
     "plan_shape",
     "check_plan",
     "generate_problem",
-    "problem_of_plan",
+    "problems_of_plan",
     "forward_closure_solvable",
     "exhaustive_solvable",
 ]
@@ -388,17 +388,20 @@ class SolverProblem:
         )
 
 
-def problem_of_plan(plan, *, name: str = "template") -> SolverProblem | None:
-    inputs = getattr(plan, "_solver_inputs", None)
-    if inputs is None:
-        return None
-    given, transforms, target = inputs
-    return SolverProblem(
-        given=[set(g) for g in given],
-        transforms=list(transforms),
-        target=target,
-        name=name,
-    )
+def problems_of_plan(plan, *, name: str = "template") -> list[tuple[SolverProblem, Solution]]:
+    solves = getattr(plan, "_solver_cases", [])
+    return [
+        (
+            SolverProblem(
+                given=[set(g) for g in given],
+                transforms=list(transforms),
+                target=target,
+                name=name if len(solves) == 1 else f"{name}/{label}",
+            ),
+            result,
+        )
+        for label, (given, transforms, target), result in solves
+    ]
 
 
 def _type_props(i: int) -> set[str]:
