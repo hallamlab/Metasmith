@@ -69,6 +69,8 @@ pub type Group = Vec<(DepId, EpId)>;
 pub struct Appl {
     /// Which timeline this application was born into. `initial_timeline`.
     pub timeline: i64,
+    /// 1.0 when an input descends from a dead anchor (`Problem::dead_anchor`).
+    pub off_anchor: f64,
     pub transform: TransformId,
     pub used: Bindings,
     pub produced: Vec<Group>,
@@ -127,7 +129,7 @@ impl Arena {
         let sig = self.sign(p, transform, &used);
         let id = self.appls.len() as ApplId;
         self.appls.push(Appl {
-            timeline, transform, used, produced: Vec::new(),
+            timeline, off_anchor: 0.0, transform, used, produced: Vec::new(),
             score: [0.0, 0.0], iteration: -1, sig,
         });
         id
@@ -234,6 +236,35 @@ fn satisfies_lineage(
     Ok(true)
 }
 
+/// Forward check: can every later requirement whose last lineage anchor was
+/// just bound at `di` still be bound?
+///
+/// Without it a dead branch is only discovered at the dead slot, after the
+/// search has enumerated every binding of the unrelated slots in between: one
+/// call walked 1.5M nodes to find no application on a 30-requirement target.
+/// It prunes only subtrees with no leaf, so the applications and their order
+/// are unchanged. An anchor required again further on gets rebound in place,
+/// so its dependents are left to the slot itself.
+fn anchored_slots_open(
+    p: &Problem, ar: &Arena, requires: &[DepId], matches: &Map<DepId, Vec<EpId>>,
+    di: usize, used: &Bindings,
+) -> Result<bool, String> {
+    let d = requires[di];
+    for j in (di + 1)..requires.len() {
+        let dj = requires[j];
+        let anchors = &p.dep_parents_ranked[dj as usize];
+        let settled = anchors.contains(&d)
+            && anchors.iter().all(|&a| used.get(a).is_some() && !requires[di + 1..j].contains(&a));
+        if !settled { continue; }
+        let mut open = false;
+        for &c in &matches[&dj] {
+            if satisfies_lineage(p, ar, dj, c, used)? { open = true; break; }
+        }
+        if !open { return Ok(false); }
+    }
+    Ok(true)
+}
+
 /// Every application of one transform that the current production allows.
 /// `generate_applications_of_transform`.
 ///
@@ -275,6 +306,7 @@ pub fn generate_applications(
     // `mock_produced` still decides where a candidate's *products* come from; it
     // no longer decides whether its *inputs* are checked.
     let mint_from_transform = mock_produced.is_none();
+    let first_leaf_only = tr == p.target_index && mint_from_transform;
 
     // Two passes: prefer given. Fall back to given+produced only when the
     // given-only pass could not reach a leaf *for lineage reasons* -- reaching a
@@ -284,8 +316,13 @@ pub fn generate_applications(
         let mut matches: Map<DepId, Vec<EpId>> = det::map();
         let mut missing = false;
         for &d in &requires {
-            let c = find_endpoints(p, ar, production, d, include_produced);
+            let mut c = find_endpoints(p, ar, production, d, include_produced);
             if c.is_empty() { missing = true; break; }
+            // The stack pops the last candidate first. The target keeps one
+            // leaf, and the oldest endpoints are the ones that share a chain:
+            // taking the newest of each slot stitched seven DAS Tool runs into
+            // one hybrid plan.
+            if first_leaf_only { c.reverse(); }
             matches.insert(d, c);
         }
         if missing {
@@ -303,6 +340,7 @@ pub fn generate_applications(
             let d = requires[di];
             let used = used.with(d, e);
             if !satisfies_lineage(p, ar, d, e, &used)? { continue; }
+            if !anchored_slots_open(p, ar, &requires, &matches, di, &used)? { continue; }
             if di + 1 < requires.len() {
                 let next = di + 1;
                 for &ne in &matches[&requires[next]] {
@@ -356,6 +394,11 @@ pub fn generate_applications(
             };
             ar.appls[a as usize].produced = produced;
             viable.push(a);
+            // One target application ends the timeline, so the rest are never
+            // popped -- and requirements anchored only on a shared ancestor
+            // bind independently, so "the rest" is their whole cross product.
+            // The refiner still enumerates: rebinding the target is its job.
+            if first_leaf_only { break; }
         }
         if reached_leaf || include_produced { return Ok(viable); }
     }

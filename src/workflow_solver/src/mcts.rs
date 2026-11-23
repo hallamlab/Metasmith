@@ -132,6 +132,12 @@ impl<'a> Search<'a> {
             1.0 - dist/self.p.max_distance as f64,
             1.0 - 1.0/(1.0 + opportunity/10.0),
         ];
+        if !self.p.dead_anchor.is_empty() {
+            // An endpoint's parents are its whole flattened lineage.
+            let dead = |e: EpId| self.p.dead_anchor.contains(&ar.eps.ty(e));
+            let off = ar.appl(a).used.values().any(|e| dead(e) || ar.eps.parents(e).iter().any(|&x| dead(x)));
+            ar.appls[a as usize].off_anchor = if off { 1.0 } else { 0.0 };
+        }
     }
 
     /// One application, applied to one timeline, giving the states that result.
@@ -537,6 +543,7 @@ pub fn mcts(
             frontier.len(),
             |j| ar.appl(frontier[j]).score,
             |j| ar.appl(frontier[j]).transform,
+            |j| ar.appl(frontier[j]).off_anchor,
         );
         let n = frontier.len() - 1;
         frontier.swap(idx, n);

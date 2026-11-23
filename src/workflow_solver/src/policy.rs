@@ -24,6 +24,11 @@ pub const PUCT_ENV: &str = "MSM_SOLVER_PUCT";
 /// to drown the scores.
 const GUIDE_WEIGHT: f64 = 0.5;
 
+/// What an application fed by a dead anchor loses, in the same space. At the
+/// shipped temperature it divides the prior by e^2: the lane that can reach the
+/// target is built first, and the other is still built if the search wants it.
+const OFF_ANCHOR_WEIGHT: f64 = 1.0;
+
 #[derive(Clone, Copy, Debug)]
 pub struct PuctConfig {
     pub c_puct: f64,
@@ -384,22 +389,24 @@ impl Policy {
     /// `score * valid` over a score that is never positive, so an invalid state's
     /// 0.0 outranks every valid one. The retired rule ranked on that, bug and all;
     /// nothing here inherits it, which is part of why the plans moved.
-    pub fn select<P, K>(
+    pub fn select<P, K, D>(
         &mut self,
         rng: &mut DecisionStream,
         len: usize,
         prior_of: P,
         key_of: K,
+        off_anchor_of: D,
     ) -> usize
     where
         P: Fn(usize) -> [f64; 2],
         K: Fn(usize) -> u32,
+        D: Fn(usize) -> f64,
     {
         let c = self.c;
         if c.epsilon_milli > 0 && rng.bounded_int(1000) < c.epsilon_milli {
             return rng.bounded_int(len as u64) as usize;
         }
-        self.puct_index(len, &prior_of, &key_of, c);
+        self.puct_index(len, &prior_of, &key_of, &off_anchor_of, c);
         rng.pick_top_k(&self.scratch, c.top_k)
     }
 
@@ -409,10 +416,12 @@ impl Policy {
     /// comparable to the next: the channels are unnormalised scores whose range
     /// moves with the problem, and a softmax over raw values would be a different
     /// temperature on every instance.
-    fn puct_index<P, K>(&mut self, len: usize, prior_of: &P, key_of: &K, c: PuctConfig)
-    where
+    fn puct_index<P, K, D>(
+        &mut self, len: usize, prior_of: &P, key_of: &K, off_anchor_of: &D, c: PuctConfig,
+    ) where
         P: Fn(usize) -> [f64; 2],
         K: Fn(usize) -> u32,
+        D: Fn(usize) -> f64,
     {
         self.scratch.clear();
         self.scratch.resize(len, 0.0);
@@ -447,6 +456,11 @@ impl Policy {
                     self.scratch[i] += GUIDE_WEIGHT * g;
                 }
             }
+        }
+        // Per slot, not per key: one transform has applications on both sides
+        // of an anchor, and the statistics below cannot tell them apart.
+        for i in 0..len {
+            self.scratch[i] -= OFF_ANCHOR_WEIGHT * off_anchor_of(i);
         }
         let tau = if c.temperature > 0.0 { c.temperature } else { 1e-9 };
         let mut peak = f64::NEG_INFINITY;

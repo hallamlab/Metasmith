@@ -45,8 +45,11 @@ than added at the first break, and the scar tissue is `LIN_PAYLOAD_VERSION`: a *
 covering two things that can move independently is how the last desync went unnoticed. The
 binary also advertises `capabilities`; a capability it does not claim is simply unavailable.
 
-`SOLVER_RNG_VERSION` is 3. It went to 3 when PUCT became the selection rule — the envelope did
-not move, and that is exactly the independence the two constants exist to express.
+`SOLVER_RNG_VERSION` is 4. It went to 3 when PUCT became the selection rule — the envelope did
+not move, and that is exactly the independence the two constants exist to express. It went to 4
+when the search began to mint one target application instead of every binding, and to demote
+applications fed by a dead anchor. No corpus fingerprint moved. The plans of wide real templates
+did.
 
 `WIRE_VERSION` is 3. Version 3 added three optional request fields for fork cases, and the version
 is the only guard, because an older engine ignores an unknown field.
