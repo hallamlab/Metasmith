@@ -306,6 +306,7 @@ pub fn generate_applications(
     // `mock_produced` still decides where a candidate's *products* come from; it
     // no longer decides whether its *inputs* are checked.
     let mint_from_transform = mock_produced.is_none();
+    let first_leaf_only = tr == p.target_index && mint_from_transform;
 
     // Two passes: prefer given. Fall back to given+produced only when the
     // given-only pass could not reach a leaf *for lineage reasons* -- reaching a
@@ -315,8 +316,13 @@ pub fn generate_applications(
         let mut matches: Map<DepId, Vec<EpId>> = det::map();
         let mut missing = false;
         for &d in &requires {
-            let c = find_endpoints(p, ar, production, d, include_produced);
+            let mut c = find_endpoints(p, ar, production, d, include_produced);
             if c.is_empty() { missing = true; break; }
+            // The stack pops the last candidate first. The target keeps one
+            // leaf, and the oldest endpoints are the ones that share a chain:
+            // taking the newest of each slot stitched seven DAS Tool runs into
+            // one hybrid plan.
+            if first_leaf_only { c.reverse(); }
             matches.insert(d, c);
         }
         if missing {
@@ -392,7 +398,7 @@ pub fn generate_applications(
             // popped -- and requirements anchored only on a shared ancestor
             // bind independently, so "the rest" is their whole cross product.
             // The refiner still enumerates: rebinding the target is its job.
-            if tr == p.target_index && mint_from_transform { break; }
+            if first_leaf_only { break; }
         }
         if reached_leaf || include_produced { return Ok(viable); }
     }
