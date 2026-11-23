@@ -116,11 +116,14 @@ class DataInstance:
             instance_id=raw.get("instance_id"),
         )
         if raw.get("instance_id"):
+            was_value = lib.instance_meta.get(inst.path, {}).get("value")
             lib.instance_meta[inst.path] = {
                 "instance_id": inst.instance_id,
                 "origin": inst.origin,
                 "lineage_payload": inst.lineage_payload,
             }
+            if was_value:
+                lib.instance_meta[inst.path]["value"] = True
         return inst
 
 class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _TelemetryQueries):
@@ -146,6 +149,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
         self.instance_meta: dict[Path, dict] = {}
+        self.cases: dict[Path, list[str]] = {}
         self._type_sources: dict[str, Path] = {}
         # The `pinned:` block from index.yml, or None for the overwhelming
         # majority of libraries. See pinned.py.
@@ -156,6 +160,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             self.manifest = other.manifest
             self.types = other.types
             self.instance_meta = other.instance_meta
+            self.cases = other.cases
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
             self._pinned = other._pinned
@@ -380,9 +385,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self._invalidate_endpoint_cache()
         return path
 
-    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None, cases: Iterable[str]|None=None):
         self._refuse_if_pinned("AddItem")
-        return self._register(path, dtype, parents, self._mint_leaf_id)
+        path = self._register(path, dtype, parents, self._mint_leaf_id)
+        if cases:
+            self.cases[path] = list(cases)
+        return path
 
     # The caller supplies the identity, so nothing here invents one and the
     # given path does not refuse what this produces. That is the route a pool
@@ -427,16 +435,15 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
-        # The file is written before it is registered: a leaf id is derived from
-        # the file's stat, and registering first would find nothing there and
-        # fall back to a random id.
+        # The file is written before it is registered: a value's id is derived
+        # from its text.
         self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
         with open(self.location/path, "w") as f:
             f.write(value)
-        return self.AddItem(path=path, dtype=dtype, parents=parents)
+        return self._register(path, dtype, parents, lambda p: self._mint_leaf_id(p, value=True))
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()
@@ -474,6 +481,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 skipped[str(path)] = (
                     "produced by a run; its identity is its lineage"
                 )
+                continue
+            if entry.get("value"):
+                skipped[str(path)] = "a value; its identity is its text, so edit the text"
                 continue
             abs_path = self._abs(path)
             if is_deferred(abs_path):
@@ -523,16 +533,19 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         if path in self.parents:
             del self.parents[path]
         self.instance_meta.pop(path, None)
+        self.cases.pop(path, None)
         self._invalidate_endpoint_cache()
 
     def _migrate_instance_meta(self, old: Path, new: Path):
+        if old in self.cases:
+            self.cases[new] = self.cases.pop(old)
         meta = self.instance_meta.pop(old, None)
         if meta is None:
             return
         if meta.get("origin", "leaf") != "leaf":
             self.instance_meta[new] = meta
         else:
-            self._mint_leaf_id(new)
+            self._mint_leaf_id(new, value=bool(meta.get("value")))
 
     def Rename(self, path: Path, new: Path, _save=True):
         self._refuse_if_pinned("Rename")
@@ -666,6 +679,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
     def _calculate_key(self, _raw_override=None):
         src = _raw_override if _raw_override is not None else self.Pack()
         me_d = {k: v for k, v in src.items() if k not in self._KEY_EXCLUDED_TOP_LEVEL}
+        # A leaf's stamp is a witness for its id, not part of it: two checkouts
+        # holding the same ids key the same whatever their mtimes.
+        if "manifest" in me_d:
+            me_d["manifest"] = {
+                k: {f: x for f, x in v.items() if f != "stamp"} for k, v in me_d["manifest"].items()
+            }
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key

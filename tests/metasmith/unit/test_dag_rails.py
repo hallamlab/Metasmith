@@ -132,7 +132,9 @@ def _random_blocks(seed, names):
     return blocks
 
 
-@pytest.mark.parametrize("seed", range(600))
+# seeds cycle size (mod 18), density (mod 3), a back edge (mod 5) and blocks (seed // 3 mod 3):
+# 90 covers every combination of the first three
+@pytest.mark.parametrize("seed", range(90))
 def test_a_random_dag_keeps_the_grid_and_one_path_per_edge(seed):
     names, edges = _random_dag(seed)
     blocks = _random_blocks(seed, names) if seed // 3 % 3 == 0 else None

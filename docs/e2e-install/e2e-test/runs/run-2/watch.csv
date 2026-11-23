@@ -1,0 +1,82 @@
+ts,kind,path,inodes,bytes,note
+2026-11-19T13:06:55-07:00,total,/scratch/phyberos/msm_e2e/run-2,0,0,absent
+2026-11-19T13:06:55-07:00,apptainer,/home/phyberos/.apptainer,1,0,
+2026-11-19T13:06:55-07:00,quota,-,0,0,/home (user phyberos)       174MiB/  50GiB          16K/ 500K
+2026-11-19T13:06:55-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          57K/1000K
+2026-11-19T13:10:09-07:00,total,/scratch/phyberos/msm_e2e/run-2,0,0,absent
+2026-11-19T13:10:09-07:00,apptainer,/home/phyberos/.apptainer,1,0,
+2026-11-19T13:10:09-07:00,quota,-,0,0,/home (user phyberos)       174MiB/  50GiB          16K/ 500K
+2026-11-19T13:10:09-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          57K/1000K
+2026-11-19T13:11:58-07:00,total,/scratch/phyberos/msm_e2e/run-2,1,4096,
+2026-11-19T13:11:58-07:00,dir,container_images,1,4096,
+2026-11-19T13:11:58-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:11:58-07:00,apptainer,/home/phyberos/.apptainer,11,85201351,
+2026-11-19T13:11:58-07:00,quota,-,0,0,/home (user phyberos)       175MiB/  50GiB          16K/ 500K
+2026-11-19T13:11:58-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          57K/1000K
+2026-11-19T13:15:12-07:00,total,/scratch/phyberos/msm_e2e/run-2,3,978243584,
+2026-11-19T13:15:12-07:00,dir,container_images,3,978243584,
+2026-11-19T13:15:12-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:15:12-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:15:12-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:15:12-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:15:12-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          58K/1000K
+2026-11-19T13:17:04-07:00,total,/scratch/phyberos/msm_e2e/run-2,9,980106461,
+2026-11-19T13:17:04-07:00,dir,msm,1,1121,
+2026-11-19T13:17:04-07:00,dir,lib,3,14412,
+2026-11-19T13:17:04-07:00,dir,relay,2,1847344,
+2026-11-19T13:17:04-07:00,dir,container_images,3,978243584,
+2026-11-19T13:17:04-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:17:04-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:17:04-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:17:04-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:17:04-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          58K/1000K
+2026-11-19T13:20:15-07:00,total,/scratch/phyberos/msm_e2e/run-2,9,980106461,
+2026-11-19T13:20:15-07:00,dir,msm,1,1121,
+2026-11-19T13:20:15-07:00,dir,lib,3,14412,
+2026-11-19T13:20:15-07:00,dir,relay,2,1847344,
+2026-11-19T13:20:15-07:00,dir,container_images,3,978243584,
+2026-11-19T13:20:15-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:20:15-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:20:15-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:20:15-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:20:15-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          58K/1000K
+2026-11-19T13:22:07-07:00,total,/scratch/phyberos/msm_e2e/run-2,9,980106461,
+2026-11-19T13:22:07-07:00,dir,msm,1,1121,
+2026-11-19T13:22:07-07:00,dir,lib,3,14412,
+2026-11-19T13:22:07-07:00,dir,relay,2,1847344,
+2026-11-19T13:22:07-07:00,dir,container_images,3,978243584,
+2026-11-19T13:22:07-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:22:07-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:22:07-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:22:07-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:22:07-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          58K/1000K
+2026-11-19T13:27:12-07:00,total,/scratch/phyberos/msm_e2e/run-2,9,980106461,
+2026-11-19T13:27:12-07:00,dir,msm,1,1121,
+2026-11-19T13:27:12-07:00,dir,lib,3,14412,
+2026-11-19T13:27:12-07:00,dir,relay,2,1847344,
+2026-11-19T13:27:12-07:00,dir,container_images,3,978243584,
+2026-11-19T13:27:12-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:27:12-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:27:12-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:27:12-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:27:12-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          58K/1000K
+2026-11-19T13:32:16-07:00,total,/scratch/phyberos/msm_e2e/run-2,9,980106461,
+2026-11-19T13:32:16-07:00,dir,msm,1,1121,
+2026-11-19T13:32:16-07:00,dir,lib,3,14412,
+2026-11-19T13:32:16-07:00,dir,relay,2,1847344,
+2026-11-19T13:32:16-07:00,dir,container_images,3,978243584,
+2026-11-19T13:32:16-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:32:16-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:32:16-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:32:16-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:32:16-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          58K/1000K
+2026-11-19T13:37:19-07:00,total,/scratch/phyberos/msm_e2e/run-2,9,980106461,
+2026-11-19T13:37:19-07:00,dir,msm,1,1121,
+2026-11-19T13:37:19-07:00,dir,lib,3,14412,
+2026-11-19T13:37:19-07:00,dir,relay,2,1847344,
+2026-11-19T13:37:19-07:00,dir,container_images,3,978243584,
+2026-11-19T13:37:19-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-2,0,0,0
+2026-11-19T13:37:19-07:00,sif,/scratch/phyberos/msm_e2e/run-2/container_images/docker..quay.io_hallamlab_metasmith..0.25.1-6ab46b6.sif,1,978239488,
+2026-11-19T13:37:19-07:00,apptainer,/home/phyberos/.apptainer,30,2017415037,
+2026-11-19T13:37:19-07:00,quota,-,0,0,/home (user phyberos)      2098MiB/  50GiB          16K/ 500K
+2026-11-19T13:37:19-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          58K/1000K

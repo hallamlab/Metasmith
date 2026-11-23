@@ -1,0 +1,11 @@
+# python:3.8-slim-bookworm as of 2026-11-21.
+Bootstrap: docker
+From: python@sha256:1d52838af602b4b5a831beb13a0e4d073280665ea7be7f69ce2382f29c5a613f
+
+%files
+    {{ recipe }}/install.sh /opt/msm-build/install.sh
+    {{ package }} /opt/msm-build/package
+
+%post
+    sh /opt/msm-build/install.sh /opt/msm-build/package
+    rm -rf /opt/msm-build

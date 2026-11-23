@@ -57,19 +57,3 @@ def select_for_key(dep_insts: list, key_inst, key_idx: int) -> list:
     if related:
         return related
     return positional_slice(dep_insts, key_idx, key_idx + 1)
-
-
-def expected_per_key(dep_insts: list, key_insts: list) -> int | None:
-    if not dep_insts or not key_insts:
-        return None
-    if len(dep_insts) == 1:
-        return None
-    sizes = set()
-    for key_inst in key_insts:
-        related = related_to_key(dep_insts, key_inst)
-        if not related:
-            return None
-        sizes.add(len(related))
-        if len(sizes) > 1:
-            return None
-    return sizes.pop() if sizes else None

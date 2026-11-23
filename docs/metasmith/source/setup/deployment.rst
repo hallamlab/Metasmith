@@ -37,7 +37,8 @@ Agents can also be deployed to remote machines through SSH by changing their hom
 
     `SSH setup <../setup/ssh.html>`_
 
-Additional setup commands, to be run before the excution of each workflow, can be specifed:
+Additional setup commands, to be run before the excution of each workflow, can be specifed.
+On a cluster, load the container runtime here:
 
 .. code-block:: python
     :linenos:
@@ -45,23 +46,26 @@ Additional setup commands, to be run before the excution of each workflow, can b
     smith = Agent(
         # ...
         setup_commands=[
-            'export TMPDIR="/home/$USER/tmp"',
-            'mkdir -p $TMPDIR',
-            'export APPTAINER_CACHEDIR="$TMPDIR"',
-            'export APPTAINER_TMPDIR="$TMPDIR"',
+            'module load apptainer',
         ]
     )
 
 .. note::
 
-    For the Apptainer runtime, ``APPTAINER_CACHEDIR`` also selects where
-    Metasmith stores its built container images (the ``.sif`` files and any
-    unpacked ``.sandbox`` directories) — this is the store ``apptainer exec``
-    reads from at run time. When it is unset, Metasmith falls back to
-    ``<agent_home>/container_images``. If you export it (as above), point it at
-    **persistent** storage with room for the images; a location that is wiped
-    between sessions (e.g. a node-local ``/tmp``) forces a re-pull on every run.
-    The example above uses ``/home/$USER/tmp``, which persists, so it is safe.
+    For the Apptainer runtime, Metasmith stores the built container images and
+    Apptainer's own download cache in ``<agent_home>/container_images``. Put the
+    agent home on storage with room for the images, such as a cluster's scratch.
+    To store the images elsewhere, export ``APPTAINER_CACHEDIR`` in
+    ``setup_commands`` and point it at **persistent** storage. A location wiped
+    between sessions forces a new download on every run.
+
+.. warning::
+
+    Do not point ``TMPDIR`` or ``APPTAINER_TMPDIR`` at a network filesystem,
+    such as ``/home`` or ``/scratch`` on most clusters. Apptainer unpacks each
+    image layer in that directory. On a network filesystem the unpack takes over
+    an hour, against a few minutes in the login node's local ``/tmp``. Leave
+    both unset.
 
 .. note::
 

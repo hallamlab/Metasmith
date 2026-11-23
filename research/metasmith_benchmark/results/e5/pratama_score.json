@@ -1,0 +1,21 @@
+{
+ "votus": 178976,
+ "matched": 120136,
+ "recovered": 172153,
+ "recovery": 0.6692,
+ "recovery_by_published_lane": {
+  "hybrid": 0.3719,
+  "megahit": 0.7595,
+  "spades": 0.6611
+ },
+ "lanes": {
+  "megahit": 145146,
+  "opera_ms": 33830
+ },
+ "matched_lanes": {
+  "megahit": 108098,
+  "opera_ms": 12038
+ },
+ "paired_median_identity": 98.44,
+ "paired": 152120
+}

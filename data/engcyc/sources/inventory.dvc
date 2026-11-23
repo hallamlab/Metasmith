@@ -1,0 +1,6 @@
+outs:
+- md5: b2488ddcc38086e944f7fda2d1f99e21.dir
+  size: 2433810
+  nfiles: 45
+  hash: md5
+  path: inventory

@@ -11,6 +11,7 @@ ref  = model.AddRequirement(lib.GetType("ref::genomad"))
 virus_summary_out   = model.AddProduct(lib.GetType("taxonomy::genomad_virus_summary"))
 plasmid_summary_out = model.AddProduct(lib.GetType("taxonomy::genomad_plasmid_summary"))
 virus_genes_out     = model.AddProduct(lib.GetType("taxonomy::genomad_virus_genes"))
+plasmid_genes_out   = model.AddProduct(lib.GetType("taxonomy::genomad_plasmid_genes"))
 taxonomy_out        = model.AddProduct(lib.GetType("taxonomy::genomad_taxonomy"))
 calls_out           = model.AddProduct(lib.GetType("viromics::genomad_candidate_virus"))
 
@@ -50,6 +51,7 @@ def protocol(context: ExecutionContext):
     ovirus  = context.Output(virus_summary_out)
     oplasmid = context.Output(plasmid_summary_out)
     ogenes  = context.Output(virus_genes_out)
+    opgenes = context.Output(plasmid_genes_out)
     otax    = context.Output(taxonomy_out)
     ocalls  = context.Output(calls_out)
 
@@ -71,6 +73,7 @@ def protocol(context: ExecutionContext):
     shutil.copy2(summary_dir / f"{prefix}_virus_summary.tsv", ovirus.local)
     shutil.copy2(summary_dir / f"{prefix}_plasmid_summary.tsv", oplasmid.local)
     shutil.copy2(summary_dir / f"{prefix}_virus_genes.tsv", ogenes.local)
+    shutil.copy2(summary_dir / f"{prefix}_plasmid_genes.tsv", opgenes.local)
     # Not in the summary directory. `--cleanup` removes only `_mmseqs2`, so the
     # annotate directory and this file both survive it.
     shutil.copy2(Path(f"genomad_output/{prefix}_annotate/{prefix}_taxonomy.tsv"), otax.local)
@@ -82,11 +85,12 @@ def protocol(context: ExecutionContext):
                 virus_summary_out: ovirus.local,
                 plasmid_summary_out: oplasmid.local,
                 virus_genes_out: ogenes.local,
+                plasmid_genes_out: opgenes.local,
                 taxonomy_out: otax.local,
                 calls_out: ocalls.local,
             },
         ],
-        success=all(p.local.exists() for p in (ovirus, oplasmid, ogenes, otax, ocalls)),
+        success=all(p.local.exists() for p in (ovirus, oplasmid, ogenes, opgenes, otax, ocalls)),
     )
 
 

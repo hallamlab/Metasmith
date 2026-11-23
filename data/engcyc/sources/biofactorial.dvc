@@ -1,0 +1,6 @@
+outs:
+- md5: ff9a2627123511127f450e9acfb93e28.dir
+  size: 19947
+  nfiles: 2
+  hash: md5
+  path: biofactorial

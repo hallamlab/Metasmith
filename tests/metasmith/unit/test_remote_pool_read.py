@@ -12,6 +12,7 @@ the failure this file is watching for.
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -37,6 +38,8 @@ def _row(name, iid, dtype="cami::reads", path=None):
 
 class _SshAgent(_PoolAccess):
     """An agent whose home is on a host this process cannot reach."""
+
+    _POOL_RETRY_S = (0.0, 0.0)
 
     def __init__(self, rows, setup_commands=()):
         self.home = Source(
@@ -269,16 +272,32 @@ class TestAGivenLibraryFromPoolReferences:
 class _ImportingAgent(_SshAgent):
     """An agent that records what it was asked to import, and grows a pool."""
 
+    def _add(self, name, dtype, path, parents=()):
+        iid = f"{len(self.rows):02x}" * 34
+        self.rows.append(dict(_row(name, iid, dtype=dtype, path=path), parents=list(parents)))
+        return iid
+
     def _remote_oneshot(self, cmd, timeout=30):
         self.sent.append(cmd)
+        if "data ensure" in cmd:
+            blob = cmd.rsplit("data ensure ", 1)[1].split()[0].strip("'")
+            held = {r["name"]: r["instance_id"] for r in self.rows}
+            out = {}
+            for item in json.loads(base64.b64decode(blob)):
+                name = item.get("name") or item["path"]
+                if name not in held:
+                    parents = [out.get(p, p) for p in item.get("parents") or []]
+                    held[name] = self._add(name, item["dtype"], item["path"], parents)
+                out[name] = held[name]
+            body = json.dumps({"instance_ids": out})
+            return type("R", (), {"out": ["binds [...]", body], "err": []})()
         if "data import" not in cmd:
             return super()._remote_oneshot(cmd, timeout=timeout)
         flags = cmd.rsplit("data import ", 1)[1].split()
         path = flags[0]
         name = flags[flags.index("--name") + 1] if "--name" in flags else path
         dtype = flags[flags.index("--dtype") + 1]
-        iid = f"{len(self.rows):02x}" * 34
-        self.rows.append(_row(name, iid, dtype=dtype, path=path))
+        iid = self._add(name, dtype, path)
         body = json.dumps({"name": name, "instance_id": iid, "path": path})
         return type("R", (), {"out": ["binds [...]", body], "err": []})()
 
@@ -308,7 +327,7 @@ class TestImportingIntoARemotePool:
              "name": "batch1/s1/reads"},
         ])
         assert found == {"batch1/s1/reads": "aa" * 34}
-        assert not any("data import" in c for c in agent.sent)
+        assert len(agent.rows) == 1
 
     def test_setup_run_twice_gives_the_same_identities(self):
         items = [
@@ -322,7 +341,66 @@ class TestImportingIntoARemotePool:
         second = agent.EnsurePoolEntries(items)
         assert first == second
         assert len(first) == 2
-        assert sum("data import" in c for c in agent.sent) == 2
+        assert len(agent.rows) == 2
+
+    def test_every_item_goes_in_one_remote_call(self):
+        agent = _ImportingAgent([])
+        agent.EnsurePoolEntries([
+            {"path": f"{REMOTE_DATA}/s{i}.fq", "dtype": "cami::reads"} for i in range(5)
+        ])
+        assert len(agent.sent) == 1 and "data ensure" in agent.sent[0]
+
+    def test_a_lost_answer_is_asked_again(self):
+        agent = _ImportingAgent([])
+        real = agent._remote_oneshot
+        lost = iter([True, True])
+
+        def drop_twice(cmd, timeout=30):
+            if next(lost, False):
+                agent.sent.append(cmd)
+                return type("R", (), {"out": [], "err": ["Connection reset"]})()
+            return real(cmd, timeout)
+
+        agent._remote_oneshot = drop_twice
+        found = agent.EnsurePoolEntries([{"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads"}])
+        assert len(found) == 1 and len(agent.sent) == 3
+
+    def test_an_answer_lost_every_time_names_the_pool(self):
+        agent = _ImportingAgent([])
+        agent._remote_oneshot = lambda cmd, timeout=30: type("R", (), {"out": [], "err": []})()
+        with pytest.raises(ValueError, match=f"{REMOTE_HOME}/task_cache"):
+            agent.EnsurePoolEntries([{"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads"}])
+
+    def test_a_single_import_is_never_sent_twice(self):
+        agent = _ImportingAgent([])
+        sent = []
+        agent._remote_oneshot = lambda cmd, timeout=30: sent.append(cmd) or type(
+            "R", (), {"out": [], "err": []})()
+        with pytest.raises(ValueError):
+            agent.ImportToPool(f"{REMOTE_DATA}/s1.fq", "cami::reads")
+        assert len(sent) == 1
+
+    def test_the_batch_command_runs_on_the_agents_own_cli(self, tmp_path, capsys):
+        import shlex
+
+        from metasmith.coms.cli._main import main
+
+        class _CliAgent(_SshAgent):
+            def _remote_oneshot(self, cmd, timeout=30):
+                main(shlex.split(cmd.split("./msm ", 1)[1]))
+                return type("R", (), {"out": capsys.readouterr().out.splitlines(), "err": []})()
+
+        agent = _CliAgent([])
+        agent.home = Source(address=f"ssh://cluster:{tmp_path}", type=SourceType.SSH)
+        items = [
+            {"path": f"{REMOTE_DATA}/meta.json", "dtype": "cami::meta", "name": "s1/meta"},
+            {"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads", "name": "s1/reads",
+             "parents": ["s1/meta"]},
+        ]
+        first = agent.EnsurePoolEntries(items)
+        assert agent.EnsurePoolEntries(items) == first
+        (reads,) = agent.ResolvePoolRefs(["s1/reads"], entries=agent.ReadPool()["entries"])
+        assert reads["parents"] == [first["s1/meta"]]
 
     def test_a_parent_named_earlier_in_the_list_resolves_to_its_identity(self):
         agent = _ImportingAgent([])
@@ -332,8 +410,8 @@ class TestImportingIntoARemotePool:
             {"path": f"{REMOTE_DATA}/s1.fq", "dtype": "cami::reads",
              "name": "batch1/s1/reads", "parents": ["batch1/s1/meta"]},
         ])
-        reads_cmd = [c for c in agent.sent if "s1.fq" in c][-1]
-        assert f"--parent {found['batch1/s1/meta']}" in reads_cmd
+        reads = next(r for r in agent.rows if r["name"] == "batch1/s1/reads")
+        assert reads["parents"] == [found["batch1/s1/meta"]]
 
     def test_nothing_here_touches_the_agents_filesystem(self):
         agent = _ImportingAgent([])

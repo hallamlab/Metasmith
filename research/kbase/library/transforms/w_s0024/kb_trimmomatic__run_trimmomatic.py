@@ -20,13 +20,15 @@ study             = model.AddRequirement(lib.GetType("kbase::study"))
 sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 input_reads_ref   = model.AddRequirement(lib.GetType("kbase::accepts_10"), parents={sample})
 env               = model.AddRequirement(lib.GetType("env::kb_trimmomatic.env"))
-# output_reads_name is one of 3 types; each is its own product branch
+# output_reads_name is one of 3 types; each is its own product group, sharing the other products
 output_reads_name = model.AddProduct(lib.GetType("kbase::KBaseFile_PairedEndLibrary"))
+report_           = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 output_reads_name_2 = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
+model.AddProduct(report_)
 model.NewProductGroup()
 output_reads_name_3 = model.AddProduct(lib.GetType("kbase::KBaseSets_ReadsSet"))
-report_           = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {output_reads_name: context.Output(output_reads_name)}

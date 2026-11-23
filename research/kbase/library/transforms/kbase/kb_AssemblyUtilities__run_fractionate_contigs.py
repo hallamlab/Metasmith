@@ -22,11 +22,12 @@ sample                    = model.AddRequirement(lib.GetType("kbase::sample"), p
 input_assembly_ref        = model.AddRequirement(lib.GetType("kbase::accepts_44"), parents={sample})
 input_pos_filter_obj_refs = model.AddRequirement(lib.GetType("kbase::accepts_42"), parents={sample})
 env                       = model.AddRequirement(lib.GetType("env::kb_AssemblyUtilities.env"))
-# output_name is one of 2 types; each is its own product branch
+# output_name is one of 2 types; each is its own product group, sharing the other products
 output_name               = model.AddProduct(lib.GetType("kbase::KBaseGenomeAnnotations_Assembly"))
+report_                   = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 output_name_2             = model.AddProduct(lib.GetType("kbase::KBaseMetagenomes_AnnotatedMetagenomeAssembly"))
-report_                   = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {output_name: context.Output(output_name)}

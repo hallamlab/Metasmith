@@ -432,6 +432,8 @@ def sync(
         if not f.is_file() or f.read_text(encoding="utf-8") != spec["value"]:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(spec["value"], encoding="utf-8")
+            lib._mark_value(held[rid])
+            changed = True
     for entry in plan:
         if entry["mode"] != "value":
             continue
@@ -439,6 +441,8 @@ def sync(
         if not f.is_file() or f.read_text(encoding="utf-8") != entry["value"]:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(entry["value"], encoding="utf-8")
+            lib._mark_value(Path(entry["path"]))
+            changed = True
 
     by_id = {str(r["id"]): r for r in plain_rows}
     for rid, at in held.items():

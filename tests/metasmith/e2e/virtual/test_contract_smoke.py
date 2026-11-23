@@ -1,27 +1,22 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
-import pytest
 
 from metasmith.constants import AgentPaths
-from metasmith.env import Runtime
-from metasmith.models.libraries import (
-    DataInstanceLibrary,
-    DataTypeLibrary,
-    TransformInstanceLibrary,
-)
+from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
 from metasmith.models.solver import Endpoint, Transform
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask
 from metasmith.testing.contract_runtime import ContractRuntime
 from metasmith.testing.mock_transforms import (
     group_then_unfold,
     identity_transform,
-    multi_slot_producer,
+    multi_product_one_group,
 )
 from metasmith.testing.plan_oracle import PlanExecutionOracle
 
-from .conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 
 
 def _configure_paths(monkeypatch, home: Path) -> None:
@@ -87,10 +82,8 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
     target_model = Transform()
     target_model.AddRequirement(properties={"final"})
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["final_target"]),
         transforms=[tr_lib],
-        target_names=["final_target"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), f"planner did not converge: {plan!r}"
     assert len(plan.steps) == 2
@@ -137,7 +130,7 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
     )
 
 
-def test_multi_slot_producer_emits_three_distinct_dtypes(tmp_path):
+def test_multi_product_one_group_emits_three_distinct_dtypes(tmp_path):
     types_path = _make_types_file(
         tmp_path,
         {
@@ -149,18 +142,15 @@ def test_multi_slot_producer_emits_three_distinct_dtypes(tmp_path):
             "slot_2": {"slot_2"},
         },
     )
-    transforms = multi_slot_producer(slots=3)
+    transforms = multi_product_one_group(products=3)
     tr_lib = create_transform_library(tmp_path / "tr_multi", types_path, transforms)
 
     found = list(tr_lib.IterateTransforms())
     assert len(found) == 1, f"expected one transform, got {len(found)}"
     _, inst = found[0]
     produces = inst.model.produces
-    assert len(produces) == 3, f"expected 3 product groups, got {len(produces)}"
-    dtype_keys: set[str] = set()
-    for group in produces:
-        assert len(group) == 1, "each slot should have one dep"
-        dtype_keys.add(group[0].key)
+    assert len(produces) == 1, f"expected 1 product group, got {len(produces)}"
+    dtype_keys = {dep.key for dep in produces[0]}
     assert len(dtype_keys) == 3, (
         f"expected 3 distinct dtype keys, got {dtype_keys}"
     )

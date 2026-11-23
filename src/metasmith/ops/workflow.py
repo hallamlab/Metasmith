@@ -16,6 +16,7 @@ def plan_spec(spec: Spec, workspace: str | None = None, return_task: bool = Fals
             "message": "solver could not find a complete plan",
             "step_count": len(plan.steps),
             "dropped_targets": list(plan.dropped_targets),
+            "dropped_samples": list(plan.dropped_samples),
             "hints": [
                 {
                     "kind": h.kind,

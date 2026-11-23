@@ -184,6 +184,6 @@ class RunWatcher:
             return None
         patch = {"state": state, "finished_at": utcnow(), "probe_error": None, "probe_error_at": None}
         if state == "failed":
-            patch["error"] = "the run stopped without reporting completion"
+            patch["error"] = probe.get("reason") or "the run stopped without reporting completion"
         self.project.update_run(rec.workflow, rec.name, patch)
         return {"run": rec.name, "state": state}

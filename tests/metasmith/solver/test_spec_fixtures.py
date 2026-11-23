@@ -123,6 +123,38 @@ def test_the_deep_anchor_actually_needs_the_transitive_walk(engine):
 
 
 # ---------------------------------------------------------------------------
+# the anchor relation is reflexive: one endpoint can fill a slot and its anchor
+# ---------------------------------------------------------------------------
+
+
+def _self_anchor():
+    reads = Endpoint(properties={"reads"})
+
+    # Two assemblers. Only the hybrid one's product carries {"hybrid"}, and the
+    # target anchors its hybrid slot to its generic one -- satisfiable only by
+    # binding both slots to the one hybrid assembly.
+    plain = Transform()
+    plain.AddRequirement(properties={"reads"})
+    plain.AddProduct(properties={"asm"})
+    hybrid = Transform()
+    hybrid.AddRequirement(properties={"reads"})
+    hybrid.AddProduct(properties={"asm", "hybrid"})
+
+    target = Transform()
+    generic = target.AddRequirement(properties={"asm"})
+    target.AddRequirement(properties={"asm", "hybrid"}, parents={generic})
+    return [{reads}], [plain, hybrid], target
+
+
+def test_a_slot_anchored_to_another_target_slot_may_take_the_same_endpoint(engine):
+    request, reply = _solve(engine, *_self_anchor())
+    assert reply["complete"]
+    assert _both_agree(request, reply).ok
+    (tgt,) = [s for s in reply["steps"] if s["transform"] == request["target_index"]]
+    assert len({e for _, e in tgt["used"]}) == 1
+
+
+# ---------------------------------------------------------------------------
 # two files that look alike: the case identity exists for
 # ---------------------------------------------------------------------------
 

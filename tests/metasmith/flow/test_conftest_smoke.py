@@ -16,7 +16,6 @@ from .conftest import (
     build_linear_plan,
     build_mixed_cacheability_plan,
     build_multi_input_plan,
-    run_and_load,
 )
 
 
@@ -52,7 +51,7 @@ def test_build_branching_with_failure_plan_returns_plan(tmp_path):
 
 
 def test_build_fan_out_plan_returns_plan(tmp_path):
-    bp = build_fan_out_plan(tmp_path, n_slots=2)
+    bp = build_fan_out_plan(tmp_path, n_products=2)
     assert isinstance(bp, BuiltPlan)
     assert bp.plan is not None
 
@@ -97,10 +96,3 @@ def test_build_5hop_dag_plan_returns_plan(tmp_path):
     assert len(bp.plan.steps) == 5
 
 
-def test_run_and_load_on_linear_plan(tmp_path, virtual_runtime):
-    bp = build_linear_plan(tmp_path, n_steps=2)
-    task, lib = run_and_load(virtual_runtime, bp)
-    assert task is not None
-    assert lib is not None
-    summary = lib.summary()
-    assert "counts" in summary

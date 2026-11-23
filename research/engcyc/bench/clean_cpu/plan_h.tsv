@@ -1,0 +1,11 @@
+name	mode	procs	threads	toks	n	pin	stack	flags	env	input
+h_ort_fp32	ort_fp32	6	8	1024	2400	1	ort	-	-	mg
+h_ort_sqall	ort_sqall	6	8	1024	2400	1	ort	save	-	mg
+h_ort_sqpart	ort_sqpart	6	8	1024	2400	1	ort	save	-	mg
+hd_bf16pure	bf16pure	6	8	1024	0	1	stock	save,slim	-	dh
+hd_sq_int8	sq_int8	6	8	1024	0	1	stock	save,slim	-	dh
+hd_ao_int8wo	ao_int8wo	6	8	1024	0	1	t25	save,slim	-	dh
+hd_ort_int8pc	ort_int8pc	6	8	1024	0	1	ort	save	-	dh
+hd_ort_int8pt	ort_int8pt	6	8	1024	0	1	ort	save	-	dh
+hd_ort_sqall	ort_sqall	6	8	1024	0	1	ort	save	-	dh
+hd_ort_sqpart	ort_sqpart	6	8	1024	0	1	ort	save	-	dh

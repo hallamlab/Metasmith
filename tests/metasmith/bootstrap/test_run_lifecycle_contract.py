@@ -108,3 +108,21 @@ class TestToolContainersCarryTheRunToken:
     ])
     def test_neither_carries_the_other_dialect(self, runtime, foreign):
         assert foreign not in _run_command(runtime)
+
+
+@pytest.mark.parametrize("code", [0, 3])
+def test_the_driver_script_exits_with_nextflows_status(tmp_path, code):
+    # The run's sentinel reads this status, so an aborted nextflow is a failed run.
+    from metasmith.coms.terminals import LiveShell
+
+    stub = tmp_path / "bin" / "nextflow"
+    stub.parent.mkdir()
+    stub.write_text(f"#!/bin/bash\nexit {code}\n")
+    stub.chmod(0o755)
+    script = RenderNextflowScript(
+        workspace=tmp_path, log_dir=Path("logs"), host="h", results_folder="results",
+        nxf_report=Path("r.html"), nxf_dag=Path("d.dot"), stub_param="",
+    )
+    with LiveShell() as shell:
+        res = shell.Exec(f"export PATH={stub.parent}:$PATH\n{script}", timeout=30)
+    assert res.exit_code == code

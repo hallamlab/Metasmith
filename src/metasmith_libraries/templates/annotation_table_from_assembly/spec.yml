@@ -1,0 +1,57 @@
+name: annotation_table_from_assembly
+description: 'Run every annotation lane against an existing assembly and collect their
+  calls into one
+
+  long annotation::annotation_table, one row per lane, ORF or contig feature, and
+  term. Also
+
+  cuts the GPR evidence table over every reaction-mapping lane from it
+
+  (annotation::gpr_table_all).
+
+
+  Every lane includes MetaCyc, which is licensed: give the Pathway Tools installer
+
+  (licensed::pathway_tools_package), from which the MetaCyc 27.0 references are built.'
+sample_type: null
+target_types:
+- annotation::annotation_table
+- annotation::gpr_table_all
+transform_libraries:
+- metagenomics
+- logistics
+- functionalAnnotation
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/37a78fec4b994612b07664c057920b4d:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e20bb91a0eab7eb8218d8aa4ff4ea1d0645239badeeb01d513448f4d8d583514ab3
+      origin: leaf
+    /msm_deferred/a54a4cd098424f4c9313c62eefdc9798:
+      type: ref::lane_calibration
+      instance_id: 1e201689b1a87fc46c582de837c3f9c4bf6a9d6fba2c9265aeacd99ff6bd9802ce51
+      origin: leaf
+    /msm_deferred/b30132065b18409c8aaf14029a90c184:
+      type: sequences::assembly
+      instance_id: 1e205df650fa31926ee7e26d23ed77f2908007b9beeadbb884b194542df5fa7fb614
+      origin: leaf
+    /msm_deferred/c9ea7fa17f744940aa37b93876cb4611:
+      type: ref::mnxr_lookup
+      instance_id: 1e20237e6ae4ee4b5081517b9f99950a6e70c45bb0d6448a07d89269e670e7d9eaf9
+      origin: leaf
+    /msm_deferred/d0c41a9f8d0c49da887d5055d0783ec7:
+      type: licensed::pathway_tools_package
+      instance_id: 1e2091803f6b7c0f8ce29ff0204ccb7b322d94a7feb62a329bf2b4bd2c2522342e68
+      origin: leaf
+    eggnog_source.marker:
+      type: annotation::eggnog_source
+      instance_id: 1e208af982f5a78a37076b3d3f96da1a0b59211fabb6dc9fc5e8c9f3717137cb8a02
+      origin: leaf
+  values:
+    eggnog_source.marker: trigger

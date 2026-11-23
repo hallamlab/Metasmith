@@ -20,14 +20,19 @@ rhtml  = model.AddProduct(lib.GetType("aspire::fastp_report_html"))
 def protocol(context: ExecutionContext):
     ireads, iqc = context.Input(reads), context.Output(qc)
     ijson, ihtml = context.Output(rjson), context.Output(rhtml)
-    parity = json.loads(context.Input(meta).local.read_text())["parity"]
+    sample = json.loads(context.Input(meta).local.read_text())
+    parity = sample["parity"]
     assert parity in {"single", "paired"}, f"unknown parity: [{parity}]"
     cfg = yaml.safe_load(context.Input(params).local.read_text())["fastp"]
 
+    # A run delivered with its primers removed begins where the primers ended. Trimming the
+    # primer length again would cut real bases, and its ASVs would no longer match other runs'.
+    front_r1, front_r2 = (0, 0) if sample.get("primers_removed") else (cfg["trim_front_r1"], cfg["trim_front_r2"])
+
     # --stdout writes a paired run interleaved, so the product keeps its input's layout.
-    trims = f"-f {cfg['trim_front_r1']} -t {cfg['trim_tail_r1']}"
+    trims = f"-f {front_r1} -t {cfg['trim_tail_r1']}"
     if parity == "paired":
-        trims += f" --interleaved_in -F {cfg['trim_front_r2']} -T {cfg['trim_tail_r2']}"
+        trims += f" --interleaved_in -F {front_r2} -T {cfg['trim_tail_r2']}"
     adapters = "" if cfg["adapter_trimming"] else "--disable_adapter_trimming"
     context.ExecWithEnv(env=image, cmd=f"""\
         fastp -i {ireads.container} --stdout {trims} \

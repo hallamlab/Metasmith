@@ -6,13 +6,22 @@ description: 'Assemble an isolate genome from long reads with hifiasm-meta, and 
 sample_type: sequences::long_reads
 target_types:
 - sequences::hifiasm_meta_assembly
-- annotation::diamond_uniref50_results
-- annotation::diamond_uniref50_descriptions
-- annotation::kofamscan_results
-- annotation::kofamscan_descriptions
+- type: annotation::diamond_uniref50_results
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_descriptions
+  parents:
+  - 0
+- type: annotation::kofamscan_results
+  parents:
+  - 0
+- type: annotation::kofamscan_descriptions
+  parents:
+  - 0
 transform_libraries:
 - logistics
 - assembly
+- isolate
 - metagenomics
 - functionalAnnotation
 resource_libraries:

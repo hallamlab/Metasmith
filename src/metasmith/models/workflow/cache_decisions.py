@@ -63,7 +63,7 @@ def compute_cache_decisions(task, context: NextflowGenContext) -> dict[int, dict
                     transform_key, signature, dep.key, branch_idx, upstream
                 )
                 out_slot_ids[(dep.key, branch_idx)] = slot_id
-                for inst in step.dependency_map.get(dep, []):
+                for inst in step.ProductsOf(branch_idx, dep):
                     slot_id_by_archetype[inst.instance_id] = slot_id
                     inst.instance_id = slot_id
                     inst.origin = "lineage"

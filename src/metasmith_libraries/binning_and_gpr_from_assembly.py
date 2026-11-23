@@ -6,19 +6,17 @@ from metasmith.python_api import DEFERRED, Spec
 
 NAME = "binning_and_gpr_from_assembly"
 DESCRIPTION = """
-Bin an existing assembly with three binners, filter the bins on CheckM2 quality
-and dereplicate them with skani, and in the same pass build the gene-attributed
+Bin an existing assembly with three binners merged by DAS Tool, filter DAS Tool's
+bins on CheckM2 quality and dereplicate them with skani, and in the same pass build the gene-attributed
 GPR evidence table from KOFAMSCAN, CLEAN, DIAMOND UniRef50 and ProteinBERT.
 Takes the assembly and the long reads it was built from; the reads are what the
 coverage the binners need is computed from.
 """
 
-# Only checkm_stats is pinned, and only because all three binners' bin_fasta
-# types share sequences::putative_genome: an unpinned target is satisfied by
-# running CheckM2 on one binner's output, which starves the aggregator that
-# needs all three. The assembly needs no pinning -- unlike
-# metagenomics_from_paired_reads there is one concrete assembly here and no
-# second producer to be ambiguous with.
+# Only checkm_stats is pinned, and only because every binner's bin_fasta type
+# shares sequences::putative_genome: an unpinned target is satisfied by running
+# CheckM2 on whichever binner's output the search reaches first. The assembly
+# needs no pinning: it is given, so there is no second producer to be ambiguous with.
 _MB, _SB, _CB = 3, 4, 5
 TARGETS = [
     "sequences::assembly_stats",

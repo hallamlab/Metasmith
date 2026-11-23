@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
-import pytest
 
 from metasmith.agents import RunWorkflow
 from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
@@ -11,7 +11,9 @@ from metasmith.models.workflow import WorkflowPlan, WorkflowTask
 from metasmith.testing.mock_transforms import pull_container_transform
 from metasmith.testing.plan_oracle import PlanExecutionOracle
 
-from .conftest import create_transform_library, stage_task
+from tests.metasmith.support import create_transform_library
+
+from .conftest import stage_task
 
 
 _CONTAINER_SUBTYPES = {
@@ -56,10 +58,8 @@ def _build_pull_task(tmp_path) -> WorkflowTask:
     target_model = Transform()
     target_model.AddRequirement(properties={"pulled_container"})
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["pulled"]),
         transforms=[tr_lib],
-        target_names=["pulled"],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan)
     assert len(plan.steps) == 1

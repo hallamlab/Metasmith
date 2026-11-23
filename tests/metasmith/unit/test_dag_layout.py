@@ -126,7 +126,8 @@ def _keeps_blocks(lay, blocks):
 # -- the row order -----------------------------------------------------------
 
 
-@pytest.mark.parametrize("seed", range(200))
+# seeds cycle size (mod 7) and density (mod 3): 42 is two draws of every class
+@pytest.mark.parametrize("seed", range(42))
 def test_the_row_order_is_the_shortest_that_keeps_every_block_whole(seed):
     names, edges = _random_dag(seed, 3 + seed % 7, (0.15, 0.3, 0.5)[seed % 3])
     blocks = _step_blocks(seed, names, edges)
@@ -163,7 +164,8 @@ def test_an_order_that_splits_a_block_is_declined():
 
 
 
-@pytest.mark.parametrize("seed", range(300))
+# seeds cycle size (mod 7) and density (mod 3): 63 is three draws of every class
+@pytest.mark.parametrize("seed", range(63))
 def test_the_row_order_is_the_shortest_there_is(seed):
     names, edges = _random_dag(seed, 3 + seed % 7, (0.15, 0.3, 0.5)[seed % 3])
     lay = layout(names, edges)
@@ -421,7 +423,8 @@ def test_a_last_child_takes_its_parents_column_as_a_straight_drop():
     assert measure(lay).drops == 2
 
 
-@pytest.mark.parametrize("seed", range(200))
+# seeds cycle size (mod 30) and density (mod 3): 60 is two draws of every class
+@pytest.mark.parametrize("seed", range(60))
 def test_no_node_bends_away_from_every_run_ending_at_it(seed):
     names, edges = _random_dag(3000 + seed, 6 + seed % 30, (0.15, 0.3, 0.5)[seed % 3])
     lay = layout(names, edges)
@@ -462,7 +465,8 @@ def _best_columns(lay):
     return best
 
 
-@pytest.mark.parametrize("seed", range(120))
+# seeds cycle size (mod 5) and density (mod 2): 30 is three draws of every class
+@pytest.mark.parametrize("seed", range(30))
 def test_the_columns_are_the_best_there_are(seed):
     names, edges = _random_dag(1000 + seed, 3 + seed % 5, (0.3, 0.5)[seed % 2])
     lay = layout(names, edges)

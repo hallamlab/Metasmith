@@ -323,16 +323,24 @@ types:
     - assembly
     properties:
       method: megahit
+  # The hybrid lane. MEGAHIT's contigs for OPERA-MS carry no `origin: assembler`, so no
+  # assembly consumer takes the draft and a hybrid sample's downstream reads OPERA-MS alone.
+  megahit_draft:
+    properties:
+      _: MEGAHIT contigs of a hybrid sample's short reads, for OPERA-MS to scaffold
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+  opera_ms_assembly:
+    extends:
+    - assembly
+    properties:
+      method: opera_ms
   spades_assembly:
     extends:
     - assembly
     properties:
       method: spades
-  flye_raw_assembly:
-    extends:
-    - assembly
-    properties:
-      method: flye using raw reads
 # -----------------------------------------
 # assembly graphs -- the assembler's OWN representation of the assembly, kept
 # because the contig FASTA is a lossy read-out of it. A contig FASTA cannot say
@@ -444,6 +452,13 @@ types:
                            # is a property-superset of orfs and satisfies orfs requirements, so
                            # whole-sample tools (rgi, amrfinderplus) fan out over every chunk.
       ext: faa
+  # The ORFs of a whole assembly, prodigal's. The viral lane's prodigal-gv ORFs of the frozen
+  # set also descend from the assembly, so only this type, not lineage, tells a target which.
+  assembly_orfs:
+    extends:
+    - orfs
+    properties:
+      orf_caller: prodigal
   orfs_shard:
     extends:
     - orfs
@@ -465,24 +480,6 @@ types:
       Data: protein sequence
       content: open reading frames
       granularity: batch
-      ext: faa
-  # ORFs called on ONE metagenomic bin (one putative genome), the way metaGEM
-  # reconstructs a model per MAG rather than per assembly. A true SIBLING of
-  # `orfs`, NOT a subtype -- same reasoning as `orf_chunk`/`orf_batch` above:
-  # `granularity: bin` differs in VALUE from `orfs`'s `granularity: whole`, so
-  # this type does not satisfy a plain `sequences::orfs` requirement and is not
-  # satisfied by the whole-assembly (`metagenomics/prodigal.py`) or viral
-  # frozen-set (`viromics/prodigal_gv.py`) producers. Without this
-  # discriminator `metabolicModelling/carveme_from_orfs.py`'s reconstruction
-  # requirement would be answerable from either of those -- an ambiguity a
-  # target cannot resolve (see AGENTS.md "Two producers need a masked
-  # library"). `metabolicModelling/prodigal_from_bin.py` is the sole producer.
-  bin_orfs:
-    properties:
-      Format: FASTA
-      Data: protein sequence
-      content: open reading frames
-      granularity: bin
       ext: faa
 # -----------------------------------------
 # protein structures

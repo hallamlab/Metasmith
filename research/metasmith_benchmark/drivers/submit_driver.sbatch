@@ -1,5 +1,5 @@
 #!/bin/bash
-# One benchmark driver as a Slurm job on fir. The driver's client, its nextflow and the run's
+# One benchmark driver as a Slurm job on fir or nibi. The driver's client, its nextflow and the run's
 # local steps all live inside this job, which ends when the run does.
 #
 # Submit from a fir login node, from a checkout sync.sh wrote:
@@ -35,6 +35,13 @@ cd "$CHECKOUT/research/metasmith_benchmark/drivers"
 "$BENCH_PYTHON" -u "$DRIVER" "$@" &
 child=$!
 trap 'kill -USR1 "$child" 2>/dev/null || true' USR1
+
+# The node's relay lives in the cgroup of whichever driver job started it, and dies when that job ends,
+# leaving every other driver on the node unable to submit or poll; nextflow then writes off its running
+# tasks after 30 min. MSM_RELAY_HOME=<agent home> makes this driver restart a dead relay within a minute.
+if [ -n "${MSM_RELAY_HOME:-}" ]; then
+    ( cd "$MSM_RELAY_HOME" && while sleep 60; do timeout -k 5 45 ./relay/msm_relay start >/dev/null 2>&1; done ) &
+fi
 
 status=0
 while :; do

@@ -4,59 +4,13 @@ import shutil
 from pathlib import Path
 
 import pytest
-import yaml
 
 from metasmith.constants import AgentPaths, MODULE_PATH
 from metasmith.env import Runtime
-from metasmith.models.libraries import (
-    DataInstanceLibrary,
-    DataTypeLibrary,
-    TransformInstanceLibrary,
-)
+from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.remote import Source
-from metasmith.models.solver import Endpoint
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.testing.pool_fixtures import pool_backed
-from metasmith.testing.virtual_runtime import VirtualE2ERuntime
-
-
-def configure_agent_paths(monkeypatch, home: Path) -> None:
-    monkeypatch.setattr(AgentPaths, "HOME_ROOT", home)
-    monkeypatch.setattr(AgentPaths, "WORK_ROOT", home / "_ws")
-
-
-@pytest.fixture
-def virtual_runtime(tmp_path, monkeypatch):
-    runtime = VirtualE2ERuntime(tmp_path / "virtual_rt", host="virt-host", force_bounce=False)
-    runtime.setup(monkeypatch)
-    configure_agent_paths(monkeypatch, runtime.home)
-    return runtime
-
-
-@pytest.fixture
-def virtual_runtime_bounce(tmp_path, monkeypatch):
-    runtime = VirtualE2ERuntime(tmp_path / "virtual_rt_bounce", host="virt-host", force_bounce=True)
-    runtime.setup(monkeypatch)
-    configure_agent_paths(monkeypatch, runtime.home)
-    return runtime
-
-
-@pytest.fixture
-def mock_types(tmp_path) -> Path:
-    types = DataTypeLibrary()
-
-    types["sample_metadata"] = Endpoint(properties={"sample_metadata"})
-    types["reads"] = Endpoint(properties={"reads"})
-    types["assembly"] = Endpoint(properties={"assembly"})
-
-    types["bam"] = Endpoint(properties={"bam"})
-    types["metabat2_bins"] = Endpoint(properties={"bins", "method:metabat2"})
-    types["maxbin2_bins"] = Endpoint(properties={"bins", "method:maxbin2"})
-    types["concoct_bins"] = Endpoint(properties={"bins", "method:concoct"})
-
-    path = tmp_path / "types.yml"
-    types.Save(path)
-    return path
 
 
 @pytest.fixture
@@ -79,45 +33,6 @@ def mock_samples(tmp_path, mock_types) -> DataInstanceLibrary:
     pool_backed(lib)
     lib.Save()
     return lib
-
-
-def create_transform_library(
-    base_dir: Path,
-    mock_types: Path,
-    transforms: dict[str, str],
-) -> TransformInstanceLibrary:
-    tr_path = base_dir / "transforms.xgdb"
-    tr_path.mkdir(parents=True, exist_ok=True)
-
-    meta = tr_path / "_metadata"
-    types_dir = meta / "types"
-    types_dir.mkdir(parents=True, exist_ok=True)
-
-    shutil.copy(mock_types, types_dir / "mock.yml")
-    (types_dir / "transforms.yml").write_text(
-        """schema: v1
-ontology:
-  name: EDAM
-  version: '1.25'
-  doi: https://doi.org/10.1093/bioinformatics/btt113
-  strict: false
-types:
-  transform:
-    properties:
-    - metasmith
-    - transform
-""",
-        encoding="utf-8",
-    )
-
-    manifest = {}
-    for name, code in transforms.items():
-        fp = tr_path / f"{name}.py"
-        fp.write_text(code, encoding="utf-8")
-        manifest[f"{name}.py"] = {"type": "transforms::transform"}
-
-    (meta / "index.yml").write_text(yaml.dump({"manifest": manifest, "schema": "v1"}), encoding="utf-8")
-    return TransformInstanceLibrary.Load(tr_path)
 
 
 def stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:

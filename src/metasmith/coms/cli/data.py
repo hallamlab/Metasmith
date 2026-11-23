@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 
 from ...ops import data as _ops
@@ -175,6 +176,17 @@ def register(subs):
         a.path, a.dtype, agent_home=a.agent_home, cache_root=a.cache_root,
         name=a.name, parents=a.parents or None, tags=a.tags or None,
         type_library_paths=a.type_library_paths or None,
+    ))
+
+    _en = sp.add_parser(
+        "ensure",
+        help="import each item the pool holds no entry for by name, in one call",
+    )
+    _en.add_argument("items", help="base64 of a JSON list of {path, dtype, name?, parents?, tags?}")
+    _en.add_argument("--agent-home", default=None)
+    _en.add_argument("--cache-root", default=None)
+    _en.set_defaults(func=lambda a: _ops.ensure_items(
+        json.loads(base64.b64decode(a.items)), agent_home=a.agent_home, cache_root=a.cache_root,
     ))
 
     _fg = sp.add_parser(

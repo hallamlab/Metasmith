@@ -65,6 +65,8 @@ def ResolveEnvImage(content: str, runtime: Runtime, source: str|Path="<env>") ->
         return str(value).strip()
     return content.strip()
 
+_CONTAINER_BUILDERS = (Runtime.DOCKER, Runtime.APPTAINER)
+
 _RESERVED_EXPORTS = frozenset({"PATH", "HOME", "LD_LIBRARY_PATH", "TMPDIR", "PWD"})
 
 def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
@@ -369,6 +371,53 @@ class ExecutionContext:
         )
         env.extra_args = extra_args
         return env
+
+    def BuildImage(self, recipe: ContextPath, out: ContextPath, files: dict[str, ContextPath]) -> int:
+        # The image lands at `out` in the form this runtime runs a file from (a
+        # `docker save` archive, or a SIF), so a tool env whose instance is `out`
+        # runs in it. `recipe` holds a Dockerfile and an apptainer.def; each of
+        # `files` reaches the build under its key, as a file in the docker build
+        # context and as the apptainer build argument of that name.
+        env = self._environment
+        dst, rdir = Path(out.external), Path(recipe.external)
+        if env.native or env.runtime not in _CONTAINER_BUILDERS:
+            raise ExecutionFailed(
+                f"building an image needs a container runtime, and this agent runs "
+                f"[{'native' if env.native else env.runtime.value}]"
+            )
+        if env.runtime == Runtime.DOCKER:
+            _, k = KeyGenerator.FromStr(str(dst))
+            tag = f"msm-built/{re.sub(r'[^a-z0-9._-]+', '-', dst.name.lower())}:{k.lower()}"
+            ctx = Path(self.external_cwd)/"_image_build"
+            stage = " && ".join(
+                f'{{ ln "{p.external}" "{ctx}/{name}" 2>/dev/null || cp -r "{p.external}" "{ctx}/{name}"; }}'
+                for name, p in files.items()
+            )
+            cmd = (
+                f'rm -rf "{ctx}" && mkdir -p "{ctx}" && cp -r "{rdir}"/. "{ctx}"/'
+                + (f' && {stage}' if stage else '')
+                + f' && DOCKER_BUILDKIT=1 docker build --platform=linux/amd64 -t {tag} "{ctx}"'
+                f' && docker save -o "{dst}" {tag}'
+            )
+            cmd = f'( {cmd} ); __msm_rc=$?; rm -rf "{ctx}"; ( exit $__msm_rc )'
+        else:
+            args = " ".join(f'--build-arg {name}="{p.external}"' for name, p in files.items())
+            store = Path(self.external_agent_home)/AgentPaths.CONTAINER_CACHE
+            cmd = (
+                f'( export APPTAINER_CACHEDIR="${{APPTAINER_CACHEDIR:-{store}}}"; '
+                f'apptainer build --force --build-arg recipe="{rdir}" {args} "{dst}" "{rdir}/apptainer.def" )'
+            )
+        Log.Info(f"building image [{dst.name}] from [{rdir}] using [{env.runtime.name}]")
+        res = self.external_shell.Exec(cmd, timeout=None, history=True)
+        code = 1 if res.exit_code is None else res.exit_code
+        self._record_exit(code)
+        if code != 0 and env.runtime == Runtime.APPTAINER:
+            Log.Error(
+                "apptainer builds from a definition file as an unprivileged user only where"
+                " user namespaces or /etc/subuid fakeroot are enabled. Where they are not,"
+                " build the image on a host that allows it and give the SIF as the env input."
+            )
+        return code
 
     def ExecWithEnv(
         self,

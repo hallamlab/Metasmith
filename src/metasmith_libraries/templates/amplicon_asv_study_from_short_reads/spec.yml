@@ -29,71 +29,71 @@ shared_input_paths: []
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/2c968f61cd5040c48e86ff2a1b6ae69d:
+    /msm_deferred/0e9f943e71574c9cbc15731e9c95d6e6:
+      type: aspire::contaminant_reference_set
+      instance_id: 1e207dd5d75318f6316f6f32414b7ba5fb6dd48977e0bf3e02f73441c41e5f7451e7
+      origin: leaf
+    /msm_deferred/234399e163324d3e8df58b198165d91a:
       type: sequences::zipped_forward_short_reads
       parents:
-        ZynRQFupc0uF@read_pair_1.txt: sequences::read_pair
-      instance_id: 1e20c48a63c4dcac1dc0f50fd7ed016b54d2fe48eff9b9cb59d3026e8d24ebc83b23
+        uVrPeoREkrVB@read_pair_1.txt: sequences::read_pair
+      instance_id: 1e2002721d5eb656fbbe876629016c445c031069238ae33bf796c69fefc6ecb8de1f
       origin: leaf
-    /msm_deferred/58f5ee4650cc4fcbb0c6f89dac4a0bdf:
-      type: sequences::zipped_reverse_short_reads
-      parents:
-        ZynRQFupc0uF@read_pair_1.txt: sequences::read_pair
-      instance_id: 1e207189a13c68d0dfbd0d876a77dc59b2917f6f5fcb633349d0f88c0134385442e5
+    /msm_deferred/63b16e69203f4763a7bb36c73b097ccd:
+      type: aspire::mito_reference_source
+      instance_id: 1e2084e5620c6f5d1336aaa704c2657c86396489cf6c3a69ff4320967d6e09eba217
       origin: leaf
-    /msm_deferred/d5d91f778c884092b5922beab7ddd61d:
+    /msm_deferred/680d14c1d15844b9919e0d32fcb18a52:
       type: aspire::params
       parents:
-        ZynRQFupc0uF@/msm_deferred/ef999220ac92463183d3b9d91adbdcb0: aspire::study_metadata
-      instance_id: 1e20089cbf98355c061e5a901ca5159a02530b36b39f2e816a0ecde1097c849766b0
+        uVrPeoREkrVB@/msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5: aspire::study_metadata
+      instance_id: 1e20ea9c33fc5d6e161969619917b2b87ded8f88f003b77193221f0b6385b4076594
       origin: leaf
-    /msm_deferred/ef999220ac92463183d3b9d91adbdcb0:
+    /msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5:
       type: aspire::study_metadata
-      instance_id: 1e2025c7d9bddd24f14303694ac57a6e91d87b2f677a27117e9e9b157ed0fc8c9577
+      instance_id: 1e206a65d7b5e6972ace4e4dc52a6a395ed068cbbe9b14b66bf9db2d28c9f16f5c50
       origin: leaf
-    /msm_deferred/f59bfaa1cfb2425ea6d0cc459477bc4e:
-      type: aspire::contaminant_reference_source
-      instance_id: 1e20fb98e33fa881f161a4151fda4014499e183e7335a86713efd358bdc09d0e669d
-      origin: leaf
-    /msm_deferred/fe7e34f149c445b89b035b63417f39c1:
-      type: aspire::mito_reference_source
-      instance_id: 1e20cb73e84e0874273035f514a89c0bb51dd13adc03ca32e5dd6071761386c7380f
+    /msm_deferred/775e828edaa3472cbc19b34f48a5dd41:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        uVrPeoREkrVB@read_pair_1.txt: sequences::read_pair
+      instance_id: 1e20f9340db5966b68c72584731620f81715ed9c9063c95447eeabaa0d5c441eaa69
       origin: leaf
     policy_asv_mag_link.txt:
       type: aspire::asv_mag_link_on
       parents:
-        ZynRQFupc0uF@/msm_deferred/ef999220ac92463183d3b9d91adbdcb0: aspire::study_metadata
-      instance_id: 1e206165d0010c4a6380c8b32a533e9e75a532c41e2d1ae78f124996d06ef6630894
+        uVrPeoREkrVB@/msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5: aspire::study_metadata
+      instance_id: 1e20010b60cd0a20087a2390b22e2dcc91297cf41d27ecd2259ca3e1b47c96a49cb5
       origin: leaf
     policy_graph_network.txt:
       type: aspire::graph_network_on
       parents:
-        ZynRQFupc0uF@/msm_deferred/ef999220ac92463183d3b9d91adbdcb0: aspire::study_metadata
-      instance_id: 1e2052fc6862b6d8a6a976736a8ae768c19e028e544cb44a9f0b117277173fc3c4dd
+        uVrPeoREkrVB@/msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5: aspire::study_metadata
+      instance_id: 1e207c1b65864667cb8759dafbc03924caabd1292d306ab5347b880f675d32018562
       origin: leaf
     policy_network_modules.txt:
       type: aspire::network_modules_on
       parents:
-        ZynRQFupc0uF@/msm_deferred/ef999220ac92463183d3b9d91adbdcb0: aspire::study_metadata
-      instance_id: 1e20dc77f37c2b13fa902b3df01d9fb6ba35777c56fffe1dbe59c3fe8a305f49f8b4
+        uVrPeoREkrVB@/msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5: aspire::study_metadata
+      instance_id: 1e20a0350600359e2ac2c3a0438b2d97f6fa5eb4116d4b979bdd308ca01bdd8f89d4
       origin: leaf
     policy_spieceasi.txt:
       type: aspire::spieceasi_on
       parents:
-        ZynRQFupc0uF@/msm_deferred/ef999220ac92463183d3b9d91adbdcb0: aspire::study_metadata
-      instance_id: 1e200d3702c78eb5adf780aaca59dfee1adb5404170150f11fe7e4b8bf33a2db5e00
+        uVrPeoREkrVB@/msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5: aspire::study_metadata
+      instance_id: 1e20522f65a6c642d427ea34106963124c96df1b4631e813732278cb1d605d82875e
       origin: leaf
     read_metadata_1.json:
       type: sequences::read_metadata
       parents:
-        ZynRQFupc0uF@/msm_deferred/ef999220ac92463183d3b9d91adbdcb0: aspire::study_metadata
-      instance_id: 1e20172a04cb6c32e7e1f475b524dfdb353f9474aec9299778abdf22301c2ed9484d
+        uVrPeoREkrVB@/msm_deferred/6d225bfaca3c4de9a1da7ee81c4ba8e5: aspire::study_metadata
+      instance_id: 1e2068807ee2261a1804a6440fa17b79fc873ff5366acbda727bc6ec4051ed7f9863
       origin: leaf
     read_pair_1.txt:
       type: sequences::read_pair
       parents:
-        ZynRQFupc0uF@read_metadata_1.json: sequences::read_metadata
-      instance_id: 1e20a40cef607eec1361da7d29f1b6454d765c91a10b1ffe2f920d9601a4d7f172c8
+        uVrPeoREkrVB@read_metadata_1.json: sequences::read_metadata
+      instance_id: 1e203e3fcc62196f9a818cd32877fed72818acccaa25cad36befb96cf52f38b3e624
       origin: leaf
   values:
     policy_asv_mag_link.txt: 'on'

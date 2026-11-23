@@ -1,0 +1,4 @@
+BiGG genes with a KO	23530 of 26727 (88.0%)
+KOs on a BiGG gene	4656
+BiGG genes per KO, median	2.0
+BiGG genes per ORF with a mapped KO, median (IQR)	14.0 (5.0-23.0) over 689998 ORFs

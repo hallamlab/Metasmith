@@ -222,8 +222,13 @@ when THAT binding is checked, by this same clause over this same step. -/
 def slotsOf (bs : List (Nat × Nat)) : Ids := bs.map Prod.fst
 
 /-- The step binds exactly the slots its transform requires, and emits exactly
-one endpoint per declared product slot. Without this a step that binds nothing
-passes every clause below vacuously.
+one endpoint per product slot of ONE declared group. Without this a step that
+binds nothing passes every clause below vacuously.
+
+One group, whichever the transform declares. A transform with several groups is
+a fork: each group is one outcome, and the planner gives every outcome its own
+plan, so one step carries the one group its plan was solved for. Groups may
+share slots, which is why the match is by slot set and not by position.
 
 No exemption for a given step, because there is no given step: the givens are a
 parameter and the adapter strips it. That removed four exemptions and a boundary
@@ -231,8 +236,8 @@ conjunct, all of them case splits a completeness proof would have had to carry. 
 @[reducible] def Shape (p : types.Problem) (s : StepView) : Prop :=
   (slotsOf s.used).Nodup ∧
   SameSet (slotsOf s.used) (requiresOf p s.transform) ∧
-  s.produced.length = (producesOf p s.transform).length ∧
-  ∀ gd ∈ s.produced.zip (producesOf p s.transform), SameSet (slotsOf gd.1) gd.2
+  s.produced.length = 1 ∧
+  ∀ g ∈ s.produced, ∃ d ∈ producesOf p s.transform, SameSet (slotsOf g) d
 
 /-- The lineage a step confers on what it produces: everything it consumed, and
 those endpoints' own parents. One hop, which is why `Ancestor` is transitive -- a

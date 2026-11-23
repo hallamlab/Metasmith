@@ -75,9 +75,12 @@ def build_bwrap_argv(
     unshare_user: bool = False,
     chdir: str | None = None,
     tmp_bind: BindSpec | None = None,
+    keep_children: bool = False,
 ) -> list[str]:
-    argv = [bwrap, "--die-with-parent", "--unshare-pid", "--unshare-ipc",
-            "--unshare-uts", "--unshare-cgroup-try"]
+    # keep_children shares the host pid namespace, so a process the agent detaches
+    # outlives the jail. The caller must then own cleanup, e.g. through a cgroup.
+    argv = [bwrap] + ([] if keep_children else ["--die-with-parent", "--unshare-pid"])
+    argv += ["--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try"]
     if unshare_user:
         argv.append("--unshare-user-try")
     argv += ["--proc", "/proc", "--dev", "/dev"]
@@ -94,7 +97,7 @@ def build_bwrap_argv(
     return argv
 
 
-_CLAUDE_DIR_REL = ".claude"
+CLAUDE_CREDENTIALS_REL = Path(".claude") / ".credentials.json"
 
 
 def default_binds(
@@ -120,15 +123,12 @@ def default_binds(
             seen.add(bindir)
             binds.append(BindSpec(bindir, bindir, "ro", optional=True))
     binds.append(BindSpec(str(sandbox_root), str(sandbox_root), "rw"))
+    # Only the credentials file: the rest of ~/.claude holds the host's
+    # CLAUDE.md, memory, settings and MCP config, which would leak into the agent.
     if share_claude_auth:
-        host_claude = Path.home() / _CLAUDE_DIR_REL
-        if host_claude.exists():
-            binds.append(BindSpec(str(host_claude),
-                                  str(home / _CLAUDE_DIR_REL), "rw"))
-        host_claude_json = Path.home() / ".claude.json"
-        if host_claude_json.exists():
-            binds.append(BindSpec(str(host_claude_json),
-                                  str(home / ".claude.json"), "rw", optional=True))
+        creds = Path.home() / CLAUDE_CREDENTIALS_REL
+        if creds.exists():
+            binds.append(BindSpec(str(creds), str(home / CLAUDE_CREDENTIALS_REL), "rw"))
     return binds
 
 

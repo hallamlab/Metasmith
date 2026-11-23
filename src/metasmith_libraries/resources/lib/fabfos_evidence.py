@@ -87,6 +87,11 @@ def read_parquet(path, columns=None, filters=None) -> pd.DataFrame:
     return _from_polars(lf.collect())
 
 
+def read_lane_tables(paths, columns=None, filters=None) -> pd.DataFrame:
+    return pd.concat([read_parquet(p, columns=columns, filters=filters) for p in paths],
+                     ignore_index=True)
+
+
 def write_parquet(df: pd.DataFrame, path, compression=None) -> None:
     if _PARQUET_ENGINE == "pyarrow":
         extra = {} if compression is None else {"compression": compression}
@@ -109,7 +114,14 @@ def _to_polars(df: pd.DataFrame):
             # pandas spells a missing string NaN -- under pandas 3's `str` dtype as
             # much as under object -- and polars refuses a float among strings, so
             # the sentinel has to be translated rather than passed through.
-            arr = s.astype(object).where(s.notna(), None).to_numpy()
+            vals = s.astype(object).where(s.notna(), None)
+            # polars types an object array by its FIRST element, so a string column
+            # that opens on a null -- `gene` on a prodigal ORF set, `contig` on an
+            # annotation table -- becomes Object, which it refuses to write.
+            if all(v is None or isinstance(v, str) for v in vals):
+                cols[name] = pl.Series(name, vals.tolist(), dtype=pl.String)
+                continue
+            arr = vals.to_numpy()
         cols[name] = arr
     return pl.DataFrame(cols)
 
@@ -272,9 +284,14 @@ def schema_for(extensions=()) -> list:
 # `uniref50_dr`, `pbert_transfer` beside the mappers' `ezpred`, `uniref50`,
 # `pbert`); a join written against one silently returns nothing against the other,
 # so the names are declared once, here, and read from here.
+#
+# `all_reaction` is every lane of the annotation table whose terms reach a reaction
+# (`fabfos_gpr/gpr_table.py::REACTION_LANES`); `chosen_4` is the subset the fosmid
+# pipeline and every shipped `annotation::gpr_table` consumer read.
 LANE_SETS = {
     "chosen_4": ("kofam", "clean", "uniref50", "pbert"),
     "full_7": ("kofam", "clean", "deepec", "ezpred", "uniref50", "pbert", "esmc"),
+    "all_reaction": ("kofam", "clean", "uniref50", "pbert", "deepec", "eggnog"),
 }
 CHANNELS = tuple(sorted(set(c for cs in LANE_SETS.values() for c in cs)))
 
@@ -341,6 +358,8 @@ RAW_SCORE_RANGE = {
     "ezpred": (0.0, 1.0),
     # A score-less tool asserting presence.
     "deepec": (1.0, 1.0),
+    # eggNOG-mapper's seed-ortholog bitscore. Never fitted, so it only has to be positive.
+    "eggnog": (0.0, 1e6),
 }
 
 # THE PRIOR THE LLR IS MEASURED AGAINST, and the one `pool_logodds` combines it with.
@@ -574,14 +593,10 @@ PBERT_FLOOR = 0.00
 EMBED_ARCHIVE_FLOOR = 0.20
 
 # --- ESM-C kNN label transfer ----------------------------------------------
-# The same lane against a different backbone, and cosine is not comparable between two
-# embedding spaces -- so pbert's tuned numbers are not transferable here, and are not
-# copied. 0.0 for both quota knobs is the pre-quota behaviour stated explicitly:
-# retrieve K_MAX, admit all of them, refuse no ORF. The seven-lane reproduction has
-# not been measured, and an unmeasured cut-off would refuse ORFs on a number nobody
-# checked. Tune these on an ESM-C cohort before quoting an ESM-C precision.
-ESMC_NN_MIN = 0.0
-ESMC_TAU = 0.0
+# Calibrated on two CPE3 assemblies, top-1 MNXR against kofam/UniRef50: at 0.985 precision 0.91 (hybrid
+# cu7_8) and 0.88 (OPERA-MS cu6) at 7% coverage; ungated it was 0.43 and 0.39. ESM-C cosines crowd near 1.
+ESMC_NN_MIN = 0.985
+ESMC_TAU = 0.999
 ESMC_K_MAX = 30
 ESMC_FLOOR = 0.10
 
@@ -1032,7 +1047,8 @@ def load_mnxr_lookup(path: Path, id_source: str) -> pd.DataFrame:
 # helpers
 # =====================================================================
 
-_BOILERPLATE_RE = re.compile(r"\s+(n=\d+|Tax=.+?|RepID=\S+)(?=\s|$)")
+# A UniRef title is "<name> n=<members> Tax=<taxon> TaxID=<id> RepID=<id>", and <taxon> has spaces.
+_BOILERPLATE_RE = re.compile(r"\s+n=\d+\s+Tax=.*$")
 
 
 def _clean_stitle(stitle: str) -> str:

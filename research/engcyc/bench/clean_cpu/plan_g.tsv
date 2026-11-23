@@ -1,0 +1,17 @@
+name	mode	procs	threads	toks	n	pin	stack	flags	env	input
+g_fp32	fp32	6	8	1024	2400	1	stock	save,slim	-	mg
+g_bf16	bf16	6	8	1024	2400	1	stock	save,slim	-	mg
+g_bf16pure	bf16pure	6	8	1024	2400	1	stock	save,slim	-	mg
+g_int8pc	int8pc	6	8	1024	2400	1	stock	save,slim	-	mg
+g_pc_fc1	pc_fc1	6	8	1024	2400	1	stock	save,slim	-	mg
+g_pc_ffn	pc_ffn	6	8	1024	2400	1	stock	save,slim	-	mg
+g_sq_int8	sq_int8	6	8	1024	2400	1	stock	save,slim	-	mg
+g_t25_bf16	bf16	6	8	1024	2400	1	t25	save,slim	-	mg
+g_ao_int8wo	ao_int8wo	6	8	1024	2400	1	t25	save,slim	-	mg
+g_ao_int8dyn	ao_int8dyn	6	8	1024	2400	1	t25	save,slim	-	mg
+g_ao_int4wo	ao_int4wo	6	8	1024	2400	1	t25	save,slim	-	mg
+g_ort_fp32	ort_fp32	6	8	1024	2400	1	ort	save	-	mg
+g_ort_int8pc	ort_int8pc	6	8	1024	2400	1	ort	save	-	mg
+g_ort_int8pt	ort_int8pt	6	8	1024	2400	1	ort	save	-	mg
+gd_fp32	fp32	6	8	1024	0	1	stock	save,slim	-	dh
+gd_bf16	bf16	6	8	1024	0	1	stock	save,slim	-	dh

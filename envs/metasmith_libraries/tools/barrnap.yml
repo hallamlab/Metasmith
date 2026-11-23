@@ -1,0 +1,6 @@
+name: barrnap
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - barrnap=0.9

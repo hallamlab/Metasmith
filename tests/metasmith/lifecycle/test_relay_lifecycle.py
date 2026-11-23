@@ -6,7 +6,6 @@ only observable from outside the process. Each test pins one of them.
 """
 import os
 import platform
-import shutil
 import signal
 import subprocess
 from pathlib import Path
@@ -38,21 +37,11 @@ def _relay_binary() -> Path | None:
     return None
 
 
-def _build_relay() -> Path | None:
-    cargo = shutil.which("cargo") or str(Path.home()/".cargo/bin/cargo")
-    if not Path(cargo).is_file():
-        return None
-    subprocess.run(
-        [cargo, "build", "--release", "-q"], cwd=_REPO/"src/bash_relay", check=True, timeout=900,
-    )
-    return _relay_binary()
-
-
 @pytest.fixture(scope="module")
 def relay_bin() -> Path:
-    path = _relay_binary() or _build_relay()
+    path = _relay_binary()
     if path is None:
-        pytest.skip("no msm_relay built and no cargo to build one; run ./dev/metasmith.sh -br")
+        pytest.skip("no msm_relay built; run ./dev/metasmith.sh -br")
     return path
 
 

@@ -29,7 +29,8 @@ import _authoring as A
 
 AUTHORS = (
     "pangenome_heatmap_from_assembly",
-    "metagenomics_from_paired_reads",
+    "engcyc_metagenomics",
+    "engcyc_prep_references",
     "isolate_assembly_from_long_reads",
     "annotation_palette_from_assembly",
     "annotation_trio_from_assembly",
@@ -38,6 +39,7 @@ AUTHORS = (
     "amplicon_asv_study_from_short_reads",
     "viromics_survey_from_assembly",
     "gpr_table_from_assembly",
+    "annotation_table_from_assembly",
     "ecspr_results_from_gpr_table",
     "ecspr_survey_from_pooled_reads",
     "geoquery_from_aoi_table",

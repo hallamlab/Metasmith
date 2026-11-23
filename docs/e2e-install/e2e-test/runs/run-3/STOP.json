@@ -1,0 +1,23 @@
+{
+  "ts": "2026-11-19T16:48:03-07:00",
+  "reason": "operator: setup downloading metabuli DB (205 GB+) the goal excludes; scratch quota risk",
+  "total": {},
+  "actions": [
+    "scancel 28039305",
+    "kill l2.nibi.sharcnet:3125356",
+    "kill l2.nibi.sharcnet:3853774",
+    "kill l2.nibi.sharcnet:3854073",
+    "kill l2.nibi.sharcnet:3861085",
+    "kill l2.nibi.sharcnet:3861097",
+    "kill l2.nibi.sharcnet:3861098",
+    "kill l2.nibi.sharcnet:3861225",
+    "kill l2.nibi.sharcnet:3861233",
+    "kill l2.nibi.sharcnet:3861234",
+    "kill l2.nibi.sharcnet:3861384",
+    "kill l2.nibi.sharcnet:3863847",
+    "kill l2.nibi.sharcnet:3863911",
+    "kill l2.nibi.sharcnet:3863923",
+    "kill l2.nibi.sharcnet:3863934",
+    "systemctl stop msm-e2e-run-3.scope"
+  ]
+}

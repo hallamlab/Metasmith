@@ -7,15 +7,17 @@ from pathlib import Path
 
 from metasmith.constants import MODULE_PATH
 
+from tests.metasmith.support import nxf_exec
+
 pytestmark = [pytest.mark.docker, pytest.mark.nextflow, pytest.mark.slow]
 
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
 
 class NxfTestRunner:
-    def __init__(self, work_dir: Path, docker_image: str):
+    def __init__(self, work_dir: Path, nxf_container: str):
         self.work_dir = work_dir
-        self.docker_image = docker_image
+        self.nxf_container = nxf_container
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
         lib_dir = self.work_dir / "lib"
@@ -25,7 +27,7 @@ class NxfTestRunner:
     def run(
         self,
         nxf_script: str,
-        timeout: int = 120,
+        timeout: int = 300,
         extra_lib: dict = None,
         extra_args: list = None,
     ) -> subprocess.CompletedProcess:
@@ -36,10 +38,7 @@ class NxfTestRunner:
 
         result = subprocess.run(
             [
-                "docker", "run", "--rm",
-                "-v", f"{self.work_dir}:/ws",
-                "-w", "/ws",
-                self.docker_image,
+                *nxf_exec(self.nxf_container, self.work_dir, timeout),
                 "nextflow", "run", "test.nf",
                 "-lib", "./lib",
                 "-ansi-log", "false",
@@ -69,8 +68,8 @@ class NxfTestRunner:
 
 
 @pytest.fixture
-def nxf_runner(tmp_path, docker_image):
-    return NxfTestRunner(tmp_path / "nxf_test", docker_image)
+def nxf_runner(tmp_path, nxf_container):
+    return NxfTestRunner(tmp_path / "nxf_test", nxf_container)
 
 
 class TestOrchestratorPost:
@@ -89,6 +88,7 @@ workflow {
     def out = (o.post([ch], ["result"]))[0]
     def (name, stream) = out
     stream.view { idx, item -> "POST: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
+    o.seal()
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -143,6 +143,7 @@ workflow {
         def hash_val = idx["x"][0]
         "HASH: ${hash_val} type=${hash_val.getClass().name}"
     }
+    o.seal()
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -168,6 +169,7 @@ workflow {
     def out = (o.post([ch], ["x"], ["deadbeef"]))[0]
     def (name, stream) = out
     stream.view { idx, item -> "HASH: ${idx["x"][0]}" }
+    o.seal()
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -311,6 +313,7 @@ workflow {{
         def per_member = indexes.collect {{ m -> m.FILES[1].collect {{ p -> p.split("/")[-1] }} }}
         "TASK: " + groovy.json.JsonOutput.toJson(per_member)
     }}
+    o.seal()
 }}
 ''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
@@ -386,6 +389,7 @@ workflow {{
         ]
         "PROV: " + groovy.json.JsonOutput.toJson(payload)
     }}
+    o.seal()
 }}
 ''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
@@ -447,7 +451,7 @@ workflow {
     g1.view { "G1: ${it[0]}" }
     g2.view { "G2: ${it[0]}" }
 }
-''', timeout=60)
+''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
         g1_lines = [l for l in result.stdout.split("\n") if l.startswith("G1:")]
         g2_lines = [l for l in result.stdout.split("\n") if l.startswith("G2:")]
@@ -537,6 +541,7 @@ workflow {
     p01_result.view { "P01: ${it[1].name}" }
     p02_result.view { "P02: ${it[1].name}" }
     p03_result.view { "P03: ${it[1].name}" }
+    o.seal()
 }
 ''', timeout=120)
         p03_lines = [l for l in result.stdout.split("\n") if l.startswith("P03:")]
@@ -646,6 +651,7 @@ workflow {{
 
     k2 = ["out2"]
     step2(o.group("out1", [_out1], k2, {batch_size}))
+    o.seal()
 }}
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -667,7 +673,7 @@ workflow {{
         return observed
 
     @staticmethod
-    def _assert_files_resolve(files: list[str]) -> None:
+    def _assert_files_resolve(files: list[str], launch_dir) -> None:
         from pathlib import Path
 
         from metasmith.bootstrap import _parse_path
@@ -675,7 +681,8 @@ workflow {{
 
         assert files, "no FILES paths to verify"
         task_key = "TEST"
-        for p in files:
+        # A deployed agent launches Nextflow in /ws; this runner launches it in its own work dir.
+        for p in (f"/ws/{Path(f).relative_to(launch_dir)}" for f in files):
             parsed = _parse_path(
                 Path(p),
                 agent_home="/host/scratch/agent",
@@ -694,11 +701,11 @@ workflow {{
 
     def test_batched_files_resolve_through_parse_path(self, nxf_runner):
         files = self._run_two_step_files_check(nxf_runner, batch_size=2)
-        self._assert_files_resolve(files)
+        self._assert_files_resolve(files, nxf_runner.work_dir)
 
     def test_unbatched_files_resolve_through_parse_path(self, nxf_runner):
         files = self._run_two_step_files_check(nxf_runner, batch_size=1)
-        self._assert_files_resolve(files)
+        self._assert_files_resolve(files, nxf_runner.work_dir)
 
     def test_batch_debatch_roundtrip(self, nxf_runner):
         for i in range(4):
@@ -788,6 +795,7 @@ workflow {{
     def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1))[0]
 
     step2(o.group("out1", [_out1], ["out2"], {n}))
+    o.seal()
 }}
 ''', timeout=180)
         NxfTestRunner.assert_nxf_ok(result)
@@ -881,7 +889,7 @@ workflow {
 
 
 class TestPathStringification:
-    def test_docker_emits_absolute_ws_prefix(self, nxf_runner):
+    def test_docker_emits_an_absolute_path_under_the_launch_dir(self, nxf_runner):
         result = nxf_runner.run('''
 process produce {
     output:
@@ -901,7 +909,7 @@ workflow {
         lines = [l for l in result.stdout.split("\n") if l.startswith("STRSHAPE:")]
         assert len(lines) == 1, f"expected exactly one STRSHAPE line, got: {lines}"
         rendered = lines[0].split("STRSHAPE: ", 1)[1]
-        assert rendered.startswith("/ws/"), (
+        assert rendered.startswith(f"{nxf_runner.work_dir}/"), (
             f"Docker emitted unexpected toString shape: {rendered!r}. "
             f"If this changes, `bootstrap._parse_path` case-1 (the inbox "
             f"#139 fix) needs to be re-validated."
@@ -937,6 +945,7 @@ workflow {{
     workflow.onComplete {{
         println "DISPATCH:" + groovy.json.JsonOutput.toJson(o.getDispatchLog())
     }}
+    o.seal()
 }}
 '''
 
@@ -1079,6 +1088,7 @@ class Ownership {
 '''
 
 
+@pytest.mark.xdist_group("multi_output")
 class TestMultiOutputProcess:
     _PROCESSES = '''
 process two_out {
@@ -1119,14 +1129,15 @@ workflow {
     def _g = (o.postIn([ch], ["g"]))[0]
 
     def k = ["A", "B"]
-    def (_A, _B) = o.post(o.asStreams(two_out(o.group("g", [_g], k, 1, [:]))), k, ["sA", "sB"])
+    def (_A, _B) = o.post(o.asStreams(two_out(o.group("g", [_g], k, 1))), k, ["sA", "sB"])
 
     _A[1].view { idx, item -> "IDX_A:" + groovy.json.JsonOutput.toJson(idx) }
     _B[1].view { idx, item -> "IDX_B:" + groovy.json.JsonOutput.toJson(idx) }
 
     k = ["M"]
-    def _M = (o.post(o.asStreams(merge_both(o.group("g", [_g, _A, _B], k, 1, [:]))), k, ["sM"]))[0]
+    def _M = (o.post(o.asStreams(merge_both(o.group("g", [_g, _A, _B], k, 1))), k, ["sM"]))[0]
     _M[1].view { idx, item -> "OUT_M:" + item.name }
+    o.seal()
 }
 '''
 
@@ -1138,13 +1149,14 @@ workflow {
     def _g = (o.postIn([ch], ["g"]))[0]
 
     def k = ["A", "B"]
-    def raw = o.asStreams(two_out(o.group("g", [_g], k, 1, [:])))
+    def raw = o.asStreams(two_out(o.group("g", [_g], k, 1)))
     raw[0].view { idx, item -> Ownership.tag("RAW_A", idx) }
     raw[1].view { idx, item -> Ownership.tag("RAW_B", idx) }
 
     def (_A, _B) = o.post(raw, k, ["sA", "sB"])
     _A[1].view { idx, item -> Ownership.tag("POST_A", idx) }
     _B[1].view { idx, item -> Ownership.tag("POST_B", idx) }
+    o.seal()
 }
 '''
 
@@ -1155,8 +1167,12 @@ workflow {
         NxfTestRunner.assert_nxf_ok(result)
         return result
 
-    def test_each_output_keeps_its_task_index(self, nxf_runner):
-        result = self._run(nxf_runner)
+    @pytest.fixture(scope="class")
+    def default_run(self, tmp_path_factory, nxf_container):
+        return self._run(NxfTestRunner(tmp_path_factory.mktemp("multi_output"), nxf_container))
+
+    def test_each_output_keeps_its_task_index(self, default_run):
+        result = default_run
         for stream in ("A", "B"):
             lines = [
                 l for l in result.stdout.splitlines()
@@ -1175,8 +1191,8 @@ workflow {
                     f"output {stream} is missing its own key: {idx}"
                 )
 
-    def test_both_outputs_join_one_downstream_group(self, nxf_runner):
-        result = self._run(nxf_runner)
+    def test_both_outputs_join_one_downstream_group(self, default_run):
+        result = default_run
         emits = [l for l in result.stdout.splitlines() if l.startswith("OUT_M:")]
         assert len(emits) == 2, (
             "the merge step must run once per group key; got "

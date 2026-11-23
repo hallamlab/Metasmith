@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import shutil
 import textwrap
 from pathlib import Path
@@ -52,10 +53,8 @@ def _build_binner_plan(
     target_model = _make_target_model([_MOCK_TYPE_PROPERTIES[t] for t in target_bin_types])
     given = [[sv] for sv in lib.AsSamples("mock::assembly")]
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=list(target_bin_types)),
         transforms=[tr_lib],
-        target_names=list(target_bin_types),
-        target_model=target_model,
     )
     return lib, tr_lib, plan
 
@@ -121,10 +120,8 @@ def test_lp4_impossible_parents_raises_planhint(tmp_path):
     target_model = _make_target_model([_MOCK_TYPE_PROPERTIES["metabat2_bins"]])
     given = [[sv] for sv in samples.AsSamples("mock::assembly")]
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=["metabat2_bins"]),
         transforms=[tr_lib],
-        target_names=["metabat2_bins"],
-        target_model=target_model,
     )
 
     assert isinstance(plan, WorkflowPlan)

@@ -343,7 +343,9 @@ will be run with the newly created :python:`genomes` file.
     )
 
 At the end of the protocol, we will report on the results by returning a manifest of outputs
-and indicating success.
+and indicating success. The manifest is a list with one dict per product group. fastANI has one
+group, so it returns one dict. A tool with alternative outputs is covered in
+`Transforms <../usage/transforms.html>`_.
 
 .. code-block:: python
     :caption: fastani.py

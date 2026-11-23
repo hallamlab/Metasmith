@@ -10,21 +10,30 @@ A plan takes one read type, so each type renders its own DAG:
 
   cami_pe            CAMI short reads, interleaved
   cami_hybrid_ont    CAMI short + simulated Nanopore
-  cami_hybrid_pacbio CAMI short + simulated PacBio CLR
+  cami_long_pacbio   CAMI simulated PacBio CLR alone
   pratama_pe         Pratama short reads, interleaved
   pratama_hybrid_ont Pratama short + real MinION
   metagem_pe_split   metaGEM paired reads as two gzipped files
   metagem_se         metaGEM single-end reads
 
-A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. Every other
-sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so the
-viral lane pools a study, and a batch holds whole studies.
+A hybrid sample's assembly is MEGAHIT -> OPERA-MS, the lane the hybrid pilot chose. A PacBio
+sample's is Flye on its long reads alone, after Filtlong. Every other sample's is MEGAHIT. QC is bbduk on JGI's settings for every corpus. Each study is one root, so a
+batch holds whole studies. A MAG-only batch too large for fir's quota runs in chunks: --chunk I/N
+takes the I-th of N contiguous slices of each study, as its own run.
 
-Subcommands: list [--batch N], import --batch N [--shape S],
-run --batch N [--shape S] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear].
+The viral lane runs as one plan per vOTU catalogue (CATALOGUES), over the cached assemblies listed in
+results/e5/assemblies.tsv (written by e5_assemblies.py). A catalogue plan cites no reads, so evicting a
+finished batch's trimmed reads leaves its catalogue runnable. --viral instead pools each study inside its
+batch's own plan, which is how the first batches built theirs.
+
+Subcommands: list [--batch N] [--chunk I/N] [--paths], import --batch N [--shape S] [--chunk I/N],
+run --batch N [--shape S] [--chunk I/N] [--dag] [--stage-only|--launch|--materialise] [--import] [--clear],
+catalogue NAME [--dag] [--stage-only|--launch|--materialise] [--import] [--clear]. A catalogue's --import
+with no launch mode imports and stops, as `import` does.
 """
 
 import argparse
+import csv
 import os
 import sys
 import time
@@ -43,43 +52,71 @@ from metasmith.python_api import (  # noqa: E402
 
 TYPE_LIBS = e3_pratama.TYPE_LIBS + [c.LIBRARY / "data_types" / "e5.yml"]
 PILOT_SIZE = 3
-# The modern lane's CarveMe comes from the bench modelling library.
+# The modern lane's CarveMe comes from e5_gem, split at its DIAMOND search, and MEMOTE from the bench
+# modelling library.
 GEM_MASK = {Path("carveme_from_orfs.py"), Path("memote_score.py"), Path("carveme_from_orfs_cplex.py")}
 # The hybrid pilot's comparison lanes and scorers.
 PILOT_ONLY = {Path("flye.py"), Path("polca.py"), Path("quast.py"), Path("metaquast.py")}
 
-# shape -> (corpus, read layout, hybrid). OPERA-MS takes no platform, so ONT and PacBio differ only in their reads.
+# shape -> (corpus, read layout, assembly: short, hybrid or long).
 SHAPES = {
-    "cami_pe": ("cami", "pe", False),
-    "cami_hybrid_ont": ("cami", "pe", True),
-    "cami_hybrid_pacbio": ("cami", "pe", True),
-    "pratama_pe": ("pratama", "pe", False),
-    "pratama_hybrid_ont": ("pratama", "pe", True),
-    "metagem_pe_split": ("metagem", "split", False),
-    "metagem_se": ("metagem", "se", False),
+    "cami_pe": ("cami", "pe", "short"),
+    "cami_hybrid_ont": ("cami", "pe", "hybrid"),
+    "cami_long_pacbio": ("cami", "long", "long"),
+    "pratama_pe": ("pratama", "pe", "short"),
+    "pratama_hybrid_ont": ("pratama", "pe", "hybrid"),
+    "metagem_pe_split": ("metagem", "split", "short"),
+    "metagem_se": ("metagem", "se", "short"),
 }
+# A long-read-only sample's platform, which picks Flye's mode and minimap2's preset.
+PLATFORM = {"cami_long_pacbio": "PACBIO_CLR"}
 
 # batch -> {shape: [study]}. Batch 0 is the pilot: the first PILOT_SIZE samples of each shape's first study.
 BATCHES = {
     1: {"cami_pe": ["toy_mousegut", "toy_hmp_airskinurogenital", "toy_hmp_gastrooral"]},
-    2: {"cami_hybrid_ont": ["toy_humangut", "plant_associated"], "cami_hybrid_pacbio": ["marine", "strain"]},
+    2: {"cami_hybrid_ont": ["toy_humangut", "plant_associated"], "cami_long_pacbio": ["marine", "strain"]},
     3: {"pratama_pe": ["pratama_short"], "pratama_hybrid_ont": ["pratama_hybrid"]},
     4: {"metagem_se": ["korem2015"], "metagem_pe_split": ["li2019", "bissett_base"]},
     5: {"metagem_pe_split": ["karlsson2013"]},
     6: {"metagem_pe_split": ["sunagawa2015"]},
 }
 BATCHES[0] = {shape: [studies[0]] for b in (2, 3, 4, 1) for shape, studies in BATCHES[b].items()}
+# Batches whose assemblies came from the standard MEGAHIT and e5's own megahit_draft, before e5_assembly.
+# They keep those transforms so a relaunch serves its assemblies, and everything after them, from the cache.
+PRE_E5_ASSEMBLY = {1, 3, 4}
+
+# vOTU catalogue -> the studies it pools. Pratama pools its short and hybrid samples, as the paper did; marine and
+# strain hold their PacBio samples only. Every other catalogue is one study.
+CATALOGUES = {
+    "pratama": ["pratama_short", "pratama_hybrid"],
+    **{s: [s] for s in ("toy_mousegut", "toy_hmp_airskinurogenital", "toy_hmp_gastrooral", "toy_humangut",
+                        "plant_associated", "marine", "strain",
+                        "korem2015", "li2019", "bissett_base", "karlsson2013", "sunagawa2015")},
+}
+ASSEMBLIES = HERE.parent / "results" / "e5" / "assemblies.tsv"
+# Each array element counts against queueSize and slurm.nf's arrays are 100 wide, so a queue near 100 keeps one
+# array in flight and runs the four callers' arrays in series (findings/E5_RUN.md).
+CATALOGUE_QUEUE = 800
+
+# Each assembly and DAS Tool MAG with the task-cache shard that holds it on chinook fir_bench_e5/e5_home.
+# restore_e5_taxonomy.sh copies them to TAXONOMY_HOME/<shard>/out/<name>, where the taxonomy plans read them.
+TAXONOMY_INPUTS = HERE.parent / "results" / "e5" / "taxonomy_inputs.tsv"
+TAXONOMY_HOME = Path("/scratch/phyberos/e5_tax/inputs")
+# GTDB r214.1, the one Metabuli DB on fir. GTDB-Tk reads r232.
+METABULI_DB = c.DB_ROOT / "metabuli" / "gtdb"
 
 # CAMI's long-read set for each hybrid study.
 CAMI_LONG = {"toy_humangut": "toy_humangut_long", "plant_associated": "plant_associated_long_nano",
              "marine": "marine_long", "strain": "strain_long"}
 
 # First-attempt (cpus, GB, hours), retries doubling memory and time. The viral sizes are E3's, measured
-# on its 65 runs (e3_pratama.SCALED). The MAG lane keeps E2's declarations, except COMEBin, which
-# runs at 12 cpus: E1 at 12 and E2 at 48 ran the same 208 samples at a median 1.83 h against 1.48 h.
+# on its 65 runs (e3_pratama.SCALED). The MAG lane keeps E2's declarations, except COMEBin (COMEBIN below).
 SCALED = {
     "seqkit_reads": (2, 4, 1),
     "bbduk": (4, 16, 2),
+    # minimap2 is CPU-bound and scales ~linearly (15.9x at 16 threads). SRR32696690 needs ~40 h at 16,
+    # and every retry is capped at MAX_TASK_DURATION, so width is the only lever that keeps it under 24 h.
+    "assembly_stats": (48, 64, 24),
     "megahit": (16, 64, 12),
     "megahit_draft": (16, 64, 12),
     "deepvirfinder": (8, 64, 6),   # batch 0: a CAMI hybrid contig batch OOMed at 32 GB after 6 h
@@ -90,16 +127,15 @@ SCALED = {
     "viral_merge_calls": (4, 32, 4),
     "votu_cluster": (16, 128, 6),
 }
-COMEBIN_CPUS = 12
-# Batch 0 trained a 182K-contig Pratama hybrid assembly at 10 min an epoch on CPU, 35-40 h for 200 epochs
-# against the 24 h cap. A MIG slice runs the same image with --nv.
-COMEBIN_GPU = "nvidia_h100_80gb_hbm3_1g.10gb"
-# First-attempt GPU hours per shape; a retry doubles. A shorter request backfills into the gaps between
-# larger GPU jobs. About half batch 0's slowest CPU run: training is ~85% of it and runs 4.9x faster on a
-# slice. pratama_hybrid_ont was measured on a slice at ~9 h.
-COMEBIN_GPU_HOURS = {
-    "cami_pe": 2, "cami_hybrid_ont": 2, "cami_hybrid_pacbio": 5, "metagem_se": 1,
-    "metagem_pe_split": 12, "pratama_pe": 10, "pratama_hybrid_ont": 12,
+# COMEBin's first-attempt (cpus, GB, hours) per shape, on the CPU account; a retry doubles memory and time.
+# The transform's CPU patch trains a ~97K-contig Pratama sample at 27.7 s/epoch on 24 cpus and 25.8 s on 48,
+# so every shape takes 24. That sample runs all 200 epochs in ~2 h; its Leiden sweep peaks at 38 GB. A CAMI sample takes
+# ~17 min at 12 cpus. Hours are about 2x the measured run, 3x for the shapes with ~180K-contig assemblies.
+# Tara (metagem_pe_split) takes 24: over its first 164 samples a successful attempt ran p50 3.4 h, p90 6.9 h,
+# max 11.5 h, and 47 first attempts died at the old 6 h limit and restarted from scratch.
+COMEBIN = {
+    "cami_pe": (24, 24, 2), "cami_hybrid_ont": (24, 24, 2), "cami_long_pacbio": (24, 24, 3), "metagem_se": (24, 24, 2),
+    "pratama_pe": (24, 48, 4), "pratama_hybrid_ont": (24, 48, 6), "metagem_pe_split": (24, 48, 24),
 }
 # The account may queue 1,000 jobs. A batch's plans share this, which leaves room for their drivers.
 # Nextflow counts each element of a job array against queueSize, and refuses an array wider than it,
@@ -140,13 +176,29 @@ def samples_of(study):
     return _metagem(study)
 
 
-def draw(batch, only=None):
-    """{shape: {study: [(sample id, reads, long reads or None)]}} for one batch."""
+def chunk_of(samples, chunk):
+    if chunk is None:
+        return samples
+    i, n = chunk
+    size = -(-len(samples) // n)
+    return samples[(i - 1) * size:i * size]
+
+
+def parse_chunk(text):
+    i, n = (int(x) for x in text.split("/"))
+    if not 1 <= i <= n:
+        raise argparse.ArgumentTypeError(f"chunk {text}: want I/N with 1 <= I <= N")
+    return i, n
+
+
+def draw(batch, only=None, chunk=None):
+    """{shape: {study: [(sample id, reads, long reads or None)]}} for one batch, or one chunk of it."""
     plans = {}
     for shape, studies in BATCHES[batch].items():
         if only and shape != only:
             continue
-        plans[shape] = {s: samples_of(s)[:PILOT_SIZE] if batch == 0 else samples_of(s) for s in studies}
+        plans[shape] = {s: samples_of(s)[:PILOT_SIZE] if batch == 0 else chunk_of(samples_of(s), chunk)
+                        for s in studies}
         for study, samples in plans[shape].items():
             assert samples, f"{shape}/{study}: no samples"
     return plans
@@ -161,6 +213,15 @@ def declare_givens(smith, shape, by_study, cache_dir, ensure):
         for sid, reads, long_ in samples:
             tags = ["e5", shape, study_name, sid]
             ns = f"e5/{study_name}/{sid}"
+            if layout == "long":
+                meta = c.add_value(givens, f"{ns}/read_metadata",
+                                   {"sample": sid, "parity": "single", "length_class": "long",
+                                    "platform": PLATFORM[shape]},
+                                   "sequences::read_metadata", parents=[study], tags=tags)
+                # CAUTION not `long_reads`: a given's name hashes its path but not its type, so that name cites
+                # the hybrid pilot's import of the same file as e3::nanopore_reads.
+                c.add_file(givens, f"{ns}/long_only_reads", long_, "sequences::long_reads", parents=[meta], tags=tags)
+                continue
             meta = c.add_value(givens, f"{ns}/read_metadata",
                                {"sample": sid, "parity": "single" if layout == "se" else "paired",
                                 "length_class": "short"},
@@ -181,54 +242,82 @@ def expected_counts(shape, by_study):
     layout = SHAPES[shape][1]
     n = sum(len(s) for s in by_study.values())
     want = {"sequences::study": len(by_study), "sequences::read_metadata": n, "sequences::read_pair": 0}
-    if layout == "se":
+    if layout == "long":
+        want["sequences::long_reads"] = n
+    elif layout == "se":
         want["sequences::short_reads_se"] = n
     elif layout == "split":
         want.update({"sequences::zipped_forward_short_reads": n, "sequences::zipped_reverse_short_reads": n})
     else:
         want["sequences::short_reads_pe"] = n
-    if SHAPES[shape][2]:
+    if SHAPES[shape][2] == "hybrid":
         want["e3::nanopore_reads"] = n
     return want
 
 
-def build_transforms(hybrid):
+def build_transforms(mode, pre_e5_assembly=False):
     # E5 owns its viral lane, the MAG ORF mapping and the hybrid pair. e5_binning owns a COMEBin and DAS Tool
     # that survive an assembly too small for COMEBin. The standard libraries keep E3's masks, except
-    # assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every corpus. A hybrid
-    # sample's MEGAHIT writes a draft that only OPERA-MS reads.
-    replaced = {**e3_pratama.REPLACED, "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py", "bbduk.py"},
+    # assembly_stats (its BAM feeds the binners) and bbduk, whose JGI settings QC every corpus.
+    # e5_assembly owns both MEGAHITs, which delete their workspace: the assembly for a short-read sample, and
+    # for a hybrid one a draft that only OPERA-MS reads. e5's own megahit_draft predates it and stays masked,
+    # since rebuilding e5 would fork the cache of every transform in it. A long-read-only sample takes its
+    # Flye, read mapping and binners from e5_long instead.
+    replaced = {**e3_pratama.REPLACED,
+                "assembly": e3_pratama.REPLACED["assembly"] - {"assembly_stats.py", "bbduk.py"} | {"megahit.py"},
                 "metagenomics": e3_pratama.REPLACED["metagenomics"] | {"binning/comebin.py", "binning/das_tool.py"},
                 "logistics": {"interleave_zipped_short_reads.py"}}
-    if hybrid:
-        replaced["assembly"] = replaced["assembly"] | {"megahit.py"}
+    hybrid = mode == "hybrid"
+    legacy = pre_e5_assembly and mode != "long"
+    if legacy and not hybrid:
+        replaced["assembly"] = replaced["assembly"] - {"megahit.py"}
+    own_masked = PILOT_ONLY | (set() if hybrid else {Path("opera_ms.py")}) | (
+        set() if legacy and hybrid else {Path("megahit_draft.py")})
+    own = [TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)]
+    if mode == "long":
+        replaced["assembly"] = replaced["assembly"] | {"assembly_stats.py", "flye.py", "flye_raw.py"}
+        replaced["metagenomics"] = replaced["metagenomics"] | {"binning/semibin2.py", "binning/metabat2.py"}
+        own.append(TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_long"))
+    elif not legacy:
+        own.append(TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_assembly").AsView(
+            {Path("megahit.py" if hybrid else "megahit_draft.py")}, invert=True))
     std = [TransformInstanceLibrary.Load(c.MLIB / "transforms" / name).AsView(
                {Path(p) for p in replaced.get(name, ())}, invert=True)
            for name in ("logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics")]
-    own_masked = PILOT_ONLY if hybrid else PILOT_ONLY | {Path("megahit_draft.py"), Path("opera_ms.py")}
-    e5_lib = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5").AsView(own_masked, invert=True)
     modelling = TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metabolicModelling")
     bench = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench").AsView({Path("deepvirfinder.py")}, invert=True)
     binning = TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_binning")
-    return [e5_lib, binning, bench, *std,
+    return [*own, binning, bench, *std,
             modelling.AsView(GEM_MASK | {Path("prodigal_from_bin.py")}, invert=True),
-            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling")]
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "modelling").AsView(
+                {Path("carveme_from_orfs.py")}, invert=True),
+            TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "e5_gem")]
 
 
-def build_targets(hybrid):
-    # The sample's assembly is OPERA-MS for a hybrid sample and MEGAHIT otherwise; every lane reads it.
+def build_targets(mode, mags=True, viral=False):
+    # The sample's assembly is OPERA-MS for a hybrid sample, Flye for a long-read-only one and MEGAHIT
+    # otherwise; every lane reads it.
     # DAS Tool's bins are the MAG set: CheckM2, ORFs and models run on them alone.
     t = TargetBuilder()
     t.Add("sequences::read_qc_stats")
-    asm = t.Add("e5::opera_ms_assembly" if hybrid else "sequences::megahit_assembly")
+    asm = t.Add({"hybrid": "e5::opera_ms_assembly", "long": "sequences::flye_assembly",
+                 "short": "sequences::megahit_assembly"}[mode])
 
-    mags = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
-    t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
-    t.Add("bench::checkm2_quality", parents=[mags])
-    gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[mags])])
-    t.Add("modelling::memote_score", parents=[gem])
+    if mags:
+        bins = t.Add("sequences::das_tool_bin_fasta", parents=[asm])
+        t.Add("binning::das_tool_contig_to_bin_table", parents=[asm])
+        t.Add("bench::checkm2_quality", parents=[bins])
+        gem = t.Add("modelling::carveme_model", parents=[t.Add("sequences::bin_orfs", parents=[bins])])
+        t.Add("modelling::memote_score", parents=[gem])
 
-    frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm])
+    if viral:
+        add_viral_targets(t, asm)
+    return t
+
+
+def add_viral_targets(t, asm=None):
+    # A given cannot be a target, so a catalogue plan's frozen set has no assembly parent. It is one per study either way.
+    frozen = t.Add("viromics::dereplicated_candidate_virus", parents=[asm] if asm else [])
     for dtype in ("viromics::contig_length_table", "viromics::checkv_contamination",
                   "viromics::checkv_quality_summary"):
         t.Add(dtype, parents=[frozen])
@@ -242,7 +331,8 @@ def solve(args, shape, by_study):
     n = sum(len(s) for s in by_study.values())
     print(f"\n=== batch {args.batch} {shape}: {n} samples in {', '.join(f'{s} ({len(v)})' for s, v in by_study.items())}",
           flush=True)
-    cache_dir = CACHE_DIR / f"batch{args.batch}" / shape
+    part = f"_c{args.chunk[0]}of{args.chunk[1]}" if args.chunk else ""
+    cache_dir = CACHE_DIR / f"batch{args.batch}" / f"{shape}{part}"
     importing = args.cmd == "import"
     remote = importing or args.stage_only or args.launch or args.materialise
     smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
@@ -254,7 +344,7 @@ def solve(args, shape, by_study):
         print(f"the pool at {smith.home.GetPath()} holds the givens of {n} samples")
         return
 
-    hybrid = SHAPES[shape][2]
+    mode = SHAPES[shape][2]
     t0 = time.time()
     task = smith.GenerateWorkflow(
         samples=list(inputs.AsSamples("sequences::read_metadata")),
@@ -263,8 +353,8 @@ def solve(args, shape, by_study):
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
                    DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
                    pratama_globals, gem_globals],
-        transforms=build_transforms(hybrid),
-        targets=build_targets(hybrid),
+        transforms=build_transforms(mode, pre_e5_assembly=args.batch in PRE_E5_ASSEMBLY),
+        targets=build_targets(mode, mags=not args.no_mags, viral=args.viral),
     )
     print(f"solved in {time.time() - t0:.1f}s", flush=True)
     c.check_plan(task, expected_counts(shape, by_study))
@@ -272,33 +362,185 @@ def solve(args, shape, by_study):
     if args.dag:
         c.write_dag(task, f"e5_{shape}", cache_dir)
     if remote:
-        queue = args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape))
+        queue = args.queue_size or QUEUE_BUDGET // len(draw(args.batch, args.shape, args.chunk))
         if queue < 100:
             sys.exit(f"a queue of {queue} is narrower than a 100-wide job array")
-        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}_{shape}", stage_only=args.stage_only,
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_b{args.batch}{part}_{shape}", stage_only=args.stage_only,
                         params=dict(executor=dict(queueSize=queue),
                                     process=dict(tries=4)),
-                        scaled=SCALED, comebin_cpus=COMEBIN_CPUS, comebin_gpu=COMEBIN_GPU,
-                        comebin_gpu_hours=COMEBIN_GPU_HOURS[shape], materialise=args.materialise,
+                        scaled=SCALED, comebin_cpus=COMEBIN[shape][0], comebin_memory_gb=COMEBIN[shape][1],
+                        comebin_hours=COMEBIN[shape][2], materialise=args.materialise,
                         on_exist="clear" if args.clear else "update")
     else:
         print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
 
 
+def catalogue_assemblies(name):
+    """[(study, sample, assembly path)] for one catalogue, from results/e5/assemblies.tsv."""
+    with open(ASSEMBLIES) as f:
+        rows = [r for r in csv.DictReader(f, delimiter="\t") if r["study"] in CATALOGUES[name]]
+    missing = set(CATALOGUES[name]) - {r["study"] for r in rows}
+    if missing:
+        sys.exit(f"catalogue {name}: {ASSEMBLIES.name} has no assemblies for {sorted(missing)}")
+    for study in CATALOGUES[name]:
+        got = sum(r["study"] == study for r in rows)
+        want = len(samples_of(study))
+        if got != want:
+            sys.exit(f"catalogue {name}: {study} has {got} assemblies of {want} samples")
+    return [(r["study"], r["sample"], Path(r["path"])) for r in rows]
+
+
+def declare_catalogue_givens(smith, name, assemblies, cache_dir, ensure):
+    givens = smith.PoolGivens()
+    study = c.add_value(givens, f"e5cat/{name}", {"study": name}, "sequences::study", tags=["e5cat", name])
+    for study_name, sid, path in assemblies:
+        tags = ["e5cat", name, study_name, sid]
+        ns = f"e5cat/{name}/{sid}"
+        meta = c.add_value(givens, f"{ns}/read_metadata", {"sample": sid, "parity": "paired", "length_class": "short"},
+                           "sequences::read_metadata", parents=[study], tags=tags)
+        c.add_file(givens, f"{ns}/assembly", path, "sequences::assembly", parents=[meta], tags=tags)
+    return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
+
+
+def cmd_catalogue(args):
+    name = args.name
+    assemblies = catalogue_assemblies(name)
+    n = len(assemblies)
+    print(f"=== catalogue {name}: {n} assemblies from {', '.join(CATALOGUES[name])}", flush=True)
+    cache_dir = CACHE_DIR / "catalogue" / name
+    launching = args.stage_only or args.launch or args.materialise
+    remote = launching or args.import_givens
+    smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
+    ensure = args.import_givens or not remote
+    inputs = declare_catalogue_givens(smith, name, assemblies, cache_dir, ensure)
+    pratama_globals = c.pratama_globals(smith, cache_dir, ensure)
+    if remote and not launching:
+        print(f"the pool at {smith.home.GetPath()} holds the givens of {n} assemblies")
+        return 0
+    task = smith.GenerateWorkflow(
+        samples=list(inputs.AsSamples("sequences::read_metadata")),
+        resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"),
+                   DataInstanceLibrary.Load(c.MLIB / "resources" / "lib"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "bench"),
+                   DataInstanceLibrary.Load(c.LIBRARY / "resources" / "e5"),
+                   pratama_globals],
+        transforms=build_transforms("hybrid", pre_e5_assembly=True),
+        targets=add_viral_targets(TargetBuilder()),
+    )
+    c.check_plan(task, {"sequences::study": 1, "sequences::read_metadata": n, "sequences::assembly": n})
+    c.print_plan(task, width=34)
+    reads = sorted({i.dtype_name for i in task.plan.given if "reads" in i.dtype_name})
+    assert not reads, f"the catalogue plan cites reads: {reads}"
+    if args.dag:
+        c.write_dag(task, f"e5_catalogue_{name}", cache_dir)
+    if launching:
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_cat_{name}", stage_only=args.stage_only,
+                        params=dict(executor=dict(queueSize=args.queue_size or CATALOGUE_QUEUE), process=dict(tries=4)),
+                        scaled=SCALED, materialise=args.materialise, on_exist="clear" if args.clear else "update")
+    else:
+        print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
+    return 0
+
+
+def taxonomy_inputs(name):
+    """[(study, sample, assembly path, [MAG paths])] for one catalogue, at their restored paths on fir."""
+    assembly, mags = {}, {}
+    with open(TAXONOMY_INPUTS) as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            if r["study"] in CATALOGUES[name]:
+                path = TAXONOMY_HOME / r["shard"] / "out" / r["name"]
+                if r["kind"] == "assembly":
+                    assembly[r["study"], r["sample"]] = path
+                else:
+                    mags.setdefault(r["sample"], []).append(path)
+    for study, sid, _ in catalogue_assemblies(name):
+        assert (study, sid) in assembly, f"{TAXONOMY_INPUTS.name} has no assembly for {sid}"
+    return [(study, sid, path, sorted(mags.get(sid, []))) for (study, sid), path in sorted(assembly.items())]
+
+
+def declare_taxonomy_givens(smith, name, inputs, cache_dir, ensure):
+    givens = smith.PoolGivens()
+    study = c.add_value(givens, f"e5tax/{name}", {"study": name}, "sequences::study", tags=["e5tax", name])
+    for study_name, sid, assembly, bins in inputs:
+        tags = ["e5tax", name, study_name, sid]
+        ns = f"e5tax/{name}/{sid}"
+        meta = c.add_value(givens, f"{ns}/read_metadata", {"sample": sid, "parity": "paired", "length_class": "short"},
+                           "sequences::read_metadata", parents=[study], tags=tags)
+        c.add_file(givens, f"{ns}/assembly", assembly, "sequences::assembly", parents=[meta], tags=tags)
+        for b in bins:
+            c.add_file(givens, f"{ns}/bin", b, "sequences::das_tool_bin_fasta", parents=[meta], tags=tags)
+    return c.cite(givens, cache_dir / "inputs.xgdb", TYPE_LIBS, ensure)
+
+
+def declare_taxonomy_refs(smith, metabuli_db, cache_dir, ensure):
+    givens = smith.PoolGivens()
+    c.declare_refs(givens, {"ref::gtdb": c.STAGED_REFS["ref::gtdb"], **c.GTDB_GENOMES_IMAGE,
+                            "ref::metabuli_ref": metabuli_db})
+    types = [c.MLIB / "data_types" / "ref.yml", c.LIBRARY / "data_types" / "bench.yml"]
+    return c.cite(givens, cache_dir / "refs.xgdb", types, ensure)
+
+
+def cmd_taxonomy(args):
+    name = args.name
+    inputs = taxonomy_inputs(name)
+    n, m = len(inputs), sum(len(b) for *_, b in inputs)
+    print(f"=== taxonomy {name}: {n} assemblies, {m} DAS Tool MAGs, Metabuli DB {args.metabuli_db}", flush=True)
+    cache_dir = CACHE_DIR / "taxonomy" / name
+    launching = args.stage_only or args.launch or args.materialise
+    remote = launching or args.import_givens
+    smith = c.agent_for("e5", remote, cache_dir / "dryrun_home")
+    ensure = args.import_givens or not remote
+    given = declare_taxonomy_givens(smith, name, inputs, cache_dir, ensure)
+    refs = declare_taxonomy_refs(smith, args.metabuli_db, cache_dir, ensure)
+    if remote and not launching:
+        print(f"the pool at {smith.home.GetPath()} holds the givens of {n} assemblies and {m} MAGs")
+        return 0
+    t = TargetBuilder()
+    t.Add("taxonomy::metabuli")
+    if m:
+        t.Add("taxonomy::gtdbtk")
+    task = smith.GenerateWorkflow(
+        samples=list(given.AsSamples("sequences::read_metadata")),
+        resources=[DataInstanceLibrary.Load(c.MLIB / "resources" / "env"), refs],
+        transforms=[TransformInstanceLibrary.Load(c.MLIB / "transforms" / "metagenomics").AsView(
+                        {Path("taxonomy/metabuli.py")}),
+                    TransformInstanceLibrary.Load(c.LIBRARY / "transforms" / "bench").AsView({Path("gtdbtk_image.py")})],
+        targets=t,
+    )
+    c.check_plan(task, {"sequences::study": 1, "sequences::read_metadata": n, "sequences::assembly": n,
+                        "sequences::das_tool_bin_fasta": m})
+    c.print_plan(task, width=34)
+    if args.dag:
+        c.write_dag(task, f"e5_taxonomy_{name}", cache_dir)
+    if launching:
+        c.stage_and_run(smith, task, cache_dir, args.tag or f"e5_tax_{name}", stage_only=args.stage_only,
+                        params=dict(executor=dict(queueSize=args.queue_size or CATALOGUE_QUEUE), process=dict(tries=3)),
+                        materialise=args.materialise, on_exist="clear" if args.clear else "update")
+    else:
+        print(f"key={task.GetKey()} (dry run; nothing staged or submitted)")
+    return 0
+
+
 def cmd_list(args):
     for batch in ([args.batch] if args.batch is not None else sorted(BATCHES)):
         total = 0
-        for shape, by_study in draw(batch).items():
+        for shape, by_study in draw(batch, chunk=args.chunk).items():
             for study, samples in by_study.items():
                 total += len(samples)
+                if args.paths:
+                    for _, reads, long_reads in samples:
+                        for f in (reads if isinstance(reads, tuple) else (reads,)) + ((long_reads,) if long_reads else ()):
+                            print(f)
+                    continue
                 print(f"{batch}  {shape:20s} {study:26s} {len(samples):3d}  {samples[0][0]} ..")
-        print(f"batch {batch}: {total} samples\n")
+        if not args.paths:
+            print(f"batch {batch}: {total} samples\n")
     return 0
 
 
 def cmd_run(args):
     failed = []
-    for shape, by_study in draw(args.batch, args.shape).items():
+    for shape, by_study in draw(args.batch, args.shape, args.chunk).items():
         try:
             solve(args, shape, by_study)
         except SystemExit as e:
@@ -314,13 +556,16 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("list")
     p.add_argument("--batch", type=int, choices=sorted(BATCHES))
+    p.add_argument("--chunk", type=parse_chunk, help="I/N: the I-th of N contiguous slices of each study")
+    p.add_argument("--paths", action="store_true", help="print every read file of the selection, one per line")
     p.set_defaults(fn=cmd_list)
     for name in ("import", "run"):
         p = sub.add_parser(name)
         p.add_argument("--batch", type=int, required=True, choices=sorted(BATCHES))
         p.add_argument("--shape", choices=list(SHAPES))
+        p.add_argument("--chunk", type=parse_chunk, help="I/N: the I-th of N contiguous slices of each study, as its own run")
         p.set_defaults(fn=cmd_run, dag=False, stage_only=False, launch=False, materialise=False, tag=None,
-                       import_givens=False, clear=False, queue_size=None)
+                       import_givens=False, clear=False, queue_size=None, no_mags=False, viral=False)
         if name == "run":
             p.add_argument("--dag", action="store_true", help="render each plan to page/dags/e5_<shape>.dag.svg")
             mode = p.add_mutually_exclusive_group()
@@ -334,6 +579,37 @@ def main():
                            help="restage from scratch, which a protocol-only transform edit needs; deletes the run's logs")
             p.add_argument("--import", dest="import_givens", action="store_true",
                            help="import what the pool lacks before planning, as `import` does")
+            p.add_argument("--no-mags", action="store_true",
+                           help="leave out the MAG lane (binners, DAS Tool, CheckM2, GEMs); a later full run adds it from the cache")
+            p.add_argument("--viral", action="store_true",
+                           help="add the viral lane, pooled per study; off by default")
+    p = sub.add_parser("catalogue", help="the viral lane over one catalogue's cached assemblies")
+    p.add_argument("name", choices=list(CATALOGUES))
+    p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e5_catalogue_<name>.dag.svg")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--stage-only", action="store_true")
+    mode.add_argument("--launch", action="store_true")
+    mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
+    p.add_argument("--tag")
+    p.add_argument("--queue-size", type=int, help=f"tasks this run may queue; default {CATALOGUE_QUEUE}")
+    p.add_argument("--clear", action="store_true", help="restage from scratch; deletes the run's logs")
+    p.add_argument("--import", dest="import_givens", action="store_true",
+                   help="import what the pool lacks before planning")
+    p.set_defaults(fn=cmd_catalogue)
+    p = sub.add_parser("taxonomy", help="Metabuli on each assembly and GTDB-Tk r232 on each DAS Tool MAG of one catalogue")
+    p.add_argument("name", choices=list(CATALOGUES))
+    p.add_argument("--metabuli-db", type=Path, default=METABULI_DB, help=f"default {METABULI_DB}")
+    p.add_argument("--dag", action="store_true", help="render the plan to page/dags/e5_taxonomy_<name>.dag.svg")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--stage-only", action="store_true")
+    mode.add_argument("--launch", action="store_true")
+    mode.add_argument("--materialise", action="store_true", help="stage, fetch every image the plan needs, stop")
+    p.add_argument("--tag")
+    p.add_argument("--queue-size", type=int, help=f"tasks this run may queue; default {CATALOGUE_QUEUE}")
+    p.add_argument("--clear", action="store_true", help="restage from scratch; deletes the run's logs")
+    p.add_argument("--import", dest="import_givens", action="store_true",
+                   help="import what the pool lacks before planning")
+    p.set_defaults(fn=cmd_taxonomy)
     args = ap.parse_args()
     return args.fn(args)
 

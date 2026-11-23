@@ -1,0 +1,13 @@
+container: docker://quay.io/hallamlab/metasmith:0.25.1-6ab46b6
+default_preset: slurm
+gpu_args: []
+home:
+  address: ssh://nibi:/scratch/phyberos/msm_e2e/run-2
+  type: SSH
+id: BLzDT8z2
+native: false
+real_path: /scratch/phyberos/msm_e2e/run-2
+runtime: APPTAINER
+setup_commands:
+- '#!/bin/bash'
+- module load apptainer

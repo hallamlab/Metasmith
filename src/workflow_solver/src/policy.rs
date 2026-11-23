@@ -18,6 +18,12 @@ use crate::rng::DecisionStream;
 
 pub const PUCT_ENV: &str = "MSM_SOLVER_PUCT";
 
+/// The guide's lift, in the normalised space the two score channels share
+/// (their weights sum to 1). At the shipped temperature it multiplies a
+/// guided transform's prior by e, enough to look there first and too little
+/// to drown the scores.
+const GUIDE_WEIGHT: f64 = 0.5;
+
 #[derive(Clone, Copy, Debug)]
 pub struct PuctConfig {
     pub c_puct: f64,
@@ -298,6 +304,9 @@ pub struct Policy {
     /// apart from `n` because `n` counts every observation, and the ramp has to
     /// read how often *this* key wasted an iteration.
     fails: Map<u32, f64>,
+    /// 1.0 per transform the caller's guide names, indexed by transform. Empty
+    /// without a guide, so an unguided solve selects exactly as before.
+    guide: Vec<f64>,
 }
 
 impl Policy {
@@ -314,7 +323,7 @@ impl Policy {
         Ok(Self {
             c, phase, w: det::map(), n: det::map(), total: 0,
             scratch: Vec::new(), dups: det::map(), seen: det::map(),
-            structure: Vec::new(), fails: det::map(),
+            structure: Vec::new(), fails: det::map(), guide: Vec::new(),
         })
     }
 
@@ -329,6 +338,17 @@ impl Policy {
     pub fn set_structure(&mut self, table: &[f64]) {
         self.structure.clear();
         self.structure.extend_from_slice(table);
+    }
+
+    /// Raise the prior of every transform `guide` names. A guide only says where
+    /// to look first: the transforms still compete, and the search accepts
+    /// nothing because the guide named it.
+    pub fn set_guide(&mut self, guide: &[u32]) {
+        for &t in guide {
+            let t = t as usize;
+            if self.guide.len() <= t { self.guide.resize(t + 1, 0.0); }
+            self.guide[t] = 1.0;
+        }
     }
 
     /// Whether the caller should compute the progress pair `observe` needs.
@@ -418,6 +438,13 @@ impl Policy {
                 let k = key_of(i) as usize;
                 if let Some(&s) = self.structure.get(k) {
                     self.scratch[i] -= c.w2 * s;
+                }
+            }
+        }
+        if !self.guide.is_empty() {
+            for i in 0..len {
+                if let Some(&g) = self.guide.get(key_of(i) as usize) {
+                    self.scratch[i] += GUIDE_WEIGHT * g;
                 }
             }
         }

@@ -49,9 +49,11 @@ TYPE_LIBS = [MLIB / "data_types" / t for t in ("aspire.yml", "amplicon.yml", "se
 SAMPLES = ["CTRL_001_BAL", "CTRL_002_BRUSH", "CTRL_003_BAL",
            "CASE_001_BRUSH", "CASE_002_BAL", "CASE_003_BAL_CONTRA"]
 
+# The mock's ground truth expects exactly its own 3 contaminants, so its set holds that one list.
+MOCK_CONTAMINANTS = MOCK / "references" / "contaminants.fasta"
 MOCK_REFERENCES = {
     "aspire::mito_reference_source": MOCK / "references" / "mitochondria.fasta",
-    "aspire::contaminant_reference_source": MOCK / "references" / "contaminants.fasta",
+    "aspire::contaminant_reference_set": CACHE_DIR / "contaminant_set",
 }
 ABSENT_REFERENCES = ["amplicon::silva_db"]
 
@@ -105,6 +107,10 @@ def declare_study(smith, on, parity, preset):
 
 
 def declare_references(smith):
+    cset = MOCK_REFERENCES["aspire::contaminant_reference_set"]
+    if not (cset / "mock.fasta").exists():
+        cset.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(MOCK_CONTAMINANTS, cset / "mock.fasta")
     givens = smith.PoolGivens()
     for dtype, path in MOCK_REFERENCES.items():
         add_file(givens, f"aspire/{STUDY}/ref/{dtype}", path, dtype, tags=["aspire", "reference"])

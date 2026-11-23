@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
 from metasmith.constants import MODULE_PATH
 from metasmith.models.workflow.payload import build_entry
+
+from tests.metasmith.support import nxf_exec
 
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 
@@ -54,7 +55,7 @@ workflow {
 '''
 
 
-def test_groovy_and_python_agree_on_every_member_key(tmp_path, docker_image):
+def test_groovy_and_python_agree_on_every_member_key(tmp_path, nxf_container):
     try:
         from metasmith.caching import invocation as inv
     except ImportError:
@@ -73,8 +74,7 @@ def test_groovy_and_python_agree_on_every_member_key(tmp_path, docker_image):
         "cache_root": str(tmp_path / "cache"), "members": members,
     }))
     res = subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
-         docker_image, "nextflow", "run", "main.nf", "-lib", "./lib", "-ansi-log", "false"],
+        [*nxf_exec(nxf_container, tmp_path, 600), "nextflow", "run", "main.nf", "-lib", "./lib", "-ansi-log", "false"],
         capture_output=True, text=True, timeout=600,
     )
     assert res.returncode == 0, res.stdout[-3000:] + res.stderr[-3000:]

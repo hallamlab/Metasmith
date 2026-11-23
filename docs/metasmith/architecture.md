@@ -66,12 +66,14 @@ back down to their descendants, so over a cycle one mask becomes the whole libra
 reports the **transitive closure**, not the declared parents — a consumer that does not
 collapse it again offers a grandparent whose removal silently reverts on the next load.
 
-**Products come in groups.** `Transform.produces` is a `list[list[Dependency]]`, advanced by
-`NewProductGroup()`, and the call is **overloaded with opposite meanings**: for sample
-alternatives it branches into separate timelines (A *or* B), for a multi-output transform the
-products stay in one timeline (A *and* B). The solver discriminates on whether the
-application's transform is the given one. Getting it wrong stops a multi-output tool's products
-co-existing.
+**A product group is one possible outcome.** `Transform.produces` is a `list[list[Dependency]]`.
+Products a tool always writes together share one group. `NewProductGroup()` starts an
+alternative, so a transform with several groups is a *fork*: each task writes one or more of
+its groups, and the plan must hold a route below every group. `getSraReads` is the shipped case,
+since an accession yields long, paired or single reads. The given transform reuses the shape for
+sample families, which the solver branches into timelines. One solve plans for one group of each
+fork (`Problem::outcome` in `src/workflow_solver/`), so a fork step in any one case's plan
+carries exactly one declared group, and the witness checks that.
 
 **What the solver does.** It works backwards from the target, carrying what it has and which
 transforms remain candidates. The search itself is `src/workflow_solver/` — `msm_solver`, the only
@@ -185,18 +187,60 @@ Dependency is created once with its Transform and never changes.
 `step.dependency_map[dep]` carries *one* instance standing for however many the fan-out above
 produces; only `group_by_instances` counts keys. Anything reading a slot's length as "how many
 items this key receives" is wrong in the direction that hurts — it tells the runtime a key is
-already whole and the group ships with one item. `grouping.expected_per_key` therefore answers
-`None` for a one-instance slot, degrading everything downstream to the channel-close flush,
-which is always safe.
+already whole and the group ships with one item.
 
-**A cache hit must put the same lineage on the wire that a real run does.** The synthetic
-channel replays each shard file with the index its producing task carried, captured at promote
-time into the manifest's `index` field — compile time cannot reconstruct it, since which inputs
-an output descends from is decided inside the task. A shard that cannot supply an index for
-every matched file is demoted to a miss rather than replayed, and an index present but **empty**
-counts as absent on both sides of that exchange: it renders to Groovy's `[:]`, which `_post`
-stamps the produced key onto, so the replayed file reaches a downstream `o.group` carrying
-exactly one key — its own — and is refused.
+**A group leaves early only on counts the data carries, never on a count from the plan.** The
+plan cannot know how many files a member delivers: a glob output yields however many files the
+tool wrote, and an optional branch yields none. `_post` therefore appends one level
+`[stream, post, by, n, i]` to each item's reserved `SIBS` chain: the post that delivered it, the
+producing member's `group_by` key, the number of files that member delivered into the slot, and
+the item's ordinal. A member inherits its by-item's chain, so the chain records every fan-out
+between a group key and the item, through any number of steps and merged producers. A key
+leaves once its items cover the whole tree below it:
+
+1. Every post on the routes from the stream back to the key delivered.
+2. Each post's level carries one `n`.
+3. The ordinals at every level are exactly `0..n-1`.
+
+A route also ends at a post grouped by an ancestor of the key. An example is assembly stats
+grouped by the read set, joined on the assembly. Such an item must carry exactly one hash of
+that ancestor. A key value carries every ancestor hash it descends from, and so does every item
+made from it. So a key value that reached two ancestor members, as a coassembly reaches one
+member per read set, marks each of their items with both hashes. Those items wait for close.
+Without that check, the first read set's item would release the coassembly, and the next one
+would arrive for a key that already left.
+
+A route that crosses a post with no `group_by`, such as a given or a step with no inputs, has no
+count to check, so its keys wait for the stream to close. The close flush is unconditional,
+because `errorStrategy 'ignore'` drops a task whose chain then never completes. `SIBS` is
+stripped before PROV and publish, so it never reaches a member key or a manifest. A cache hit
+needs no special case: the `_cached` twin posts through the same `_post` after `mixOuts`, and a
+member runs in exactly one of the two. `tests/metasmith/e2e/nextflow/test_release_spec.py`
+states this contract black-box on host Nextflow. Change a rule there first.
+
+**A fork group a task left unwritten counts as delivered.** Without a record, a route through
+that group never delivers, and its keys wait for close. The bootstrap therefore writes one empty
+`.~0.` marker (`payload.ZERO_MARK`) under each reached group the task did not write. `_post`
+drops the marker and records a zero post for that node and its cases. `_whole` accepts an
+absent post when a zero post covers the same root hash, the same chain prefix and every case the
+post owes the key. The marker name and `Orchestrator.ZERO_MARK` must agree, which
+`test_wire_version_sync.py` pins. B20 in `test_release_spec.py` pins the release.
+
+**A second file where the data promised one is a crash, not a late member.** A chain level and
+a parent item's hash each name exactly one file. `LineageViolation` names the stream when a
+second distinct file arrives under one release path or one parent hash, and when an item
+arrives for a key that already left. An exact duplicate is dropped, since it adds nothing. A
+file's identity includes its member's cache key, so no workflow codegen emits reaches these
+states. They are assertions, and no test drives them.
+
+**The registries the routes are read from are complete only after `o.seal()`.** The
+workflow body writes `group_by_of` and `posts_of`, and data flow reads them. Nextflow
+starts data flow only after the body returns, through the igniters in
+`Session.fireDataflowNetwork`. Codegen therefore ends the body with `o.seal()`. A read before
+the seal throws, and so does a write after it. **CAUTION** An already-bound channel such as
+`Channel.value` can flow during the body. A given carries no stamp and never reads the
+registries, but an `o.post` over a bound channel would read them early and throw. Codegen emits
+no such post.
 
 **That index is captured from a file beside the outputs, which survives only if it is copied
 back.** Each task appends its lineage to `.command.metadata` in the current directory and
@@ -224,18 +268,33 @@ Nextflow that stops sharing announces itself there instead of leaving this parag
 false. The copy is shallow on purpose: value lists stay shared by reference across descendant
 indexes, and no production path mutates one.
 
-**A stream declared `DESCENDANT_OF_BY` must carry the by-key, and `group()` raises when one does
-not.** Absent and empty-list are the same defect; the empty list is the worse one, because the
+**A joined item must carry the key it is declared to descend from, and `group()` raises when one
+does not.** Under `DESCENDANT_OF_BY` that is the by-key on the stream. Under `PARENT_OF_BY` it is
+the parent's key on the by-stream. Absent and empty-list are the same defect; the empty list is the worse one, because the
 loop over it iterates zero times and used to leave no trace at all. The alternative to raising is
 invisible: a dropped item makes the join emit nothing, an empty channel is not an error in
 Nextflow, and the DAG simply ends early with every submitted task at exit 0 — a task that is
 never created cannot fail, so no `errorStrategy` and no failure count can see it. Two production
 runs lost days to exactly that, one truncating a nine-step workflow after seven, and in both the
-only record was a dispatch-log row nothing reads. The producer-side guards each close one route
-(the cache-hit index above, `promote._collect_output_indexes` for a replayed output); this is the
-one that does not have to be re-derived for the next producer. `SIBLING` only logs, because
-`_firstSharedAncestor` picks an arbitrary member of the ancestor intersection and an item may
-legitimately relate through a different one.
+only record was a dispatch-log row nothing reads. A guard at a producer closes only that
+producer's route, and this one does not have to be re-derived for the next producer. `SIBLING`
+only logs, because an item may legitimately relate to the by-stream through a shared ancestor
+other than the one the join buckets on.
+
+**A `SIBLING` join buckets on one shared ancestor and filters on every nearest one.** A
+reference every sample was built against is as near a shared ancestor as the sample itself, so
+a join on the reference alone hands each member every sample's items. The member keeps only the items
+that share a hash with the by-item on every nearest shared ancestor, which makes any bucket
+correct. The bucket prefers the stream producer's `group_by` key, because that is the key its
+stamps name and so the only one it can leave early on. A by-item is matched once, over the
+union of its bucket hashes, so a coassembly that carries every sample's hash yields one member
+rather than one partial member per sample.
+
+**A `PARENT_OF_BY` join gives each member every parent item its by-item names.** A per-sample
+product names one sample, and a coassembly names every sample it was built from. The join
+therefore matches each hash in the by-item's list, never the list as a whole: a coassembly's
+whole list equals no single parent's, and a join on it emitted nothing. A parent item's hash is
+its identity, so the member leaves once every hash it names arrived, with no chain to check.
 
 **Two grouped slots are paired by ancestry, never by position.** A collecting step receives
 each slot as an independently accumulated, independently deduped list in task-arrival order, so
@@ -288,6 +347,77 @@ item with a *parent* puts that parent's whole subtree in every mask and collapse
 into one view, while an item beside the index that nothing links to lands in no mask at all and
 the planner never sees it though it is still staged. `ops.samples.validate` refuses the first;
 `shared_input_paths` is the way out of the second.
+
+**Each case is solved alone, because one joint solve cannot be trusted to cover several.** A
+`Case` is a group of samples of one given shape with its own target. The solver forks one
+timeline per case, but its frontier blacklist (`frontier_sigs`, `mcts.rs`) is one set across all
+timelines, so a joint solve can starve a case while the reply still says `complete`.
+`case_merge.PlanCases` therefore runs one solve per case, and the witness checks each one. The
+merged plan has no witness. Its only guard is `_Merge.problems`, which requires every slot a case
+reads to have exactly one source for that case, and a plan that fails it is refused with the
+samples named in `dropped_samples`.
+
+**A fork outcome is a case, pushed onto the same stack as the declared ones.** `PlanCases` pops
+cases from a stack seeded with the declared cases, first declared on top, and merges each solved
+plan at once. Each fork in a solved plan that the case did not pin pushes one case per other
+group. A pushed case keeps its root's givens and samples, and its pins name the group it plans
+for. It starts from its parent's steps up to the fork, which the solver replays and keeps. Its
+guide is every step of the parent and the aggregate that no fork's outcome conditions, and the
+guide only biases where the search looks. A declared case solves with neither, so its plan does
+not depend on declaration order. If any case has no route, the whole plan is
+refused, and a `fork_branch` hint names the fork and its group. Pushed cases take their root's
+name wherever a case name reaches the runtime, so the runtime never sees an outcome as a case.
+
+**Each group of a fork posts its own stream.** The solver's endpoints compare equal across a
+fork's groups, so `_by_outcome` gives each fork product an identity per group before the merge.
+`_joins_outcomes` refuses a join that puts two groups of one fork in one stream class. A step
+that reads a product two groups share is therefore placed once per group, and a sample that
+wrote both groups reaches it through two pointers to one file. Without this, every consumer of a
+shared product runs for every outcome that writes it. `WorkflowStep.groups` records each
+product's group, and codegen, cache decisions and the bootstrap read products through
+`ProductsOf`.
+
+**The bootstrap checks what a fork task wrote.** A fork names its products outside every output
+glob. After the tool runs, `point_fork_groups` fails the task unless each manifest entry equals
+one declared group, each named file exists, and each product names one path. It then points
+each written group at the files under that group's name, as a rename and then hard links.
+Promotion refuses a branch missing one of its slots.
+
+**A case's step joins an existing step only while every case keeps one source per slot.** The
+merge walks the cases in declared order and each plan in step order. A step joins the first node
+with the same transform and slots that does not serve its case yet, and an exact stream match
+wins over a node whose slots merely hold the same types. A join unions each slot's sources into
+one *stream class*, which is how a short-read assembler and a hybrid assembler feed one viral-ID
+step. The merge undoes a join that gives a case two sources in one class, or that pools
+different per-case givens into a slot unrelated to the group-by input. **CAUTION** Declared case
+order is the tie-break, so reordering the cases can change which steps pool.
+
+**Codegen and `plan.streams` must name a stream the same way.** Codegen names every stream by its
+class representative, the earliest member. Two producers of one class post under `_<s>_1` and
+`_<s>_2` and meet in `o.mix`, and each keeps its own dtype for its output globs. The step meta's
+`slot_channels` holds the stream name too, because the member key reads it. A single-case plan
+with no fork has no classes and stages byte-identical text, which `cache/test_template_golden.py` pins.
+
+**Every item carries the cases it serves under the reserved `CASES` key, and an untagged item
+serves every case.** `postIn` tags a given from the `cases` map in the given-lineage file.
+`o.cases(stream, S)` keeps the items of a step's cases S and narrows their tags. A member serves
+the cases that every one of its slots still serves. Only a *lane slot*, one that the served cases
+read from different producers, splits a member per case. Splitting every slot would split the
+pooled vOTU table into one table per case. A lane split is why a read set two cases share runs
+each assembler's lane once and never hands a step both assemblies.
+
+**Early release counts only the posts that serve a key's cases.** `_countPost` records the cases
+of each post, and `_whole` skips a post that serves none of the key's cases. The member case sets
+of each remaining post must partition the cases it owes the key exactly. A chain level carries
+the member's cases as a sixth element, so two members made from one by-item stay apart in the
+release registry. A given post into a mixed stream blocks only the keys of its own cases.
+`test_release_spec.py` pins these rules with B17 to B19.
+
+**A run's cases stay out of the cache.** A shard serves every later run that hits it, and those
+runs may group the same product under other cases. So the promote record, the trace event and
+the hit-log line carry a member's cases, and the shard and the member key never do.
+`CollectResults` copies them into the results library's per-item `cases` map, and `given.csv`
+gains a `cases` column for multi-case runs only.
 
 **Planning is not reentrant, and the lock lives at the mutation.** `TransformInstance.Load`
 imports by bare module name, mutates `sys.path`, calls `importlib.reload` and returns through a
@@ -586,13 +716,27 @@ leaf is a file or a 300k-file directory. That is what a transform's own outputs 
 library carry. It is no longer what a *given* carries: a plan refuses a given whose identity the
 calling process minted, because the absolute path belongs to whichever host ran the stat and a
 path nothing can stat used to fall back to a fresh uuid4 per call. Two hosts holding identical
-bytes at different paths still do not agree, and a same-mtime in-place edit is still invisible.
+bytes at different paths still do not agree.
 `StageWorkflow` re-derives every remaining leaf id on the agent before compiling
 (`restat_leaf_ids`) and writes the plan back to `task.yml`, because `CollectResults` later joins
 the trace against that same plan. A change below the top node is invisible by construction, and
 `msm data invalidate` is the lever for it: it moves the mtime forward and re-mints through the
 same formula, so client and agent still agree. Invalidate refuses an imported item and says to
 import again, because an assigned identity has nothing to re-derive.
+
+**A recorded leaf id moves when its file changes.** Each minted leaf keeps a `stamp` beside its id
+in the index: the stat, plus a content digest for a file of 1 MiB or less. A load re-mints a leaf
+whose stamp no longer matches, so an edited `.oci` tag misses the cache instead of serving the old
+image's results. A small file is judged by its bytes alone, so a checkout or copy that only moves
+the mtime keeps the id. The stamp is excluded from the library key for the same reason. An index
+written before stamps existed keeps its ids, and each id gains a stamp at its next save if it still
+re-derives from the file.
+
+**A value item's id is its text.** `AddValue` marks the entry `value` and derives the id from the
+bytes and the relative library path, the minted filename that stands for the row. An edit moves
+the id, an undo restores it, and the agent derives the same id from its copy. A value item minted
+before this keeps its old id until a recipe sync rewrites its text, because one cache miss per
+downstream step is too high a price for unchanged data.
 
 **A given's identity is a record, and the plan refuses one that is not.** `_mint_leaf_id` marks
 what it invented, `Pack` does not carry the mark, and `CollectSolverInputs` refuses anything that
@@ -612,7 +756,7 @@ library already held rather than inventing one, and an invalidate has already re
 it could not stat.
 
 **A slot id is structural. It joins a consumer to a producer and carries no inputs.** The
-solver folds a multi-sample run into one *unique case*, so a step has one plan instance whatever
+solver folds the samples of one shape into one *unique case*, so a step has one plan instance whatever
 the sample count and the per-sample fan-out happens on the channel at run time. A produced slot's
 id therefore hashes the transform key, the signature, the slot, the branch, and the slot ids
 upstream of it (`given:<dtype>` for a given). It never folds a leaf id or the step's order. Two

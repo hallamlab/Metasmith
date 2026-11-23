@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 import yaml
 
@@ -94,48 +94,175 @@ def _refuse_unminted_givens(instances: list[DataInstance]) -> None:
     ))
 
 
+@dataclass
+class Case:
+    name: str
+    # One list of library views per sample, every sample of the same shape.
+    given: list[list[DataInstanceLibraryView]]
+    # Requirements only, no products.
+    target: Transform
+    target_names: list[str]|None = None
+
+    @classmethod
+    def ByShape(
+        cls, given: list[list[DataInstanceLibraryView]],
+        target: Transform|Callable[[frozenset[Endpoint], str], tuple[Transform, list[str]|None]],
+        target_names: list[str]|None = None, name: str = "case",
+    ) -> list[Case]:
+        def for_shape(shape: frozenset) -> tuple[Transform, list[str]|None]:
+            if isinstance(target, Transform):
+                return target, target_names
+            return target(shape, labels.get(shape, name))
+
+        shapes: dict[frozenset, list[list[DataInstanceLibraryView]]] = {}
+        labels: dict[frozenset, str] = {}
+        view_cache: dict[int, tuple[set[Endpoint], set[str]]] = {}
+        for sample in given:
+            eps: set[Endpoint] = set()
+            names: set[str] = set()
+            for view in sample:
+                if id(view) not in view_cache:
+                    found = list(view.Iterate())
+                    view_cache[id(view)] = {ep for _, _, ep in found}, {n for _, n, _ in found}
+                v_eps, v_names = view_cache[id(view)]
+                eps |= v_eps
+                names |= v_names
+            shapes.setdefault(frozenset(eps), []).append(sample)
+            labels.setdefault(frozenset(eps), "+".join(sorted(names)))
+        if len(shapes) <= 1:
+            t, n = for_shape(next(iter(shapes), frozenset()))
+            return [cls(name=name, given=list(given), target=t, target_names=n)]
+        out: list[Case] = []
+        seen: dict[str, int] = {}
+        for shape, samples in shapes.items():
+            label = labels[shape]
+            seen[label] = seen.get(label, 0) + 1
+            t, n = for_shape(shape)
+            out.append(cls(
+                name=label if seen[label] == 1 else f"{label}#{seen[label]}",
+                given=samples, target=t, target_names=n,
+            ))
+        return out
+
+
+def _check_cases(cases: list[Case]) -> None:
+    if not cases:
+        raise ValueError("a plan needs at least one case")
+    names = [c.name for c in cases]
+    if len(set(names)) != len(names):
+        raise ValueError(f"case names must be unique: {names}")
+    for c in cases:
+        if any(len(g) > 0 for g in c.target.produces):
+            raise ValueError(f"case [{c.name}]: a target has requirements and no outputs")
+        if c.target_names is not None and len(c.target_names) != len(c.target.requires):
+            raise ValueError(f"case [{c.name}]: {len(c.target_names)} target names for {len(c.target.requires)} requirements")
+
+
+def _target_names(case: Case, transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView]) -> list[str]:
+    if case.target_names is not None:
+        return list(case.target_names)
+    names = []
+    for d in case.target.requires:
+        e = Endpoint(d.properties)
+        name = next((n for n in (_try_name(t, e) for t in transforms) if n), None)
+        names.append(name or "+".join(sorted(d.properties)))
+    return names
+
+
+def _try_name(lib, e: Endpoint) -> str|None:
+    try:
+        return lib.GetName(e)
+    except (AssertionError, KeyError):
+        return None
+
+
+class _MixedCase(ValueError):
+    def __init__(self, case: int, label: str):
+        super().__init__(case, label)
+        self.case, self.label = case, label
+
+
+@dataclass
+class CaseIndex:
+    group_case: list[int] = field(default_factory=list)
+    group_label: list[str] = field(default_factory=list)
+    inst_cases: dict[str, set[int]] = field(default_factory=dict)
+
+    def samples_of(self, cases: set[int]) -> list[str]:
+        return [lbl for c, lbl in zip(self.group_case, self.group_label) if c in cases]
+
+
 def CollectSolverInputs(
     given: list[list[DataInstanceLibraryView]],
     transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
+    group_cases: list[int]|None = None,
 ) -> tuple[
     dict[Endpoint, list[DataInstance]],
     list[set[Endpoint]],
     dict[Transform, TransformInstance],
     dict[TransformInstance, TransformInstanceLibrary],
+    CaseIndex,
 ]:
+    # Without `group_cases` a case is a distinct given shape. With it, each
+    # sample belongs to the declared case it names, every sample of a case must
+    # share one shape, and the returned endpoint sets are indexed by case.
     given_map: dict[Endpoint, list[DataInstance]] = {}
-    _seen_instances: set[tuple] = set()
+    _key2inst: dict[tuple, DataInstance] = {}
     _view_eps_cache: dict[int, set[Endpoint]] = {}
+    _view_keys_cache: dict[int, list[tuple]] = {}
     given_endpoints: list[set[Endpoint]] = []
-    _seen_group_keys: set[tuple] = set()
-    for group in given:
+    if group_cases is not None:
+        given_endpoints = [None]*(max(group_cases)+1)  # type: ignore
+    _seen_group_keys: dict[tuple, tuple[set[Endpoint], list[tuple], str]] = {}
+    cases = CaseIndex()
+    for gi, group in enumerate(given):
         group_key = tuple((id(lib._original), lib._mask_key) for lib in group)
-        if group_key in _seen_group_keys:
-            continue
-        _seen_group_keys.add(group_key)
-
-        eps = set()
-        for lib in group:
-            view_id = id(lib)
-            if view_id in _view_eps_cache:
-                eps.update(_view_eps_cache[view_id])
-                continue
-            lib_eps = set()
-            for path, ep_name, ep in lib.Iterate():
-                dedup_key = (path, ep)
-                if dedup_key not in _seen_instances:
-                    _seen_instances.add(dedup_key)
-                    given_map.setdefault(ep, []).append(DataInstance(
-                        path=path,
-                        dtype=ep,
-                        dtype_name=ep_name,
-                        parent_lib=lib._original,
-                    ))
-                lib_eps.add(ep)
-            _view_eps_cache[view_id] = lib_eps
-            eps.update(lib_eps)
-        if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
-        given_endpoints.append(eps)
+        if group_key not in _seen_group_keys:
+            eps = set()
+            group_keys: list[tuple] = []
+            for lib in group:
+                view_id = id(lib)
+                if view_id in _view_eps_cache:
+                    eps.update(_view_eps_cache[view_id])
+                    group_keys += _view_keys_cache[view_id]
+                    continue
+                lib_eps = set()
+                lib_keys = []
+                for path, ep_name, ep in lib.Iterate():
+                    dedup_key = (path, ep)
+                    if dedup_key not in _key2inst:
+                        inst = DataInstance(
+                            path=path,
+                            dtype=ep,
+                            dtype_name=ep_name,
+                            parent_lib=lib._original,
+                        )
+                        _key2inst[dedup_key] = inst
+                        given_map.setdefault(ep, []).append(inst)
+                    lib_eps.add(ep)
+                    lib_keys.append(dedup_key)
+                _view_eps_cache[view_id] = lib_eps
+                _view_keys_cache[view_id] = lib_keys
+                eps.update(lib_eps)
+                group_keys += lib_keys
+            label = ", ".join(sorted({str(path) for path, _ in group_keys}))
+            _seen_group_keys[group_key] = eps, group_keys, label
+        eps, group_keys, label = _seen_group_keys[group_key]
+        if group_cases is None:
+            case = next((i for i, g in enumerate(given_endpoints) if g==eps), None)
+            if case is None:
+                given_endpoints.append(eps)
+                case = len(given_endpoints)-1
+        else:
+            case = group_cases[gi]
+            if given_endpoints[case] is None:
+                given_endpoints[case] = eps
+            elif given_endpoints[case] != eps:
+                raise _MixedCase(case, label)
+        cases.group_case.append(case)
+        cases.group_label.append(label)
+        for k in group_keys:
+            cases.inst_cases.setdefault(_key2inst[k].instance_id, set()).add(case)
 
     _refuse_unminted_givens(
         [inst for insts in given_map.values() for inst in insts]
@@ -152,7 +279,56 @@ def CollectSolverInputs(
                 continue
             transform2inst[model] = tr
             inst2trlib[tr] = base
-    return given_map, given_endpoints, transform2inst, inst2trlib
+    return given_map, given_endpoints, transform2inst, inst2trlib, cases
+
+
+def _dedupe_instances(instances: list[DataInstance]):
+    out = []
+    seen: dict[str, DataInstance] = {}
+    for inst in instances:
+        if inst.instance_id in seen:
+            existing = seen[inst.instance_id]
+            for p_path, p_list in inst.parent_lib.parents.items():
+                if p_path not in existing.parent_lib.parents:
+                    existing.parent_lib.parents[p_path] = list(p_list)
+                else:
+                    existing_keys = {f"{x.library_key}/{x.path}" for x in existing.parent_lib.parents[p_path]}
+                    existing.parent_lib.parents[p_path].extend(
+                        p for p in p_list if f"{p.library_key}/{p.path}" not in existing_keys
+                    )
+            continue
+        seen[inst.instance_id] = inst
+        out.append(inst)
+    return out
+
+
+def _absorb_givens(
+    given_map: dict[Endpoint, list[DataInstance]], given_step: Application,
+    merged_endpoints: dict[Endpoint, set[Endpoint]],
+) -> None:
+    for pgroup in given_step.produced:
+        for d in pgroup:
+            e = pgroup[d]
+            if e in given_map:
+                current = set(given_map[e])
+                given_map[e] += [x for x in given_map.get(d, []) if x not in current] # type: ignore
+            else:
+                for ge in list(given_map):
+                    if not e.properties==ge.properties: continue
+                    given_map[e] = given_map[ge]
+                    break
+
+    for e, me in merged_endpoints.items():
+        if len(me)<2: continue
+        if e not in given_map: continue
+        pool = list(given_map[e])
+        for x in me:
+            if x==e: continue
+            pool += given_map.get(x, [])
+        given_map[e] = _dedupe_instances([
+            inst if inst.dtype.key==e.key else inst.WithDType(e)
+            for inst in pool
+        ])
 
 
 @dataclass
@@ -163,6 +339,7 @@ class WorkflowPlan:
     _solver_result: SolverResult|None=None
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
     dropped_targets: list[str] = field(default_factory=list)
+    dropped_samples: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
     # A run publishes its targets and nothing else. The per-step outputs stay in
     # the work dir and the cache store, so what a collect copies back is what was
@@ -170,6 +347,12 @@ class WorkflowPlan:
     # folder, where the per-step logs are then the only record.
     publish_intermediates: bool = False
     _solver_inputs: tuple|None = None
+    # The case names, in declared order. Beyond one case a plan also records the
+    # stream each produced or given endpoint posts to, and each given instance's
+    # cases, which seed the runtime case tags.
+    cases: list[str] = field(default_factory=list)
+    streams: dict[str, str] = field(default_factory=dict)
+    given_cases: dict[str, list[str]] = field(default_factory=dict)
 
     def __post_init__(self):
         self._update_hash()
@@ -221,13 +404,25 @@ class WorkflowPlan:
             for _k, _n, _e in to_add:
                 todo.append((_k, _n, _e))
 
-        return dict(
+        packed = dict(
             types=packed_types,
             given=[inst.Pack() for inst in self.given],
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
             publish_intermediates=self.publish_intermediates,
         )
+        if self.streams:
+            packed.update(streams=dict(self.streams))
+        if self.multi_case:
+            packed.update(cases=list(self.cases), given_cases=dict(self.given_cases))
+        else:
+            for x in packed["steps"]: x.pop("cases", None)
+            for x in packed["targets"]: x.pop("case", None)
+        return packed
+
+    @property
+    def multi_case(self) -> bool:
+        return len(self.cases) > 1
 
     def Save(self, path: Path):
         with open(path, "w") as f:
@@ -297,24 +492,40 @@ class WorkflowPlan:
             targets=[_unpack_target(d) for d in raw["targets"]],
             steps=steps,
             publish_intermediates=raw.get("publish_intermediates", False),
+            cases=list(raw.get("cases", [])),
+            streams=dict(raw.get("streams", {})),
+            given_cases=dict(raw.get("given_cases", {})),
         )
 
     @classmethod
     def Generate(
         cls,
-        given: list[list[DataInstanceLibraryView]],
+        cases: list[Case],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
-        target_names: list[str],
-        target_model: Transform,
         max_iter: int=256, max_refine: int|None=None, seed: int=42,
     ):
-        given_map, given_endpoints, transform2inst, inst2trlib = CollectSolverInputs(
+        _check_cases(cases)
+        if len(cases) > 1:
+            from .case_merge import PlanCases
+            return PlanCases(
+                cls, cases, transforms, max_iter=max_iter, max_refine=max_refine, seed=seed,
+            )
+
+        (case,) = cases
+        given = case.given
+        target_model = case.target
+        target_names = _target_names(case, transforms)
+        given_map, given_endpoints, transform2inst, inst2trlib, _ = CollectSolverInputs(
             given, transforms,
         )
+        if len(given_endpoints) > 1:
+            raise ValueError(
+                f"case [{case.name}] holds samples of [{len(given_endpoints)}] shapes; "
+                "split them with Case.ByShape"
+            )
 
         _pl1 = "" if len(given)==1 else "s"
-        _pl2 = "" if len(given_endpoints)==1 else "s"
-        Log.Info(f"solving plan for [{len(given)}] sample{_pl1} as [{len(given_endpoints)}] unique case{_pl2}")
+        Log.Info(f"solving plan for [{len(given)}] sample{_pl1} as [1] unique case")
 
         result = solve_by_mcts(
             given=given_endpoints,
@@ -324,15 +535,59 @@ class WorkflowPlan:
             max_refine=max_refine,
             seed=seed,
         )
-        return cls._Assemble(
-            result=result,
+        if any(a.used and len(a.transform.produces) > 1 for a in result.dependency_plan):
+            from .case_merge import PlanCases
+            return PlanCases(
+                cls, cases, transforms, max_iter=max_iter, max_refine=max_refine, seed=seed,
+            )
+        plan = cls._Assemble(
+            result=result, inst2trlib=inst2trlib,
             solver_inputs=(given_endpoints, list(transform2inst.keys()), target_model),
+            given_map=given_map, transform2inst=transform2inst,
+            transforms=transforms, target_names=target_names, target_model=target_model,
+        )
+        plan.cases = [case.name]
+        for step in plan.steps:
+            step.cases = [case.name]
+        for t in plan.targets:
+            t.case = case.name
+        return plan
+
+    @classmethod
+    def _Refuse(
+        cls, result, failed: dict[int, list[str]], cases: CaseIndex,
+        solver_inputs: tuple,
+        given_map: dict[Endpoint, list[DataInstance]],
+        transform2inst: dict[Transform, TransformInstance],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
+        target_names: list[str],
+        target_model: Transform,
+    ):
+        names = cases.samples_of(set(failed))
+        lines = [
+            f"  [{lbl}]: {'; '.join(failed[c])}"
+            for c in sorted(failed) for lbl in cases.samples_of({c})
+        ]
+        msg = f"no plan carries [{len(names)}] sample(s) to {target_names}:\n" + "\n".join(lines)
+        Log.Error(msg)
+        hints = [PlanHint(kind="dropped_samples", target=",".join(target_names), message=msg)]
+        hints += _diagnose_plan_failure(
+            target_model=target_model,
+            target_names=target_names,
             given_map=given_map,
             transform2inst=transform2inst,
-            inst2trlib=inst2trlib,
-            transforms=transforms,
-            target_names=target_names,
-            target_model=target_model,
+            solver_result=result,
+            type_lookups=list(transforms),
+        )
+        return cls(
+            given=[],
+            targets=[],
+            steps=[],
+            _solver_result=result,
+            _solver_inputs=solver_inputs,
+            dropped_targets=list(target_names),
+            dropped_samples=names,
+            hints=hints,
         )
 
     @classmethod
@@ -347,25 +602,6 @@ class WorkflowPlan:
         target_names: list[str],
         target_model: Transform,
     ):
-        def _dedupe_instances(instances: list[DataInstance]):
-            out = []
-            seen: dict[str, DataInstance] = {}
-            for inst in instances:
-                if inst.instance_id in seen:
-                    existing = seen[inst.instance_id]
-                    for p_path, p_list in inst.parent_lib.parents.items():
-                        if p_path not in existing.parent_lib.parents:
-                            existing.parent_lib.parents[p_path] = list(p_list)
-                        else:
-                            existing_keys = {f"{x.library_key}/{x.path}" for x in existing.parent_lib.parents[p_path]}
-                            existing.parent_lib.parents[p_path].extend(
-                                p for p in p_list if f"{p.library_key}/{p.path}" not in existing_keys
-                            )
-                    continue
-                seen[inst.instance_id] = inst
-                out.append(inst)
-            return out
-
         if not result.complete or not result.dependency_plan:
             failure_hints = _diagnose_plan_failure(
                 target_model=target_model,
@@ -385,30 +621,7 @@ class WorkflowPlan:
                 hints=failure_hints,
             )
 
-        result_given = result.dependency_plan[0]
-        for pgroup in result_given.produced:
-            for d in pgroup:
-                e = pgroup[d]
-                if e in given_map:
-                    current = set(given_map[e])
-                    given_map[e] += [x for x in given_map.get(d, []) if x not in current] # type: ignore
-                else:
-                    for ge in list(given_map):
-                        if not e.properties==ge.properties: continue
-                        given_map[e] = given_map[ge]
-                        break
-
-        for e, me in result.merged_endpoints.items():
-            if len(me)<2: continue
-            if e not in given_map: continue
-            pool = list(given_map[e])
-            for x in me:
-                if x==e: continue
-                pool += given_map.get(x, [])
-            given_map[e] = _dedupe_instances([
-                inst if inst.dtype.key==e.key else inst.WithDType(e)
-                for inst in pool
-            ])
+        _absorb_givens(given_map, result.dependency_plan[0], result.merged_endpoints)
 
         solution = result
 
@@ -476,18 +689,18 @@ class WorkflowPlan:
             for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
                     if e not in target_endpoints: continue
-                    queue = ep_dep_queue.get(e)
-                    assert queue, f"no target dep matched produced endpoint [{e}]"
-                    d_target = queue.pop(0)
-                    dtname = dep_to_name[d_target]
-                    resolved_deps.add(d_target)
-                    t = _insts[(j, d, e)]
-                    target_meta[e] = target_meta.get(e, [])+[
+                    # One endpoint can fill several targets: an OPERA-MS
+                    # assembly is both the hybrid target and the assembly.
+                    deps = dict.fromkeys(ep_dep_queue.pop(e, ()))
+                    assert deps, f"no target dep matched produced endpoint [{e}]"
+                    resolved_deps |= deps.keys()
+                    target_meta[e] = target_meta.get(e, []) + [
                         WorkflowTarget(
-                            name=dtname,
-                            instance=t,
+                            name=dep_to_name[d_target],
+                            instance=_insts[(j, d, e)],
                             producing_step=step,
                         )
+                        for d_target in deps
                     ]
 
         def _collect_ancestor_endpoints(endpoints: set[Endpoint], pool: set[Endpoint]) -> set[Endpoint]:

@@ -1,8 +1,9 @@
 name: binning_and_gpr_from_assembly
-description: 'Bin an existing assembly with three binners, filter the bins on CheckM2
-  quality
+description: 'Bin an existing assembly with three binners merged by DAS Tool, filter
+  DAS Tool''s
 
-  and dereplicate them with skani, and in the same pass build the gene-attributed
+  bins on CheckM2 quality and dereplicate them with skani, and in the same pass build
+  the gene-attributed
 
   GPR evidence table from KOFAMSCAN, CLEAN, DIAMOND UniRef50 and ProteinBERT.
 

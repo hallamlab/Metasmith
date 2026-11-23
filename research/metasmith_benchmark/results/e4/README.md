@@ -19,6 +19,19 @@ These tables are E4's full-run results: which bins got a model in each lane, how
 | `ablation_memote.tsv` | 14,080 rows | MEMOTE 0.17 total and section scores for metaGEM's GEM and every rung, one row per bin and source. `note` is `no model` where a rung built none. |
 | `ablation_memote_rewritten.tsv` | 7,040 rows | as `ablation_memote.tsv`, for metaGEM's GEM and rungs R0 to U after each model is rewritten through CarveMe 1.6.6's SBML writer |
 | `ablation_rewrite_fidelity.tsv` | 7,040 rows | what each rewrite changed: per check, the count of elements that differ, and the formulas, charges, SBO terms and annotation namespaces before and after |
+| `evidence_parity.tsv` | 8,488 rows | each evidence lane's model against metaGEM, rung M and the smoke bins' own DIAMOND model, one row per bin, lane and reference |
+| `evidence_memote.tsv` | 5,632 rows | MEMOTE 0.17 total and section scores per bin and evidence lane. `note` is `no score` where the lane built no model. |
+| `evidence_sources.tsv` | 1,403 bins | the `both` lane's reactions split by which hit table supports their gene rule, and by whether rung M or the `kofam` lane also carries them |
+| `evidence_growth.tsv` | 4,229 rows | biomass flux on M8 per bin and evidence lane |
+| `evidence_fig2c.tsv` | 108 rows | medians and quartiles per lane, study and metric for Figure 2C, beside rungs R0 and M |
+| `evidence_reference.txt` | 5 lines | how many BiGG genes carry a KO, and how far one KO spreads over BiGG genes |
+| `evidence_orf_rates.tsv` | 1,408 bins | per bin: ORFs, ORFs with a KO at or above its KofamScan threshold, ORFs with a DIAMOND or KO-to-BiGG-gene hit, and genes, reactions, gene-backed reactions and exchanges in each lane's model |
+| `evidence_orf_union.tsv` | 1,408 bins | per bin: ORFs annotated by DIAMOND, by KofamScan before and after the KO-to-BiGG-gene map, and by their unions |
+| `evidence_orf_mnx.tsv` | 1,408 bins | per bin, in MetaNetX reactions: ORFs reaching a reaction through DIAMOND (BiGG gene to BiGG reaction) and through KofamScan (KO to KEGG reaction), the reactions each reaches, and how many of KofamScan's extra reactions CarveMe's universe holds |
+| `evidence_bound_pool_sizes.tsv` | 1,408 bins | per bin: ORFs with a MetaNetX reaction (either route), ORFs annotated with no reaction, and the remainder neither DIAMOND nor KofamScan annotates |
+| `evidence_bound_tiers.tsv` | 7 groups | per sampled group of ORFs: length, partial genes, UniRef50 and Pfam hits, CLEAN confidence, and the share in each metabolic-evidence tier |
+| `evidence_bound_recall.tsv` | 6 genomes | per curated genome, with its own order masked from the BiGG reference: the share of its model's genes the pipeline ties to a reaction, and what CLEAN and Pfam recover of the rest |
+| `evidence_bound_summary.txt` | 7 lines | Pfam family counts, the MAGs' median DIAMOND best-hit identity, and the median pool shares |
 
 A per-test column holds MEMOTE's metric, and `<test>_n` holds the count or value it came from.
 
@@ -43,5 +56,11 @@ A parity row with only `no published GEM` is one of the 18 bins metaGEM built no
 | S | `scip` | `fHy9Gtxj` |
 
 `drivers/e4_ablation_memote.sbatch` scored metaGEM's GEMs and rungs R0 to S (jobs 62448450 and 62448866, 2026-10-01, checkout b5e5cee0) over models from a fresh `extract` of the rung archives. `e4_ablation_memote.py collect` wrote `ablation_memote.tsv`, taking M's rows from `quality_modern.tsv`. `figures/make_figures.py` draws E4's figures from these tables.
+
+`drivers/e4_gems.py --lane evidence` built the `kofam` and `both` lanes on the 1,408 ablation bins (run `xsIzzdfv`, home `e4abl`, 2026-10-29, checkout 88342c0d). Rung M is the DIAMOND lane, so `diamond` holds only the 10 smoke bins (run `LSVPtFfb`). `diluted_top1` covers the 1,408 bins (run `mxQRJ8Dc`, checkout 41382ec2). Five `both` bins have no model because CarveMe's M8 gap fill fails on SCIP. `drivers/e4_evidence.py` extracted the models and wrote the other `evidence_*` tables (checkout 41382ec2).
+
+`drivers/e4_orf_rates.py`, `e4_orf_union.py` and `e4_orf_mnx.py` wrote the three `evidence_orf_*` tables on a fir login node (2026-10-29), from the evidence lanes' hit tables, run `mxQRJ8Dc`'s KofamScan output and each bin's published proteins. `e4_orf_mnx.py` maps a KO as ECSPr's `route_ko` does (`src/fabfos/build_references/resources/buildlib/mnxr_lookup.py`), from MetaNetX 4.5 `reac_xref.tsv` and KEGG 119 `ko2reaction.tsv`. `e4_orf_konly_kinds.py` sorts the ORFs that only KofamScan annotates by their KO's definition and prints the medians.
+
+`drivers/e4_bound_submit.sh` ran the `evidence_bound_*` searches on fir (2026-10-29, checkout 41382ec2 for the Python env). `e4_bound_sample.py` drew 11,386 remainder, 5,776 no-reaction and 5,430 reaction ORFs from the 1,408 bins, at fixed per-pool rates and seed. `e4_bound_truth.py` took six curated genomes' NCBI proteins (E. coli iML1515, B. subtilis iYO844, P. putida iJN1463, Synechocystis iSynCJ816, G. metallireducens iAF987, T. maritima iLJ478) and built each one a CarveMe BiGG reference with every model of its taxonomic order removed. DIAMOND ran as CarveMe runs it (`--more-sensitive`). UniRef50 (DIAMOND `--sensitive`), Pfam-A 32 (`hmmsearch --cut_ga`) and CLEAN (the `functionalAnnotation/clean.py` wrapper, calibrated confidence) ran over every sampled and curated protein. `e4_bound_kofam.py` applies KofamScan's thresholds to one hmmsearch over all KO profiles, because `exec_annotation` hit its 12 h limit on the 23,135 curated proteins. `e4_bound_kofam_check.py` checked it on bin ERR1701760_bin.13.p: all 522 KofamScan calls reproduced, plus 1. `e4_bound_analyse.py` wrote the tables. It scores a Pfam family metabolic from the MAG reaction and no-reaction pools only, so neither the remainder nor the curated genomes vote on their own labels.
 
 The same sbatch with `REWRITE_IMAGE` set to the stock CarveMe 1.6.6 image (reframed 1.6.0) wrote the two rewrite tables (jobs 62505042 and 62505653, 2026-10-01, checkout c8b0c61a). `drivers/sbml_rewrite.py` holds the rewrite and its checks.

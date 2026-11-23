@@ -1,0 +1,6 @@
+outs:
+- md5: b52e2109d612e457df1a96c9d8f266cf.dir
+  size: 5389194
+  nfiles: 7
+  hash: md5
+  path: fosdb

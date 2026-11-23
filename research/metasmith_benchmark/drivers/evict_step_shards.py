@@ -1,12 +1,14 @@
 """Tombstone and empty the promoted cache shards of one step of one live run, to free the bytes they duplicate.
 
-    evict_step_shards.py <run dir> <cache root> <step name> [--apply]
+    evict_step_shards.py <run dir> <cache root> <step name> [--finished] [--apply]
 
 A shard qualifies when the task's .command.cache record says `promoted`, its shard sits under the
 cache root, and the task dir still holds every produced file at the shard file's size, so the run's
 consumers keep their copy. --apply touches the tombstone, then deletes the files under the shard's
 out/. The manifest, logs and tombstone stay, so `probe` misses at the tombstone and `record_run`
 finds an existing dir.
+--finished drops the exit-code and task-copy checks, for a run whose nxf_work was already pruned to
+.command.cache: the promoting run and every run that read its shards must have finished.
 CAUTION a later run recomputes this step instead of hitting the cache.
 """
 import argparse, json, os, sys
@@ -14,6 +16,7 @@ from pathlib import Path
 
 ap = argparse.ArgumentParser()
 ap.add_argument("run"); ap.add_argument("cache_root"); ap.add_argument("step")
+ap.add_argument("--finished", action="store_true")
 ap.add_argument("--apply", action="store_true")
 a = ap.parse_args()
 run = Path(a.run).resolve(); root = Path(a.cache_root).resolve()
@@ -23,7 +26,7 @@ ok, skipped, freed = [], {}, 0
 for rec_file in sorted(work.glob("??/*/.command.cache")):
     task = rec_file.parent
     ec = task / ".exitcode"
-    if not ec.exists() or ec.read_text().strip() != "0":
+    if not a.finished and (not ec.exists() or ec.read_text().strip() != "0"):
         continue
     for line in rec_file.read_text().splitlines():
         r = json.loads(line)
@@ -47,7 +50,7 @@ for rec_file in sorted(work.glob("??/*/.command.cache")):
                 sf = shard / p["relpath"]; tf = task / Path(p["relpath"]).name
                 if not sf.is_file():
                     why = "shard file missing"; break
-                if not tf.is_file() or tf.stat().st_size != sf.stat().st_size:
+                if not a.finished and (not tf.is_file() or tf.stat().st_size != sf.stat().st_size):
                     why = "task copy missing or differs"; break
         if why:
             skipped[why] = skipped.get(why, 0) + 1

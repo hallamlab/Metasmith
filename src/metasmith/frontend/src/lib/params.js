@@ -46,6 +46,8 @@ export function paramProblems(rows) {
   const seen = new Set()
   for (const r of rows ?? []) {
     const k = (r.key ?? '').trim()
+    // the name box shows its placeholder in grey, which reads as filled in
+    if (!k && (r.value ?? '').trim()) problems.push(`[${r.value.trim()}] has no param name, so it is not saved`)
     if (!k) continue
     if (!PARAM_NAME.test(k)) problems.push(`[${k}] is not a param name: letters, digits and _ only`)
     else if (seen.has(k)) problems.push(`[${k}] is given twice`)

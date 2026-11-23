@@ -115,3 +115,14 @@ def output_file_name(
         f"{batch + 1}-{item + 1}-{branch + 1}."
         f"{member_token(entry)}-{dtype.key}{dtype.GetPreferredFileExtension()}"
     )
+
+
+ZERO_MARK = ".~0."
+
+
+def zero_file_name(entry: dict, dtype: Endpoint, *, batch: int, branch: int) -> str:
+    """The empty file that says a fork member wrote nothing into one output of `branch`."""
+    return (
+        f"{batch + 1}-1-{branch + 1}{ZERO_MARK}"
+        f"{member_token(entry)}-{dtype.key}{dtype.GetPreferredFileExtension()}"
+    )

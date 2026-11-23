@@ -15,6 +15,10 @@ types:
     properties:
       src: transcriptomics
       usage: command line
+  isolate_rnaseq:
+    properties:
+      src: isolate_rnaseq
+      usage: command line
   metabolomics:
     properties:
       src: metabolomics
@@ -73,6 +77,14 @@ types:
     properties:
       src: ezpred_wrapper
       usage: command line
+  uniprot_ec_maps.py:
+    properties:
+      src: uniprot_ec_maps
+      usage: command line
+  diamond_bsr.py:
+    properties:
+      src: diamond_bsr
+      usage: command line
   bsr_histogram.py:
     properties:
       src: bsr_histogram
@@ -100,15 +112,32 @@ types:
   # on a version rather than on a copy, and the transform and a benchmark run the
   # same executable. There is nothing left to stage.
   # ASPIRE's scripts, from research/aspire/upstream/ASPIRE/processes (the tree rescued in
-  # dd08319f). filter_ASV_table, parse_sina_log, trim_v_sina, qiime_vs_classifier,
-  # mito_checker and filter_nontarget are unmodified. sankey_builder and plot_metadata lose
-  # only their lung-study examples and column derivations, plot_metadata also names the index
-  # its taxonomy merge loses under pandas 2.2, and run_indicspecies.R keeps only
-  # its generic per-label path. curate, read_accounting, upstream_layout and plot_indicators
-  # are new; each says what it replaces.
+  # dd08319f). sankey_builder and plot_metadata lose only their lung-study examples and
+  # column derivations, plot_metadata also names the index its taxonomy merge loses under
+  # pandas 2.2, and run_indicspecies.R keeps only its generic per-label path and tests a
+  # many-level label one group at a time. graph_network sorts a label whose
+  # levels mix numbers and words, where upstream's sort raises. curate, read_accounting,
+  # upstream_layout and plot_indicators are new; each says what it replaces. Every other
+  # script is upstream's, unmodified.
   aspire:
     properties:
       src: aspire
+      usage: command line
+  metapathways_pgdb:
+    properties:
+      src: metapathways_pgdb
+      usage: command line
+  lcastar:
+    properties:
+      src: lcastar
+      usage: command line
+  rna_scan:
+    properties:
+      src: rna_scan
+      usage: command line
+  pathologic:
+    properties:
+      src: pathologic
       usage: command line
   # On PYTHONPATH it makes COMEBin's `main.py train` parallelise on a CPU; with CUDA it does nothing.
   comebin_cpu:
@@ -120,3 +149,21 @@ types:
     properties:
       src: mobileelementfinder_jsonfix
       usage: library
+  # Recipes that build a licensed tool's env image from its licensed:: package:
+  # a Dockerfile and an apptainer.def around one install.sh (ExecutionContext.BuildImage).
+  licensed_pathway_tools:
+    properties:
+      src: licensed_pathway_tools
+      usage: image recipe
+  licensed_signalp6:
+    properties:
+      src: licensed_signalp6
+      usage: image recipe
+  licensed_deeptmhmm:
+    properties:
+      src: licensed_deeptmhmm
+      usage: image recipe
+  licensed_phobius:
+    properties:
+      src: licensed_phobius
+      usage: image recipe

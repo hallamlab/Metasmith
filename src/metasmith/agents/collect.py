@@ -122,11 +122,17 @@ def CollectResults(
                 inst_id2inst.setdefault(_pf.file_instance_id, _cands[0])
 
     produced: dict[str, ProducedFile] = {}
+    produced_cases: dict[str, list[str] | None] = {}
     for ev in trace_idx.events:
         for pf in ev.produces:
             if not pf.file_instance_id or not pf.path or not pf.dtype_key:
                 continue
             produced[pf.file_instance_id] = pf
+            produced_cases[pf.file_instance_id] = ev.cases
+
+    multi_case = task.plan.multi_case
+    def _given_cases(iid: str) -> list[str] | None:
+        return list(task.plan.given_cases.get(iid, task.plan.cases)) if multi_case else None
 
     published = _published_index(output_path)
     registered: dict[str, Path | None] = {}
@@ -153,7 +159,9 @@ def CollectResults(
                 )
                 registered[fid] = None
                 return None
-            path = output.AddItem(path=inst.ResolvePath(), dtype=inst.dtype_name)
+            path = output.AddItem(
+                path=inst.ResolvePath(), dtype=inst.dtype_name, cases=_given_cases(fid),
+            )
             registered[fid] = path
             return path
 
@@ -173,6 +181,7 @@ def CollectResults(
             ),
             dtype=cinst.dtype_name,
             parents=parents,
+            cases=produced_cases.get(fid),
         )
         output.SetLineageInstance(
             path=path,
@@ -197,13 +206,15 @@ def CollectResults(
                 if not p:
                     continue
                 inst = _resolve_instance(dtype_key, path2iid.get(p))
-                given_manifest.append(
-                    (inst.instance_id, inst.dtype.key, p, inst.origin)
-                )
+                row = (inst.instance_id, inst.dtype.key, p, inst.origin)
+                if multi_case:
+                    row += (";".join(_given_cases(inst.instance_id)),)
+                given_manifest.append(row)
 
     output.PruneTypes(save=False)
     output.Save()
 
-    _df = pd.DataFrame(given_manifest, columns=["instance_id", "dtype_key", "path", "origin"])
+    columns = ["instance_id", "dtype_key", "path", "origin"] + (["cases"] if multi_case else [])
+    _df = pd.DataFrame(given_manifest, columns=columns)
     _df.to_csv(output_path/"given.csv", index=False)
     return output

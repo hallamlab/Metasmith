@@ -1,0 +1,6 @@
+outs:
+- md5: a3712e42c2ce3dee5e2caf5cda395a02.dir
+  size: 7432750
+  nfiles: 129
+  hash: md5
+  path: purify_r1

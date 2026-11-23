@@ -3,8 +3,8 @@
 # viral and MAG lanes one template rather than two.
 #
 # The three collected slots are joined on bin id inside the task, not by lineage:
-# GTDB-Tk runs on each binner's bins while the quality pool is the aggregator's
-# output, so no single quality bin has one gtdbtk ancestor to recover. gtdbtk's
+# GTDB-Tk runs on the quality pool as a whole (de_novo_wf takes every genome at once),
+# so no single quality bin has one gtdbtk ancestor to recover. gtdbtk's
 # `user_genome` column names the bin file, which is the join every consumer of
 # these two files already uses.
 import json

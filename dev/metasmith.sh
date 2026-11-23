@@ -410,6 +410,28 @@ _assert_dist_matches_source() {
     return 0
 }
 
+# The tests need only the host's engine, which -bel stages; -be's four-target check is for shipping.
+_assert_test_engine() {
+    PYTHONPATH=$HERE/src python -c "
+import sys
+from metasmith.models.solver_engine import EngineFor
+sys.exit(EngineFor('solve') is None)" && return 0
+    echo "ERROR: no msm_solver engine for this host under src/metasmith/engine/."
+    echo "  Build one with ./dev/metasmith.sh -bel, or copy a released one in."
+    return 1
+}
+
+_groups() { python $HERE/tests/metasmith/_groups.py "$@"; }
+
+# Pinned, not prepended: a relative entry inherited from the caller's PYTHONPATH is
+# re-resolved against every cwd a test chdirs to, and resolves `metasmith` to some
+# other checkout when it is absolute.
+_test_env() {
+    cd $HERE
+    export PYTHONPATH=$HERE/src
+    _assert_test_engine
+}
+
 # CONDA=conda
 CONDA=mamba # https://mamba.readthedocs.io/en/latest/mamba-installation.html#mamba-install
 echo image: $DOCKER_IMAGE:$DOCKER_TAG
@@ -440,6 +462,12 @@ echo ""
 # dev.sh -bd # build docker image
 # dev.sh -ud # publish to quay.io
 # dev.sh -bs # build apptainer image from local docker image
+#
+# tests:
+# dev.sh -ts # smoke set, about a minute
+# dev.sh -tm cache flow # merge check: smoke plus the named groups (tests/metasmith/_groups.py list)
+# dev.sh -tm # the whole cheap tier
+# dev.sh -tr # release set, docker lane included
 
 case $1 in
     ###################################################
@@ -719,23 +747,50 @@ case $1 in
         pytest $@
     ;;
 
+    -ts) # smoke: one to three tests per feature group, about a minute
+        shift
+        _test_env || exit 1
+        pytest -q -n auto --dist loadfile $(_groups smoke) "$@"
+    ;;
+
+    -tm) # merge check: smoke plus the named groups' cheap tests; no group runs the whole cheap tier
+        shift
+        _test_env || exit 1
+        groups=()
+        while [ $# -gt 0 ] && [[ $1 != -* ]]; do groups+=("$1"); shift; done
+        targets=$(_groups paths "${groups[@]}") || exit 1
+        [ ${#groups[@]} -gt 0 ] && targets="$(_groups smoke) $targets"
+        # loadfile keeps a module's shared run on one worker.
+        pytest -q -n auto --dist loadfile $targets "$@"
+    ;;
+
     -tg) # just the GUI's suite -- the inner loop while working on the page
         shift
-        cd $HERE
-        # Pinned, not prepended: a *relative* entry inherited from the caller's
-        # PYTHONPATH (a workspace that exports `../../src`) is re-resolved
-        # against the cwd of every process and every temp dir a test chdirs to,
-        # and the stat misses alone doubled this suite's wall time.
-        export PYTHONPATH=$HERE/src
-        # The directory is the definition of the set -- tests/conftest.py stamps
-        # `gui` on everything under it, and a file that lands under no axis at
-        # all fails collection rather than going quiet. Handing pytest the path
-        # matters as much as the -m: collection imports every module it walks,
-        # and importing the e2e ones costs more than this whole suite takes.
-        [ -d "$HERE/tests/metasmith/gui" ] || { echo "tests/metasmith/gui/ is missing"; exit 1; }
-        # -q and no per-test names: this is meant to be run every minute, so
-        # what it prints is the count and the failures, not a 200-line roster.
-        pytest -m gui -q --durations=0 --durations-min=0.25 $HERE/tests/metasmith/gui $@
+        exec "$0" -tm gui "$@"
+    ;;
+
+    -tr) # release set: image, then perf and lifecycle alone, then the docker lane beside the rest
+        shift
+        _test_env || exit 1
+        manual="not remote_host and not requires_apptainer and not requires_ssh_localhost and not requires_docker_dev_image"
+        t0=$SECONDS
+        python -c "from metasmith.testing.docker_builder import build_docker_image; print(build_docker_image())" || exit 1
+        echo "image ready in $((SECONDS - t0))s"
+        rc=0
+        # Wall-clock-sensitive, and lifecycle scans /proc and signals process trees: nothing beside them.
+        pytest -q tests/metasmith/perf -m "$manual" "$@" || rc=1
+        "$0" -tl || rc=1
+        # Each docker-lane worker execs its Nextflow runs into one long-lived container.
+        # loadgroup spreads its files test by test; xdist_group keeps a shared run on one worker.
+        log=$(mktemp -t msm-tr-docker.XXXXXX.log)
+        pytest -q -n 8 --dist loadgroup tests/metasmith/e2e/docker -m "$manual" "$@" > $log 2>&1 &
+        docker_pid=$!
+        pytest -q -n 8 --dist loadfile $(_groups paths) tests/metasmith/deploy tests/metasmith/e2e/nextflow -m "$manual" "$@" || rc=1
+        wait $docker_pid || rc=1
+        echo "--- docker lane ($log)"
+        tail -n 25 $log
+        echo "release set finished in $((SECONDS - t0))s"
+        exit $rc
     ;;
 
     -tl) # the process-lifecycle suite -- what actually dies when a run is stopped

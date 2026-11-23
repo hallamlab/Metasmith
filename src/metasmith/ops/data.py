@@ -723,6 +723,38 @@ def record_library(lib):
     return recorded
 
 
+def ensure_items(
+    items: list[dict],
+    *,
+    agent_home: str | None = None,
+    cache_root: str | None = None,
+) -> dict:
+    """Import each item the pool holds no entry for by name, and name every item's id.
+
+    Each item is a mapping of `path` and `dtype`, plus an optional `name`
+    (defaulting to the path), `parents` and `tags`. A parent may be the name of
+    an item earlier in the list. Running it twice imports nothing the second
+    time, so a remote caller can retry it safely.
+    """
+    from .cache import list_cache
+
+    root = resolve_store_root(agent_home, cache_root)
+    held: dict[str, str] = {}
+    for row in list_cache(cache_root=str(root), origin="imported")["entries"]:
+        held.setdefault(row["name"], row["instance_id"])
+    out: dict[str, str] = {}
+    for item in items:
+        name = str(item.get("name") or item["path"])
+        if name not in held:
+            held[name] = import_item(
+                item["path"], item["dtype"], cache_root=str(root), name=name,
+                parents=[out.get(str(p), p) for p in item.get("parents") or []],
+                tags=item.get("tags"),
+            )["instance_id"]
+        out[name] = held[name]
+    return {"cache_root": str(root), "instance_ids": out}
+
+
 def import_item(
     path: str,
     dtype: str,

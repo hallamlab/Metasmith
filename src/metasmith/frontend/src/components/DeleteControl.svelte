@@ -1,23 +1,22 @@
 <script>
-  // A small cross, double-click to confirm. Deleting is archiving: the first
+  // A small cross, click twice to confirm. Deleting is archiving: the first
   // press tombstones and the row is still there under the `archived` chip, so
   // the label says that up front rather than letting the outcome be a surprise
   // in either direction. `archived` flips it to what a second press does --
   // remove the thing for good -- which is the one press that is not undoable.
   let { onconfirm, title = 'delete', archived = false } = $props()
   let armed = $state(false)
-  let timer
 
+  // Armed until the pointer or focus leaves, not for a fixed time: a slow
+  // second click on the same cross is still a confirmation.
   function arm(e) {
     e.stopPropagation()
     if (armed) {
-      clearTimeout(timer)
       armed = false
       onconfirm()
       return
     }
     armed = true
-    timer = setTimeout(() => (armed = false), 2000)
   }
 </script>
 
@@ -26,6 +25,8 @@
   class:armed
   class:forgood={archived}
   onclick={arm}
+  onmouseleave={() => (armed = false)}
+  onblur={() => (armed = false)}
   title={armed
     ? archived
       ? 'click again to remove it for good — this one cannot be undone'

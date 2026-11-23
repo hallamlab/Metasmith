@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
 
 from tests.metasmith.cache._cache_harness import capture_run, clear_trace
 from tests.metasmith.cache.fixtures.cache_fixtures import linear_3step

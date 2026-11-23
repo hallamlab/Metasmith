@@ -1,0 +1,7 @@
+model	proteins	model_genes	model_gene_share	pipeline_reaction_orfs	pipeline_share	recall_diamond	recall_kofam	recall_union	recall_union_pident_lt60	recall_union_pident_lt50	recall_union_pident_lt40	non_model_reaction_orfs	best_pident_median	missed_model_genes	missed_clean_ge_0.5	missed_pfam_metabolic	missed_either	remainder_share
+iML1515	4290	1513	0.3527	2056	0.4793	0.9002	0.5796	0.9286	0.9273	0.9227	0.9081	651	43.4	108	9	26	32	0.2054
+iYO844	4237	840	0.1983	1779	0.4199	0.9619	0.6167	0.9762	0.9738	0.9643	0.9452	959	40.7	20	3	5	6	0.3432
+iJN1463	5564	1440	0.2588	2476	0.445	0.916	0.5611	0.9368	0.934	0.9292	0.9035	1127	41.1	91	9	15	20	0.3343
+iSynCJ816	3630	801	0.2207	1402	0.3862	0.8689	0.563	0.8989	0.8976	0.8914	0.8739	682	39.0	81	8	6	13	0.4477
+iAF987	3568	986	0.2763	1511	0.4235	0.9189	0.5903	0.928	0.926	0.9239	0.9138	596	40.7	71	3	29	32	0.3501
+iLJ478	1846	473	0.2562	923	0.5	0.9683	0.6047	0.9767	0.9746	0.9725	0.9514	461	39.4	11	4	4	7	0.2665

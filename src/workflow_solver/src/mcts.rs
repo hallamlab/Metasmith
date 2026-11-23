@@ -136,13 +136,9 @@ impl<'a> Search<'a> {
 
     /// One application, applied to one timeline, giving the states that result.
     ///
-    /// Multi-group applications carry two different intents behind one data
-    /// shape. The synthesized `given` transform's groups are *alternatives* --
-    /// one sample family each -- so they branch into separate timelines. Every
-    /// other transform's groups are co-produced by a single invocation and stay
-    /// in one timeline, or a downstream step requiring two of its slots could
-    /// never apply. The DSL is symmetric, so the two are told apart by identity
-    /// against the given transform.
+    /// Only the synthesized `given` application carries several groups here, one
+    /// sample family each, and it branches into one timeline per group. A fork's
+    /// application carries only its chosen group, from `Problem::outcome`.
     fn expand(
         &self, ar: &mut Arena, tl: &mut Timelines, state: &SolverState, a: ApplId,
     ) -> Vec<SolverState> {
@@ -214,6 +210,77 @@ impl<'a> Search<'a> {
         &self, ar: &mut Arena, state: &SolverState, blacklist: &Set<ApplSig>, tr: TransformId,
     ) -> Result<Vec<ApplId>, String> {
         generate_applications(self.p, ar, state.k, &state.production, blacklist, tr, None)
+    }
+
+    /// Queue every child of every remaining timeline. Each batch is folded into
+    /// the blacklist before the next is asked for, as `children_of` requires.
+    fn grow(
+        &self, ar: &mut Arena, remain: &mut [SolverState], frontier: &mut Vec<ApplId>,
+        frontier_sigs: &mut Set<ApplSig>, i: i64,
+    ) -> Result<(), String> {
+        for st in remain.iter_mut() {
+            let mut applied: Set<TransformId> = det::set();
+            for tr in self.candidate_transforms(st) {
+                for child in self.children_of(ar, st, frontier_sigs, tr)? {
+                    self.score_appl(ar, child);
+                    ar.appls[child as usize].iteration = -i;
+                    frontier_sigs.insert(ar.appl(child).sig);
+                    applied.insert(ar.appl(child).transform);
+                    frontier.push(child);
+                }
+            }
+            st.candidates.retain(|t| !applied.contains(t)); // all possibilities per tr explored
+        }
+        Ok(())
+    }
+
+    /// A timeline that just applied the target: prune, refine, and fold it into
+    /// the solution.
+    #[allow(clippy::too_many_arguments)]
+    fn settle(
+        &self, ar: &mut Arena, rng: &mut DecisionStream, mut st: SolverState,
+        solved: &mut Option<SolverState>, merged: &mut Vec<(EpSig, EpId, Vec<EpId>)>,
+        refiner_iterations: &mut Vec<(i64, i64)>,
+    ) -> Result<(), String> {
+        // Pruned before refining so that "one producer per endpoint" still
+        // holds; after merging it does not, and the refiner assumes it.
+        st.steps = prune_steps(ar, &st.steps);
+        let refined = refine(self.p, ar, rng, self.given_appl, &st.steps, self.p.max_refine)?;
+        refiner_iterations.push((refined.found_on, refined.iterations));
+        let order = get_order(ar, &refined.steps);
+        st.steps = order_steps(ar, &order, &refined.steps);
+        match solved.as_mut() {
+            Some(dst) => merge_states(self.p, ar, self.given_appl, dst, &st, merged)?,
+            None => *solved = Some(st),
+        }
+        Ok(())
+    }
+
+    /// Apply the partial solution to one timeline: each transform, in order,
+    /// once, wherever this timeline's production can feed it, then the target.
+    /// Stops at the target. A transform this timeline cannot feed is skipped,
+    /// not searched for.
+    ///
+    /// Only the steps up to the fork are replayed. A sibling's steps below the
+    /// fork were chosen for the sibling's outcome, and replaying them here hands
+    /// this outcome the sibling's route whenever that route also fits.
+    fn replay(
+        &self, ar: &mut Arena, tl: &mut Timelines, mut st: SolverState,
+        sigs: &mut Set<ApplSig>, i: i64,
+    ) -> Result<SolverState, String> {
+        for &tr in self.p.partial.iter().chain([&self.p.target_index]) {
+            if st.steps.last().map(|&a| ar.appl(a).transform) == Some(self.p.target_index) {
+                break;
+            }
+            if tr == self.p.given_index { continue; }
+            let apps = generate_applications(self.p, ar, st.k, &st.production, sigs, tr, None)?;
+            let Some(&a) = apps.first() else { continue };
+            self.score_appl(ar, a);
+            ar.appls[a as usize].iteration = i;
+            sigs.insert(ar.appl(a).sig);
+            st = self.expand(ar, tl, &st, a).pop().ok_or("a partial step expanded to nothing")?;
+        }
+        Ok(st)
     }
 }
 
@@ -415,6 +482,42 @@ pub fn mcts(
     let wants_rewards = policy.wants_rewards();
     let mut i: i64 = 0;
 
+    if !p.guide.is_empty() { policy.set_guide(&p.guide); }
+
+    // With a partial solution, the first iteration is fixed: the given
+    // application, then the partial solution replayed on every timeline it
+    // opens. The search proper starts from wherever the replay left each
+    // timeline, and the replayed steps are already in the blacklist, so it
+    // never proposes them again.
+    if !p.partial.is_empty() {
+        i += 1;
+        let node = frontier.pop().ok_or("no given application to start from")?;
+        ar.appls[node as usize].iteration = i;
+        let start = timelines.pop().ok_or("no start timeline")?;
+        let mut remain: Vec<SolverState> = Vec::new();
+        for st in s.expand(ar, &mut tl, &start, node) {
+            let st = s.replay(ar, &mut tl, st, &mut frontier_sigs, i)?;
+            if st.steps.last().map(|&a| ar.appl(a).transform) == Some(p.target_index) {
+                s.settle(ar, rng, st, &mut solved, &mut merged_endpoints, &mut refiner_iterations)?;
+            } else {
+                remain.push(st);
+            }
+        }
+        if remain.is_empty() {
+            if let Some(st) = solved {
+                return Ok(MctsResult {
+                    complete: true,
+                    steps: st.steps,
+                    merged: merged_endpoints,
+                    iterations: i,
+                    refiner_iterations,
+                });
+            }
+        }
+        s.grow(ar, &mut remain, &mut frontier, &mut frontier_sigs, i)?;
+        timelines = remain;
+    }
+
     while !frontier.is_empty() && (i as u32) < p.max_iter {
         i += 1;
         // The frontier, per iteration, when `MSM_SOLVER_TRACE` is set. Together
@@ -465,23 +568,13 @@ pub fn mcts(
         };
 
         let mut remain: Vec<SolverState> = Vec::new();
-        for mut st in next {
+        for st in next {
             let last_tr = st.steps.last().map(|&a| ar.appl(a).transform);
             if last_tr != Some(p.target_index) {
                 remain.push(st);
                 continue;
             }
-            // Pruned before refining so that "one producer per endpoint" still
-            // holds; after merging it does not, and the refiner assumes it.
-            st.steps = prune_steps(ar, &st.steps);
-            let refined = refine(p, ar, rng, given_appl, &st.steps, p.max_refine)?;
-            refiner_iterations.push((refined.found_on, refined.iterations));
-            let order = get_order(ar, &refined.steps);
-            st.steps = order_steps(ar, &order, &refined.steps);
-            match solved.as_mut() {
-                Some(dst) => merge_states(p, ar, given_appl, dst, &st, &mut merged_endpoints)?,
-                None => solved = Some(st),
-            }
+            s.settle(ar, rng, st, &mut solved, &mut merged_endpoints, &mut refiner_iterations)?;
         }
 
         {
@@ -513,19 +606,7 @@ pub fn mcts(
                 refiner_iterations,
             });
         }
-        for st in remain.iter_mut() {
-            let mut applied: Set<TransformId> = det::set();
-            for tr in s.candidate_transforms(st) {
-                for child in s.children_of(ar, st, &frontier_sigs, tr)? {
-                    s.score_appl(ar, child);
-                    ar.appls[child as usize].iteration = -i;
-                    frontier_sigs.insert(ar.appl(child).sig);
-                    applied.insert(ar.appl(child).transform);
-                    frontier.push(child);
-                }
-            }
-            st.candidates.retain(|t| !applied.contains(t)); // all possibilities per tr explored
-        }
+        s.grow(ar, &mut remain, &mut frontier, &mut frontier_sigs, i)?;
         timelines = carry;
         timelines.extend(remain);
     }

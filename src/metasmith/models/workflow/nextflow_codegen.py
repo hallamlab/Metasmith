@@ -19,7 +19,6 @@ from ..libraries import DataInstance, GPU_LABEL, ResolveEnvImage
 from ..lineage import LinPayload
 from ..paths import PathMap
 from ..solver import Endpoint
-from .grouping import expected_per_key
 from .steps import WorkflowStep
 
 
@@ -46,9 +45,10 @@ LIN_ECHO_EXPR = (
     f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index])}}"
 )
 
-_RESERVED_KEYS_GROOVY = (
-    "[" + ", ".join(f"'{k}'" for k in sorted(LinPayload.RESERVED_KEYS)) + "]"
-)
+def _reserved_keys_groovy(multi_case: bool) -> str:
+    # A single-case run never carries CASES, and leaving it out keeps its staged text unchanged.
+    keys = LinPayload.RESERVED_KEYS if multi_case else LinPayload.RESERVED_KEYS - {LinPayload.CASES_KEY}
+    return "[" + ", ".join(f"'{k}'" for k in sorted(keys)) + "]"
 
 def branch_name_pattern(branch_idx: int) -> "re.Pattern[str]":
     return re.compile(rf"^\d+-\d+-{branch_idx + 1}\.")
@@ -294,14 +294,10 @@ def prepare_nextflow(task, context: NextflowGenContext):
             insts = step.dependency_map[d]
             archetype = get_archetype(insts)
             used_archetypes.append(archetype)
-        produced_archetypes: list[list[DataInstance]] = []
-        for dg in step.transform.model.produces:
-            g = []
-            for d in dg:
-                insts = step.dependency_map[d]
-                archetype = get_archetype(insts)
-                g.append(archetype)
-            produced_archetypes.append(g)
+        produced_archetypes: list[list[DataInstance]] = [
+            [get_archetype(insts) for d in dg if (insts := step.ProductsOf(g, d))]
+            for g, dg in enumerate(step.transform.model.produces)
+        ]
         return used_archetypes, produced_archetypes
 
     def prepare_step(step: WorkflowStep):
@@ -371,11 +367,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
             for d in step.transform.model.requires
         }
         dep_out = [
-            {
-                d.key: [inst.instance_id for inst in step.dependency_map.get(d, [])]
-                for d in dep_group
-            }
-            for dep_group in step.transform.model.produces
+            {d.key: [inst.instance_id for inst in step.ProductsOf(g, d)] for d in dep_group}
+            for g, dep_group in enumerate(step.transform.model.produces)
         ]
         structure_arity = {
             d.key: len(step.dependency_map.get(d, []))
@@ -385,7 +378,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             )
         }
         slot_channels = {
-            d.key: a.dtype.key
+            d.key: stream(a.dtype)
             for d, a in zip(step.transform.model.requires, used_archetypes)
         }
         sample_arity = len(step.group_by_instances)
@@ -418,7 +411,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
                         slot_id = cache_decision[
                             "out_instance_ids"
                         ].get((dep.key, branch_idx), "")
-                        insts = step.dependency_map.get(dep, [])
+                        insts = step.ProductsOf(branch_idx, dep)
                         if insts:
                             dtype_key = insts[0].dtype.key
                             dtype_name = insts[0].dtype_name
@@ -489,7 +482,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             '"""',
             'stub:',
             'def dt = new Random().nextFloat()*params.testSpread',
-            f'def hash = "${{index[0].findAll {{ k, v -> !({_RESERVED_KEYS_GROOVY}.contains(k)) }}'
+            f'def hash = "${{index[0].findAll {{ k, v -> !({_reserved_keys_groovy(the_plan.multi_case)}.contains(k)) }}'
             '.sort().collectEntries { k, v -> [k, v.sort(false)] }}".md5()[0..11]',
             f'"""',
             f'sleep $dt',
@@ -555,33 +548,45 @@ def prepare_nextflow(task, context: NextflowGenContext):
         return d
     
     the_plan = task.plan
+    def stream(e: Endpoint) -> str:
+        return the_plan.streams.get(e.key, e.key)
+    def groovy_strings(xs) -> str:
+        return "[" + ", ".join("'" + x.replace("\\", "\\\\").replace("'", "\\'") + "'" for x in xs) + "]"
+
     _given = set(the_plan.given)
     used_given = {x for s in the_plan.steps for x in s.uses if x in _given}
-    given_endpoints = {x.dtype for x in used_given}
+    given_streams = {stream(x.dtype) for x in used_given}
 
     inputs_dir = ensure_local_folder("inputs")
-    e2producer: dict[Endpoint, list[WorkflowStep]] = {}
+    s2producer: dict[str, list[WorkflowStep]] = {}
+    stream_endpoint: dict[str, Endpoint] = {}
+    producer_of: dict[str, int] = {}
     for step in the_plan.steps:
         for pg in step.produces:
             for inst in pg:
-                e2producer[inst.dtype] = e2producer.get(inst.dtype, [])+[step]
+                s = stream(inst.dtype)
+                stream_endpoint.setdefault(s, inst.dtype)
+                s2producer[s] = s2producer.get(s, [])+[step]
+                producer_of[inst.instance_id] = step.order
+    def source_of(inst: DataInstance):
+        return producer_of.get(inst.instance_id, inst.dtype.key)
     final_steps_for_merging: dict[int, set[Endpoint]] = {}
-    for e, steps in e2producer.items():
-        if e not in given_endpoints and len(steps)<2: continue
-        k = max(s.order for s in steps)
-        final_steps_for_merging[k] = final_steps_for_merging.get(k, set())|{e}
+    for s, steps in s2producer.items():
+        if s not in given_streams and len(steps)<2: continue
+        k = max(x.order for x in steps)
+        final_steps_for_merging[k] = final_steps_for_merging.get(k, set())|{stream_endpoint[s]}
     output_copies: dict[str, int] = {}
-    to_merge_names: dict[Endpoint, list[str]] = {}
+    to_merge_names: dict[str, list[str]] = {}
     def get_prod_name(x: Endpoint, force_singular=False):
-        k = x.key
-        arity = len(e2producer.get(x, []))+int(x in given_endpoints)
+        k = stream(x)
+        arity = len(s2producer.get(k, []))+int(k in given_streams)
         if not force_singular and arity>1:
             i = output_copies.get(k, 0)+1
             output_copies[k] = i
             name = f"{k}_{i}"
-            _curr = to_merge_names.get(x, [])
+            _curr = to_merge_names.get(k, [])
             if name not in _curr: _curr.append(name)
-            to_merge_names[x] = _curr
+            to_merge_names[k] = _curr
         else:
             name = f"{k}"
         return name
@@ -609,18 +614,18 @@ def prepare_nextflow(task, context: NextflowGenContext):
     given2order = {}
     for i, x in enumerate(the_plan.given):
         given2order[x] = i
+    stream_inputs: dict[str, list[DataInstance]] = {}
+    for e, lst in input_channels.items():
+        stream_inputs[stream(e)] = stream_inputs.get(stream(e), []) + lst
     prepared_given: list[tuple[Path, str, str]] = []
-    _seen_paths = set()
     _given_by_prod_name: dict[str, list[DataInstance]] = {}
     _path2prod_name = {}
     _path2given_inst: dict[Path, DataInstance] = {}
-    for i, (_, lst) in enumerate(input_channels.items()):
+    for lst in stream_inputs.values():
         inst = get_archetype(lst)
         p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
-        if p in _seen_paths: continue
-        _seen_paths.add(p)
         v = get_prod_name(inst.dtype)
-        k = p, v, "/".join({i.dtype_name for i in lst})
+        k = p, v, "/".join(sorted({i.dtype_name for i in lst}))
         prepared_given.append(k)
         with open(p, "w") as f:
             unique_lst = set(lst)
@@ -677,13 +682,15 @@ def prepare_nextflow(task, context: NextflowGenContext):
         "lineage": _given_lineage,
         "child2parent": {k: sorted(v) for k, v in given_lineage_by_keys.items()},
     }
+    # Kept beside the rows, never in them: a row key reads as a parent stream.
+    if the_plan.multi_case:
+        _lineage_file_data["cases"] = dict(the_plan.given_cases)
     with open(context.work_dir/LINEAGE_FILE, "w") as f:
         json.dump(_lineage_file_data, f, separators=(',', ':'))
 
-    target_endpoints = {x.instance.dtype for x in the_plan.targets}
+    target_streams = {stream(x.instance.dtype) for x in the_plan.targets}
     src_process = []
     wf_main = []
-    wf_publish = set()       
     published_channels: dict[str, tuple[int, DataInstance]] = {}
     resources = {}
     gpu_requirements: dict[str, dict] = {}
@@ -708,7 +715,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
         produced_slot_ids = [
             _out_ids.get((dep.key, branch_idx), "")
             for branch_idx, dep_group in enumerate(step.transform.model.produces)
-            for dep in dep_group
+            for dep in dep_group if step.ProductsOf(branch_idx, dep)
         ]
         slot_ids_literal = (
             "[" + ", ".join(f"'{s}'" for s in produced_slot_ids) + "]"
@@ -722,7 +729,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             resources[twin_name] = twin_res
             src_process.append(twin_src)
             _inst = step.group_by_instances
-            _dtypes = {x.dtype.key for x in _inst}
+            _dtypes = {stream(x.dtype) for x in _inst}
             if len(_dtypes)>1:
                 _detail = ", ".join(f"{x.dtype_name}({x.dtype.key})" for x in _inst)
                 raise ValueError(
@@ -731,29 +738,23 @@ def prepare_nextflow(task, context: NextflowGenContext):
                     f"valid o.group (would NPE at runtime). instances: [{_detail}]"
                 )
             _inst = _inst[0]
-            gb = _inst.dtype.key
-            using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-            _expected: dict[str, int] = {}
-            for dep in step.transform.model.requires:
-                dep_insts = step.dependency_map.get(dep, [])
-                if not dep_insts:
-                    continue
-                sname = dep_insts[0].dtype.key
-                if sname == gb:
-                    continue
-                n = expected_per_key(list(dep_insts), list(step.group_by_instances))
-                if n is not None and n > 0:
-                    _expected[sname] = n
-            expected_literal = (
-                "["
-                + (
-                    ", ".join(f"'{k}': {v}" for k, v in sorted(_expected.items()))
-                    if _expected
-                    else ":"
+            gb = stream(_inst.dtype)
+            using_symbols = ", ".join(f"_{stream(x.dtype)}" for x in used_archetypes)
+            if the_plan.multi_case and set(step.cases) != set(the_plan.cases):
+                cases_var = f"__cases_{step.order}"
+                wf_main.append(f"{cases_var} = {groovy_strings(step.cases)}")
+                using_symbols = ", ".join(
+                    f"o.cases(_{stream(x.dtype)}, {cases_var})" for x in used_archetypes
                 )
-                + "]"
-            )
-            slk_literal = "[" + ", ".join(f"'{x.dtype.key}'" for x in used_archetypes) + "]"
+            # A slot whose served cases read it from different producers is a
+            # lane per case: a by-item shared by those cases must not pool them.
+            lanes = [
+                stream(a.dtype) for d, a in zip(step.transform.model.requires, used_archetypes)
+                if the_plan.multi_case and stream(a.dtype) != gb
+                and len({source_of(x) for x in step.dependency_map[d]}) > 1
+            ]
+            lanes_arg = f", {groovy_strings(dict.fromkeys(lanes))}" if lanes else ""
+            slk_literal = "[" + ", ".join(f"'{stream(x.dtype)}'" for x in used_archetypes) + "]"
             cacheable = bool(decision and decision.get("cacheable"))
             cache_literal = (
                 f"[tk: '{(decision or {}).get('transform_key', '')}', "
@@ -770,26 +771,30 @@ def prepare_nextflow(task, context: NextflowGenContext):
             out_var = f"__out_{step.order}"
             wf_main.append(
                 f"({miss_var}, {hit_var}) = o.group('{gb}', [{using_symbols}], k, "
-                f"{step.transform.batch_size}, {expected_literal}, {cache_literal})"
+                f"{step.transform.batch_size}, {cache_literal}{lanes_arg})"
             )
             wf_main.append(
                 f"{out_var} = o.mixOuts(o.asStreams({process_name}({miss_var})), "
                 f"o.asStreams({twin_name}({hit_var})))"
             )
             streams_expr = out_var
+            post_args = slot_ids_literal
         else:
             streams_expr = f"o.asStreams({process_name}())"
+            post_args = slot_ids_literal
+            if the_plan.multi_case and set(step.cases) != set(the_plan.cases):
+                post_args += f", {groovy_strings(step.cases)}"
         if len(produced_names) == 1:
             wf_main.append(
-                f"_{produced_names[0]} = (o.post({streams_expr}, k, {slot_ids_literal}))[0]"
+                f"_{produced_names[0]} = (o.post({streams_expr}, k, {post_args}))[0]"
             )
         else:
             wf_main.append(
-                f"({produced}) = o.post({streams_expr}, k, {slot_ids_literal})"
+                f"({produced}) = o.post({streams_expr}, k, {post_args})"
             )
         if step.order in final_steps_for_merging:
             for e in final_steps_for_merging[step.order]:
-                names = to_merge_names[e]
+                names = to_merge_names[stream(e)]
                 to_mix = [f"_{x}" for x in names]
                 name = get_prod_name(e, force_singular=True)
                 wf_main.append(
@@ -799,11 +804,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
         if the_plan.publish_intermediates:
             to_pubish = [x for g in produced_archetypes for x in g]
         else:
-            to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
+            to_pubish = [x for g in produced_archetypes for x in g if stream(x.dtype) in target_streams]
         for inst in to_pubish:
-            k = inst.dtype.key
-            wf_publish.add(k)
-            published_channels[k] = (step.order, inst)
+            published_channels[stream(inst.dtype)] = (step.order, inst)
 
     with open(context.work_dir/context.resources_file, "w") as f:
         _src = [
@@ -843,11 +846,23 @@ def prepare_nextflow(task, context: NextflowGenContext):
         f.write("\n")
 
     wf_output = []
-    _e2target = {x.instance.dtype:x for x in the_plan.targets}
+    _s2target = {stream(x.instance.dtype):x for x in the_plan.targets}
+    publish_filter: dict[str, list[str]] = {}
+    if the_plan.multi_case and not the_plan.publish_intermediates:
+        for ch in published_channels:
+            wanted = {x.case for x in the_plan.targets if stream(x.instance.dtype) == ch}
+            if wanted != set(the_plan.cases):
+                publish_filter[ch] = [c for c in the_plan.cases if c in wanted]
+    def given_served(prod_name: str) -> str:
+        if not the_plan.multi_case:
+            return ""
+        served = {c for x in _given_by_prod_name[prod_name] for c in the_plan.given_cases.get(x.instance_id, the_plan.cases)}
+        return f", {groovy_strings([c for c in the_plan.cases if c in served])}"
+
     for ch, (step_order, inst) in published_channels.items():
         spec_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
-        if inst.dtype in _e2target:
-            out_name = _e2target[inst.dtype].name.replace(' ', '_').replace("::", "-")
+        if ch in _s2target:
+            out_name = _s2target[ch].name.replace(' ', '_').replace("::", "-")
         else:
             out_name = f"{step_order}_{spec_name}"
         wf_output += [
@@ -863,17 +878,21 @@ def prepare_nextflow(task, context: NextflowGenContext):
         f'_lf = new groovy.json.JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
         f'l = _lf.lineage',
         f'o.seedParents(_lf.child2parent)',
-    ] + [
-        f'_{v} = (o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]))[0] // {n}'
+    ] + (
+        [f'o.seedCases(_lf.cases)'] if the_plan.multi_case else []
+    ) + [
+        f'_{v} = (o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]{given_served(v)}))[0] // {n}'
         for p, v, n in prepared_given
     ] + [
         line for line in wf_main
     ] + [
+        "o.seal()",
         "",
         "publish:",
     ] + [
-        f"_{k} = o.publish(_{k})"
-        for k in wf_publish
+        f"_{k} = o.publish(_{k}, {groovy_strings(publish_filter[k])})"
+        if k in publish_filter else f"_{k} = o.publish(_{k})"
+        for k in published_channels
     ] + [
         "}",
         "",
