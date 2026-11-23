@@ -1028,6 +1028,28 @@ class TestTemplates:
         items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
         assert [i["type_name"] for i in items] == ["mock::assembly"]
 
+    def test_a_template_s_cases_cite_their_inputs_by_row(self, client, project_root):
+        # Filling a deferred row moves its item to the file's path, so a case still
+        # naming the template's path would name nothing.
+        mlib = project_root / "MetasmithLibraries"
+        lib = DataInstanceLibrary(mlib / "templates" / "two_cases" / "inputs.xgdb")
+        lib.AddTypeLibrary(mlib / "data_types" / "mock.yml")
+        paths = [str(lib.AddItem(DEFERRED, "mock::assembly")) for _ in range(2)]
+        lib.Save()
+        Template(
+            name="two_cases", description="two cases",
+            cases=[Spec(input_library=lib, name=f"c{i}", input_paths=[path],
+                        target_types=["mock::bam"]) for i, path in enumerate(paths)],
+            transform_libraries=[mlib / "transforms" / "transforms.xgdb"],
+        ).Save(mlib)
+
+        name = client.post("/api/workflows", json={"template": "two_cases"}).get_json()["name"]
+        detail = client.get(f"/api/workflows/{name}").get_json()
+        rows = {d["id"] for d in detail["request"]["input_drafts"]}
+        cited = [c["input_paths"] for c in detail["request"]["cases"]]
+        assert all(len(refs) == 1 and refs[0].startswith("#") for refs in cited), cited
+        assert {refs[0][1:] for refs in cited} == rows
+
     def test_the_copied_rows_keep_the_template_s_identity(self, client, template, project_root):
         source = DataInstanceLibrary.Load(
             project_root / "MetasmithLibraries" / "templates" / template / "inputs.xgdb"

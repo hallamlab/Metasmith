@@ -6,15 +6,27 @@ from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "engcyc_metagenomics"
 DESCRIPTION = """
-The Engcyc metagenomics workflow from reads, one sample per read set. Every lane is
-its own target; deselect a target to drop its lane. Sizes are each lane's reference
-download; a ~ marks an estimate.
+The Engcyc metagenomics workflow from reads, in three cases planned together: short
+reads, hybrid (short plus long reads) and long reads. Funnel each sample into the
+case for its reads; give an SRA run accession in place of a read set if you like (a
+short-read run, a long-read run, or one of each for hybrid). Delete a case you have
+no samples for. Every lane is its own target; deselect a target to drop its lane.
+Steps the cases share, such as every reference download, run once. Sizes are each
+lane's reference download; a ~ marks an estimate.
 
-Assembly: BBDuk -> MEGAHIT for short reads; Flye for long reads.
+Assembly: short, BBDuk -> MEGAHIT; hybrid, BBDuk -> MEGAHIT draft -> OPERA-MS;
+long, Filtlong -> Flye.
 Binning: MetaBAT2, SemiBin2, COMEBin -> DAS Tool -> CheckM2 (~3 GB) -> quality MAGs
 at >= 50% complete and <= 10% contamination.
-Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan against GTDB r232
-SSU (~2.4 GB).
+Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan against
+GTDB r232 SSU (~2.4 GB); Metabuli on the contigs, against a GTDB r232 database the
+plan builds from complete genomes, human T2T and RefSeq viral (192 GB download, 77 GB
+built, 203 GB peak disk).
+Read taxonomy: short and hybrid, MetaPhlAn and StrainPhlAn (4.8 GB) and inStrain on
+the quality MAGs; long, MetaPhlAn and StrainPhlAn in long-read mode (the same 4.8 GB),
+sylph (GTDB r220 sketches, 14 GB), Kraken2 (standard 16 GB) and ganon2 (RefSeq
+archaea and bacteria, one genome per species, ~50 GB). Hybrid's StrainPhlAn reads
+its long reads.
 Gene function: DIAMOND UniRef50 (~24 GB), KOfam (~5 GB), InterProScan (~100 GB),
 eggNOG (12 GB, 55 GB unpacked).
 GPR tables: the 4-lane table (KOfam, CLEAN, UniRef50, ProteinBERT) and the
@@ -26,8 +38,7 @@ geNomad ~1.5 GB).
 DRAM distill per quality MAG (DRAM forms only; dbCAN ~1 GB, MEROPS ~1 GB, VOGDB
 ~2 GB, RefSeq viral ~1 GB).
 Resistome: RGI/CARD (~0.3 GB), AMRFinderPlus (~0.3 GB), MEGARes, BacMet, VFDB
-(each < 0.1 GB), IntegronFinder, MobileElementFinder, inStrain,
-MetaPhlAn/StrainPhlAn (4.8 GB).
+(each < 0.1 GB), IntegronFinder, MobileElementFinder.
 GEM per quality MAG: CarveMe 1.6.6 from the BiGG lane, then MEMOTE.
 Viral: geNomad, VirSorter2 (~10 GB), VIBRANT (11 GB) -> CheckV (~7 GB) ->
 vOTUs; DRAM-v; CCTyper; vConTACT3 (5.1 GB); iPHoP (~350 GB) with the quality MAGs
@@ -101,14 +112,25 @@ TARGETS = [
 ]
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
 assert TARGETS[BINS]["type"] == "sequences::das_tool_bin_fasta"
+METABULI = [{"type": t, "parents": _A} for t in ("taxonomy::metabuli", "taxonomy::metabuli_report")]
+SHORT_ONLY = {"annotation::instrain_genome_info"}
+SHORT_TARGETS = TARGETS + METABULI
+
+# A long-read sample's case: Flye in place of BBDuk -> MEGAHIT, and the long-read lanes of
+# MetaPhlAn and StrainPhlAn answer the same targets as the short-read ones. inStrain is
+# short-read only; sylph, Kraken2 and ganon2 are long-read lanes here.
+LONG_TARGETS = [t for t in TARGETS if not isinstance(t, dict) or t["type"] not in SHORT_ONLY] + [
+    "taxonomy::sylph_profile", "taxonomy::kraken2_report", "taxonomy::ganon2_report",
+] + METABULI
 
 # A hybrid sample's case (short + long reads): the hybrid lane, MEGAHIT draft -> OPERA-MS,
 # anchored to the assembly, so its assembly is the OPERA-MS assembly and every lane hanging
 # off the assembly reads it.
 HYBRID_TARGETS = [ASSEMBLY, {"type": "sequences::opera_ms_assembly", "parents": [0]}] + [
     t if isinstance(t, str) else t | {"parents": [p + (p >= 1) for p in t.get("parents", [])]}
-    for t in TARGETS[1:]
+    for t in SHORT_TARGETS[1:]
 ]
+CASE_TARGETS = {"short": SHORT_TARGETS, "long": LONG_TARGETS, "hybrid": HYBRID_TARGETS}
 
 # Consumed and produced by nothing, so they are given, and shared because they
 # belong to no one sample.
@@ -117,39 +139,88 @@ SHARED_REFS = ("ref::mnxr_lookup", "ref::label_transfer_landmarks", "ref::lane_c
 TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml", "taxonomy.yml",
              "binning.yml", "binning_local.yml", "viromics.yml", "modelling.yml", "licensed.yml",
              "ncbi.yml")
+SRA = {"short": "ncbi::sra_short_read_accession", "long": "ncbi::sra_long_read_accession"}
 
 
-def add_sample(lib, study, name, long_reads=False):
-    meta = lib.AddValue(f"{name}_reads_metadata.json",
-                        {"parity": "paired", "length_class": "short"},
-                        "sequences::read_metadata", parents={study})
-    pair = lib.AddValue(f"{name}_read_pair.txt", name, "sequences::read_pair", parents={meta})
-    lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
-    lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
-    if long_reads:
+def meta_path(name: str) -> str:
+    return f"{name}_reads_metadata.json"
+
+
+# A sample for `case`, as reads, or as SRA runs when `accessions` maps read class to run.
+def add_sample(lib, study, case, name, accessions=None):
+    parents = {study}
+    if case == "long":
+        # Kraken2 names its report from a sample name above the reads.
+        parents = {lib.AddValue(f"{name}_name.txt", name, "sequences::sample_name", parents=parents)}
+    length = "long" if case == "long" else "short"
+    parity = "single" if case == "long" else "paired"
+    meta = lib.AddValue(meta_path(name), {"parity": parity, "length_class": length},
+                        "sequences::read_metadata", parents=parents)
+    if accessions:
+        for kind, run in accessions.items():
+            lib.AddValue(f"{name}_{kind}.acc", run, SRA[kind], parents={meta})
+        return
+    if case != "long":
+        pair = lib.AddValue(f"{name}_read_pair.txt", name, "sequences::read_pair", parents={meta})
+        lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
+        lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
+    if case != "short":
         lib.AddItem(DEFERRED, "sequences::long_reads", parents={meta})
 
 
-def short_sample(lib, study):
-    add_sample(lib, study, "sample_1")
+# The template's own inputs: one sample per case, each funnelled into its case.
+DEFAULT_SAMPLES = [("short", "short_1"), ("hybrid", "hybrid_1"), ("long", "long_1")]
+
+
+def _lineage(library) -> dict[str, set[str]]:
+    # A re-used template library comes back as its packed dict.
+    if isinstance(library, dict):
+        return {p: {k.split("@", 1)[1] for k in (entry.get("parents") or {})}
+                for p, entry in library["manifest"].items()}
+    return {str(p): {str(m.path) for m in library.parents.get(p, [])} for p in library.manifest}
 
 
 def _dtypes(library) -> dict[str, str]:
-    # A re-used template library comes back as its packed dict.
     if isinstance(library, dict):
         return {p: entry["type"] for p, entry in library["manifest"].items()}
     return {str(p): dtype for p, dtype in library.manifest.items()}
 
 
-def template_for(name, samples=None, rebuild=False, targets=TARGETS,
+def case_rows(library, metas: list[str], shared: list[str]) -> list[str]:
+    # A case lists every row of its samples rather than naming a sample type: the form
+    # the GUI writes, so a GUI plan and a direct one read the same request. A sample's
+    # rows are its metadata, what hangs off it, and what it hangs off short of the shared.
+    parents = _lineage(library)
+    children: dict[str, set[str]] = {}
+    for p, ps in parents.items():
+        for q in ps:
+            children.setdefault(q, set()).add(p)
+
+    def walk(start, step):
+        seen, queue = set(), [start]
+        while queue:
+            for q in step.get(queue.pop(), ()):
+                if q not in seen and q not in shared:
+                    seen.add(q)
+                    queue.append(q)
+        return seen
+
+    return sorted(set(metas).union(*(walk(m, children) | walk(m, parents) for m in metas)))
+
+
+def template_for(name, samples=None, rebuild=False, targets=None,
                  description=DESCRIPTION) -> Template:
+    # `samples` lists (case, sample name[, accessions]). With none, one case plans
+    # `targets` from the whole library.
+    samples = [tuple(s) + (None,) * (3 - len(s)) for s in samples or ()]
+
     def inputs(lib):
         for tl in TYPE_LIBS:
             lib.AddTypeLibrary(A.TYPES / tl)
         study = lib.AddValue("contig_study.json", {"logistics": "contig study"},
                              "viromics::contig_study")
-        if samples is not None:
-            samples(lib, study)
+        for case, sample, accessions in samples:
+            add_sample(lib, study, case, sample, accessions)
         for t in SHARED_REFS:
             lib.AddItem(DEFERRED, t)
         # Opts the run into eggNOG's fetch; its content is not read.
@@ -158,14 +229,20 @@ def template_for(name, samples=None, rebuild=False, targets=TARGETS,
     input_library = A.deferred_inputs(name, inputs, rebuild=rebuild)
     shared = ["contig_study.json", "eggnog_source.json"] + sorted(
         path for path, dtype in _dtypes(input_library).items() if dtype in SHARED_REFS)
+    if not samples:
+        cases = [Spec(input_library=input_library, target_types=targets)]
+    else:
+        order = list(dict.fromkeys(case for case, _, _ in samples))
+        cases = [Spec(
+            input_library=input_library, name=case,
+            input_paths=case_rows(input_library, [meta_path(s) for c, s, _ in samples if c == case],
+                                  shared),
+            shared_input_paths=shared,
+            target_types=CASE_TARGETS[case] if targets is None else targets,
+        ) for case in order]
     return Template(
         name=name, description=description.strip(),
-        cases=[Spec(
-            input_library=input_library,
-            sample_type=None if samples is None else "sequences::read_metadata",
-            shared_input_paths=[] if samples is None else shared,
-            target_types=targets,
-        )],
+        cases=cases,
         transform_libraries=A.transforms(
             "logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics",
             "metabolicModelling"),
@@ -174,7 +251,7 @@ def template_for(name, samples=None, rebuild=False, targets=TARGETS,
 
 
 def build_template(rebuild: bool = False) -> Template:
-    return template_for(NAME, short_sample, rebuild=rebuild)
+    return template_for(NAME, DEFAULT_SAMPLES, rebuild=rebuild)
 
 
 if __name__ == "__main__":

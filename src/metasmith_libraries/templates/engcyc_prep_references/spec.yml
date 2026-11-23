@@ -6,13 +6,17 @@ description: 'Fetches and builds every reference database and tool image that
   the real run; engcyc_metagenomics then finds these products in the cache.
 
 
-  Its targets are the reference products of engcyc_metagenomics'' plan, so the two
+  Its targets are the reference products of engcyc_metagenomics'' plan over all three
 
-  templates name the same steps. Licensed packages are left out, as in
+  of its cases, so the two templates name the same reference steps: the long-read
 
-  engcyc_metagenomics. The downloads total ~680 GB, ~350 GB of it iPHoP''s; see
+  lanes'' references and the Metabuli database build included. Licensed packages are
 
-  engcyc_metagenomics'' description for each lane''s size.'
+  left out, as in engcyc_metagenomics. The downloads total ~950 GB: ~350 GB of it
+
+  iPHoP''s and 192 GB the Metabuli build''s sources. See engcyc_metagenomics''
+
+  description for each lane''s size.'
 transform_libraries:
 - logistics
 - assembly
@@ -41,6 +45,7 @@ cases:
   - ref::dbcan_hmm
   - ref::deeparg_db
   - ref::dram_sheets
+  - ref::ganon2_db
   - ref::genomad
   - ref::gtdb
   - ref::gtdb_rrna
@@ -48,10 +53,13 @@ cases:
   - ref::iphop_db
   - ref::kofamscan_ko_list
   - ref::kofamscan_profiles
+  - ref::kraken2_db
   - ref::merops_diamond_db
+  - ref::metabuli_ref
   - ref::metaphlan_db
   - ref::pathofact_db
   - ref::refseq_viral_diamond_db
+  - ref::sylph_db
   - ref::uniref50_diamond_db
   - ref::vcontact3_db
   - ref::vibrant_db

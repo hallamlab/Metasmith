@@ -2,7 +2,9 @@ name: isolate_assembly_from_long_reads
 description: 'Assemble an isolate genome from long reads with hifiasm-meta, and annotate
   it
 
-  against UniRef50 and KOFAM.'
+  against UniRef50 and KOFAM. Give the reads, or an SRA long-read run accession in
+
+  their place.'
 transform_libraries:
 - logistics
 - assembly
@@ -13,7 +15,7 @@ resource_libraries:
 - env
 cases:
 - name: case
-  sample_type: sequences::long_reads
+  sample_type: sequences::read_metadata
   target_types:
   - sequences::hifiasm_meta_assembly
   - type: annotation::diamond_uniref50_results
@@ -32,7 +34,16 @@ cases:
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/bdd0f0d1c2144b1fba4cbcc73e988d11:
+    /msm_deferred/d18310a1664a413db2c6a45b001ab564:
       type: sequences::long_reads
-      instance_id: 1e20a199d5c2463b4db69843b515273443aaa086d3fb78fc3aa5ef64b7beac0cec3b
+      parents:
+        trL2gYSwwkNV@isolate_reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20f359f37c6e3e8968fd972abf297e053ba030cee3de0099efab8640311014a828
       origin: leaf
+    isolate_reads_metadata.json:
+      type: sequences::read_metadata
+      instance_id: 1e20e455b28c3e9e0b08103a2d4e9fd8091a694c4a3c0f544355a68685e532be81c3
+      origin: leaf
+      value: true
+  values:
+    isolate_reads_metadata.json: '{"parity": "single", "length_class": "long"}'

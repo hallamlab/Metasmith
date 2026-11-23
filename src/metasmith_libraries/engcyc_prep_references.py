@@ -10,36 +10,46 @@ Fetches and builds every reference database and tool image that
 engcyc_metagenomics needs, and takes no samples. Run it once on an agent before
 the real run; engcyc_metagenomics then finds these products in the cache.
 
-Its targets are the reference products of engcyc_metagenomics' plan, so the two
-templates name the same steps. Licensed packages are left out, as in
-engcyc_metagenomics. The downloads total ~680 GB, ~350 GB of it iPHoP's; see
-engcyc_metagenomics' description for each lane's size.
+Its targets are the reference products of engcyc_metagenomics' plan over all three
+of its cases, so the two templates name the same reference steps: the long-read
+lanes' references and the Metabuli database build included. Licensed packages are
+left out, as in engcyc_metagenomics. The downloads total ~950 GB: ~350 GB of it
+iPHoP's and 192 GB the Metabuli build's sources. See engcyc_metagenomics'
+description for each lane's size.
 """
 
 
-def reference_targets(plan) -> list[str]:
-    # A step is reference-side when nothing it consumes descends from a sample.
-    # Its products that a sample-side step consumes are the targets.
+def reference_side(plan) -> tuple[set, list[str]]:
+    # A step is reference-side when nothing it consumes descends from a sample. Returns
+    # those steps, as (transform, product ids), and the products a sample-side step
+    # consumes, which are the targets.
     sample_made = {str(i.path) for i in plan.given if i.dtype_name.startswith("sequences::")}
-    ref_made: dict[str, str] = {}
-    consumed_by_samples: set[str] = set()
+    steps, ref_made, consumed_by_samples = set(), {}, set()
     for step in sorted(plan.steps, key=lambda s: s.order):
-        ins = [i for d in step.transform.model.requires for i in step.dependency_map.get(d, [])]
-        outs = [i for g in step.transform.model.produces for d in g
-                for i in step.dependency_map.get(d, [])]
-        if any(str(i.path) in sample_made for i in ins):
+        ins = [str(i.path) for i in step.uses]
+        outs = [i for g in step.produces for i in g]
+        if any(i in sample_made for i in ins):
             sample_made |= {str(i.path) for i in outs}
-            consumed_by_samples |= {str(i.path) for i in ins}
+            consumed_by_samples |= set(ins)
         else:
             ref_made |= {str(i.path): i.dtype_name for i in outs}
-    return sorted({t for i, t in ref_made.items() if i in consumed_by_samples})
+            steps.add((step.transform.name, frozenset(i.instance_id for i in outs)))
+    return steps, sorted({t for i, t in ref_made.items() if i in consumed_by_samples})
 
 
 def build_template(rebuild: bool = False):
     main = M.build_template(rebuild=rebuild).Plan()
     assert main.ok, f"engcyc_metagenomics does not plan: {sorted(main.plan.dropped_targets)}"
-    return M.template_for(NAME, rebuild=rebuild, targets=reference_targets(main.plan),
-                          description=DESCRIPTION)
+    steps, targets = reference_side(main.plan)
+    template = M.template_for(NAME, rebuild=rebuild, targets=targets, description=DESCRIPTION)
+    prep = template.Plan()
+    assert prep.ok, f"{NAME} does not plan: {sorted(prep.plan.dropped_targets)}"
+    mine, _ = reference_side(prep.plan)
+    assert mine == steps, (
+        f"{NAME} and engcyc_metagenomics plan different reference steps: "
+        f"only here {sorted(t for t, _ in mine - steps)}, only there {sorted(t for t, _ in steps - mine)}"
+    )
+    return template
 
 
 if __name__ == "__main__":
