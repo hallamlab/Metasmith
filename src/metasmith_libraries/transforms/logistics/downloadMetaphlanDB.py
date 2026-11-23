@@ -12,6 +12,10 @@ INDEX = "mpa_vJan25_CHOCOPhlAnSGB_202503"
 BASE  = "https://cmprod1.cibio.unitn.it/biobakery4/metaphlan_databases"
 # Each is a .tar with its .md5 beside it.
 ARCHIVES = [f"bowtie2_indexes/{INDEX}_bt2", INDEX]
+URLS = {
+    **{f"{Path(a).name}.{ext}": f"{BASE}/{a}.{ext}" for a in ARCHIVES for ext in ("md5", "tar")},
+    f"{INDEX}.nwk": f"{BASE}/{INDEX}.nwk",
+}
 BT2L = [f"{INDEX}.{n}.bt2l" for n in ("1", "2", "3", "4", "rev.1", "rev.2")]
 
 # This leaves what `metaphlan --install` leaves, without the part that costs: install
@@ -23,23 +27,23 @@ BT2L = [f"{INDEX}.{n}.bt2l" for n in ("1", "2", "3", "4", "rev.1", "rev.2")]
 
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
-    base = context.params.get("metaphlan_url", BASE).rstrip("/")
+    mirror = context.params.get("metaphlan_url")
     db   = iout.local
     failed = ExecutionResult(manifest=[], success=False)
 
     names = [Path(a).name for a in ARCHIVES]
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(f"{base}/{a}.md5", f"{n}.md5") for a, n in zip(ARCHIVES, names)),
+        *(FetchCommand(Rebase(URLS[f"{n}.md5"], BASE, mirror), f"{n}.md5") for n in names),
     ])) != 0:
         return failed
     md5 = [open(f"{n}.md5").read().split()[0] for n in names]
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(f"{base}/{a}.tar", f"{n}.tar", md5=m) for a, n, m in zip(ARCHIVES, names, md5)),
+        *(FetchCommand(Rebase(URLS[f"{n}.tar"], BASE, mirror), f"{n}.tar", md5=m) for n, m in zip(names, md5)),
         f"mkdir -p {db}",
-        FetchCommand(f"{base}/{INDEX}.nwk", db/f"{INDEX}.nwk"),
+        FetchCommand(Rebase(URLS[f"{INDEX}.nwk"], BASE, mirror), db/f"{INDEX}.nwk"),
         *(f"tar -xf {n}.tar -C {db} --exclude={INDEX}_SGB.fna.bz2" for n in names),
         f"bunzip2 -f {db}/{INDEX}_VSG.fna.bz2",
         # The consumer runs --offline with no --index, which reads the index name from here.

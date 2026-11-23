@@ -14,16 +14,17 @@ FILES = [
     "inspect.txt", "library_report.tsv",
     *(f"database{n}mers.kmer_distrib" for n in (50, 75, 100, 150, 200, 250, 300)),
 ]
+URLS = {name: f"{BASE}/{name}" for name in (MD5S, *FILES)}
 
 
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
-    base = context.params.get("kraken2_url", BASE).rstrip("/")
+    base = (context.params.get("kraken2_url") or BASE).rstrip("/")
     failed = ExecutionResult(manifest=[], success=False)
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/{MD5S}", MD5S),
+        FetchCommand(Rebase(URLS[MD5S], BASE, base), MD5S),
     ])) != 0:
         return failed
     md5 = {}
@@ -37,7 +38,7 @@ def protocol(context: ExecutionContext):
     if context.LocalShell("\n".join([
         "set -euo pipefail",
         f"mkdir -p {iout.local}",
-        *(FetchCommand(f"{base}/{f}", iout.local/f, md5=md5[f]) for f in FILES),
+        *(FetchCommand(Rebase(URLS[f], BASE, base), iout.local/f, md5=md5[f]) for f in FILES),
     ])) != 0:
         return failed
 

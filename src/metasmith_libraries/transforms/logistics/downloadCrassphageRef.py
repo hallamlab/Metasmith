@@ -6,15 +6,15 @@ image = model.AddRequirement(lib.GetType("env::diamond.env"))
 ref   = model.AddProduct(lib.GetType("annotation::crassphage_ref"))
 
 ACCESSION = "NC_024711.1"
-EFETCH_URL = (
+URLS = {"efetch": (
     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
     f"?db=nuccore&id={ACCESSION}&rettype=fasta&retmode=text"
-)
+)}
 
 
 def protocol(context: ExecutionContext):
     iref = context.Output(ref)
-    url = context.params.get("crassphage_url", EFETCH_URL)
+    url = context.params.get("crassphage_url", URLS["efetch"])
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",

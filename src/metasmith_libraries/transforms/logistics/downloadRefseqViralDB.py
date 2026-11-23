@@ -8,18 +8,19 @@ sources = model.AddProduct(lib.GetType("ref::refseq_viral_sources"))
 # What DRAM-setup.py 1.5.0 fetches for `viral`: NUMBER_OF_VIRAL_FILES is 1. RefSeq replaces
 # this file every release (238: 2026-11-13, 102 MB), so the release number is kept beside it.
 BASE_URL = "https://ftp.ncbi.nlm.nih.gov/refseq/release"
+URLS = {name: f"{BASE_URL}/{name}" for name in ("viral/viral.1.protein.faa.gz", "RELEASE_NUMBER")}
 
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    base = context.params.get("refseq_base_url", BASE_URL).rstrip("/")
+    mirror = context.params.get("refseq_base_url")
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/viral/viral.1.protein.faa.gz", staged.local/"viral.1.protein.faa.gz",
+        FetchCommand(Rebase(URLS["viral/viral.1.protein.faa.gz"], BASE_URL, mirror), staged.local/"viral.1.protein.faa.gz",
                      label="RefSeq viral proteins"),
-        FetchCommand(f"{base}/RELEASE_NUMBER", staged.local/"RELEASE_NUMBER", label="RefSeq release"),
+        FetchCommand(Rebase(URLS["RELEASE_NUMBER"], BASE_URL, mirror), staged.local/"RELEASE_NUMBER", label="RefSeq release"),
         f"mkdir -p {isrc.local}",
         f"mv {staged.local}/viral.1.protein.faa.gz {staged.local}/RELEASE_NUMBER {isrc.local}/",
     ])) != 0:

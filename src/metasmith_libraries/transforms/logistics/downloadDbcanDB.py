@@ -9,16 +9,17 @@ sources = model.AddProduct(lib.GetType("ref::dbcan_sources"))
 # still serves them: DRAM's own bcb.unl.edu address answers with a web page.
 BASE_URL = "https://pro.unl.edu/dbCAN2/download/Databases/V11"
 FILES = {"hmm": "dbCAN-HMMdb-V11.txt", "activities": "CAZyDB.08062022.fam-activities.txt"}
+URLS = {name: f"{BASE_URL}/{name}" for name in FILES.values()}
 
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    base = context.params.get("dbcan_base_url", BASE_URL).rstrip("/")
+    mirror = context.params.get("dbcan_base_url")
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(f"{base}/{name}", staged.local/name, label=f"dbCAN {key}")
+        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/name, label=f"dbCAN {key}")
           for key, name in FILES.items()),
         f"mkdir -p {isrc.local}",
         *(f"mv {staged.local/name} {isrc.local}/" for name in FILES.values()),

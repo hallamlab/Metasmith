@@ -12,22 +12,24 @@ DB_URL = "https://zenodo.org/records/14192463/files/DATABASES.tar.gz"
 DB_MD5 = "acb950e7994c561311a0a6ec36caa701"
 SRC_REPO = "https://gitlab.com/uniluxembourg/lcsb/systems-ecology/pathofact2"
 SRC_COMMIT = "bd5d527ede1516803500691536104a3cf41a5575"
+URLS = {
+    "databases": DB_URL,
+    "source": f"{SRC_REPO}/-/archive/{SRC_COMMIT}/pathofact2-{SRC_COMMIT}.tar.gz",
+}
 
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    commit = context.params.get("pathofact_commit", SRC_COMMIT)
-    src_url = f"{SRC_REPO}/-/archive/{commit}/pathofact2-{commit}.tar.gz"
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(DB_URL, staged.local/"DATABASES.tar.gz", label="PathoFact 2.0 databases"),
-        FetchCommand(src_url, staged.local/"pathofact2.tar.gz", label="PathoFact 2.0 source"),
+        FetchCommand(URLS["databases"], staged.local/"DATABASES.tar.gz", label="PathoFact 2.0 databases"),
+        FetchCommand(URLS["source"], staged.local/"pathofact2.tar.gz", label="PathoFact 2.0 source"),
         f'echo "{DB_MD5}  {staged.local}/DATABASES.tar.gz" | md5sum -c -',
         f"mkdir -p {isrc.local}",
         f"mv {staged.local}/DATABASES.tar.gz {staged.local}/pathofact2.tar.gz {isrc.local}/",
-        f"echo {commit} > {isrc.local}/commit",
+        f"echo {SRC_COMMIT} > {isrc.local}/commit",
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)
 

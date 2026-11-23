@@ -5,7 +5,7 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::diamond.env"))
 db    = model.AddProduct(lib.GetType("annotation::mobileog_diamond_db"))
 
-MOBILEOG_URL = "https://zenodo.org/records/13241605/files/mobileOG-db_beatrix-1.6.All.faa?download=1"
+URLS = {"mobileog": "https://zenodo.org/records/13241605/files/mobileOG-db_beatrix-1.6.All.faa?download=1"}
 
 
 def protocol(context: ExecutionContext):
@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(
         env=image,
         cmd=f"""
-            wget -q "{MOBILEOG_URL}" -O mobileog.faa
+            wget -q "{URLS['mobileog']}" -O mobileog.faa
             diamond makedb --in mobileog.faa -d mobileog
             mv mobileog.dmnd {idb.container}
         """,

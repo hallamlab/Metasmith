@@ -20,6 +20,7 @@ MANUAL_ONLY = {
     "remote_host",
     "docker",
     "nextflow",
+    "network",
 }
 
 NON_AXIS_DIRS = {"fixtures", "__pycache__", "repro"}

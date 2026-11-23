@@ -12,6 +12,7 @@ MIRRORS = ["https://ftp.uniprot.org/pub/databases/uniprot", "https://ftp.ebi.ac.
 # 1.6 GB and 243 GB.
 FILES = {sprot: f"{RELEASE}/knowledgebase/uniprot_sprot-only2025_04.tar.gz",
          uniref: f"{RELEASE}/uniref/uniref2025_04.tar.gz"}
+URLS = {path.rsplit("/", 1)[-1]: [f"{m}/{path}" for m in MIRRORS] for path in FILES.values()}
 
 
 def protocol(context: ExecutionContext):
@@ -20,7 +21,7 @@ def protocol(context: ExecutionContext):
     lines = ["set -euo pipefail"]
     for t, path in FILES.items():
         name = path.rsplit("/", 1)[-1]
-        lines += [FetchCommand([f"{m}/{path}" for m in MIRRORS], staged.local/name, label=name),
+        lines += [FetchCommand(URLS[name], staged.local/name, label=name),
                   f"mv {staged.local}/{name} {outs[t].local}"]
     if context.LocalShell("\n".join(lines)) != 0:
         return ExecutionResult(manifest=[], success=False)

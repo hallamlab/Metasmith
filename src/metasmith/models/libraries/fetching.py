@@ -12,6 +12,13 @@ _STALL_TIMEOUT_S = 120
 _TRIES = 3
 
 
+def Rebase(url: str, default_base: str, override: str | None) -> str:
+    if not override:
+        return url
+    assert url.startswith(default_base), f"[{url}] does not start with [{default_base}]"
+    return override.rstrip("/") + url[len(default_base):]
+
+
 def FetchCommand(
     urls: "str | list[str]",
     dest: "str | Path",

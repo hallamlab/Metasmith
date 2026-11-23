@@ -14,17 +14,17 @@ sources = model.AddProduct(lib.GetType("ref::metabuli_sources"))
 # one changes daily; it places human and the viruses. RefSeq viral is the current release
 # (238 when pinned), which NCBI replaces in place, so RELEASE_NUMBER records which one
 # was fetched.
-URLS = [
-    "https://data.gtdb.ecogenomic.org/releases/release232/232.0/genomic_files_reps/gtdb_genomes_reps_r232.tar.gz",
-    "https://data.gtdb.ecogenomic.org/releases/release232/232.0/bac120_metadata_r232.tsv.gz",
-    "https://data.gtdb.ecogenomic.org/releases/release232/232.0/ar53_metadata_r232.tsv.gz",
-    "https://github.com/shenwei356/gtdb-taxdump/releases/download/v0.7.0/gtdb-taxdump-R232.tar.gz",
-    "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/009/914/755/GCF_009914755.1_T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic.fna.gz",
-    "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump_archive/taxdmp_2026-10-01.zip",
-    "https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.1.1.genomic.fna.gz",
-    "https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.1.genomic.gbff.gz",
-    "https://ftp.ncbi.nlm.nih.gov/refseq/release/RELEASE_NUMBER",
-]
+URLS = {
+    "gtdb_genomes_reps_r232.tar.gz": "https://data.gtdb.ecogenomic.org/releases/release232/232.0/genomic_files_reps/gtdb_genomes_reps_r232.tar.gz",
+    "bac120_metadata_r232.tsv.gz": "https://data.gtdb.ecogenomic.org/releases/release232/232.0/bac120_metadata_r232.tsv.gz",
+    "ar53_metadata_r232.tsv.gz": "https://data.gtdb.ecogenomic.org/releases/release232/232.0/ar53_metadata_r232.tsv.gz",
+    "gtdb-taxdump-R232.tar.gz": "https://github.com/shenwei356/gtdb-taxdump/releases/download/v0.7.0/gtdb-taxdump-R232.tar.gz",
+    "GCF_009914755.1_T2T-CHM13v2.0_genomic.fna.gz": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/009/914/755/GCF_009914755.1_T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic.fna.gz",
+    "taxdmp_2026-10-01.zip": "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump_archive/taxdmp_2026-10-01.zip",
+    "viral.1.1.genomic.fna.gz": "https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.1.1.genomic.fna.gz",
+    "viral.1.genomic.gbff.gz": "https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.1.genomic.gbff.gz",
+    "RELEASE_NUMBER": "https://ftp.ncbi.nlm.nih.gov/refseq/release/RELEASE_NUMBER",
+}
 # From GTDB's MD5SUM.txt and NCBI's md5checksums.txt. The archive's md5 is checked by
 # buildMetabuliDB while it reads the archive, so the login node does not read 192 GB twice.
 MD5 = {
@@ -39,12 +39,12 @@ ARCHIVE_ROOT = "gtdb_genomes_reps_r232"
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    names = [url.rsplit("/", 1)[1] for url in URLS]
+    names = list(URLS)
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
         *(FetchCommand(url, staged.local/name, md5=MD5.get(name), label=name)
-          for url, name in zip(URLS, names)),
+          for name, url in URLS.items()),
         f"mkdir -p {isrc.local}",
         *(f"mv {staged.local/name} {isrc.local}/" for name in names),
     ])) != 0:

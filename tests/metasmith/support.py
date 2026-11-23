@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import re
 import shutil
 from pathlib import Path
 
@@ -93,3 +95,29 @@ def nxf_exec(container: str, workdir: Path, timeout: int) -> list[str]:
         "-e", "NXF_DISABLE_CHECK_LATEST=true",
         container, "timeout", "-s", "KILL", str(timeout),
     ]
+
+
+_FETCH_TOKENS = re.compile(
+    r"\b(wget|curl|aria2c|prefetch|urlretrieve|urlopen|datasets download|virsorter setup)\b"
+    r"|download-[a-z-]+|https?://|ftp://"
+)
+
+
+def source_downloads(source: str) -> bool:
+    tree = ast.parse(source)
+    docstrings = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "FetchCommand":
+            return True
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            if _FETCH_TOKENS.search(node.value):
+                return True
+    return False
+
+
+def library_transforms(libraries_root: Path):
+    transforms = libraries_root / "transforms"
+    for d in sorted(p for p in transforms.iterdir() if (p / "_metadata").is_dir()):
+        lib = TransformInstanceLibrary.Load(d)
+        for key, tr in lib.IterateTransforms():
+            yield f"{d.name}/{key}", tr, (d / tr._path).read_text()

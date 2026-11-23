@@ -9,21 +9,21 @@ sources = model.AddProduct(lib.GetType("ref::vogdb_sources"))
 BASE_URL = "https://fileshare.lisc.univie.ac.at/vog"
 RELEASE = "vog237"
 FILES = ("vog.hmm.tar.gz", "vog.annotations.tsv.gz")
+URLS = {name: f"{BASE_URL}/{RELEASE}/{name}" for name in FILES}
 
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    base = context.params.get("vogdb_base_url", BASE_URL).rstrip("/")
-    release = context.params.get("vogdb_release", RELEASE)
+    mirror = context.params.get("vogdb_base_url")
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(f"{base}/{release}/{name}", staged.local/name, label=f"VOGDB {name}")
+        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/name, label=f"VOGDB {name}")
           for name in FILES),
         f"mkdir -p {isrc.local}",
         *(f"mv {staged.local/name} {isrc.local}/" for name in FILES),
-        f"echo {release} > {isrc.local}/release",
+        f"echo {RELEASE} > {isrc.local}/release",
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)
 

@@ -9,13 +9,15 @@ image   = model.AddRequirement(lib.GetType("env::iphop.env"))
 sources = model.AddProduct(lib.GetType("ref::iphop_sources"))
 
 # iPHoP_db_Jun25_rw is GTDB r226 and is what iphop.env's version reads; see there for
-# why no r232 host database is possible. A run param, so Aug23_rw (r214, iphop 1.3.3)
-# or the small `iPHoP_db_rw_for-test` can be named at launch.
+# why no r232 host database is possible. Aug23_rw (r214, iphop 1.3.3) and the small
+# `iPHoP_db_rw_for-test` are other names that resolve here.
 #
 # Use `iPHoP_db_rw_for-test`, NOT the `iPHoP_db_for-test` the tool's own --help prints:
 # that name 404s.
 DB_VERSION = "iPHoP_db_Jun25_rw"
 BASE_URL = "https://portal.nersc.gov/cfs/m342/iphop/db"
+# The chunk names come from this list at run time.
+URLS = {"md5 list": f"{BASE_URL}/{DB_VERSION}.tar.gz.md5"}
 STREAMS = 4
 
 # What `iphop download --split` 1.4.2 reads (modules/master_downloader.py), fetched here
@@ -37,14 +39,14 @@ def _read_md5_list(path):
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    version = context.params.get("iphop_db_version", DB_VERSION)
-    base = context.params.get("iphop_base_url", BASE_URL).rstrip("/")
+    version = DB_VERSION
+    base = (context.params.get("iphop_base_url") or BASE_URL).rstrip("/")
     failed = ExecutionResult(manifest=[], success=False)
 
     md5_list = staged.local/f"{version}.tar.gz.md5"
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/{version}.tar.gz.md5", md5_list, label=f"{version} md5 list"),
+        FetchCommand(Rebase(URLS["md5 list"], BASE_URL, base), md5_list, label=f"{version} md5 list"),
     ])) != 0:
         return failed
     whole, chunks, folder = _read_md5_list(md5_list)

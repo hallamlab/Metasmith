@@ -12,6 +12,8 @@ RELEASE = "r232"
 MIN_GTDBTK = "2.7.0"
 BASE = "https://data.ace.uq.edu.au/public/gtdb/data/releases/release232/232.0"
 PARTS = "auxillary_files/gtdbtk_package/split_package/gtdbtk_r232_data.tar.gz.part_"
+# The part names come from MD5SUM.txt at run time; the first part stands for them.
+URLS = {"MD5SUM.txt": f"{BASE}/MD5SUM.txt", "first part": f"{BASE}/{PARTS}aa"}
 
 # Only the GTDB-Tk package, about 61 GB packed and 98 GB unpacked by buildGtdbDB. From 2.7 the ANI
 # screen and the post-placement ANI both run `skani search` against the shipped
@@ -23,11 +25,12 @@ def protocol(context: ExecutionContext):
     staged = context.StagingDir()
     # A run param, so a mirror that keeps the release's own layout can stand in.
     base = context.params.get("gtdb_release_url", BASE).rstrip("/")
+    md5sum_url = Rebase(URLS["MD5SUM.txt"], BASE, base)
 
     failed = ExecutionResult(manifest=[], success=False)
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/MD5SUM.txt", staged.local/"MD5SUM.txt", label="GTDB MD5SUM.txt"),
+        FetchCommand(md5sum_url, staged.local/"MD5SUM.txt", label="GTDB MD5SUM.txt"),
     ])) != 0:
         return failed
     parts = []

@@ -48,7 +48,7 @@ OVERRIDES: dict[str, list[str]] = {
     "library": _files(
         "unit", "binner_oom_exit", "build_decomposition", "database_downloads", "deferred_paths",
         "fetch_and_memory", "fork_roundtrip", "library_view_ordering", "pinned_library",
-        "product_groups", "prune_types", "transform_load_is_serialised",
+        "product_groups", "prune_types", "transform_load_is_serialised", "download_contracts",
     ),
     "pkg": _files(
         "unit", "container_tag", "dev_sh_dist_guard", "dev_sh_tag", "docker_build_context",
