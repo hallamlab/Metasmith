@@ -42,7 +42,7 @@ def _sha256(p: Path) -> str:
     return h.hexdigest()
 
 
-def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str):
+def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, produced: date):
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -99,7 +99,7 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str):
         f"# {out.name}",
         "",
         f"Geospatial features for {len(norm)} areas of interest (AOIs) from {len(found)} public data sources. "
-        f"geoquery produced it on {date.today()} (run `{run}`, image `{image}`).",
+        f"geoquery produced it on {produced} (run `{run}`, image `{image}`).",
         "",
         "Start with `integrated/features_wide.parquet` for one row per AOI, or open a source's CSV below.",
         "",
@@ -198,7 +198,7 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
         raise SystemExit(f"run produced no {missing}; see {results}/_metadata/logs.latest")
     env = (root / "resources" / "env" / "geoquery.env").read_text()
     image = re.search(r"^container: docker://(\S+)", env, re.M).group(1)
-    print(f"published {out}: {publish(results, aoi_table, out, task.GetKey(), image)}")
+    print(f"published {out}: {publish(results, aoi_table, out, task.GetKey(), image, date.today())}")
 
 
 def main():
