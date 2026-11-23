@@ -10,6 +10,7 @@ Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-seri
 engcyc-cases — after both workers land: engcyc template as two cases (short reads -> engcyc targets; long reads -> modified set incl. long-read taxonomy lanes), isolate/hybrid templates take accessions, probes short/hybrid/isolate/SRA-short/SRA-long/long-only/mixed two-case.
 
 ## Waiting on the user
+- run 4 disk: nibi /scratch has 849 GB free; full prep peaks above that (iPHoP 278 GB chunks kept + unpack, Metabuli 180 GB + build). Deselect iPHoP for run 4 (recommended), or home on /project (931 GB free)?
 - fix the ~40 s 3-case plan time (case_merge step order rebuilt per placement) before run 4?
 
 ## Preferences
