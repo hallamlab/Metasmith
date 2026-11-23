@@ -127,6 +127,10 @@ types:
     properties:
       src: metapathways_pgdb
       usage: command line
+  metabuli_gtdb:
+    properties:
+      src: metabuli_gtdb
+      usage: command line
   lcastar:
     properties:
       src: lcastar

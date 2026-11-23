@@ -110,13 +110,13 @@ types:
     - reference_data
     properties:
       _: metabuli reference database
-  # The fetch half of metabuli_ref.
+  # The fetch half of metabuli_ref. Linked rather than copied: it holds the 192 GB GTDB archive.
   metabuli_sources:
+    stage: link
     extends:
     - reference_data
     properties:
-      _: metabuli reference package tarball as fetched, unpacked by buildMetabuliDB
-      ext: tar.gz
+      _: GTDB r232 representative genome archive with its metadata, gtdb-taxdump, the R214.1 selection, human T2T, NCBI taxdump and RefSeq viral, as fetched, built by buildMetabuliDB
   gtdb:
     extends:
     - reference_data
