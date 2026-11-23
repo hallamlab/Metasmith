@@ -13,10 +13,16 @@ types:
     extends: accession
     properties:
       database: assemblies
-  sra_accession:
+  sra_short_read_accession:
     extends: accession
     properties:
       database: SRA
+      read_length: short
+  sra_long_read_accession:
+    extends: accession
+    properties:
+      database: SRA
+      read_length: long
   # What the user calls the thing an accession fetches. Sits ABOVE the accession
   # in lineage, so everything downloaded from it inherits the name and any later
   # step can ask which name a file descends from. It lives here rather than in

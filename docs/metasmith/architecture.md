@@ -69,8 +69,7 @@ collapse it again offers a grandparent whose removal silently reverts on the nex
 **A product group is one possible outcome.** `Transform.produces` is a `list[list[Dependency]]`.
 Products a tool always writes together share one group. `NewProductGroup()` starts an
 alternative, so a transform with several groups is a *fork*: each task writes one or more of
-its groups, and the plan must hold a route below every group. `getSraReads` is the shipped case,
-since an accession yields long, paired or single reads. The given transform reuses the shape for
+its groups, and the plan must hold a route below every group. No standard-library transform is a fork today; `tests/metasmith/flow/test_forks.py` pins the behaviour. The given transform reuses the shape for
 sample families, which the solver branches into timelines. One solve plans for one group of each
 fork (`Problem::outcome` in `src/workflow_solver/`), so a fork step in any one case's plan
 carries exactly one declared group, and the witness checks that.

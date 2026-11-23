@@ -7,18 +7,8 @@ lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::sra-tools.env"))
 meta    = model.AddRequirement(lib.GetType("sequences::read_metadata"))
-dep     = model.AddRequirement(lib.GetType("ncbi::sra_accession"), parents={meta})
-
-# One accession yields exactly one of these, and which one is a fact about the
-# run that only the metadata knows -- so they are alternative product groups
-# rather than three products. Downstream tools require the concrete type
-# (bbduk takes short_reads, filtlong takes long_reads), which is why this does
-# not simplify to a single `sequences::reads` product.
-long     = model.AddProduct(lib.GetType("sequences::long_reads"))
-model.NewProductGroup()
-short_pe = model.AddProduct(lib.GetType("sequences::short_reads_pe"))
-model.NewProductGroup()
-short_se = model.AddProduct(lib.GetType("sequences::short_reads_se"))
+dep     = model.AddRequirement(lib.GetType("ncbi::sra_short_read_accession"), parents={meta})
+reads   = model.AddProduct(lib.GetType("sequences::short_reads"))
 
 def protocol(context: ExecutionContext):
     iacc = context.Input(dep)
@@ -33,15 +23,9 @@ def protocol(context: ExecutionContext):
     length_class = read_meta["length_class"]
     parity = read_meta["parity"]
     Log.Info(f"length_class=[{length_class}], parity=[{parity}]")
-    assert length_class in {"short", "long"}, f"unknown [length_class] = [{length_class}]"
+    assert length_class == "short", f"[length_class] = [{length_class}] was given a short-read accession"
     assert parity in {"single", "paired"}, f"unknown [parity] = [{parity}]"
 
-    if length_class == "long":
-        reads = long
-    elif parity == "paired":
-        reads = short_pe
-    else:
-        reads = short_se
     ireads = context.Output(reads)
 
     cpus = context.params.get('cpus')
@@ -49,9 +33,8 @@ def protocol(context: ExecutionContext):
 
     # prefetch leaves the cache in ./{acc}, which is where fastq-dump looks for
     # it, so the two halves need nothing between them. --split-spot writes both
-    # mates of a paired spot consecutively, which is the interleaving
-    # `short_reads_pe` declares. The image's sh is busybox ash, which honours
-    # the pipefail ExecWithEnv sets.
+    # mates of a paired spot consecutively, which interleaves a paired run. The
+    # image's sh is busybox ash, which honours the pipefail ExecWithEnv sets.
     dump_log = "fastq-dump.log"
     context.ExecWithEnv(
         env = image,

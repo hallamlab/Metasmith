@@ -19,9 +19,9 @@ notebook_name = Path(__file__).stem
 
 input_raw = [
 
-    ("SRR17798920", "ncbi::sra_accession", dict(parity="single", length_class="short")),
-    ("SRR039686", "ncbi::sra_accession", dict(parity="single", length_class="long")),
-    ("SRR21655586", "ncbi::sra_accession", dict(parity="paired", length_class="short")),
+    ("SRR17798920", "ncbi::sra_short_read_accession", dict(parity="single", length_class="short")),
+    ("SRR039686", "ncbi::sra_long_read_accession", dict(parity="single", length_class="long")),
+    ("SRR21655586", "ncbi::sra_short_read_accession", dict(parity="paired", length_class="short")),
 ]
 _, _hash = KeyGenerator.FromStr("".join(str(p) for p, t, m in input_raw))
 in_dir = base_dir/f"{notebook_name}/inputs.{_hash}.xgdb"
