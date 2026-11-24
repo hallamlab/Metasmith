@@ -6,8 +6,9 @@ under the key it was handed, and the virtual runtime calls the functions
 in-process. Nothing here opens sqlite: a task and the head node both probe by
 looking at the shard on disk.
 
-Imports only `caching.keys` and the standard library, so the helper's start-up
-cost stays that of one interpreter.
+Imports only `caching.keys`, `caching.leases` and the standard library, so the
+helper's start-up cost stays that of one interpreter. The same command deletes
+a shard file for the orchestrator (`op: delete`), under the run's lease check.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from . import leases
 from .keys import CACHE_KEY_VERSION, canonical_cbor, lineage_key, multihash_key
 from .layout import MANIFEST_NAME, shard_dir
 
@@ -160,7 +162,8 @@ def probe_members(spec: dict) -> list[Row]:
     In `probe` mode the verdict is `-`, `hit`, `ghost` or `miss`. In `run` mode
     a ghost is `skip` when the run's skip file lists it and `miss` otherwise, and
     a miss that would read a file a skipped ghost left absent is `stale`: the
-    probe and the run disagree, and running it would read a placeholder.
+    probe and the run disagree, and running it would read a placeholder. Every
+    key is leased to the spec's `run` before its shard is read (`leases`).
     """
     tk = spec["tk"]
     sig = spec["sig"]
@@ -168,18 +171,19 @@ def probe_members(spec: dict) -> list[Row]:
     cache_root = Path(spec["cache_root"])
     probing = spec.get("mode") == "probe"
     skip, absent = (set(), set()) if probing else read_skips(spec.get("skip"))
+    consumed = [consumed_of(entry, slots) for entry in spec["members"]]
+    keys = [None if c is None else member_key(tk, sig, c) for c in consumed]
+    leases.take(cache_root, spec.get("run") or "", [k.hex() for k in keys if k], bool(spec.get("keep")))
     rows: list[Row] = []
-    for entry in spec["members"]:
-        consumed = consumed_of(entry, slots)
-        if consumed is None:
+    for c, key in zip(consumed, keys):
+        if key is None:
             rows.append(("-", "-", "", []))
             continue
-        key = member_key(tk, sig, consumed)
         verdict, shard, files = shard_state(cache_root, key)
         if not probing and verdict == "ghost":
             verdict = "skip" if key.hex() in skip else "miss"
         if verdict == "miss":
-            if absent and any(i in absent for ids in consumed.values() for i in ids):
+            if absent and any(i in absent for ids in c.values() for i in ids):
                 verdict = "stale"
             rows.append((key.hex(), verdict, "", []))
         else:
@@ -189,6 +193,10 @@ def probe_members(spec: dict) -> list[Row]:
 
 def main(argv: list[str] | None = None) -> int:
     spec = json.load(sys.stdin)
+    if spec.get("op") == "delete":
+        for status in leases.delete(Path(spec["cache_root"]), spec.get("run") or "", spec["items"]):
+            sys.stdout.write(status + "\n")
+        return 0
     for key_hex, verdict, shard, files in probe_members(spec):
         line = f"{key_hex}|{verdict}"
         if shard:
