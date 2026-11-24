@@ -28,6 +28,8 @@ __pycache__
 /conda_recipe/*/*
 !/conda_recipe/*/compile_recipe.py
 !/conda_recipe/*/meta_template.yaml
+!/conda_recipe/bioconda/meta.yaml
+!/conda_recipe/bioconda/build.sh
 
 # A deployed agent home, under every spelling anyone has used for one. These are
 # deployment artifacts, never repo content, and a script that anchors its home on
