@@ -133,8 +133,8 @@ and the 0.5 cut.
   hits. The new pipeline does neither. It still uses CLEAN's model calls, and its UniRef50
   release is newer.
 
-Rerun outputs on fir are under `/scratch/phyberos/beth_mp/pffix/` (`names/` and `floor05/`,
-one directory per assembly). `pathway_recheck.py` and `pathway_recheck.sbatch` produce them.
+Rerun outputs are in `data/beth_mp/pffix/outputs/` (`names/` and `floor05/`,
+one directory per assembly), with the two driver runs in `data/beth_mp/pffix/runs/`. `pathway_recheck.py` and `pathway_recheck.sbatch` produce them.
 
 ## Recheck with MetaPathways 4's own Pathway Tools input (2026-11-22)
 
@@ -184,5 +184,5 @@ The PathoLogic half of this recheck ran outside the workflow engine, through
 `faithful_pathologic.sbatch`, with the library's own scripts. In the engine the PathoLogic input
 reads the full annotation table, which on these assemblies would rerun lanes this input never
 reads. The four searches ran in the engine (`run_port.py --group mp4lanes`). `pf_agreement.py`
-compares the two pipelines' inputs gene by gene. Outputs on fir are under
-`/scratch/phyberos/beth_mp/pffix/faithful/`, one directory per assembly.
+compares the two pipelines' inputs gene by gene. Outputs are in
+`data/beth_mp/pffix/outputs/faithful/`, one directory per assembly.
