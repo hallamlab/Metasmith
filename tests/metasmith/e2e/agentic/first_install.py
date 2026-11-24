@@ -15,12 +15,10 @@ from tests.metasmith.e2e.agentic.harness import jail
 from tests.metasmith.e2e.agentic.harness.bootstrap_env import ensure_bootstrap_env
 from tests.metasmith.e2e.agentic.harness.loop import LoopBudgets, ralph_loop
 from tests.metasmith.e2e.agentic.harness.sandbox import _hardlink_channel
+from tests.metasmith.e2e.agentic.hosts import HOSTS, Host, run_tag
 
 REPO = Path(__file__).resolve().parents[4]
 DOCS = REPO / "docs" / "metasmith" / "source"
-HOST = "nibi"
-ACCOUNT = "def-shallam_cpu"
-REMOTE_ROOT = "/scratch/phyberos/msm_e2e"
 _ENA = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR965/008/SRR9658108/SRR9658108"
 SAMPLES = {
     "sra": "SRA run SRR9658108",
@@ -29,33 +27,41 @@ SAMPLES = {
 PLAYWRIGHT_MCP = Path.home() / "msm_e2e" / "tools" / "playwright-mcp"
 CHROMIUM = Path.home() / ".cache" / "ms-playwright" / "chromium-1248" / "chrome-linux64" / "chrome"
 
+_DEPLOY = (
+    "Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
+    "with its home under {remote}. "
+)
+_RUN = (
+    "Run the {prep} workflow to set up the reference databases, "
+    "then run the {template} workflow {targets} on {sample}. Collect the results back to ./results."
+)
 GOALS = {
     "gui": (
-        "You are a new metasmith user. Using only the docs in ./docs, install metasmith and start its web GUI. "
-        "Then use the GUI the way a person would, through your browser tools, which drive a real browser. "
+        "You are a new metasmith user. Using only the docs in ./docs, install metasmith and start its web GUI "
+        "on port {port}. Then use the GUI the way a person would, through your browser tools, which drive a real browser. "
         "Do not call the GUI's HTTP API with curl and do not write Python for these steps. "
-        "Through the GUI, deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
-        "with its home under {remote}. Run the engcyc_prep_references workflow to set up the reference databases, "
-        "then run the engcyc_metagenomics workflow with its default targets on {sample}. Collect the results back to ./results."
+        "Through the GUI, " + _DEPLOY.replace("Deploy", "deploy", 1) + _RUN
     ),
     "api": (
         "You are a new metasmith user. Using only the docs in ./docs, install metasmith and use its Python API "
-        "as the docs describe. Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
-        "with its home under {remote}. Run the engcyc_prep_references workflow to set up the reference databases, "
-        "then run the engcyc_metagenomics workflow with its default targets on {sample}. Collect the results back to ./results. "
+        "as the docs describe. " + _DEPLOY + _RUN + " "
         "For each API call you make, note in STEPS.md whether the docs made clear what it does, "
         "and whether it did what the docs said."
     ),
     "full": (
-        "You are a new metasmith user. Install metasmith using only the docs in ./docs. "
-        "Deploy an agent to the cluster reachable as `ssh {host}` (Slurm account {account}), "
-        "with its home under {remote}. Run the engcyc_prep_references workflow to set up the reference databases, "
-        "then run the engcyc_metagenomics workflow with its default targets on {sample}. Collect the results back to ./results."
+        "You are a new metasmith user. Install metasmith using only the docs in ./docs. " + _DEPLOY + _RUN
     ),
     "dry": (
         "You are a new metasmith user. Using only the docs in ./docs, install metasmith "
         "and print its version. Then run `ssh {host} hostname`. Do nothing else."
     ),
+}
+
+SUBSET_FILE = "TARGETS.txt"
+TARGET_TEXT = {
+    None: "with its default targets",
+    "keep": f"keeping only the targets listed in ./{SUBSET_FILE} and deselecting every other target in the target list",
+    "drop": f"deselecting the targets listed in ./{SUBSET_FILE} and keeping the rest of the default targets",
 }
 
 PROTOCOL = """
@@ -71,35 +77,45 @@ PROTOCOL = """
 """
 
 
-def build_prompt(goal: str, sandbox: Path, remote: str, sample: str) -> str:
-    text = GOALS[goal].format(host=HOST, account=ACCOUNT, remote=remote, sample=SAMPLES[sample])
-    return text + "\n" + PROTOCOL.format(sandbox=sandbox, host=HOST)
+def build_prompt(goal: str, sandbox: Path, remote: str, sample: str, host: Host,
+                 prep: str, template: str, subset: str | None = None) -> str:
+    targets = TARGET_TEXT[subset]
+    if subset:
+        targets += f" (a target missing from a workflow's list can be ignored; each line of ./{SUBSET_FILE} is a target type)"
+    text = GOALS[goal].format(host=host.ssh, account=host.account, remote=remote, sample=SAMPLES[sample],
+                              port=host.gui_port, prep=prep, template=template, targets=targets)
+    return text + "\n" + PROTOCOL.format(sandbox=sandbox, host=host.ssh)
 
 
-def remote_exists(path: str) -> bool:
-    r = subprocess.run(["ssh", HOST, f"test -e {shlex.quote(path)}"], capture_output=True, text=True)
+def read_subset(path: Path) -> str:
+    lines = [ln.strip() for ln in path.read_text().splitlines()]
+    return "".join(ln + "\n" for ln in lines if ln and not ln.startswith("#"))
+
+
+def remote_exists(host: Host, path: str) -> bool:
+    r = subprocess.run(["ssh", host.ssh, f"test -e {shlex.quote(path)}"], capture_output=True, text=True)
     if r.returncode == 255:
-        raise SystemExit(f"ssh {HOST} failed (is the master open?): {r.stderr.strip()}")
+        raise SystemExit(f"ssh {host.ssh} failed (is the master open?): {r.stderr.strip()}")
     return r.returncode == 0
 
 
-def stage_sif(sif: Path, tag: str, remote: str) -> None:
+def stage_sif(host: Host, sif: Path, tag: str, remote: str) -> None:
     """Put an unpublished image where the agent's pull would land, as RELEASE_PROTOCOL.md describes."""
     store = f"{remote}/container_images"
     dst = f"{store}/docker..quay.io_hallamlab_metasmith..{tag}.sif"
-    subprocess.run(["ssh", HOST, f"mkdir -p {store}"], check=True)
-    subprocess.run(["rsync", "-a", str(sif), f"{HOST}:{dst}"], check=True)
-    subprocess.run(["ssh", HOST, f"module load apptainer && apptainer exec --no-home --cleanenv {dst} true && touch {dst}.verified"],
+    subprocess.run(["ssh", host.ssh, f"mkdir -p {store}"], check=True)
+    subprocess.run(["rsync", "-a", str(sif), f"{host.ssh}:{dst}"], check=True)
+    subprocess.run(["ssh", host.ssh, f"{host.modules} && apptainer exec --no-home --cleanenv {dst} true && touch {dst}.verified"],
                    check=True)
 
 
-def ssh_config_text(sandbox: Path) -> tuple[str, str]:
+def ssh_config_text(sandbox: Path, host: Host) -> tuple[str, str]:
     # The block lands in the sandbox's ~/.ssh/config, which the GUI edits. ssh itself
     # reads the passwd home, so the real path holds only an Include of that file.
-    resolved = subprocess.run(["ssh", "-G", HOST], capture_output=True, text=True, check=True).stdout
+    resolved = subprocess.run(["ssh", "-G", host.ssh], capture_output=True, text=True, check=True).stdout
     opts = dict(line.split(" ", 1) for line in resolved.splitlines() if " " in line)
     return (
-        f"Host {HOST}\n"
+        f"Host {host.ssh}\n"
         f"    HostName {opts['hostname']}\n"
         f"    User {opts['user']}\n"
         f"    ControlMaster no\n"
@@ -110,12 +126,14 @@ def ssh_config_text(sandbox: Path) -> tuple[str, str]:
     ), opts["controlpath"]
 
 
-def build_sandbox(sandbox: Path, docs: Path, channel: Path | None) -> tuple[list[jail.BindSpec], dict[str, str]]:
+def build_sandbox(sandbox: Path, docs: Path, channel: Path | None, host: Host, subset_text: str | None = None) -> tuple[list[jail.BindSpec], dict[str, str]]:
     home = sandbox / "home"
     for d in (home, sandbox / "tmp", sandbox / "envs", sandbox / "pkgs"):
         d.mkdir(parents=True)
     shutil.copytree(docs, sandbox / "docs")
     (sandbox / "PROGRESS.md").touch()
+    if subset_text:
+        (sandbox / SUBSET_FILE).write_text(subset_text)
     condarc = ("channels:\n  - conda-forge\n  - bioconda\n"
                f"envs_dirs:\n  - {sandbox}/envs\npkgs_dirs:\n  - {sandbox}/pkgs\n")
     if channel:
@@ -126,7 +144,7 @@ def build_sandbox(sandbox: Path, docs: Path, channel: Path | None) -> tuple[list
     guard = sandbox / ".no-fresh-login"
     guard.write_text("#!/bin/sh\necho 'ssh: no connection to the cluster; ask the operator to reconnect' >&2\nexit 1\n")
     guard.chmod(0o755)
-    ssh_conf, control_path = ssh_config_text(sandbox)
+    ssh_conf, control_path = ssh_config_text(sandbox, host)
     user_ssh = home / ".ssh" / "config"
     user_ssh.parent.mkdir(mode=0o700)
     user_ssh.write_text(ssh_conf)
@@ -179,7 +197,13 @@ def write_jailed_claude(sandbox: Path, wrapper: Path, binds, env) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--run", type=int, required=True, help="run number N; names run-N locally and on the cluster")
+    ap.add_argument("--run", type=int, required=True, help="run number N; names run-N-HOST locally and on the cluster")
+    ap.add_argument("--host", choices=sorted(HOSTS), required=True, help="the cluster this run installs onto")
+    ap.add_argument("--prep", default="engcyc_prep_references", help="template that sets up the reference databases")
+    ap.add_argument("--template", default="engcyc_metagenomics", help="template that analyses the sample")
+    grp = ap.add_mutually_exclusive_group()
+    grp.add_argument("--keep", type=Path, help="file of target types, one per line; the agent deselects all others")
+    grp.add_argument("--drop", type=Path, help="file of target types, one per line; the agent deselects these")
     ap.add_argument("--goal", choices=sorted(GOALS), default="gui")
     ap.add_argument("--local-root", type=Path, default=Path.home() / "msm_e2e")
     ap.add_argument("--docs", type=Path, default=DOCS)
@@ -196,31 +220,38 @@ def main(argv: list[str] | None = None) -> int:
 
     # The agent's detached processes outlive each pass, so the whole run lives in one
     # systemd scope: stopping the scope is the only cleanup that reaches all of them.
-    unit = f"msm-e2e-run-{args.run}"
+    host = HOSTS[args.host]
+    tag = run_tag(args.run, args.host)
+    unit = f"msm-e2e-{tag}"
     if os.environ.get("MSM_E2E_SCOPE") != unit:
         os.environ["MSM_E2E_SCOPE"] = unit
         os.execvp("systemd-run", ["systemd-run", "--user", "--scope", "-q", f"--unit={unit}",
                                   sys.executable, "-m", "tests.metasmith.e2e.agentic.first_install",
                                   *(argv if argv is not None else sys.argv[1:])])
 
-    run_dir = args.local_root / f"run-{args.run}"
-    remote = f"{REMOTE_ROOT}/run-{args.run}"
+    run_dir = args.local_root / tag
+    remote = f"{host.scratch_root}/{tag}"
     if run_dir.exists():
-        raise SystemExit(f"{run_dir} exists; read and delete it before starting run {args.run}")
-    if args.goal != "dry" and remote_exists(remote):
-        raise SystemExit(f"{HOST}:{remote} exists; read and delete it before starting run {args.run}")
+        raise SystemExit(f"{run_dir} exists; read and delete it before starting {tag}")
+    if args.goal != "dry" and remote_exists(host, remote):
+        raise SystemExit(f"{host.ssh}:{remote} exists; read and delete it before starting {tag}")
+
+    subset_file, subset = (args.keep, "keep") if args.keep else (args.drop, "drop") if args.drop else (None, None)
+    subset_text = read_subset(subset_file) if subset_file else None
+    if subset_file and not subset_text:
+        raise SystemExit(f"{subset_file} lists no target types")
 
     if args.sif:
-        stage_sif(args.sif, args.image_tag, remote)
+        stage_sif(host, args.sif, args.image_tag, remote)
 
     sandbox = run_dir / "sandbox"
-    binds, env = build_sandbox(sandbox, args.docs, args.channel)
+    binds, env = build_sandbox(sandbox, args.docs, args.channel, host, subset_text)
     wrapper = run_dir / "jailed-claude"
     write_jailed_claude(sandbox, wrapper, binds, env)
     (run_dir / "harness.pid").write_text(str(os.getpid()))
     if args.goal != "dry":
         with (run_dir / "watch.out").open("w") as log:
-            subprocess.Popen([sys.executable, "-m", "tests.metasmith.e2e.agentic.watch_remote", "--run", str(args.run)],
+            subprocess.Popen([sys.executable, "-m", "tests.metasmith.e2e.agentic.watch_remote", "--run", str(args.run), "--host", args.host],
                              stdout=log, stderr=subprocess.STDOUT)
 
     # --strict-mcp-config with no --mcp-config drops the account's claude.ai connectors.
@@ -233,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
                           extra_argv=mcp)
     result = ralph_loop(
         driver=driver,
-        prompt=build_prompt(args.goal, sandbox, remote, args.sample),
+        prompt=build_prompt(args.goal, sandbox, remote, args.sample, host, args.prep, args.template, subset),
         sandbox=sandbox,
         budgets=LoopBudgets(max_iters=args.max_iters, max_tokens=args.max_tokens,
                             max_tokens_per_iter=args.max_tokens, max_usd_per_iter=args.usd_per_iter),

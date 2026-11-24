@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-HOST = "nibi"
-REMOTE_ROOT = "/scratch/phyberos/msm_e2e"
+from tests.metasmith.e2e.agentic.hosts import HOSTS, run_tag
+
 
 # One find walk feeds every per-directory row: Lustre stats are the cost, so walk once.
 PROBE = r'''
@@ -54,29 +54,36 @@ ps -u "$USER" -o pid=,ppid= | awk -v roots=" $roots " '
 '''
 
 
-def ssh_script(script: str, *args: str, timeout: float) -> str:
-    r = subprocess.run(["ssh", HOST, "bash", "-s", "--", *args], input=script,
+def ssh_script(host: str, script: str, *args: str, timeout: float, hop: str | None = None) -> str:
+    via = ["ssh", hop] if hop else []
+    r = subprocess.run(["ssh", host, *via, "bash", "-s", "--", *args], input=script,
                        capture_output=True, text=True, timeout=timeout)
     if r.returncode == 255:
-        raise RuntimeError(f"ssh {HOST} failed: {r.stderr.strip()}")
+        raise RuntimeError(f"ssh {host} failed: {r.stderr.strip()}")
     return r.stdout
 
 
-def sample(remote_dir: str, min_dir_files: int) -> list[dict]:
+def sample(host: str, remote_dir: str, min_dir_files: int) -> list[dict]:
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     rows = []
-    for line in ssh_script(PROBE, remote_dir, str(min_dir_files), timeout=1200).splitlines():
+    for line in ssh_script(host, PROBE, remote_dir, str(min_dir_files), timeout=1200).splitlines():
         kind, path, inodes, nbytes, note = (line.split("\t") + [""] * 5)[:5]
         rows.append(dict(ts=now, kind=kind, path=path, inodes=int(inodes or 0),
                          bytes=int(nbytes or 0), note=note))
     return rows
 
 
-def stop_run(remote_dir: str, local_dir: Path, reason: str, total: dict) -> None:
-    actions = ssh_script(STOP, remote_dir, timeout=120).splitlines()
+def stop_run(host: str, remote_dir: str, local_dir: Path, reason: str, total: dict) -> None:
+    actions = ssh_script(host, STOP, remote_dir, timeout=120).splitlines()
+    # A fir driver can sit on any login node, and ssh lands on only one.
+    for node in HOSTS[host].login_nodes:
+        try:
+            actions += [f"{node}: {a}" for a in ssh_script(host, STOP, remote_dir, timeout=120, hop=node).splitlines()]
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            actions.append(f"{node}: stop failed: {str(e)[:120]}")
     # The runner, this watcher and every process the agent detached share one
     # systemd scope, so the record is written before the stop that ends us.
-    unit = f"{local_dir.name.replace('run-', 'msm-e2e-run-')}.scope"
+    unit = f"msm-e2e-{local_dir.name}.scope"
     record = dict(ts=dt.datetime.now().astimezone().isoformat(timespec="seconds"),
                   reason=reason, total=total, actions=actions + [f"systemctl stop {unit}"])
     (local_dir / "STOP.json").write_text(json.dumps(record, indent=2))
@@ -86,17 +93,24 @@ def stop_run(remote_dir: str, local_dir: Path, reason: str, total: dict) -> None
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--run", type=int, help="run number N; sets --remote-dir and --local-dir")
+    ap.add_argument("--host", choices=sorted(HOSTS), required=True)
+    ap.add_argument("--run", type=int, help="run number N; sets --remote-dir and --local-dir to run-N-HOST")
     ap.add_argument("--remote-dir")
     ap.add_argument("--local-dir", type=Path)
-    ap.add_argument("--max-files", type=int, default=600_000)
-    ap.add_argument("--max-gb", type=float, default=600.0)
+    ap.add_argument("--max-files", type=int, help="default: the host's cap in hosts.py")
+    ap.add_argument("--max-gb", type=float, help="default: the host's cap in hosts.py")
     ap.add_argument("--interval", type=float, default=300.0)
     ap.add_argument("--min-dir-files", type=int, default=5000, help="report a subdirectory below depth 1 only past this many entries")
     ap.add_argument("--once", action="store_true")
     args = ap.parse_args(argv)
-    remote_dir = args.remote_dir or f"{REMOTE_ROOT}/run-{args.run}"
-    local_dir = args.local_dir or Path.home() / "msm_e2e" / f"run-{args.run}"
+    cfg = HOSTS[args.host]
+    max_files = args.max_files or cfg.max_files
+    max_gb = args.max_gb or cfg.max_gb
+    if not args.run and not (args.remote_dir and args.local_dir):
+        ap.error("give --run, or both --remote-dir and --local-dir")
+    tag = run_tag(args.run, args.host) if args.run else None
+    remote_dir = args.remote_dir or f"{cfg.scratch_root}/{tag}"
+    local_dir = args.local_dir or Path.home() / "msm_e2e" / tag
     local_dir.mkdir(parents=True, exist_ok=True)
     csv_path = local_dir / "watch.csv"
     fields = ["ts", "kind", "path", "inodes", "bytes", "note"]
@@ -105,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
 
     while True:
         try:
-            rows = sample(remote_dir, args.min_dir_files)
+            rows = sample(args.host, remote_dir, args.min_dir_files)
         except (RuntimeError, subprocess.TimeoutExpired) as e:
             rows = [dict(ts=dt.datetime.now().astimezone().isoformat(timespec="seconds"),
                          kind="error", path=remote_dir, inodes=0, bytes=0, note=str(e)[:200])]
@@ -120,9 +134,9 @@ def main(argv: list[str] | None = None) -> int:
             peak = max(peak, total["inodes"])
             jobs = sum(r["kind"] == "job" for r in rows)
             print(f"{total['ts']} files={total['inodes']} gb={total['bytes'] / 1e9:.1f} peak={peak} jobs={jobs}", flush=True)
-            if total["inodes"] >= args.max_files or total["bytes"] >= args.max_gb * 1e9:
-                stop_run(remote_dir, local_dir, f"cap crossed: files {total['inodes']} >= {args.max_files} "
-                         f"or bytes {total['bytes']} >= {args.max_gb} GB", total)
+            if total["inodes"] >= max_files or total["bytes"] >= max_gb * 1e9:
+                stop_run(args.host, remote_dir, local_dir, f"cap crossed: files {total['inodes']} >= {max_files} "
+                         f"or bytes {total['bytes']} >= {max_gb} GB", total)
                 return 2
         else:
             print(f"{rows[0]['ts']} {rows[0]['kind']}: {rows[0]['note']}", flush=True)
