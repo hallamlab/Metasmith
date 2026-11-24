@@ -6,12 +6,14 @@ import re
 import shutil
 import time
 import threading
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
 import yaml
 
+from ..caching import leases
 from ..caching.layout import default_cache_root
 from ..constants import AgentPaths, MODULE_PATH, VERSION
 from ..coms.terminals import LiveShell
@@ -182,7 +184,7 @@ def RenderLauncher(
 
 def RenderNextflowScript(
     *, workspace, log_dir, host: str, results_folder: str,
-    nxf_report, nxf_dag, stub_param: str,
+    nxf_report, nxf_dag, stub_param: str, run_id: str = "",
 ) -> str:
     # Nextflow, plus the supervisor that stops it. PID.lock holds nextflow's own
     # pgid (see `set -m` below), so removing the lock file stops the whole run
@@ -242,6 +244,7 @@ def RenderNextflowScript(
                 -with-timeline {log_dir}/nxf_timeline.html \
                 -with-trace {log_dir}/{AgentPaths.NXF_TRACE_FILE} \
                 {stub_param} \
+                --msm_run "{run_id}" \
                 -lib ./lib \
                 -ansi-log false \
                 -resume \
@@ -273,7 +276,7 @@ def RenderNextflowScript(
             """
 
 
-def RenderProbeScript(*, workspace, log_dir, host: str) -> str:
+def RenderProbeScript(*, workspace, log_dir, host: str, run_id: str) -> str:
     # The footprint's probe pass (caching/footprint.py): the same workflow, no
     # process, nothing published. It is over in the time nextflow takes to start
     # and walk the channels, so it needs no supervisor.
@@ -293,13 +296,14 @@ def RenderProbeScript(*, workspace, log_dir, host: str) -> str:
                 --hostName "{host}" \
                 --output nxf_probe/results \
                 --msm_probe true \
+                --msm_run "{run_id}" \
                 -lib ./lib \
                 -ansi-log false \
                 -work-dir {workspace}/nxf_probe
             """
 
 
-def _probe_footprint(shell, task, workspace: Path, log_dir: Path, host: str, cache_root: Path):
+def _probe_footprint(shell, task, workspace: Path, log_dir: Path, host: str, cache_root: Path, run_id: str):
     from ..caching import footprint
     from ..models.workflow.cache_decisions import cache_enabled
 
@@ -307,7 +311,7 @@ def _probe_footprint(shell, task, workspace: Path, log_dir: Path, host: str, cac
     if task.plan.keep_intermediates or not cache_enabled() or not footprint.has_ghosts(cache_root):
         return
     Log.Info("probing the cache for deleted products this run can do without")
-    probe = shell.Exec(RenderProbeScript(workspace=workspace, log_dir=log_dir, host=host), timeout=None)
+    probe = shell.Exec(RenderProbeScript(workspace=workspace, log_dir=log_dir, host=host, run_id=run_id), timeout=None)
     if probe.exit_code != 0:
         Log.Warn(f"cache probe failed (see [{log_dir}/nxf_probe.log]), so every deleted product a step reads is made again")
         footprint.reset(workspace)
@@ -782,12 +786,20 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     output_path.mkdir(parents=True, exist_ok=True)
     # Not a new session: nextflow belongs to the run this driver is, so it stays
     # in the run's session rather than escaping where a reap cannot see it.
-    with LiveShell(new_session=False) as shell:
+    # Every shard this run decides is leased to it until record_run is done, so
+    # another run on this home deletes none of them meanwhile (caching/leases.py).
+    cache_root = default_cache_root(Path(str(extern_home)))
+    run_id = os.environ.get(AgentPaths.RUN_TOKEN_ENV) or f"{key}.{start_time}"
+    lease = ExitStack()
+    lease.enter_context(leases.held(cache_root, run_id))
+    lease_on_error = ExitStack()
+    lease_on_error.callback(lease.close)
+    with lease_on_error, LiveShell(new_session=False) as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
-        _probe_footprint(shell, task, workspace, log_dir, host, default_cache_root(Path(str(extern_home))))
+        _probe_footprint(shell, task, workspace, log_dir, host, cache_root, run_id)
         with _Heartbeat(shell, workspace, task), _LineageReport(
             workspace, task, extern_home=Path(str(extern_home)), out_dir=workspace/log_dir,
         ):
@@ -795,10 +807,11 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 RenderNextflowScript(
                     workspace=workspace, log_dir=log_dir, host=host,
                     results_folder=results_folder, nxf_report=nxf_report,
-                    nxf_dag=nxf_dag, stub_param=stub_param,
+                    nxf_dag=nxf_dag, stub_param=stub_param, run_id=run_id,
                 ),
                 timeout=None,
             )
+        lease_on_error.pop_all()
 
     post_run_failures: list[str] = []
 
@@ -828,10 +841,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         from ..caching.promote import record_run
 
         cache_log: list = []
-        summary = record_run(
-            workspace=workspace, cache_root=default_cache_root(Path(str(extern_home))),
-            log=cache_log,
-        )
+        summary = record_run(workspace=workspace, cache_root=cache_root, log=cache_log)
         for level, msg in cache_log:
             (Log.Warn if level == "warn" else Log.Info)(f"cache: {msg}")
         Log.Info(
@@ -840,6 +850,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         )
     except Exception as e:
         Log.Warn(f"cache record failed: {e}")
+    _post_run_step("cache lease release", post_run_failures, lease.close)
 
     # `_metasmith/trace.jsonl` sits at the workspace root and gets truncated
     # on the next stage. Copy it alongside nxf_tasks.csv, into the one per-run

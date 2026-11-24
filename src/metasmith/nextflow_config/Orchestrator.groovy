@@ -49,8 +49,6 @@ class Orchestrator {
     // still emits. _post records it as a zero post and posts nothing. Kept in
     // lockstep with payload.ZERO_MARK.
     public static final String ZERO_MARK = ".~0."
-    // Mirrors caching/layout.GHOSTS_MARK.
-    public static final String GHOSTS_MARK = ".ghosts"
     // Where a product read off a manifest and never placed claims to live. No
     // such directory exists, so nothing can read it or delete through it.
     public static final String ABSENT_DIR = ".msm-absent"
@@ -168,6 +166,8 @@ class Orchestrator {
     //   readers      each stream's reading steps, by order
     //   cache_root   where the shards are, in this process's coordinates
     //   skip         the skip file the real pass reads (`caching.footprint`)
+    //   run          this run's lease holder id (`caching.leases`), empty for none
+    //   helper       the command that runs metasmith.caching.invocation
     //   probe_log, deleted_log
     public void footprint(Map cfg) {
         this._assertUnsealed("footprint")
@@ -1194,17 +1194,20 @@ class Orchestrator {
     // A member whose row is missing, a helper that fails, or a non-zero exit
     // is a miss: the cost of a wrong miss is compute, the cost of a wrong hit
     // is a wrong result.
-    public static List probeMembers(helper, Map spec) {
-        def json = JsonOutput.toJson(spec)
+    public static String runHelper(helper, Map spec) {
         def proc = new ProcessBuilder(helper as List<String>).start()
-        proc.outputStream.withWriter("UTF-8") { w -> w << json }
+        proc.outputStream.withWriter("UTF-8") { w -> w << JsonOutput.toJson(spec) }
         def out = new StringBuilder()
         def err = new StringBuilder()
         proc.waitForProcessOutput(out, err)
         if (proc.exitValue() != 0) {
             throw new RuntimeException("cache helper failed (${proc.exitValue()}): ${err}")
         }
-        def rows = out.toString().split("\n").findAll(l -> l.trim().size() > 0).collect(l -> {
+        return out.toString()
+    }
+
+    public static List probeMembers(helper, Map spec) {
+        def rows = runHelper(helper, spec).split("\n").findAll(l -> l.trim().size() > 0).collect(l -> {
             def parts = l.trim().split(/\|/, 4) as List
             while (parts.size() < 4) parts << ""
             return parts
@@ -1228,6 +1231,7 @@ class Orchestrator {
                     tk: cache.tk, sig: cache.sig, slk: cache.slk,
                     cache_root: cache.cache_root, members: members,
                     mode: this.probing ? 'probe' : 'run', skip: this.footprint_cfg.skip,
+                    run: this.footprint_cfg.run ?: '', keep: cache.keep == true,
                 ])
             } catch (Exception e) {
                 System.err.println("[metasmith] step ${cache.step} (${cache.step_name}): ${e.message}; running every member")
@@ -1414,19 +1418,25 @@ class Orchestrator {
         this._remove(id, p)
     }
 
+    // The work dir is this run's own. The shard is shared with every run on
+    // the agent home, so its file goes through the helper, which leaves it to
+    // any other live run that leased the key (`caching.leases`).
     private void _remove(String id, Map p) {
         if (p.path instanceof Path) _rmTree(p.path as Path)
         def key = p.key as String
-        def root = this.footprint_cfg.cache_root as String
-        if (key && key != "-" && root) {
-            // Mirrors caching/layout.shard_dir.
-            def shard = Paths.get(root, key.substring(0, 2), key.substring(2))
-            if (_rmTree(shard.resolve("out").resolve(p.cname as String))) {
-                def mark = Paths.get(root, GHOSTS_MARK)
-                if (!Files.exists(mark)) Files.createFile(mark)
+        def shard = "-"
+        if (key && key != "-" && this.footprint_cfg.cache_root) {
+            try {
+                shard = runHelper(this.footprint_cfg.helper, [
+                    op: "delete", cache_root: this.footprint_cfg.cache_root,
+                    run: this.footprint_cfg.run ?: '', items: [[key, p.cname]],
+                ]).trim()
+            } catch (Exception e) {
+                System.err.println("[metasmith] kept [${p.cname}] in the cache: ${e.message}")
+                shard = "error"
             }
         }
-        this._logDeleted([stream: p.stream, id: id, key: key, path: "${p.path}" as String])
+        this._logDeleted([stream: p.stream, id: id, key: key, path: "${p.path}" as String, shard: shard])
     }
 
     // Renamed away first, so a driver killed mid-delete leaves the product

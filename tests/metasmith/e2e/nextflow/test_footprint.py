@@ -15,13 +15,15 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from metasmith.agents import CollectResults
-from metasmith.caching import footprint
+from metasmith.caching import footprint, leases
 from metasmith.caching.invocation import read_manifest, shard_state
 from metasmith.caching.layout import default_cache_root
 from metasmith.caching.promote import record_run
@@ -41,7 +43,7 @@ CHAIN = ["assembly", "bam", "branch_a", "branch_b", "merged"]
 REPO = Path(__file__).resolve().parents[4]
 
 BOOTSTRAP = r'''
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 from metasmith.caching.layout import default_cache_root
 from metasmith.caching.promote import StepCacheMeta, promote_members
@@ -49,6 +51,7 @@ from metasmith.models.lineage import LinPayload
 from metasmith.models.workflow.payload import member_token
 
 home = Path(sys.argv[1])
+ws = Path(sys.argv[2])
 raw = {}
 for line in Path(".command.metadata").read_text().splitlines():
     head, _, rest = line.partition(" ")
@@ -56,9 +59,11 @@ for line in Path(".command.metadata").read_text().splitlines():
 order = int(sys.argv[3])
 meta = StepCacheMeta.from_raw(order, raw)
 entries = LinPayload.from_json(raw["lin"]).entries
-with open(home / "ran.log", "a") as f:
+with open(ws / "ran.log", "a") as f:
     for e in entries:
         f.write(f"{meta.step_name} {e.get('KEY')}\n")
+while (ws / f"hold.{meta.step_name}").exists():
+    time.sleep(0.5)
 if meta.step_name in (home / "fail").read_text().split():
     sys.exit(1)
 fan = 2 if meta.step_name in (home / "fan").read_text().split() else 1
@@ -123,6 +128,9 @@ class Agent:
         return WorkflowTask(ok=True, plan=plan, data_libraries=[samples], transform_libraries=[tr])
 
     def run(self, n_steps: int, name: str, keep: bool = False) -> Run:
+        return self.execute(*self.stage(n_steps, name, keep))
+
+    def stage(self, n_steps: int, name: str, keep: bool = False) -> tuple[WorkflowTask, Path]:
         # Planned afresh every run, as a stage does: codegen stamps slot ids
         # onto the plan it is handed, and a plan stamped once does not stamp
         # to the same ids again.
@@ -137,23 +145,30 @@ class Agent:
         ))
         (ws / "lib").mkdir(exist_ok=True)
         shutil.copy(MODULE_PATH / "nextflow_config/Orchestrator.groovy", ws / "lib")
-        (self.home / "ran.log").unlink(missing_ok=True)
+        return task, ws
+
+    def execute(self, task: WorkflowTask, ws: Path) -> Run:
+        (ws / "ran.log").unlink(missing_ok=True)
         (ws / "trace.tsv").unlink(missing_ok=True)
         (ws / footprint.DELETED_LOG).unlink(missing_ok=True)
 
-        footprint.reset(ws)
-        if not task.plan.keep_intermediates and footprint.has_ghosts(self.cache_root):
-            probe = self._nextflow(
-                ws, "--msm_probe", "true", "-w", str(ws / "nxf_probe"),
-                env={"NXF_CACHE_DIR": str(ws / "nxf_probe" / ".nextflow")},
+        run_id = f"{ws.name}.{time.time_ns()}"
+        with leases.held(self.cache_root, run_id):
+            footprint.reset(ws)
+            if not task.plan.keep_intermediates and footprint.has_ghosts(self.cache_root):
+                probe = self._nextflow(
+                    ws, "--msm_probe", "true", "--msm_run", run_id, "-w", str(ws / "nxf_probe"),
+                    env={"NXF_CACHE_DIR": str(ws / "nxf_probe" / ".nextflow")},
+                )
+                assert probe.returncode == 0, probe.stdout[-3000:] + probe.stderr[-3000:]
+                footprint.plan_skips(ws, self.cache_root)
+            nxf = self._nextflow(
+                ws, "--msm_run", run_id, "-w", str(ws / "nxf_work"), "-with-trace", "trace.tsv", "-resume",
             )
-            assert probe.returncode == 0, probe.stdout[-3000:] + probe.stderr[-3000:]
-            footprint.plan_skips(ws, self.cache_root)
-        nxf = self._nextflow(ws, "-w", str(ws / "nxf_work"), "-with-trace", "trace.tsv", "-resume")
-        record_run(workspace=ws, cache_root=self.cache_root)
+            record_run(workspace=ws, cache_root=self.cache_root)
         results = ws / "results"
         CollectResults(task=task, output_path=results, inputs_dir=ws / "inputs").Save()
-        ran_log = self.home / "ran.log"
+        ran_log = ws / "ran.log"
         trace = ws / "trace.tsv"
         rows = trace.read_text().splitlines()[1:] if trace.exists() else []
         return Run(
@@ -233,9 +248,10 @@ def test_keep_intermediates_deletes_nothing_and_publishes_everything(agent):
 def test_a_failed_reader_keeps_its_inputs_and_the_rerun_resumes_there(agent):
     agent.fail("identity_branch_b")
     first = agent.run(3, "ws")
-    assert _states(agent, "bam", "branch_a", "branch_b") == {
-        "bam": {"ghost"}, "branch_a": {"hit"}, "branch_b": set(),
-    }, first.output
+    # The failure aborts the run, which may come before bam's deletion does.
+    states = _states(agent, "bam", "branch_a", "branch_b")
+    assert states["bam"] in ({"ghost"}, {"hit"}), first.output
+    assert states["branch_a"] == {"hit"} and states["branch_b"] == set(), first.output
 
     agent.fail()
     second = agent.run(3, "ws")
@@ -271,3 +287,53 @@ def test_a_new_target_on_kept_products_runs_only_the_new_step(agent):
     assert run.returncode == 0, run.output
     assert run.ran == ["identity_merged"] * 2, run.ran
     assert _published(run.results) == {"merged"}
+
+
+def _deleted(ws: Path) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for line in (ws / footprint.DELETED_LOG).read_text().splitlines():
+        row = json.loads(line)
+        out.setdefault(row["stream"], []).append(row["shard"])
+    return out
+
+
+def _eventually(predicate, timeout: float = 120) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.5)
+    return predicate()
+
+
+def test_a_run_leaves_what_a_live_run_on_the_same_home_reads_or_keeps(agent):
+    # Y targets branch_a and is held inside its branch_a step, so it is live
+    # and still reads bam. X runs to the end beside it: for X both bam and
+    # branch_a are intermediates.
+    y_task, y_ws = agent.stage(2, "y")
+    hold = y_ws / "hold.identity_branch_a"
+    hold.touch()
+    y_run: list[Run] = []
+    y = threading.Thread(target=lambda: y_run.append(agent.execute(y_task, y_ws)))
+    y.start()
+    try:
+        ran = y_ws / "ran.log"
+        assert _eventually(lambda: ran.exists() and ran.read_text().count("identity_branch_a") == 2)
+        x = agent.run(3, "x")
+        assert x.returncode == 0, x.output
+        streams = {i.dtype_name: i.dtype.key for st in x.task.plan.steps for g in st.produces for i in g}
+        deleted = _deleted(agent.root / "x")
+        assert set(deleted[streams["mock::bam"]]) == {"deferred"}, deleted
+        assert set(deleted[streams["mock::branch_a"]]) == {"dropped"}, deleted
+        assert _states(agent, "bam", "branch_a", "branch_b") == {
+            "bam": {"hit"}, "branch_a": {"hit"}, "branch_b": {"hit"},
+        }
+    finally:
+        hold.unlink()
+        y.join(timeout=300)
+    assert y_run and y_run[0].returncode == 0, y_run and y_run[0].output
+    # Y's own deletion of bam, or X's deferred one, now that nobody holds it.
+    assert _states(agent, "bam", "branch_a", "branch_b") == {
+        "bam": {"ghost"}, "branch_a": {"hit"}, "branch_b": {"hit"},
+    }
+    assert leases.live_keys(agent.cache_root) == set()

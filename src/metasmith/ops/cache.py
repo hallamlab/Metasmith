@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..caching.admission import IMPORTED
 from ..caching.layout import default_cache_root
+from ..caching.leases import live_keys
 from ..caching.promote import tombstone_shard
 from ..caching.store import CacheStore, decode_manifest
 from ..logging import Log
@@ -263,6 +264,8 @@ def gc_cache(
         deleted: list[str] = []
 
         kept_imports = 0
+        # A shard a live run leased may be its hit or its target.
+        leased = live_keys(root)
 
         def _collectable(e) -> bool:
             # Collection reclaims what it can get back. An import may be the
@@ -272,7 +275,7 @@ def gc_cache(
             if e.origin == IMPORTED:
                 kept_imports += 1
                 return False
-            return True
+            return e.key.hex() not in leased
 
         if older_than_seconds is not None:
             cutoff = now - older_than_seconds

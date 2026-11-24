@@ -293,6 +293,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
     HEADER = "\n".join([
         "params.testSpread=1",
         "params.msm_probe=false",
+        "params.msm_run=''",
         f"{_strip_var(context.external_home_var)} = '{context.external_home}'",
         f'{_strip_var(context.external_work_var)} = "{path_map.Render(context.external_work, dialect="groovy")}"',
     ]+bootstrap)
@@ -750,6 +751,9 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f"[{branch+1}, '-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}']"
             for branch, g in enumerate(produced_archetypes) for x in g
         ) + "]"
+        keeps = the_plan.keep_intermediates or any(
+            stream(x.dtype) in target_streams for g in produced_archetypes for x in g
+        )
         process_name, src, src_res = prepare_step(step)
         if step.order in pull_orders:
             src_res += PULL_RESOURCES
@@ -796,6 +800,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 f"helper: {helper_literal}, "
                 f"hits_log: \"{hits_log_literal}\", "
                 f"outs: {outs_literal}, "
+                f"keep: {'true' if keeps else 'false'}, "
                 f"step: {step.order}, step_name: '{step.transform.name}']"
             )
             miss_var = f"__miss_{step.order}"
@@ -902,7 +907,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
     footprint_literal = (
         f"[probe: params.msm_probe, delete: {'false' if the_plan.keep_intermediates else 'true'}, "
         f"keep: {groovy_strings(sorted(published_channels))}, readers: {groovy_map(readers)}, "
-        f"cache_root: \"{cache_root_literal}\", "
+        f"cache_root: \"{cache_root_literal}\", run: params.msm_run, helper: {helper_literal}, "
         f"skip: \"{context.external_work_var}/{SKIP_FILE}\", "
         f"probe_log: \"{context.external_work_var}/{PROBE_LOG}\", "
         f"deleted_log: \"{context.external_work_var}/{DELETED_LOG}\"]"

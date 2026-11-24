@@ -21,7 +21,7 @@ MANIFEST_NAME = "manifest.cbor"
 
 IMPORTED_DIR_NAME = "imported"
 STAGING_DIR_NAME = "staging"
-# Touched by the orchestrator the first time a run deletes a product from a shard,
+# Touched the first time a run deletes a product from a shard (`leases.delete`),
 # so a run on a store that has never lost one skips the probe pass.
 GHOSTS_MARK = ".ghosts"
 
