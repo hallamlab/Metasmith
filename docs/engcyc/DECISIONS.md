@@ -635,22 +635,22 @@ Landed: workers prep-footprint-engine and prep-footprint-template (pending).
 
 Question: which lanes go in an engcyc lite template, which only in full, and which in neither?
 
-Tony: "can we limit read taxonomy callers to 1 per method? rRNA, kmer, ...", "then drop iPHoP", "we should split engcyc template into a lite and full versions". He then picked every lane on the decision page (https://claude.ai/artifact/S95JuGsErxwCm4gxU9Fyce, saved choices in its db at `decisions/tony`, version 43). He later kept iPHoP in full, which reverses "drop iPHoP".
+Tony: "can we limit read taxonomy callers to 1 per method? rRNA, kmer, ...", "then drop iPHoP", "we should split engcyc template into a lite and full versions". He then picked every lane on the decision page (https://claude.ai/artifact/S95JuGsErxwCm4gxU9Fyce, saved choices in its db at `decisions/tony`, version 45). He kept iPHoP in full, which reverses "drop iPHoP". Later the same day: "Lets add vibrant so we get vOTU outputs from lite", and "split if this helps you, but we ship 1 full template".
 
-Design. engcyc splits into two templates. Assembly and QC run in both. Lite holds one caller per method. Full holds every lane, including the lite lanes, except the two Tony dropped from both.
-- Binning: MetaBAT2 and SemiBin2 in both. MetaDecoder in lite, COMEBin in full. DAS Tool and CheckM2 in both. MetaBinner, VAMB and CONCOCT dropped. So lite and full give different MAG sets for one sample.
-- Read taxonomy: MetaPhlAn, Kraken2 with Bracken, sylph and inStrain in both. StrainPhlAn, ganon2, Centrifuger and phyloFlash in full.
+Design. Four shipped templates: engcyc_metagenomics (full), engcyc_metagenomics_lite, and a references-prep template for each. All are authored in `src/metasmith_libraries/engcyc_metagenomics.py` (`LITE_DROPS`, `LITE_REFERENCE_DROPS`). Each prep template asserts that its references are exactly what its samples read. Full holds every lane, the lite lanes included, except those dropped from both.
+- Binning: MetaBAT2 and SemiBin2 in both. MetaDecoder in lite, COMEBin in full. DAS Tool and CheckM2 in both. MetaBinner, VAMB and CONCOCT dropped. Lite and full give different MAG sets for one sample.
+- Binning fence: `das_tool_metadecoder` requires the given `binning::lite_binner_set`, which only lite gives, so full cannot reach it. Lite hangs every bin-derived target off the MetaDecoder table and drops the `das_tool_summary` target, because with it a short-read lite plan also ran COMEBin's DAS Tool. A marker on `das_tool.py` too would fence both sides but breaks about 20 drivers. Follow-up.
+- Read taxonomy: MetaPhlAn, Kraken2 with Bracken, sylph and inStrain in both. StrainPhlAn, ganon2, Centrifuger and phyloFlash in full. Short and hybrid run every caller. Long reads run MetaPhlAn, StrainPhlAn, Kraken2, sylph and ganon2: Centrifuger, phyloFlash and inStrain document short reads only.
 - Contig and MAG taxonomy: GTDB-Tk and the rRNA scan in both. Metabuli in full.
-- Gene function: KOfam, UniRef50 (now ten hits per ORF), CLEAN, ProteinBERT and BiGG in both. eggNOG, InterProScan and DeepEC in full. dbCAN, MEROPS and VOGDB in full.
-- GPR: the 4-lane table in both. The all-reaction table is dropped: nothing reads it, and its DeepEC and eggNOG lane tables stay targets.
+- Gene function: KOfam, UniRef50 (ten hits per ORF), CLEAN, ProteinBERT and BiGG in both. eggNOG, InterProScan, DeepEC, dbCAN, MEROPS and VOGDB in full. RefSeq viral in both.
+- GPR: the 4-lane table in both. The all-reaction table is dropped: nothing reads it.
 - Genome features: Bakta non-coding, ARAGORN and mobileOG in both. antiSMASH in full.
 - Resistome: RGI, BacMet and VFDB in both. AMRFinderPlus, MEGARes, IntegronFinder, MobileElementFinder, DeepARG, both PathoFact lanes and the PathoFact report in full.
-- Per-MAG models: CarveMe and MEMOTE in both. DRAM in full.
-- Viral: geNomad, VirSorter2 and CheckV with vOTUs in both. VIBRANT, CCTyper, vConTACT3, iPHoP and the new MAG host-link lane in full.
-- References: lite about 223 GB, full about 1,015 GB. Most of full is iPHoP 350, Centrifuger about 120 (unmeasured), InterProScan 100, GTDB 98, Metabuli 77 (peaks near 200 while building) and ganon2 50.
+- Per-MAG models: CarveMe and MEMOTE in both. DRAM and DRAM-v in full.
+- Viral: geNomad, VirSorter2, VIBRANT and CheckV with vOTUs in both. CCTyper, vConTACT3, iPHoP and virus-host links in full.
+- Virus-host links (`viromics::virus_host_links`): one row per frozen virus, MAG and evidence. Evidence is a CCTyper spacer BLASTn hit (unfiltered, with mismatches and effective mismatches, self-hits flagged), a provirus on a MAG contig, or a whole binned viral contig. Tony: "report the mismatches rather than filter so that filter can be run after the fact. lets just also do the prophage join."
+- References: lite about 220 GB, full about 1,070 GB. The largest are iPHoP 278 GB downloaded (about 350 built), Centrifuger 176 GB, Metabuli 192 GB of sources (77 built), InterProScan 100 and GTDB 98.
 
-Open with Tony: RefSeq viral is lite-only, which leaves full's DRAM and DRAM-v without it. DRAM-v is in both, but lite lacks four of its inputs: InterProScan, dbCAN, MEROPS and VOGDB.
+Run 4: lite on sockeye, full unsplit on fir. fir has about 17 TiB free, and nibi refused connections, so the split is not needed.
 
-Run 4 (Tony: "lite on sockeye, then spit full into 2 chunks (by reference db) and run them across fir and nibi"): lite runs on sockeye, and full runs as two parts split by reference database, on fir and on nibi.
-
-Landed: UniRef50 ten hits in 88442e32. Workers metadecoder (feat/engine/metadecoder) and hostlink (feat/engine/hostlink) are running. The lite and full templates are pending.
+Landed on feat/engine/rc: UniRef50 ten hits 88442e32, virus-host links c4cc4e2d, templates 9b41b3c0, MetaDecoder lane a4ecf90e, lite on MetaDecoder d8e40f09. MetaDecoder image: quay.io/hallamlab/external_metadecoder:1.2.2.
