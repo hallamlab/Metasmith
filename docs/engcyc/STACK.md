@@ -11,6 +11,7 @@ Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-seri
 engcyc-cases — after both workers land: engcyc template as two cases (short reads -> engcyc targets; long reads -> modified set incl. long-read taxonomy lanes), isolate/hybrid templates take accessions, probes short/hybrid/isolate/SRA-short/SRA-long/long-only/mixed two-case.
 
 ## Waiting on the user
+- (at T13) release route: bioconda peer reports Tony said "dont worry about PR, just adds more manual churn" for its 0.26.2 and phy0x1a79ed now has write on hallamlab/Metasmith. Confirm with Tony whether 0.26.1 also pushes release + tag straight to hallamlab.
 
 ## Preferences
 - 2026-11-19: one topic at a time, dfs-interview.
