@@ -47,6 +47,7 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- peer metasmith-bioconda (feat/engine/bioconda, 0.26.2): agreed split 2026-11-23 — it owns conda_recipe/bioconda, MANIFEST.in, the 0.26.2 cut; merges after I message it the v0.26.1 tag. It takes the docs install page for 0.26.2.
 - prep-footprint-engine resumed 2026-11-23: Tony "can we investigate and fix the parallel run in 1 home issue? that seems like a footgun." Direction: reader leases in the store, no whole-home lock. Then: merge, golden, RC rebuild, run 4.
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
