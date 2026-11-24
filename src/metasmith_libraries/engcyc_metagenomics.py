@@ -161,9 +161,6 @@ CASE_TARGETS = {"short": SHORT_TARGETS, "long": LONG_TARGETS, "hybrid": HYBRID_T
 # engcyc lite: the lanes of the lite pick in docs/engcyc/DECISIONS.md (engcyc-lite).
 # Each set lists what full has and lite leaves out.
 LITE_DROPS = {
-    # With it, a short-read plan also runs COMEBin's DAS Tool beside MetaDecoder's. Only a
-    # marker on das_tool.py as well would fence the two variants apart.
-    "binning::das_tool_summary",
     "annotation::interproscan_lane_table", "annotation::interproscan_hits",
     "annotation::eggnog_lane_table", "annotation::merops_lane_table",
     "annotation::vogdb_lane_table", "annotation::dbcan_lane_table",
@@ -191,30 +188,13 @@ LITE_REFERENCE_DROPS = {
 LITE_REFERENCES = [t for t in REFERENCES if t not in LITE_REFERENCE_DROPS]
 
 
-# Lite bins with MetaDecoder in place of COMEBin. das_tool_metadecoder needs the
-# binning::lite_binner_set given, and every bin-derived target hangs off MetaDecoder's
-# table: one left on the assembly lets the planner pull COMEBin's DAS Tool back in.
-MD_TABLE = "binning::metadecoder_contig_to_bin_table"
-LITE_BIN_DERIVED = {
-    "taxonomy::checkm_stats", "binning_local::quality_bin_fasta", "taxonomy::gtdbtk_quality", "annotation::instrain_genome_info", "modelling::carveme_model",
-    "modelling::memote_score",
-}
-
-
+# A hybrid sample has two BAMs, so without a target on MetaDecoder's table the planner runs
+# MetaBAT2, SemiBin2 and DAS Tool once per BAM. Naming the table plans one of each.
 def lite(targets: list) -> list:
     orfs = next(i for i, t in enumerate(targets) if _type(t) == "sequences::assembly_orfs")
     assert not LITE_DROPS & {_type(t) for t in targets[:orfs + 1]}
-    md = orfs + 1
-
-    def shift(t):
-        if isinstance(t, str):
-            return t
-        if t["type"] in LITE_BIN_DERIVED:
-            return t | {"parents": [md]}
-        return t | {"parents": [p + (p >= md) for p in t["parents"]]}
-
-    kept = [t for t in targets if _type(t) not in LITE_DROPS]
-    return kept[:md] + [{"type": MD_TABLE, "parents": [0]}] + [shift(t) for t in kept[md:]]
+    return [t for t in targets if _type(t) not in LITE_DROPS] + [
+        {"type": "binning::metadecoder_contig_to_bin_table", "parents": [0]}]
 
 
 LITE_CASE_TARGETS = {case: lite(ts) for case, ts in CASE_TARGETS.items()}
@@ -229,7 +209,8 @@ TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml", "tax
 SRA = {"short": "ncbi::sra_short_read_accession", "long": "ncbi::sra_long_read_accession"}
 
 
-LITE_BINNERS = "lite_binner_set.json"
+# Each template gives the marker of its binner set; it picks the DAS Tool variant.
+FULL_BINNERS, LITE_BINNERS = "metabat2_semibin2_comebin", "metabat2_semibin2_metadecoder"
 
 
 def meta_path(name: str) -> str:
@@ -298,7 +279,7 @@ def case_rows(library, metas: list[str], shared: list[str]) -> list[str]:
 
 def template_for(name, samples=None, rebuild=False, targets=None, description=DESCRIPTION,
                  case_targets=CASE_TARGETS, references=REFERENCES,
-                 lite_binners=False) -> Template:
+                 binners=FULL_BINNERS) -> Template:
     # `samples` lists (case, sample name[, accessions]). With none, one case plans
     # `targets` from the whole library.
     samples = [tuple(s) + (None,) * (3 - len(s)) for s in samples or ()]
@@ -314,12 +295,10 @@ def template_for(name, samples=None, rebuild=False, targets=None, description=DE
             lib.AddItem(DEFERRED, t)
         # Opts the run into eggNOG's fetch; its content is not read.
         lib.AddValue("eggnog_source.json", {"release": "emapperdb-5.0.2"}, "annotation::eggnog_source")
-        if lite_binners:
-            lib.AddValue(LITE_BINNERS, {"binners": "metabat2 semibin2 metadecoder"},
-                         "binning::lite_binner_set")
+        lib.AddValue(f"{binners}.json", {"binners": binners.replace("_", " ")}, f"binning::{binners}")
 
     input_library = A.deferred_inputs(name, inputs, rebuild=rebuild)
-    shared = ["contig_study.json", "eggnog_source.json"] + [LITE_BINNERS] * lite_binners + sorted(
+    shared = ["contig_study.json", "eggnog_source.json", f"{binners}.json"] + sorted(
         path for path, dtype in _dtypes(input_library).items() if dtype in SHARED_REFS)
     if not samples:
         cases = [Spec(input_library=input_library, target_types=targets)]

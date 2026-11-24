@@ -227,13 +227,14 @@ def solve(rung: dict):
         for t in TYPE_LIBS:
             lib.AddTypeLibrary(A.TYPES / t)
         rung["inputs"](lib)
+        lib.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin")
 
     il = A.deferred_inputs(f"_ladder_{rung['key']}", build, rebuild=True)
     # A deferred item with no parents belongs to no sample, and `sample_type`
     # masks the library per sample -- so the solver never sees it and drops
     # EVERY target, not just the unreachable one. Its path is minted, so it can
     # only be named shared by reading it back off the manifest.
-    want = set(rung.get("shared", ()))
+    want = set(rung.get("shared", ())) | {"binning::metabat2_semibin2_comebin"}
     shared = sorted(str(p) for p, dt in getattr(il, "manifest", {}).items()
                     if dt in want)
     assert len(shared) == len(want), f"{rung['key']}: shared {shared}"

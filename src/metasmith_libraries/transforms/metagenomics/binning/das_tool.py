@@ -24,6 +24,7 @@ model = Transform()
 # ~83 MB) at its --dbDirectory default, so no separate reference input exists
 # to require. See resources/env/das_tool.env for what was checked.
 image    = model.AddRequirement(lib.GetType("env::das_tool.env"))
+model.AddRequirement(lib.GetType("binning::metabat2_semibin2_comebin"))
 asm      = model.AddRequirement(lib.GetType("sequences::assembly"))
 orfs     = model.AddRequirement(lib.GetType("sequences::assembly_orfs"), parents={asm})
 mb_table = model.AddRequirement(lib.GetType("binning::metabat2_contig_to_bin_table"), parents={asm})

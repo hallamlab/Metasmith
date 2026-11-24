@@ -57,39 +57,48 @@ cases:
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/30a9183d584b4330929f9e26dd2ac270:
-      type: ref::label_transfer_landmarks
-      parents:
-        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e2090f1e3b4785e65fb697a85ecc42576785918980cc479878ef72a8d86df5a3328
-      origin: leaf
-    /msm_deferred/5458d6a062374ba8a31056f27082e492:
+    /msm_deferred/3ae483faadb84b26b1304f2b3c06322b:
       type: ref::mnxr_lookup
       parents:
-        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20c77675e1b09e1fed61d4148200331c69f04941487375f291077abef859a08eb3
+        uxbYudRZAHfi@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20ada4fbbe4ffe4ed77173dbb7f6c11137e2865ae568b08227922ede0f11050694
       origin: leaf
-    /msm_deferred/8c69f5bb5feb4dd3a838ec7a6693a945:
-      type: sequences::assembly
+    /msm_deferred/416ea2f9ecf748b4ae9ea28e26823228:
+      type: ref::label_transfer_landmarks
       parents:
-        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e209ab0042eb81c6cd11b64fb74155587243ad9d02838f2166689cd1278b663e5d3
+        uxbYudRZAHfi@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20167ef33e1485e17253213ea4a0efe0e61865529a9888cd37c55d9ee4206ce9b7
       origin: leaf
-    /msm_deferred/90465fec362e4841a11274a24606a784:
-      type: sequences::long_reads
-      parents:
-        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20709b1abf4c34fcd6b7d169cee12e0f242dbdfda688f6c297cdd1f4d5ca792887
-      origin: leaf
-    /msm_deferred/ace8d3b3e4194f72be9432d88177c49a:
+    /msm_deferred/7bdbf880f4834c08a74dbeed5336e4c7:
       type: ref::lane_calibration
       parents:
-        j4WAxN0xfgU1@reads_metadata.json: sequences::read_metadata
-      instance_id: 1e2037e825d2f90d4df937b05fb60aa27fea919b445df26a4a598580bf3b1a421b5e
+        uxbYudRZAHfi@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e205445916631ddbffe66adf8bc34dbee49e531da3d83bb1ceb830c52f999cee148
       origin: leaf
+    /msm_deferred/929e092f356e4f9f945c694be129d45a:
+      type: sequences::assembly
+      parents:
+        uxbYudRZAHfi@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e20bbad37c1a7bbd10067dbba83be32c4278c332d52c17cb12fe95285e2217b573c
+      origin: leaf
+    /msm_deferred/fa08e041c03246b8883624ef03a59e28:
+      type: sequences::long_reads
+      parents:
+        uxbYudRZAHfi@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e201aa9c452a4a6d1cb99ca1b346c33b87c68122ccaef4202b6c8881d5fef583860
+      origin: leaf
+    metabat2_semibin2_comebin.json:
+      type: binning::metabat2_semibin2_comebin
+      parents:
+        uxbYudRZAHfi@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e201d45180b7db0c7ddf96db0912896f4f524ab5905e4f40b7c0a7899c1986aa6a6
+      origin: leaf
+      value: true
     reads_metadata.json:
       type: sequences::read_metadata
-      instance_id: 1e2032547691fc7096698c358995f91b4328af33191f1c96762c588c32d4c636be5f
+      instance_id: 1e200f8facf3c2dd18953ad8454baca900f86389c16ed361bd651dd7ecd349bcb630
       origin: leaf
+      value: true
   values:
+    metabat2_semibin2_comebin.json: '{}'
     reads_metadata.json: '{"parity": "single", "length_class": "long"}'

@@ -1,7 +1,7 @@
 # das_tool.py over MetaBAT2, SemiBin2 and MetaDecoder in place of COMEBin: the same
 # consolidator and products for a binner set without COMEBin's GPU or CPU-day cost.
 # Both transforms produce the das_tool types; a template opts into this one by giving
-# binning::lite_binner_set (see binning.yml).
+# binning::metabat2_semibin2_metadecoder (see binning.yml).
 import glob
 from pathlib import Path
 from metasmith.python_api import *
@@ -10,7 +10,7 @@ lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 image  = model.AddRequirement(lib.GetType("env::das_tool.env"))
-model.AddRequirement(lib.GetType("binning::lite_binner_set"))
+model.AddRequirement(lib.GetType("binning::metabat2_semibin2_metadecoder"))
 asm    = model.AddRequirement(lib.GetType("sequences::assembly"))
 orfs   = model.AddRequirement(lib.GetType("sequences::assembly_orfs"), parents={asm})
 TABLES = {

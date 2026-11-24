@@ -45,6 +45,7 @@ def spec():
         # Consumed by annotation_table's pbert lane and produced by nothing.
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks", parents={meta})
         lib.AddValue(f"eggnog_source_{i}.marker", "trigger", "annotation::eggnog_source", parents={meta})
+        lib.AddValue(f"metabat2_semibin2_comebin_{i}.json", {}, "binning::metabat2_semibin2_comebin", parents={meta})
     return Spec(
         input_library=record_library(lib),
         sample_type="sequences::read_metadata",

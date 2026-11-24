@@ -149,6 +149,7 @@ def declare_givens(samples, smith):
     for dtype, path in DB_PATHS.items():
         givens.Add(path, dtype, name=f"cami/ref/{dtype}",
                    tags=["cami", "reference"])
+    givens.Value("cami/ref/metabat2_semibin2_comebin", {}, "binning::metabat2_semibin2_comebin", tags=["cami", "reference"])
     return givens
 
 

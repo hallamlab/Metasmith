@@ -62,6 +62,7 @@ def build_template(rebuild: bool = False) -> Template:
                             "sequences::read_metadata")
         lib.AddItem(DEFERRED, "sequences::assembly", parents={meta})
         lib.AddItem(DEFERRED, "sequences::long_reads", parents={meta})
+        lib.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin", parents={meta})
         # These two have consumers and no producer anywhere in the library, so
         # they have to be given. Parenting them to the sample row is what keeps
         # them visible: a sample_type masks the library to that row's lineage,

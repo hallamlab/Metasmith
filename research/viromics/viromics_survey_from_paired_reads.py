@@ -160,6 +160,7 @@ def build_spec(rebuild: bool = False) -> Spec:
         # The two study-wide references the GPR lanes fold their calls against.
         lib.AddItem(DEFERRED, "ref::mnxr_lookup")
         lib.AddItem(DEFERRED, "ref::label_transfer_landmarks")
+        lib.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin")
 
     input_library = A.deferred_inputs(NAME, inputs, rebuild=rebuild)
     # A deferred item is minted at a synthetic path, and `sample_type` masks the
@@ -167,7 +168,7 @@ def build_spec(rebuild: bool = False) -> Spec:
     # parents belongs to no sample and the solver never sees it. The two GPR
     # references are study-wide, so they have to be named shared, and their
     # paths are only knowable by reading them back off the manifest.
-    shared = ["contig_study.json"] + sorted(
+    shared = ["contig_study.json", "metabat2_semibin2_comebin.json"] + sorted(
         str(path) for path, dtype in getattr(input_library, "manifest", {}).items()
         if dtype in ("ref::mnxr_lookup", "ref::label_transfer_landmarks"))
 

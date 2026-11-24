@@ -56,100 +56,103 @@ cases:
   target_types:
   - sequences::assembly
   - sequences::read_qc_stats
-  - &id002
+  - &id003
     type: sequences::assembly_stats
     parents: &id001
     - 0
-  - &id003
+  - &id004
     type: sequences::assembly_orfs
     parents: *id001
-  - type: binning::metadecoder_contig_to_bin_table
-    parents:
-    - 0
-  - type: sequences::gff
-    parents:
-    - 0
-  - type: taxonomy::checkm_stats
-    parents:
-    - 4
-  - type: binning_local::quality_bin_fasta
-    parents:
-    - 4
-  - type: taxonomy::gtdbtk_quality
-    parents:
-    - 4
-  - type: taxonomy::rrna_gtdb
-    parents:
-    - 0
-  - type: annotation::uniref50_lane_table
-    parents:
+  - &id005
+    type: sequences::gff
+    parents: *id001
+  - &id006
+    type: binning::das_tool_summary
+    parents: *id001
+  - &id007
+    type: taxonomy::checkm_stats
+    parents: *id001
+  - &id008
+    type: binning_local::quality_bin_fasta
+    parents: *id001
+  - &id009
+    type: taxonomy::gtdbtk_quality
+    parents: *id001
+  - &id010
+    type: taxonomy::rrna_gtdb
+    parents: *id001
+  - &id011
+    type: annotation::uniref50_lane_table
+    parents: &id002
     - 3
-  - type: annotation::kofam_lane_table
-    parents:
-    - 3
-  - type: annotation::refseq_viral_lane_table
-    parents:
-    - 3
-  - type: annotation::pbert_lane_table
-    parents:
-    - 3
-  - type: annotation::clean_lane_table
-    parents:
-    - 3
-  - type: annotation::bigg_lane_table
-    parents:
-    - 3
-  - type: annotation::gpr_table
-    parents:
-    - 3
-  - type: annotation::bakta_nc_lane_table
-    parents:
-    - 0
-  - type: annotation::trna_gff
-    parents:
-    - 0
-  - type: annotation::mobileog_lane_table
-    parents:
-    - 3
-  - type: annotation::rgi_lane_table
-    parents:
-    - 3
-  - type: annotation::bacmet_lane_table
-    parents:
-    - 3
-  - type: annotation::vfdb_lane_table
-    parents:
-    - 3
+  - &id012
+    type: annotation::kofam_lane_table
+    parents: *id002
+  - &id013
+    type: annotation::refseq_viral_lane_table
+    parents: *id002
+  - &id014
+    type: annotation::pbert_lane_table
+    parents: *id002
+  - &id015
+    type: annotation::clean_lane_table
+    parents: *id002
+  - &id016
+    type: annotation::bigg_lane_table
+    parents: *id002
+  - &id017
+    type: annotation::gpr_table
+    parents: *id002
+  - &id018
+    type: annotation::bakta_nc_lane_table
+    parents: *id001
+  - &id019
+    type: annotation::trna_gff
+    parents: *id001
+  - &id020
+    type: annotation::mobileog_lane_table
+    parents: *id002
+  - &id021
+    type: annotation::rgi_lane_table
+    parents: *id002
+  - &id022
+    type: annotation::bacmet_lane_table
+    parents: *id002
+  - &id023
+    type: annotation::vfdb_lane_table
+    parents: *id002
   - type: annotation::instrain_genome_info
-    parents:
-    - 4
+    parents: *id001
   - taxonomy::metaphlan_profile
   - taxonomy::sylph_profile
   - taxonomy::kraken2_report
-  - type: modelling::carveme_model
-    parents:
-    - 4
-  - type: modelling::memote_score
-    parents:
-    - 4
-  - type: viromics::checkv_quality_summary
-    parents:
-    - 0
-  - type: viromics::votu_cluster_table
+  - &id024
+    type: modelling::carveme_model
+    parents: *id001
+  - &id025
+    type: modelling::memote_score
+    parents: *id001
+  - &id026
+    type: viromics::checkv_quality_summary
+    parents: *id001
+  - &id027
+    type: viromics::votu_cluster_table
+    parents: *id001
+  - type: binning::metadecoder_contig_to_bin_table
     parents:
     - 0
   shared_input_paths:
   - contig_study.json
   - eggnog_source.json
-  - lite_binner_set.json
-  - /msm_deferred/3e62b7bf1555451c8516ee17fbcc2d26
-  - /msm_deferred/598a7e04310f4d06b1b384f7df83d5c1
-  - /msm_deferred/6885392493df4b8d96fc8b0a387e1e44
-  - /msm_deferred/728ffe21289d4886b3893a3e1272533f
-  - /msm_deferred/7f8769b2f69c45039327a4be0cab0334
+  - metabat2_semibin2_metadecoder.json
+  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
+  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
+  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
+  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
+  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
   input_paths:
-  - /msm_deferred/5e7f8f3e14c44b20becd3a0bf3dfdf59
-  - /msm_deferred/97aa5efd838946fe81217e9f2bc0dca3
+  - /msm_deferred/94ef52205e924416aaebe4ccf5f7ab70
+  - /msm_deferred/a7df8e7d24d44b5cacdbf8b669b0b795
   - short_1_name.txt
   - short_1_read_pair.txt
   - short_1_reads_metadata.json
@@ -167,21 +170,21 @@ cases:
   - type: sequences::assembly_orfs
     parents:
     - 0
-  - type: binning::metadecoder_contig_to_bin_table
+  - type: sequences::gff
     parents:
     - 0
-  - type: sequences::gff
+  - type: binning::das_tool_summary
     parents:
     - 0
   - type: taxonomy::checkm_stats
     parents:
-    - 5
+    - 0
   - type: binning_local::quality_bin_fasta
     parents:
-    - 5
+    - 0
   - type: taxonomy::gtdbtk_quality
     parents:
-    - 5
+    - 0
   - type: taxonomy::rrna_gtdb
     parents:
     - 0
@@ -226,35 +229,38 @@ cases:
     - 4
   - type: annotation::instrain_genome_info
     parents:
-    - 5
+    - 0
   - taxonomy::metaphlan_profile
   - taxonomy::sylph_profile
   - taxonomy::kraken2_report
   - type: modelling::carveme_model
     parents:
-    - 5
+    - 0
   - type: modelling::memote_score
     parents:
-    - 5
+    - 0
   - type: viromics::checkv_quality_summary
     parents:
     - 0
   - type: viromics::votu_cluster_table
     parents:
     - 0
+  - type: binning::metadecoder_contig_to_bin_table
+    parents:
+    - 0
   shared_input_paths:
   - contig_study.json
   - eggnog_source.json
-  - lite_binner_set.json
-  - /msm_deferred/3e62b7bf1555451c8516ee17fbcc2d26
-  - /msm_deferred/598a7e04310f4d06b1b384f7df83d5c1
-  - /msm_deferred/6885392493df4b8d96fc8b0a387e1e44
-  - /msm_deferred/728ffe21289d4886b3893a3e1272533f
-  - /msm_deferred/7f8769b2f69c45039327a4be0cab0334
+  - metabat2_semibin2_metadecoder.json
+  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
+  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
+  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
+  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
+  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
   input_paths:
-  - /msm_deferred/34f03dd9b9c9472d8c773027cbe1ae1c
-  - /msm_deferred/79781a1b8e374d19984d04e0cf5bbf07
-  - /msm_deferred/d8d36af88c614afd895afdf1a012bac5
+  - /msm_deferred/154ed64bd64a4f4eb41250272f983c3d
+  - /msm_deferred/d633cbf31af5448ab7e087d0b923cbd8
+  - /msm_deferred/edd46c60ab6b4e52bab58acceeed7af9
   - hybrid_1_name.txt
   - hybrid_1_read_pair.txt
   - hybrid_1_reads_metadata.json
@@ -263,91 +269,48 @@ cases:
   target_types:
   - sequences::assembly
   - sequences::read_qc_stats
-  - *id002
   - *id003
-  - type: binning::metadecoder_contig_to_bin_table
-    parents:
-    - 0
-  - type: sequences::gff
-    parents:
-    - 0
-  - type: taxonomy::checkm_stats
-    parents:
-    - 4
-  - type: binning_local::quality_bin_fasta
-    parents:
-    - 4
-  - type: taxonomy::gtdbtk_quality
-    parents:
-    - 4
-  - type: taxonomy::rrna_gtdb
-    parents:
-    - 0
-  - type: annotation::uniref50_lane_table
-    parents:
-    - 3
-  - type: annotation::kofam_lane_table
-    parents:
-    - 3
-  - type: annotation::refseq_viral_lane_table
-    parents:
-    - 3
-  - type: annotation::pbert_lane_table
-    parents:
-    - 3
-  - type: annotation::clean_lane_table
-    parents:
-    - 3
-  - type: annotation::bigg_lane_table
-    parents:
-    - 3
-  - type: annotation::gpr_table
-    parents:
-    - 3
-  - type: annotation::bakta_nc_lane_table
-    parents:
-    - 0
-  - type: annotation::trna_gff
-    parents:
-    - 0
-  - type: annotation::mobileog_lane_table
-    parents:
-    - 3
-  - type: annotation::rgi_lane_table
-    parents:
-    - 3
-  - type: annotation::bacmet_lane_table
-    parents:
-    - 3
-  - type: annotation::vfdb_lane_table
-    parents:
-    - 3
+  - *id004
+  - *id005
+  - *id006
+  - *id007
+  - *id008
+  - *id009
+  - *id010
+  - *id011
+  - *id012
+  - *id013
+  - *id014
+  - *id015
+  - *id016
+  - *id017
+  - *id018
+  - *id019
+  - *id020
+  - *id021
+  - *id022
+  - *id023
   - taxonomy::metaphlan_profile
   - taxonomy::sylph_profile
   - taxonomy::kraken2_report
-  - type: modelling::carveme_model
-    parents:
-    - 4
-  - type: modelling::memote_score
-    parents:
-    - 4
-  - type: viromics::checkv_quality_summary
-    parents:
-    - 0
-  - type: viromics::votu_cluster_table
+  - *id024
+  - *id025
+  - *id026
+  - *id027
+  - type: binning::metadecoder_contig_to_bin_table
     parents:
     - 0
   shared_input_paths:
   - contig_study.json
   - eggnog_source.json
-  - lite_binner_set.json
-  - /msm_deferred/3e62b7bf1555451c8516ee17fbcc2d26
-  - /msm_deferred/598a7e04310f4d06b1b384f7df83d5c1
-  - /msm_deferred/6885392493df4b8d96fc8b0a387e1e44
-  - /msm_deferred/728ffe21289d4886b3893a3e1272533f
-  - /msm_deferred/7f8769b2f69c45039327a4be0cab0334
+  - metabat2_semibin2_metadecoder.json
+  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
+  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
+  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
+  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
+  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
   input_paths:
-  - /msm_deferred/238667edde3f40d6bf8d1041d9269448
+  - /msm_deferred/bcc6391d98654c608475f2fe1c27aa94
   - long_1_name.txt
   - long_1_reads_metadata.json
 - name: references
@@ -374,79 +337,79 @@ cases:
   shared_input_paths:
   - contig_study.json
   - eggnog_source.json
-  - lite_binner_set.json
-  - /msm_deferred/3e62b7bf1555451c8516ee17fbcc2d26
-  - /msm_deferred/598a7e04310f4d06b1b384f7df83d5c1
-  - /msm_deferred/6885392493df4b8d96fc8b0a387e1e44
-  - /msm_deferred/728ffe21289d4886b3893a3e1272533f
-  - /msm_deferred/7f8769b2f69c45039327a4be0cab0334
+  - metabat2_semibin2_metadecoder.json
+  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
+  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
+  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
+  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
+  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
   input_paths:
   - contig_study.json
   - eggnog_source.json
-  - lite_binner_set.json
-  - /msm_deferred/3e62b7bf1555451c8516ee17fbcc2d26
-  - /msm_deferred/598a7e04310f4d06b1b384f7df83d5c1
-  - /msm_deferred/6885392493df4b8d96fc8b0a387e1e44
-  - /msm_deferred/728ffe21289d4886b3893a3e1272533f
-  - /msm_deferred/7f8769b2f69c45039327a4be0cab0334
+  - metabat2_semibin2_metadecoder.json
+  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
+  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
+  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
+  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
+  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/238667edde3f40d6bf8d1041d9269448:
+    /msm_deferred/154ed64bd64a4f4eb41250272f983c3d:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e2082e7c133fe18024ef23a425aeb65aea9229316802cebe99d78b47ccaa87b7b1d
+      origin: leaf
+    /msm_deferred/94ef52205e924416aaebe4ccf5f7ab70:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e2000e99683d7732c6168cc88dddf4fc42a0f1689b2560d731e81ea6f0ffc7e574d
+      origin: leaf
+    /msm_deferred/98949aceb4f345e894f5566a38a9b66f:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e20a3f21dc198853f05239ade4be1e630c6b33ec3d4e33531a6caf4f4962294fa9d
+      origin: leaf
+    /msm_deferred/a7df8e7d24d44b5cacdbf8b669b0b795:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e20ca737da3fbf60248092ab3d434fe10323aa83f9e7591b7a83c267e4697eb3e1b
+      origin: leaf
+    /msm_deferred/bcc6391d98654c608475f2fe1c27aa94:
       type: sequences::long_reads
       parents:
         IkuWHv2PBGcI@long_1_reads_metadata.json: sequences::read_metadata
-      instance_id: 1e205e70c390e31c4bbb6e8f2922e28e9a35d3b644df54004b21572305961a5bac7b
+      instance_id: 1e2073a1d958d8d97dd6ed82db471379114800e1472a10b8158e8e9f94d789fa6ad5
       origin: leaf
-    /msm_deferred/34f03dd9b9c9472d8c773027cbe1ae1c:
+    /msm_deferred/cde80c3355e345e0a17880f11b7740db:
+      type: modelling::media
+      instance_id: 1e20b9662183378888db03ccb74fa0cd0079ae1859f1db4a62f717eea5a0bf543329
+      origin: leaf
+    /msm_deferred/d4de1e7cfae646edac34c24a1563af2f:
+      type: ref::lane_calibration
+      instance_id: 1e20052179a863c12e0430bdc8e1768020256bf2656161193961fb406a0be4f057da
+      origin: leaf
+    /msm_deferred/d633cbf31af5448ab7e087d0b923cbd8:
       type: sequences::long_reads
       parents:
         IkuWHv2PBGcI@hybrid_1_reads_metadata.json: sequences::read_metadata
-      instance_id: 1e202728b113d7b446de0afaf29d2ee5401fbe16077a75e9056cd2a5dc4c9eb1d500
+      instance_id: 1e20a71cd33e1f937e32da68be423ce1bc6a8231dcf8af09328a6a02acecd95d7ebc
       origin: leaf
-    /msm_deferred/3e62b7bf1555451c8516ee17fbcc2d26:
+    /msm_deferred/e91be42579d44d378abad0a97cbbf1f7:
       type: ref::mnxr_lookup
-      instance_id: 1e2023cb4a5d426b90915376847c82164e1a0a0f4b1f82f56633ed81662d2f02ba00
+      instance_id: 1e20a295e3c93f763b037bab9def55330d617d31b42d797f55678857c6c5d8c311d4
       origin: leaf
-    /msm_deferred/598a7e04310f4d06b1b384f7df83d5c1:
+    /msm_deferred/edd46c60ab6b4e52bab58acceeed7af9:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e202a29fb2b730094c01d3ad2e12ceffb4b3a5bce5d04bf5e789b1dee8f611273af
+      origin: leaf
+    /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a:
       type: modelling::medium_name
-      instance_id: 1e202b094595814ca89a1b37ff5aec1ba0e5c8f1c42c72ec87ea0c19c4628135c47e
-      origin: leaf
-    /msm_deferred/5e7f8f3e14c44b20becd3a0bf3dfdf59:
-      type: sequences::zipped_reverse_short_reads
-      parents:
-        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e2022815a5f3e4a7dfed4eb2e3742bfb461929d938d7d302c1d64a66632bd1d0f66
-      origin: leaf
-    /msm_deferred/6885392493df4b8d96fc8b0a387e1e44:
-      type: modelling::media
-      instance_id: 1e20b1d4170e0a71a61a2363c8fad7d2d21dda2b37bdec6afbdb1a86db0472b16d1b
-      origin: leaf
-    /msm_deferred/728ffe21289d4886b3893a3e1272533f:
-      type: ref::label_transfer_landmarks
-      instance_id: 1e20862d122638f696bd6afbe20855b52e76d0659b09105c93148f27607bc9fe5f7d
-      origin: leaf
-    /msm_deferred/79781a1b8e374d19984d04e0cf5bbf07:
-      type: sequences::zipped_forward_short_reads
-      parents:
-        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e20ff5e5566f032f9c8475531a83d05ff92c1bf20d9f08e33ed20311673c7a7aad3
-      origin: leaf
-    /msm_deferred/7f8769b2f69c45039327a4be0cab0334:
-      type: ref::lane_calibration
-      instance_id: 1e20baf2121bf998f52920a255fc8b2deb576c0280cadb09b45d2b779a7d8be66682
-      origin: leaf
-    /msm_deferred/97aa5efd838946fe81217e9f2bc0dca3:
-      type: sequences::zipped_forward_short_reads
-      parents:
-        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e2085ed0ae10ed34ba1d15c186b7fc32bd265dd5e30548a421c9a1d41cbbfb027fb
-      origin: leaf
-    /msm_deferred/d8d36af88c614afd895afdf1a012bac5:
-      type: sequences::zipped_reverse_short_reads
-      parents:
-        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e20f7e1b4326f32d71c9e800dfaa0e2d4fccdbd868dc31f438b14f4241b4d758c30
+      instance_id: 1e20a15611b104cc3648005ee0afab2229dadd218c76362a56da0c4d14bc843a8320
       origin: leaf
     contig_study.json:
       type: viromics::contig_study
@@ -479,11 +442,6 @@ input_library:
       instance_id: 1e2095c1d760140b2a7ffe2005d0d365ea758c74e4acda51dba86e8780703ae2ded2
       origin: leaf
       value: true
-    lite_binner_set.json:
-      type: binning::lite_binner_set
-      instance_id: 1e2071614654fe56b755bb947bf184d85db63b5f5ccf28217fb4f05921d525d2eb88
-      origin: leaf
-      value: true
     long_1_name.txt:
       type: sequences::sample_name
       parents:
@@ -496,6 +454,11 @@ input_library:
       parents:
         IkuWHv2PBGcI@long_1_name.txt: sequences::sample_name
       instance_id: 1e20c23e014838d8756680deea198ed366df4db3954e8e2fdbabc6e13a84b322dae8
+      origin: leaf
+      value: true
+    metabat2_semibin2_metadecoder.json:
+      type: binning::metabat2_semibin2_metadecoder
+      instance_id: 1e20a2a0aec3771601f5eae7c68d9c8f394f412520f781eb161b4fd28b8cf458354d
       origin: leaf
       value: true
     short_1_name.txt:
@@ -525,9 +488,9 @@ input_library:
     hybrid_1_name.txt: hybrid_1
     hybrid_1_read_pair.txt: hybrid_1
     hybrid_1_reads_metadata.json: '{"parity": "paired", "length_class": "short"}'
-    lite_binner_set.json: '{"binners": "metabat2 semibin2 metadecoder"}'
     long_1_name.txt: long_1
     long_1_reads_metadata.json: '{"parity": "single", "length_class": "long"}'
+    metabat2_semibin2_metadecoder.json: '{"binners": "metabat2 semibin2 metadecoder"}'
     short_1_name.txt: short_1
     short_1_read_pair.txt: short_1
     short_1_reads_metadata.json: '{"parity": "paired", "length_class": "short"}'

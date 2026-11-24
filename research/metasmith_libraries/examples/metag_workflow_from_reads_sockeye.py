@@ -94,6 +94,7 @@ def main():
         (REMOTE_PHYLOFLASH_DB,  "ref::phyloflash_db"),
     ):
         givens.Add(path, dtype, name=f"ref/{dtype.replace('::', '__')}")
+    givens.Value("ref/metabat2_semibin2_comebin", {}, "binning::metabat2_semibin2_comebin")
     inputs = givens.Build(
         out / "inputs.xgdb",
         type_library_paths=[

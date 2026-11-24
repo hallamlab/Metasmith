@@ -117,6 +117,8 @@ def build_inputs(mode: str) -> tuple[DataInstanceLibrary, DataInstanceLibrary]:
     refs = DataInstanceLibrary(work / "refs.xgdb")
     refs.Purge()
     refs.AddTypeLibrary(MLIB / "data_types" / "ref.yml")
+    refs.AddTypeLibrary(MLIB / "data_types" / "binning.yml")
+    refs.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin")
     for dtype, path in GPR_REFS.items():
         refs.AddItem(path, dtype)
     pin_external_leaf_ids(refs)

@@ -45,6 +45,7 @@ def inputs():
               "ref::metacyc_protein_diamond_db", "ref::metacyc_monomer_reactions"):
         lib.AddItem(DEFERRED, t, parents={meta})
     lib.AddValue("eggnog_source.marker", "trigger", "annotation::eggnog_source", parents={meta})
+    lib.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin", parents={meta})
     return record_library(lib)
 
 

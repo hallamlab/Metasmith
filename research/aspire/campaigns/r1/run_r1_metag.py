@@ -166,6 +166,7 @@ def build_inputs(samples):
 
     for dtype, path in DB_PATHS.items():
         inputs.AddItem(path, dtype)
+    inputs.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin")
 
     _apply_leaf_pins(inputs)
     inputs.Save()

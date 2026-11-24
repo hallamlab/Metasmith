@@ -42,6 +42,7 @@ def inputs():
     # Consumed by annotation_table's pbert lane and produced by nothing.
     lib.AddItem(DEFERRED, "ref::label_transfer_landmarks", parents={meta})
     lib.AddValue("eggnog_source.marker", "trigger", "annotation::eggnog_source", parents={meta})
+    lib.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin", parents={meta})
     return record_library(lib)
 
 

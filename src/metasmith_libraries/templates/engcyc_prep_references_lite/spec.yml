@@ -45,25 +45,25 @@ cases:
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/08e20f0d5db54888a3ca6c249c5c11db:
+    /msm_deferred/1de6e348b6f74a9cbb7e26d16c80189d:
       type: ref::lane_calibration
-      instance_id: 1e20da5d6cf2a299e60eb5656f89d25ab45be3766a1a5861569cae19300e245a7088
+      instance_id: 1e20a5a80f33ac912086246eb6ce79c1319fe74de5d624ec42b3a50b6f62db69b964
       origin: leaf
-    /msm_deferred/0c61163ae8544600bbbb628eb19131aa:
-      type: modelling::medium_name
-      instance_id: 1e20f234d73b869d5c72c9e3f7764471c27638ba49df9ab80abdc11e005cc3113a16
-      origin: leaf
-    /msm_deferred/0d733322968c47eeae3127cd872b0791:
+    /msm_deferred/49b6a956c3694a2385c6af2aaa324dd4:
       type: ref::label_transfer_landmarks
-      instance_id: 1e2014ab5df860fb3015d90517c4ab773dabfa03b45754fca0c18844bbb2a0b0538e
+      instance_id: 1e202f71e3433c2e8595448931b09c4ca9c4a05b7a55279a3bfd20d05b1f0ad1ee97
       origin: leaf
-    /msm_deferred/8a882294f8fb45ce9821df3caa195cbf:
-      type: modelling::media
-      instance_id: 1e202ca396e56d1d6e6c9cd926db7da689e1e0ebda48364f4638361bc8a1b881cac9
+    /msm_deferred/cdd314a9e4b14b40b1156064253b3923:
+      type: modelling::medium_name
+      instance_id: 1e20a3f868e34693171c0fd6979fa5c215238d23666d3a9689de32ebb918cc6a2b7d
       origin: leaf
-    /msm_deferred/d1466a56cb0040ec80b0ae00905ed01c:
+    /msm_deferred/e8bedfdc43014bfd9505fdf0b5ce9482:
       type: ref::mnxr_lookup
-      instance_id: 1e207018f84dd08064b8fb29c6f92bcbe1f775679f23fcf2df2d970710132c4e4ae1
+      instance_id: 1e2076e87b0b0876a03f676e4d894cc5517cf5bc1c483617566cd94a6344ffd7efe6
+      origin: leaf
+    /msm_deferred/f6c07993be274086b510bfeffadca6dd:
+      type: modelling::media
+      instance_id: 1e205f6fb844b204c676d4996eccc258b25b03f34bb41a1a3bb7b76800a5141affee
       origin: leaf
     contig_study.json:
       type: viromics::contig_study
@@ -75,6 +75,12 @@ input_library:
       instance_id: 1e207c86f58ecb9d9c7e3d781ff76efab9d175638eeef5b1d9f0378e6845a3b76bd8
       origin: leaf
       value: true
+    metabat2_semibin2_comebin.json:
+      type: binning::metabat2_semibin2_comebin
+      instance_id: 1e20dd133893c9d3d4fdd9ec0d3e4fc48cb8d6eae6289159f24aa5c943eea9cab1e7
+      origin: leaf
+      value: true
   values:
     contig_study.json: '{"logistics": "contig study"}'
     eggnog_source.json: '{"release": "emapperdb-5.0.2"}'
+    metabat2_semibin2_comebin.json: '{"binners": "metabat2 semibin2 comebin"}'

@@ -506,6 +506,12 @@ def build_globals(solver="open"):
     globals_lib = DataInstanceLibrary(CACHE_DIR / "metagem_globals.xgdb")
     globals_lib.Purge()
     globals_lib.AddTypeLibrary(MLIB / "data_types" / "modelling.yml")
+    globals_lib.AddTypeLibrary(MLIB / "data_types" / "binning.yml")
+    (globals_lib.location / "metabat2_semibin2_comebin.json").write_text("{}")
+    globals_lib.RegisterItem(
+        "metabat2_semibin2_comebin.json", "binning::metabat2_semibin2_comebin",
+        instance_id=_stable_id("metagem", "binner_set", "metabat2_semibin2_comebin"),
+    )
 
     # The medium table lives IN THE REPO, not on the cluster, so it must NOT be
     # registered as an external absolute path. StageWorkflow binds an external input's

@@ -70,25 +70,17 @@ class TestBinningWorkflowGeneration:
         assert len(task.plan.steps) > 0, "Workflow should have at least one step"
 
 
-# das_tool.py and das_tool_metadecoder.py produce the same types. Without the
-# binning::lite_binner_set given, quality_bin_fasta once planned the MetaDecoder
-# variant, silently replacing COMEBin; with it, the lite plan pins its consumers to
-# the MetaDecoder table.
-@pytest.mark.parametrize("lite", [False, True])
-def test_das_tool_variant_follows_lite_binner_set(tmp_path, lite):
+# das_tool.py and das_tool_metadecoder.py produce the same types; each requires the
+# marker named for its binner set, so the marker given picks the variant.
+@pytest.mark.parametrize("binners", ["metabat2_semibin2_comebin", "metabat2_semibin2_metadecoder"])
+def test_das_tool_variant_follows_binner_set(tmp_path, binners):
     inputs = DataInstanceLibrary(tmp_path / "inputs.xgdb")
     for name in ("sequences", "ref", "annotation", "taxonomy", "binning", "binning_local", "alignment"):
         inputs.AddTypeLibrary(MLIB / "data_types" / f"{name}.yml")
     asm = inputs.AddItem(DEFERRED, "sequences::assembly")
     inputs.AddItem(DEFERRED, "alignment::bam", parents={asm})
-    if lite:
-        inputs.AddValue("lite_binner_set.json", {}, "binning::lite_binner_set")
-        pin = {"parents": [0]}
-        targets = ["binning::metadecoder_contig_to_bin_table"]
-    else:
-        pin, targets = {}, []
-    targets += [{"type": "binning::das_tool_summary", **pin},
-                {"type": "binning_local::quality_bin_fasta", **pin}]
+    inputs.AddValue(f"{binners}.json", {}, f"binning::{binners}")
+    targets = ["binning::das_tool_summary", "binning_local::quality_bin_fasta"]
 
     task = Plan(
         [Spec(input_library=record_library(inputs), sample_type=None, target_types=targets)],
@@ -98,7 +90,8 @@ def test_das_tool_variant_follows_lite_binner_set(tmp_path, lite):
 
     used = Counter(s.transform.name for s in task.plan.steps)
     assert task.ok, task.plan.dropped_targets
-    chosen, excluded = ("das_tool_metadecoder", "comebin") if lite else ("das_tool", "metadecoder")
+    chosen, excluded = (("das_tool", "metadecoder") if binners.endswith("comebin")
+                        else ("das_tool_metadecoder", "comebin"))
     assert used[chosen] == 1 and used[excluded] == 0, used
 
 
