@@ -432,7 +432,7 @@ types:
   # DIAMOND UniRef50
   diamond_uniref50_results:
     properties:
-      _: DIAMOND alignment to UniRef50, up to five hits per ORF
+      _: DIAMOND alignment to UniRef50, up to ten hits per ORF
       Format: BLAST6
       ext: tsv
   # DIAMOND against the BiGG gene index CarveMe ships
@@ -711,7 +711,7 @@ types:
       ext: tsv
   diamond_uniref50_results_chunk:
     properties:
-      _: Per-chunk DIAMOND UniRef50 BLAST6, up to five hits per ORF (sibling of diamond_uniref50_results)
+      _: Per-chunk DIAMOND UniRef50 BLAST6, up to ten hits per ORF (sibling of diamond_uniref50_results)
       Format: BLAST6
       granularity: chunk
       ext: tsv

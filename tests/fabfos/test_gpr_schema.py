@@ -112,7 +112,7 @@ def _write_clean(p: Path, header=("Query ID", "Predicted EC number", "clean_scor
 def _write_uniref(p: Path, descriptions: Path):
     # The hit table carries the key; the subject title lives once per key beside
     # it, which is the pair the lane joins.
-    # diamond_uniref50 keeps up to five hits per ORF. Each ORF's weaker hit names
+    # diamond_uniref50 keeps up to ten hits per ORF. Each ORF's weaker hit names
     # the OTHER ORF's accession and comes first, so a lane that skipped the
     # best-hit sort would swap the two ORFs' reactions.
     rows, titles = [], []

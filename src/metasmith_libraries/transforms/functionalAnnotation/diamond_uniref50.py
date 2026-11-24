@@ -80,7 +80,7 @@ def protocol(context: ExecutionContext):
                 --threads {threads} \
                 --block-size {block_size} \
                 --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore stitle \
-                --max-target-seqs 5 \
+                --max-target-seqs 10 \
                 --evalue 1e-5 \
                 --sensitive
         """,
