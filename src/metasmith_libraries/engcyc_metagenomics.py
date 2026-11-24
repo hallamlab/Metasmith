@@ -14,7 +14,8 @@ no samples for. Every lane is its own target; deselect a target to drop its lane
 A run keeps only its targets and deletes the rest once read. The built reference
 databases are the references case's targets, so a later run finds them in the cache;
 keep that case. Steps the cases share, such as every reference download, run once. Sizes are each
-lane's reference download; a ~ marks an estimate.
+lane's reference download; a ~ marks an estimate. engcyc_metagenomics_lite is the
+same workflow with the lite lanes, about a fifth of the reference downloads.
 
 Assembly: short, BBDuk -> MEGAHIT; hybrid, BBDuk -> MEGAHIT draft -> OPERA-MS;
 long, Filtlong -> Flye.
@@ -24,15 +25,15 @@ Taxonomy: GTDB-Tk r232 on the quality MAGs (61 GB, 98 GB unpacked); rRNA scan ag
 GTDB r232 SSU (~2.4 GB); Metabuli on the contigs, against a GTDB r232 database the
 plan builds from complete genomes, human T2T and RefSeq viral (192 GB download, 77 GB
 built, 203 GB peak disk).
-Read taxonomy: short and hybrid, MetaPhlAn and StrainPhlAn (4.8 GB) and inStrain on
-the quality MAGs; long, MetaPhlAn and StrainPhlAn in long-read mode (the same 4.8 GB),
-sylph (GTDB r220 sketches, 14 GB), Kraken2 (standard 16 GB) and ganon2 (RefSeq
-archaea and bacteria, one genome per species, ~50 GB). Hybrid's StrainPhlAn reads
-its long reads.
+Read taxonomy: MetaPhlAn and StrainPhlAn (37 GB), sylph (GTDB r220 sketches, 14 GB),
+Kraken2 with Bracken (standard 16 GB) and ganon2 (RefSeq archaea and bacteria, one
+genome per species, ~50 GB), each in its long-read mode on long reads. Short and
+hybrid also run Centrifuger (GTDB r226, 176 GB), phyloFlash (SILVA 138.2, 0.2 GB)
+and inStrain on the quality MAGs. Hybrid's StrainPhlAn reads its long reads.
 Gene function: DIAMOND UniRef50 (~24 GB), KOfam (~5 GB), InterProScan (~100 GB),
 eggNOG (12 GB, 55 GB unpacked).
-GPR tables: the 4-lane table (KOfam, CLEAN, UniRef50, ProteinBERT) and the
-all-reaction table (+ DeepEC, eggNOG).
+GPR table: the 4-lane table (KOfam, CLEAN, UniRef50, ProteinBERT); the DeepEC and
+BiGG lane tables beside it.
 Genome features: Bakta non-coding (~70 GB full DB), ARAGORN tRNA, antiSMASH
 (~10 GB), mobileOG (~1 GB).
 PathoFact 2.0 reports (PathoFact DB 1.1 GB, DeepARG 1.9 GB, CARD, AMRFinderPlus,
@@ -44,7 +45,8 @@ Resistome: RGI/CARD (~0.3 GB), AMRFinderPlus (~0.3 GB), MEGARes, BacMet, VFDB
 GEM per quality MAG: CarveMe 1.6.6 from the BiGG lane, then MEMOTE.
 Viral: geNomad, VirSorter2 (~10 GB), VIBRANT (11 GB) -> CheckV (~7 GB) ->
 vOTUs; DRAM-v; CCTyper; vConTACT3 (5.1 GB); iPHoP (~350 GB) with the quality MAGs
-grafted into its host database.
+grafted into its host database; virus-host links to the quality MAGs by CCTyper spacer
+BLASTn and by prophage position, unfiltered, with each spacer hit's mismatches.
 
 Licensed lanes are not targets here. To turn one on, give its package and add its
 target: PathoLogic per MAG (annotation::bin_pathway_table, with the MP4 pathway
@@ -82,9 +84,8 @@ TARGETS = [
     *({"type": f"annotation::{lane}_lane_table", "parents": _O}
       for lane in ("merops", "refseq_viral", "vogdb", "dbcan", "deepec", "deeparg",
                    "pathofact_ml", "pathofact_hmm", "pbert", "clean", "bigg")),
-    # GPR tables
+    # the 4-lane GPR table
     {"type": "annotation::gpr_table", "parents": _O},
-    {"type": "annotation::gpr_table_all", "parents": _O},
     # genome features
     {"type": "annotation::bakta_nc_lane_table", "parents": _A},
     {"type": "annotation::trna_gff", "parents": _A},
@@ -106,6 +107,11 @@ TARGETS = [
     {"type": "annotation::instrain_genome_info", "parents": _A},
     "taxonomy::metaphlan_profile",
     "annotation::strainphlan_consensus_markers",
+    "taxonomy::sylph_profile",
+    "taxonomy::kraken2_report",
+    "taxonomy::ganon2_report",
+    "taxonomy::centrifuger_kreport",
+    "taxonomy::phyloflash_summary",
     # GEM, per quality MAG
     {"type": "modelling::carveme_model", "parents": _A},
     {"type": "modelling::memote_score", "parents": _A},
@@ -114,18 +120,23 @@ TARGETS = [
       for t in ("viromics::checkv_quality_summary", "viromics::votu_cluster_table",
                 "annotation::dramv_amg_summary", "viromics::cas_operons",
                 "viromics::vcontact3_assignments", "viromics::host_prediction_genus")),
+    "viromics::virus_host_links",
 ]
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
 METABULI = [{"type": t, "parents": _A} for t in ("taxonomy::metabuli", "taxonomy::metabuli_report")]
-SHORT_ONLY = {"annotation::instrain_genome_info"}
+# inStrain, Centrifuger and phyloFlash document short reads only.
+SHORT_ONLY = {"annotation::instrain_genome_info", "taxonomy::centrifuger_kreport",
+              "taxonomy::phyloflash_summary"}
 SHORT_TARGETS = TARGETS + METABULI
 
-# A long-read sample's case: Flye in place of BBDuk -> MEGAHIT, and the long-read lanes of
-# MetaPhlAn and StrainPhlAn answer the same targets as the short-read ones. inStrain is
-# short-read only; sylph, Kraken2 and ganon2 are long-read lanes here.
-LONG_TARGETS = [t for t in TARGETS if not isinstance(t, dict) or t["type"] not in SHORT_ONLY] + [
-    "taxonomy::sylph_profile", "taxonomy::kraken2_report", "taxonomy::ganon2_report",
-] + METABULI
+
+def _type(t) -> str:
+    return t if isinstance(t, str) else t["type"]
+
+
+# A long-read sample's case: Flye in place of BBDuk -> MEGAHIT, and each read-taxonomy
+# lane's long-read transform answers the same target as its short-read one.
+LONG_TARGETS = [t for t in SHORT_TARGETS if _type(t) not in SHORT_ONLY]
 
 # A hybrid sample's case (short + long reads): the hybrid lane, MEGAHIT draft -> OPERA-MS,
 # anchored to the assembly, so its assembly is the OPERA-MS assembly and every lane hanging
@@ -144,8 +155,46 @@ REFERENCES = [f"annotation::{t}" for t in (
         "gtdb", "gtdb_rrna", "interproscan_data", "iphop_db", "kofamscan_ko_list",
         "kofamscan_profiles", "kraken2_db", "merops_diamond_db", "metabuli_ref", "metaphlan_db",
         "pathofact_db", "refseq_viral_diamond_db", "sylph_db", "uniref50_diamond_db", "vcontact3_db",
-        "vibrant_db", "vogdb_hmm")]
+        "vibrant_db", "vogdb_hmm", "centrifuger_db", "phyloflash_db")]
 CASE_TARGETS = {"short": SHORT_TARGETS, "long": LONG_TARGETS, "hybrid": HYBRID_TARGETS}
+
+# engcyc lite: the lanes of the lite pick in docs/engcyc/DECISIONS.md (engcyc-lite).
+# Each set lists what full has and lite leaves out.
+LITE_DROPS = {
+    "annotation::interproscan_lane_table", "annotation::interproscan_hits",
+    "annotation::eggnog_lane_table", "annotation::merops_lane_table",
+    "annotation::vogdb_lane_table", "annotation::dbcan_lane_table",
+    "annotation::deepec_lane_table", "annotation::deeparg_lane_table",
+    "annotation::pathofact_ml_lane_table", "annotation::pathofact_hmm_lane_table",
+    "annotation::antismash_lane_table",
+    "annotation::pathofact_report", "annotation::pathofact_vf", "annotation::pathofact_tox",
+    "annotation::pathofact_amr",
+    "annotation::dram_metabolism_summary", "annotation::dram_product_tsv",
+    "annotation::amrfinderplus_lane_table", "annotation::megares_lane_table",
+    "annotation::integronfinder_integrons", "annotation::mobileelementfinder_results",
+    "annotation::strainphlan_consensus_markers", "taxonomy::ganon2_report",
+    "taxonomy::centrifuger_kreport", "taxonomy::phyloflash_summary",
+    "annotation::dramv_amg_summary", "viromics::cas_operons", "viromics::vcontact3_assignments",
+    "viromics::host_prediction_genus", "viromics::virus_host_links",
+    "taxonomy::metabuli", "taxonomy::metabuli_report",
+}
+LITE_REFERENCE_DROPS = {
+    "annotation::amrfinderplus_db", "annotation::eggnog_data", "annotation::megares_diamond_db",
+    "ref::antismash", "ref::dbcan_hmm", "ref::deeparg_db", "ref::dram_sheets", "ref::ganon2_db",
+    "ref::interproscan_data", "ref::iphop_db", "ref::merops_diamond_db", "ref::metabuli_ref",
+    "ref::pathofact_db", "ref::vcontact3_db", "ref::vogdb_hmm", "ref::centrifuger_db",
+    "ref::phyloflash_db",
+}
+LITE_REFERENCES = [t for t in REFERENCES if t not in LITE_REFERENCE_DROPS]
+
+
+def lite(targets: list) -> list:
+    # Every parents index names an entry ahead of the first one dropped, so it still holds.
+    assert not LITE_DROPS & {_type(t) for t in targets[:ORFS + 2]}
+    return [t for t in targets if _type(t) not in LITE_DROPS]
+
+
+LITE_CASE_TARGETS = {case: lite(ts) for case, ts in CASE_TARGETS.items()}
 
 # Consumed and produced by nothing, so they are given, and shared because they
 # belong to no one sample.
@@ -163,10 +212,8 @@ def meta_path(name: str) -> str:
 
 # A sample for `case`, as reads, or as SRA runs when `accessions` maps read class to run.
 def add_sample(lib, study, case, name, accessions=None):
-    parents = {study}
-    if case == "long":
-        # Kraken2 names its report from a sample name above the reads.
-        parents = {lib.AddValue(f"{name}_name.txt", name, "sequences::sample_name", parents=parents)}
+    # Kraken2 names its report from a sample name above the reads.
+    parents = {lib.AddValue(f"{name}_name.txt", name, "sequences::sample_name", parents={study})}
     length = "long" if case == "long" else "short"
     parity = "single" if case == "long" else "paired"
     meta = lib.AddValue(meta_path(name), {"parity": parity, "length_class": length},
@@ -223,8 +270,8 @@ def case_rows(library, metas: list[str], shared: list[str]) -> list[str]:
     return sorted(set(metas).union(*(walk(m, children) | walk(m, parents) for m in metas)))
 
 
-def template_for(name, samples=None, rebuild=False, targets=None,
-                 description=DESCRIPTION) -> Template:
+def template_for(name, samples=None, rebuild=False, targets=None, description=DESCRIPTION,
+                 case_targets=CASE_TARGETS, references=REFERENCES) -> Template:
     # `samples` lists (case, sample name[, accessions]). With none, one case plans
     # `targets` from the whole library.
     samples = [tuple(s) + (None,) * (3 - len(s)) for s in samples or ()]
@@ -253,10 +300,10 @@ def template_for(name, samples=None, rebuild=False, targets=None,
             input_paths=case_rows(input_library, [meta_path(s) for c, s, _ in samples if c == case],
                                   shared),
             shared_input_paths=shared,
-            target_types=CASE_TARGETS[case] if targets is None else targets,
+            target_types=case_targets[case] if targets is None else targets,
         ) for case in order]
         cases.append(Spec(input_library=input_library, name="references", input_paths=shared,
-                          shared_input_paths=shared, target_types=REFERENCES))
+                          shared_input_paths=shared, target_types=references))
     return Template(
         name=name, description=description.strip(),
         cases=cases,

@@ -54,6 +54,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(163.6),  # sum of SIZES, 175,643,520,942 B
     resources=Resources(
         cpus=2,
         memory=Size.GB(2),

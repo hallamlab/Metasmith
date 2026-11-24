@@ -53,6 +53,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.19),  # SILVA 138.2 NR99 trunc 199,304,081 B + UniVec, 2026-11-24
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

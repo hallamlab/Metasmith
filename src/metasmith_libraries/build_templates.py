@@ -31,6 +31,8 @@ AUTHORS = (
     "pangenome_heatmap_from_assembly",
     "engcyc_metagenomics",
     "engcyc_prep_references",
+    "engcyc_metagenomics_lite",
+    "engcyc_prep_references_lite",
     "isolate_assembly_from_long_reads",
     "annotation_palette_from_assembly",
     "annotation_trio_from_assembly",
