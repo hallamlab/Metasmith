@@ -52,6 +52,7 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
+- hostlink (feat/engine/hostlink, worktree engine/hostlink): virus-host link table over the existing spacer BLASTn lane. Tony: "report the mismatches rather than filter so that filter can be run after the fact. lets just also do the prophage join."
 - metadecoder (feat/engine/metadecoder, worktree engine/metadecoder): MetaDecoder binning transform and image, local build only.
 - peer metasmith-bioconda (feat/engine/bioconda, 0.26.2): agreed split 2026-11-23 — it owns conda_recipe/bioconda, MANIFEST.in, the 0.26.2 cut; merges after I message it the v0.26.1 tag. It takes the docs install page for 0.26.2.
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
