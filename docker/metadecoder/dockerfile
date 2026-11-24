@@ -1,0 +1,10 @@
+# MetaDecoder 1.2.2 from its GitHub release wheel, which bundles the FragGeneScan 1.31
+# and HMMER 3.2.1 binaries its seed step runs. Not on bioconda or PyPI.
+# Build from the repository root: docker build -f docker/metadecoder/dockerfile -t quay.io/hallamlab/external_metadecoder:1.2.2 .
+# condaforge/miniforge3:25.3.0-3 as of 2026-11-24.
+FROM condaforge/miniforge3@sha256:f1f537ff80646e3aaf84e64abf6249cdc3f20889aa0a8d41535e62925c959f64
+COPY envs/metasmith_libraries/tools/metadecoder.yml /opt/metadecoder.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    mamba env create -n metadecoder -f /opt/metadecoder.yml
+ENV PATH=/opt/conda/envs/metadecoder/bin:$PATH
+RUN metadecoder --version
