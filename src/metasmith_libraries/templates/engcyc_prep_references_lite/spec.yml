@@ -1,0 +1,80 @@
+name: engcyc_prep_references_lite
+description: 'Fetches and builds every reference database and tool image that
+
+  engcyc_metagenomics_lite needs, and takes no samples. Run it once on an agent before
+
+  the real run; engcyc_metagenomics_lite then finds these products in the cache. Its
+
+  targets are engcyc_metagenomics_lite''s references case. The plan summary shows
+  the
+
+  download total.'
+transform_libraries:
+- logistics
+- assembly
+- metagenomics
+- functionalAnnotation
+- viromics
+- metabolicModelling
+resource_libraries:
+- env
+- lib
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - annotation::bacmet_diamond_db
+  - annotation::bakta_db
+  - annotation::card_db
+  - annotation::mobileog_diamond_db
+  - annotation::vfdb_diamond_db
+  - annotation::virsorter2_db
+  - ref::checkv_db
+  - ref::genomad
+  - ref::gtdb
+  - ref::gtdb_rrna
+  - ref::kofamscan_ko_list
+  - ref::kofamscan_profiles
+  - ref::kraken2_db
+  - ref::metaphlan_db
+  - ref::refseq_viral_diamond_db
+  - ref::sylph_db
+  - ref::uniref50_diamond_db
+  - ref::vibrant_db
+  shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/0540276d345b4376a1901bbb066a851a:
+      type: modelling::medium_name
+      instance_id: 1e200201b26519fcc9b9c8976c8b77b82e752b1af420ff5eb1d72ea26a190ae7e2b8
+      origin: leaf
+    /msm_deferred/8280de3162a3475aae11eb928e6587ce:
+      type: ref::lane_calibration
+      instance_id: 1e2026f698a00938bebe82016de26fb78aafcaa80aec774b8057533304795ff0b992
+      origin: leaf
+    /msm_deferred/bffa3180ce96405cb6274cc774e26e3c:
+      type: ref::mnxr_lookup
+      instance_id: 1e2069f440d714d2ff02e8640611a1a99e73ec19b79bc2767cb7b9b1990a63b8fe46
+      origin: leaf
+    /msm_deferred/e407541c7443456590ec7e4d4a59d5f5:
+      type: modelling::media
+      instance_id: 1e2010c6bd6f6bc6a35adabed0eddf3d20518ad113cfddd18b10b4a765c0332c97b4
+      origin: leaf
+    /msm_deferred/e86f0d655c014781a97eb4e6aead58ed:
+      type: ref::label_transfer_landmarks
+      instance_id: 1e2046fd0972274f922336a28a9bf7d80203ef63069893f4dfcd2cee140fdb323325
+      origin: leaf
+    contig_study.json:
+      type: viromics::contig_study
+      instance_id: 1e202f446c0d1cff58a23a8fc62a73d5c053c56ccdd627e5a9cdbb0c165d0f011715
+      origin: leaf
+      value: true
+    eggnog_source.json:
+      type: annotation::eggnog_source
+      instance_id: 1e207c86f58ecb9d9c7e3d781ff76efab9d175638eeef5b1d9f0378e6845a3b76bd8
+      origin: leaf
+      value: true
+  values:
+    contig_study.json: '{"logistics": "contig study"}'
+    eggnog_source.json: '{"release": "emapperdb-5.0.2"}'
