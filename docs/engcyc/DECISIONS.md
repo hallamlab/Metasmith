@@ -630,3 +630,27 @@ Design:
 - The ~40 s three-case plan time (case_merge rebuilds step order per placement) is fixed in the same rebuild.
 
 Landed: workers prep-footprint-engine and prep-footprint-template (pending).
+
+## engcyc-lite — 2026-11-24
+
+Question: which lanes go in an engcyc lite template, which only in full, and which in neither?
+
+Tony: "can we limit read taxonomy callers to 1 per method? rRNA, kmer, ...", "then drop iPHoP", "we should split engcyc template into a lite and full versions". He then picked every lane on the decision page (https://claude.ai/artifact/S95JuGsErxwCm4gxU9Fyce, saved choices in its db at `decisions/tony`, version 43). He later kept iPHoP in full, which reverses "drop iPHoP".
+
+Design. engcyc splits into two templates. Assembly and QC run in both. Lite holds one caller per method. Full holds every lane, including the lite lanes, except the two Tony dropped from both.
+- Binning: MetaBAT2 and SemiBin2 in both. MetaDecoder in lite, COMEBin in full. DAS Tool and CheckM2 in both. MetaBinner, VAMB and CONCOCT dropped. So lite and full give different MAG sets for one sample.
+- Read taxonomy: MetaPhlAn, Kraken2 with Bracken, sylph and inStrain in both. StrainPhlAn, ganon2, Centrifuger and phyloFlash in full.
+- Contig and MAG taxonomy: GTDB-Tk and the rRNA scan in both. Metabuli in full.
+- Gene function: KOfam, UniRef50 (now ten hits per ORF), CLEAN, ProteinBERT and BiGG in both. eggNOG, InterProScan and DeepEC in full. dbCAN, MEROPS and VOGDB in full.
+- GPR: the 4-lane table in both. The all-reaction table is dropped: nothing reads it, and its DeepEC and eggNOG lane tables stay targets.
+- Genome features: Bakta non-coding, ARAGORN and mobileOG in both. antiSMASH in full.
+- Resistome: RGI, BacMet and VFDB in both. AMRFinderPlus, MEGARes, IntegronFinder, MobileElementFinder, DeepARG, both PathoFact lanes and the PathoFact report in full.
+- Per-MAG models: CarveMe and MEMOTE in both. DRAM in full.
+- Viral: geNomad, VirSorter2 and CheckV with vOTUs in both. VIBRANT, CCTyper, vConTACT3, iPHoP and the new MAG host-link lane in full.
+- References: lite about 223 GB, full about 1,015 GB. Most of full is iPHoP 350, Centrifuger about 120 (unmeasured), InterProScan 100, GTDB 98, Metabuli 77 (peaks near 200 while building) and ganon2 50.
+
+Open with Tony: RefSeq viral is lite-only, which leaves full's DRAM and DRAM-v without it. DRAM-v is in both, but lite lacks four of its inputs: InterProScan, dbCAN, MEROPS and VOGDB.
+
+Run 4 (Tony: "lite on sockeye, then spit full into 2 chunks (by reference db) and run them across fir and nibi"): lite runs on sockeye, and full runs as two parts split by reference database, on fir and on nibi.
+
+Landed: UniRef50 ten hits in 88442e32. Workers metadecoder (feat/engine/metadecoder) and hostlink (feat/engine/hostlink) are running. The lite and full templates are pending.
