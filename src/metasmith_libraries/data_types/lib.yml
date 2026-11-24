@@ -93,6 +93,10 @@ types:
     properties:
       src: piler_cr_to_gff3
       usage: command line
+  virus_host_links.py:
+    properties:
+      src: virus_host_links
+      usage: command line
  
   fabfos_gpr:
     properties:
