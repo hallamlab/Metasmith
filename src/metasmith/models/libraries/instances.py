@@ -251,11 +251,13 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
     def _build_endpoint_with_lineage(self, path: Path, _seen: set[Path] | None = None) -> Endpoint:
         if _seen is None:
             _seen = set()
+        # The cache is asked first: a finished ancestor is in both, and only one
+        # still being built -- a loop -- may come back without its lineage.
+        if path in self._endpoint_cache:
+            return self._endpoint_cache[path]
         if path in _seen:
             e_name = self.manifest[path]
             return self.GetType(e_name)
-        if path in self._endpoint_cache:
-            return self._endpoint_cache[path]
         _seen.add(path)
 
         e_name = self.manifest[path]

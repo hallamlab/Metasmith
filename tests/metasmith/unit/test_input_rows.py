@@ -306,6 +306,21 @@ def test_a_grandparent_link_still_works(lib_path, tmp_path):
     assert {str(m.path) for m in loaded(lib_path).parents[c]} == {str(a), str(b)}
 
 
+def test_a_deep_ancestor_keeps_its_own_lineage(lib_path, tmp_path):
+    # Nearest-first is the order a saved library lists ancestors in, and the one
+    # in which the walk meets `b` a second time, below `d`. The deepest row is
+    # read first because any earlier read warms the cache that hides the loss.
+    files = {n: _file(tmp_path / f"{n}.fa") for n in "abcde"}
+    op_inputs.sync(str(lib_path), [
+        row(n, files[n], parents=[f"#{m}" for m in reversed("abcde"[:i])])
+        for i, n in enumerate("abcde")
+    ])
+    lib = loaded(lib_path)
+    seen = lib.Get(files["e"]).dtype.parents
+    for n in "abcd":
+        assert lib.Get(files[n]).dtype in seen, f"[e] no longer descends from the given [{n}]"
+
+
 def test_a_parent_link_can_be_taken_back(lib_path, tmp_path):
     a, b, c = (_file(tmp_path / f"{n}.fa") for n in ("a", "b", "c"))
     rows = [row("a", a), row("b", b, parents=["#a"]), row("c", c, parents=["#b", "#a"])]
