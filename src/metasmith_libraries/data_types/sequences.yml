@@ -410,6 +410,11 @@ types:
     - bin_fasta
     properties:
       method: comebin
+  metadecoder_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: metadecoder
   metawrap_bin_fasta:
     extends:
     - bin_fasta
