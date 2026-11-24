@@ -33,6 +33,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(13.1),  # gtdb-r220-c200-dbv1.syldb Content-Length 14,061,572,967 B, 2026-11-24
     resources=Resources(
         cpus=2,
         memory=Size.GB(2),

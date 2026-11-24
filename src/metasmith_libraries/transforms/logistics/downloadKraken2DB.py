@@ -53,6 +53,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(15),  # 14 release files, 16,097,719,182 B by Content-Length, 2026-11-24
     resources=Resources(
         cpus=2,
         memory=Size.GB(2),

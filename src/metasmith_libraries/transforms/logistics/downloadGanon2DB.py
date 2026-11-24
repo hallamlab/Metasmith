@@ -80,6 +80,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(50),  # RefSeq archaea and bacteria, one assembly per species, estimate
     resources=Resources(
         cpus=4,
         memory=Size.GB(4),
