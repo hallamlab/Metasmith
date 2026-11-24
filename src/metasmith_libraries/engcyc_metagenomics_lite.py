@@ -31,7 +31,8 @@ Viral: geNomad, VirSorter2, VIBRANT -> CheckV -> vOTUs.
 
 def build_template(rebuild: bool = False) -> Template:
     return M.template_for(NAME, M.DEFAULT_SAMPLES, rebuild=rebuild, description=DESCRIPTION,
-                          case_targets=M.LITE_CASE_TARGETS, references=M.LITE_REFERENCES)
+                          case_targets=M.LITE_CASE_TARGETS, references=M.LITE_REFERENCES,
+                          lite_binners=True)
 
 
 if __name__ == "__main__":
