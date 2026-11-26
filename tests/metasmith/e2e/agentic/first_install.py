@@ -101,7 +101,9 @@ def remote_exists(host: Host, path: str) -> bool:
 
 def stage_sif(host: Host, sif: Path, tag: str, remote: str) -> None:
     """Put an unpublished image where the agent's pull would land, as RELEASE_PROTOCOL.md describes."""
-    store = f"{remote}/container_images"
+    # The engine's store root is ${APPTAINER_CACHEDIR:-<home>/container_images}; fir's login shell sets it.
+    store = subprocess.run(["ssh", host.ssh, f'echo "${{APPTAINER_CACHEDIR:-{remote}/container_images}}"'],
+                           capture_output=True, text=True, check=True).stdout.strip()
     dst = f"{store}/docker..quay.io_hallamlab_metasmith..{tag}.sif"
     subprocess.run(["ssh", host.ssh, f"mkdir -p {store}"], check=True)
     subprocess.run(["rsync", "-a", str(sif), f"{host.ssh}:{dst}"], check=True)

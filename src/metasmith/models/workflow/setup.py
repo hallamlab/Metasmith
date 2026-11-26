@@ -104,10 +104,11 @@ def tool_envs(task: WorkflowTask) -> list[DataInstance]:
 
 
 def _pull_transform(task: WorkflowTask) -> tuple[TransformInstance, TransformInstanceLibrary]:
+    # By key, not IterateTransforms: a staged library's index outlives its pruned files.
     for lib in task.transform_libraries:
-        for _path, tr in lib.IterateTransforms():
-            if tr.name == PULL_TRANSFORM:
-                return tr, lib
+        for path in lib.manifest:
+            if Path(path).stem == PULL_TRANSFORM:
+                return lib.GetTransform(path), lib
     raise ValueError(
         f"setup pulls tool images with [{PULL_TRANSFORM}], and no transform library of"
         f" [{task.GetKey()}] carries it; plan with the standard library's logistics"

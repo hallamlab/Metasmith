@@ -19,6 +19,7 @@ from ..remote import Logistics, Source, SourceType
 from .cache_decisions import compute_cache_decisions
 from .nextflow_codegen import NextflowGenContext, prepare_nextflow
 from .plan import WorkflowPlan
+from .steps import PULL_TRANSFORM
 
 
 @dataclass
@@ -134,6 +135,12 @@ class WorkflowTask:
             note(inst.parent_lib, inst.path)
         for target in self.plan.targets:
             note(target.instance.parent_lib, target.instance.path)
+
+        # A setup run adds pull steps to a task loaded back from this bundle.
+        for lib in self.transform_libraries:
+            for path in lib.manifest:
+                if Path(path).stem == PULL_TRANSFORM:
+                    note(lib, path)
 
         libraries = {lib.GetKey(): lib for lib in self.data_libraries + self.transform_libraries}
         for key, lib in libraries.items():

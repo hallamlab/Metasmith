@@ -149,11 +149,15 @@ def test_a_slice_after_a_sample_step_is_numbered_from_one(tmp_path, monkeypatch)
 
 
 def test_the_slice_survives_a_save_and_load(tmp_path):
-    task = _solve(tmp_path, {"fetch": FETCH, "annotate": ANNOTATE}, "mock::annotated")
+    task = _solve(tmp_path, {"fetch": FETCH_WITH_TOOL, "annotate": ANNOTATE, **PULL}, "mock::annotated")
     task.SaveAs(Source.FromLocal(tmp_path / "bundle"))
     loaded = WorkflowTask.Load(tmp_path / "bundle")
     assert loaded.sample_library_count == 1
     assert [s.transform.name for s in setup_subplan(loaded).plan.steps] == ["fetch"]
+    pulled = setup_subplan(loaded, pull_images=True)
+    assert [s.transform.name for s in pulled.plan.steps] == ["pullContainer", "fetch"]
+    pulled.SaveAs(Source.FromLocal(tmp_path / "setup"))
+    assert [s.transform.name for s in WorkflowTask.Load(tmp_path / "setup").plan.steps] == ["pullContainer", "fetch"]
 
 
 def test_a_plan_where_every_step_reads_a_sample_has_no_slice(tmp_path):
