@@ -5,10 +5,12 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::hmmer.env"))
 sources = model.AddProduct(lib.GetType("ref::dbcan_sources"))
 
-# The V11 HMMdb and family table downloadDramDB pins for DRAM 1.5.0, from the host that
-# still serves them: DRAM's own bcb.unl.edu address answers with a web page.
-BASE_URL = "https://pro.unl.edu/dbCAN2/download/Databases/V11"
-FILES = {"hmm": "dbCAN-HMMdb-V11.txt", "activities": "CAZyDB.08062022.fam-activities.txt"}
+# dbCAN's own S3 release, the host run_dbcan reads; pro.unl.edu and bcb.unl.edu answer 503.
+# A dated folder, never a moving alias. The md5s are the objects' single-part ETags.
+BASE_URL = "https://dbcan.s3.us-west-2.amazonaws.com/db_v5-2-9_11-3-2026"
+FILES = {"hmm": "dbCAN.hmm", "families": "fam-substrate-mapping.tsv"}
+MD5 = {"dbCAN.hmm": "d3deacef477a6efeff68c3478177e19d",
+       "fam-substrate-mapping.tsv": "a3c76a623dab04f01f4dc3a07663f6b1"}
 URLS = {name: f"{BASE_URL}/{name}" for name in FILES.values()}
 
 
@@ -19,7 +21,8 @@ def protocol(context: ExecutionContext):
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/name, label=f"dbCAN {key}")
+        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/name,
+                       label=f"dbCAN {key}", md5=MD5[name])
           for key, name in FILES.items()),
         f"mkdir -p {isrc.local}",
         *(f"mv {staged.local/name} {isrc.local}/" for name in FILES.values()),
@@ -37,7 +40,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
-    download_size=Size.GB(1),  # dbCAN V11, template estimate
+    download_size=Size.MB(119),  # dbCAN db_v5-2-9_11-3-2026, S3 Content-Length
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

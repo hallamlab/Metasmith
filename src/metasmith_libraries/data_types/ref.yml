@@ -527,7 +527,7 @@ types:
     extends:
     - reference_data
     properties:
-      _: dbCAN HMMdb and the CAZy family-activities table as fetched, pressed by buildDbcanDB
+      _: dbCAN HMMs and the family-substrate map as fetched, pressed by buildDbcanDB
   dbcan_hmm:
     extends:
     - reference_data
