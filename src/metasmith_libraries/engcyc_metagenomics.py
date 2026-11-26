@@ -33,7 +33,8 @@ and inStrain on the quality MAGs. Hybrid's StrainPhlAn reads its long reads.
 Gene function: DIAMOND UniRef50 (~24 GB), KOfam (~5 GB), InterProScan (~100 GB),
 eggNOG (12 GB, 55 GB unpacked).
 GPR table: the 4-lane table (KOfam, CLEAN, UniRef50, ProteinBERT); the DeepEC and
-BiGG lane tables beside it.
+BiGG lane tables beside it. Its reaction bridge is built from MetaNetX, Rhea and KEGG,
+and ProteinBERT's landmarks from Swiss-Prot (0.35 GB together).
 Genome features: Bakta non-coding (~70 GB full DB), ARAGORN tRNA, antiSMASH
 (~10 GB), mobileOG (~1 GB).
 PathoFact 2.0 reports (PathoFact DB 1.1 GB, DeepARG 1.9 GB, CARD, AMRFinderPlus,
@@ -153,7 +154,8 @@ REFERENCES = [f"annotation::{t}" for t in (
     f"ref::{t}" for t in (
         "antismash", "checkv_db", "dbcan_hmm", "deeparg_db", "dram_sheets", "ganon2_db", "genomad",
         "gtdb", "gtdb_rrna", "interproscan_data", "iphop_db", "kofamscan_ko_list",
-        "kofamscan_profiles", "kraken2_db", "merops_diamond_db", "metabuli_ref", "metaphlan_db",
+        "kofamscan_profiles", "kraken2_db", "label_transfer_landmarks", "merops_diamond_db",
+        "metabuli_ref", "metaphlan_db", "mnxr_lookup",
         "pathofact_db", "refseq_viral_diamond_db", "sylph_db", "uniref50_diamond_db", "vcontact3_db",
         "vibrant_db", "vogdb_hmm", "centrifuger_db", "phyloflash_db")]
 CASE_TARGETS = {"short": SHORT_TARGETS, "long": LONG_TARGETS, "hybrid": HYBRID_TARGETS}
@@ -201,8 +203,7 @@ LITE_CASE_TARGETS = {case: lite(ts) for case, ts in CASE_TARGETS.items()}
 
 # Consumed and produced by nothing, so they are given, and shared because they
 # belong to no one sample.
-SHARED_REFS = ("ref::mnxr_lookup", "ref::label_transfer_landmarks", "ref::lane_calibration",
-               "modelling::media", "modelling::medium_name")
+SHARED_REFS = ("modelling::media", "modelling::medium_name")
 TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml", "taxonomy.yml",
              "binning.yml", "binning_local.yml", "viromics.yml", "modelling.yml", "licensed.yml",
              "ncbi.yml")
@@ -319,7 +320,7 @@ def template_for(name, samples=None, rebuild=False, targets=None, description=DE
         transform_libraries=A.transforms(
             "logistics", "assembly", "metagenomics", "functionalAnnotation", "viromics",
             "metabolicModelling"),
-        resource_libraries=[A.envs(), A.MLIB / "resources" / "lib"],
+        resource_libraries=[A.envs(), A.MLIB / "resources" / "lib", A.MLIB / "resources" / "ref"],
     )
 
 

@@ -50,6 +50,7 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
+- ref
 cases:
 - name: short
   sample_type: null
@@ -145,14 +146,11 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_metadecoder.json
-  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
-  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
-  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
-  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
-  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
+  - /msm_deferred/8c5499fa286540daa8f1d04b9f3952af
+  - /msm_deferred/b7ef57c4202a4fc8bb1564429e4fe406
   input_paths:
-  - /msm_deferred/94ef52205e924416aaebe4ccf5f7ab70
-  - /msm_deferred/a7df8e7d24d44b5cacdbf8b669b0b795
+  - /msm_deferred/386ed6284c704634af5ba90f309f02bb
+  - /msm_deferred/9e05434568e144dd92df64fd25ce7e0e
   - short_1_name.txt
   - short_1_read_pair.txt
   - short_1_reads_metadata.json
@@ -252,15 +250,12 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_metadecoder.json
-  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
-  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
-  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
-  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
-  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
+  - /msm_deferred/8c5499fa286540daa8f1d04b9f3952af
+  - /msm_deferred/b7ef57c4202a4fc8bb1564429e4fe406
   input_paths:
-  - /msm_deferred/154ed64bd64a4f4eb41250272f983c3d
-  - /msm_deferred/d633cbf31af5448ab7e087d0b923cbd8
-  - /msm_deferred/edd46c60ab6b4e52bab58acceeed7af9
+  - /msm_deferred/4b01933d4d4e4be1bdeb876f45b5488b
+  - /msm_deferred/d9487bc76b394c54ad0cff735e84ad1a
+  - /msm_deferred/e95eb57af3c54c43b1526d5f285d99af
   - hybrid_1_name.txt
   - hybrid_1_read_pair.txt
   - hybrid_1_reads_metadata.json
@@ -304,13 +299,10 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_metadecoder.json
-  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
-  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
-  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
-  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
-  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
+  - /msm_deferred/8c5499fa286540daa8f1d04b9f3952af
+  - /msm_deferred/b7ef57c4202a4fc8bb1564429e4fe406
   input_paths:
-  - /msm_deferred/bcc6391d98654c608475f2fe1c27aa94
+  - /msm_deferred/cfe600afbe304c258837d2d88ae5000a
   - long_1_name.txt
   - long_1_reads_metadata.json
 - name: references
@@ -329,7 +321,9 @@ cases:
   - ref::kofamscan_ko_list
   - ref::kofamscan_profiles
   - ref::kraken2_db
+  - ref::label_transfer_landmarks
   - ref::metaphlan_db
+  - ref::mnxr_lookup
   - ref::refseq_viral_diamond_db
   - ref::sylph_db
   - ref::uniref50_diamond_db
@@ -338,78 +332,60 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_metadecoder.json
-  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
-  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
-  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
-  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
-  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
+  - /msm_deferred/8c5499fa286540daa8f1d04b9f3952af
+  - /msm_deferred/b7ef57c4202a4fc8bb1564429e4fe406
   input_paths:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_metadecoder.json
-  - /msm_deferred/98949aceb4f345e894f5566a38a9b66f
-  - /msm_deferred/cde80c3355e345e0a17880f11b7740db
-  - /msm_deferred/d4de1e7cfae646edac34c24a1563af2f
-  - /msm_deferred/e91be42579d44d378abad0a97cbbf1f7
-  - /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a
+  - /msm_deferred/8c5499fa286540daa8f1d04b9f3952af
+  - /msm_deferred/b7ef57c4202a4fc8bb1564429e4fe406
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/154ed64bd64a4f4eb41250272f983c3d:
-      type: sequences::zipped_reverse_short_reads
-      parents:
-        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e2082e7c133fe18024ef23a425aeb65aea9229316802cebe99d78b47ccaa87b7b1d
-      origin: leaf
-    /msm_deferred/94ef52205e924416aaebe4ccf5f7ab70:
+    /msm_deferred/386ed6284c704634af5ba90f309f02bb:
       type: sequences::zipped_forward_short_reads
       parents:
         IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e2000e99683d7732c6168cc88dddf4fc42a0f1689b2560d731e81ea6f0ffc7e574d
+      instance_id: 1e20ed53223e5ffe201979d775557bde091360b9a71e77a8c30e8cc3962d35db5297
       origin: leaf
-    /msm_deferred/98949aceb4f345e894f5566a38a9b66f:
-      type: ref::label_transfer_landmarks
-      instance_id: 1e20a3f21dc198853f05239ade4be1e630c6b33ec3d4e33531a6caf4f4962294fa9d
+    /msm_deferred/4b01933d4d4e4be1bdeb876f45b5488b:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e20732e284bcd7ae2497a6f0a5a10f56151be0acb5fce8caee7028ddcaa73931b45
       origin: leaf
-    /msm_deferred/a7df8e7d24d44b5cacdbf8b669b0b795:
+    /msm_deferred/8c5499fa286540daa8f1d04b9f3952af:
+      type: modelling::medium_name
+      instance_id: 1e20f87880782e4f17ce7332ac2999de241f111abeb7b469a174e6cbb333939b89d8
+      origin: leaf
+    /msm_deferred/9e05434568e144dd92df64fd25ce7e0e:
       type: sequences::zipped_reverse_short_reads
       parents:
         IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e20ca737da3fbf60248092ab3d434fe10323aa83f9e7591b7a83c267e4697eb3e1b
+      instance_id: 1e20f0daa05a1c425031bf323a102014508e0ecefc1334417674fab70f3946a72558
       origin: leaf
-    /msm_deferred/bcc6391d98654c608475f2fe1c27aa94:
+    /msm_deferred/b7ef57c4202a4fc8bb1564429e4fe406:
+      type: modelling::media
+      instance_id: 1e20850a38532a391684dfd13002ccaaf35a0bf60f603a3a9ad7fe2967e38bcf004e
+      origin: leaf
+    /msm_deferred/cfe600afbe304c258837d2d88ae5000a:
       type: sequences::long_reads
       parents:
         IkuWHv2PBGcI@long_1_reads_metadata.json: sequences::read_metadata
-      instance_id: 1e2073a1d958d8d97dd6ed82db471379114800e1472a10b8158e8e9f94d789fa6ad5
+      instance_id: 1e2024746fda13ebaced796141501d3272a719c377c4613d3c9a5b6ac482c217e401
       origin: leaf
-    /msm_deferred/cde80c3355e345e0a17880f11b7740db:
-      type: modelling::media
-      instance_id: 1e20b9662183378888db03ccb74fa0cd0079ae1859f1db4a62f717eea5a0bf543329
-      origin: leaf
-    /msm_deferred/d4de1e7cfae646edac34c24a1563af2f:
-      type: ref::lane_calibration
-      instance_id: 1e20052179a863c12e0430bdc8e1768020256bf2656161193961fb406a0be4f057da
-      origin: leaf
-    /msm_deferred/d633cbf31af5448ab7e087d0b923cbd8:
+    /msm_deferred/d9487bc76b394c54ad0cff735e84ad1a:
       type: sequences::long_reads
       parents:
         IkuWHv2PBGcI@hybrid_1_reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20a71cd33e1f937e32da68be423ce1bc6a8231dcf8af09328a6a02acecd95d7ebc
+      instance_id: 1e20b05e4a8d944b8049b588c7d0c511b0918ba9b8976542f15eec2ba696dead63be
       origin: leaf
-    /msm_deferred/e91be42579d44d378abad0a97cbbf1f7:
-      type: ref::mnxr_lookup
-      instance_id: 1e20a295e3c93f763b037bab9def55330d617d31b42d797f55678857c6c5d8c311d4
-      origin: leaf
-    /msm_deferred/edd46c60ab6b4e52bab58acceeed7af9:
-      type: sequences::zipped_forward_short_reads
+    /msm_deferred/e95eb57af3c54c43b1526d5f285d99af:
+      type: sequences::zipped_reverse_short_reads
       parents:
         IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e202a29fb2b730094c01d3ad2e12ceffb4b3a5bce5d04bf5e789b1dee8f611273af
-      origin: leaf
-    /msm_deferred/fe597160d8e345e1b13d8f5c34f8af3a:
-      type: modelling::medium_name
-      instance_id: 1e20a15611b104cc3648005ee0afab2229dadd218c76362a56da0c4d14bc843a8320
+      instance_id: 1e20ea7b0ff5167a4b327c798cff9445a6bff60f79112074f4d7ee7c92b51aa77832
       origin: leaf
     contig_study.json:
       type: viromics::contig_study

@@ -57,7 +57,10 @@ description: 'The Engcyc metagenomics workflow from reads, in three cases planne
 
   GPR table: the 4-lane table (KOfam, CLEAN, UniRef50, ProteinBERT); the DeepEC and
 
-  BiGG lane tables beside it.
+  BiGG lane tables beside it. Its reaction bridge is built from MetaNetX, Rhea and
+  KEGG,
+
+  and ProteinBERT''s landmarks from Swiss-Prot (0.35 GB together).
 
   Genome features: Bakta non-coding (~70 GB full DB), ARAGORN tRNA, antiSMASH
 
@@ -112,6 +115,7 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
+- ref
 cases:
 - name: short
   sample_type: null
@@ -290,14 +294,11 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_comebin.json
-  - /msm_deferred/3ab19540a7e247249cc73c27ecfd1d09
-  - /msm_deferred/51bffe7ce5004bf199702b1f191c3fab
-  - /msm_deferred/566b8830a1bd4fc186a709a92169a91e
-  - /msm_deferred/93d58fa815ac45968f52e67abed0a7d2
-  - /msm_deferred/9b35fb4be0244c19b87f1d56ec9ffca5
+  - /msm_deferred/c8a31daf74d7441d9ab75dbec343ef47
+  - /msm_deferred/d84e7d50a8d2498bac05cf9bda544951
   input_paths:
-  - /msm_deferred/49cb1a679b5445af86da785932ac0de8
-  - /msm_deferred/c2664060fd7347acadf09dbe3aea8332
+  - /msm_deferred/81197a8cf7dd41b18fa1ee4e3bcc129c
+  - /msm_deferred/cc54120785984ffbac338da99dbd162f
   - short_1_name.txt
   - short_1_read_pair.txt
   - short_1_reads_metadata.json
@@ -480,15 +481,12 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_comebin.json
-  - /msm_deferred/3ab19540a7e247249cc73c27ecfd1d09
-  - /msm_deferred/51bffe7ce5004bf199702b1f191c3fab
-  - /msm_deferred/566b8830a1bd4fc186a709a92169a91e
-  - /msm_deferred/93d58fa815ac45968f52e67abed0a7d2
-  - /msm_deferred/9b35fb4be0244c19b87f1d56ec9ffca5
+  - /msm_deferred/c8a31daf74d7441d9ab75dbec343ef47
+  - /msm_deferred/d84e7d50a8d2498bac05cf9bda544951
   input_paths:
-  - /msm_deferred/3d7e8e0029064fa9bdf8f7781945eb42
-  - /msm_deferred/9d5049b1dff0444d841c2b83dcf06c9f
-  - /msm_deferred/e3f5793fde984ae8b6a7bfbe8948bfa4
+  - /msm_deferred/6a5259bd077a4028b85669afee7e3be0
+  - /msm_deferred/b9c6968203a0412180b0f8dd96dd4c42
+  - /msm_deferred/c0c6959ddd9c4992a5ac012a5576ad7e
   - hybrid_1_name.txt
   - hybrid_1_read_pair.txt
   - hybrid_1_reads_metadata.json
@@ -559,13 +557,10 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_comebin.json
-  - /msm_deferred/3ab19540a7e247249cc73c27ecfd1d09
-  - /msm_deferred/51bffe7ce5004bf199702b1f191c3fab
-  - /msm_deferred/566b8830a1bd4fc186a709a92169a91e
-  - /msm_deferred/93d58fa815ac45968f52e67abed0a7d2
-  - /msm_deferred/9b35fb4be0244c19b87f1d56ec9ffca5
+  - /msm_deferred/c8a31daf74d7441d9ab75dbec343ef47
+  - /msm_deferred/d84e7d50a8d2498bac05cf9bda544951
   input_paths:
-  - /msm_deferred/d6ad4d5d2a3040fa98912d013d36d8e5
+  - /msm_deferred/fb1226625531487fb2e7fc3f226b7646
   - long_1_name.txt
   - long_1_reads_metadata.json
 - name: references
@@ -594,9 +589,11 @@ cases:
   - ref::kofamscan_ko_list
   - ref::kofamscan_profiles
   - ref::kraken2_db
+  - ref::label_transfer_landmarks
   - ref::merops_diamond_db
   - ref::metabuli_ref
   - ref::metaphlan_db
+  - ref::mnxr_lookup
   - ref::pathofact_db
   - ref::refseq_viral_diamond_db
   - ref::sylph_db
@@ -610,78 +607,60 @@ cases:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_comebin.json
-  - /msm_deferred/3ab19540a7e247249cc73c27ecfd1d09
-  - /msm_deferred/51bffe7ce5004bf199702b1f191c3fab
-  - /msm_deferred/566b8830a1bd4fc186a709a92169a91e
-  - /msm_deferred/93d58fa815ac45968f52e67abed0a7d2
-  - /msm_deferred/9b35fb4be0244c19b87f1d56ec9ffca5
+  - /msm_deferred/c8a31daf74d7441d9ab75dbec343ef47
+  - /msm_deferred/d84e7d50a8d2498bac05cf9bda544951
   input_paths:
   - contig_study.json
   - eggnog_source.json
   - metabat2_semibin2_comebin.json
-  - /msm_deferred/3ab19540a7e247249cc73c27ecfd1d09
-  - /msm_deferred/51bffe7ce5004bf199702b1f191c3fab
-  - /msm_deferred/566b8830a1bd4fc186a709a92169a91e
-  - /msm_deferred/93d58fa815ac45968f52e67abed0a7d2
-  - /msm_deferred/9b35fb4be0244c19b87f1d56ec9ffca5
+  - /msm_deferred/c8a31daf74d7441d9ab75dbec343ef47
+  - /msm_deferred/d84e7d50a8d2498bac05cf9bda544951
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/3ab19540a7e247249cc73c27ecfd1d09:
-      type: ref::lane_calibration
-      instance_id: 1e209f1eabdd2c05a383ced45cdbba50629a9533446e51118981c903290728459805
-      origin: leaf
-    /msm_deferred/3d7e8e0029064fa9bdf8f7781945eb42:
-      type: sequences::zipped_reverse_short_reads
-      parents:
-        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e203fdd0b1fd6e699c9a95edabf38738f6a9d9f99a4acec1fa509ce7c5cd0f188a5
-      origin: leaf
-    /msm_deferred/49cb1a679b5445af86da785932ac0de8:
-      type: sequences::zipped_reverse_short_reads
-      parents:
-        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e20eca0aceda9bb1b693f6180a3bd0b3bcb3e7cf359cdcd19794d7c875705b39c4b
-      origin: leaf
-    /msm_deferred/51bffe7ce5004bf199702b1f191c3fab:
-      type: modelling::media
-      instance_id: 1e207ce70a0de918dae7c08183177fdc3e050eae28312eb27bb720458477547c373a
-      origin: leaf
-    /msm_deferred/566b8830a1bd4fc186a709a92169a91e:
-      type: modelling::medium_name
-      instance_id: 1e20bc31a8e468d8b0ce18a5711a32f12eafd15b63472a209ffb691a53082225fad1
-      origin: leaf
-    /msm_deferred/93d58fa815ac45968f52e67abed0a7d2:
-      type: ref::label_transfer_landmarks
-      instance_id: 1e2095809d1a04910b5c08b72b3e8a7d713848833820034eb3d868adc43936b01601
-      origin: leaf
-    /msm_deferred/9b35fb4be0244c19b87f1d56ec9ffca5:
-      type: ref::mnxr_lookup
-      instance_id: 1e20ae116cfd1cbbda57ba80c778e3fc1d515533ba8c34ec424cac2184460d7e2518
-      origin: leaf
-    /msm_deferred/9d5049b1dff0444d841c2b83dcf06c9f:
+    /msm_deferred/6a5259bd077a4028b85669afee7e3be0:
       type: sequences::long_reads
       parents:
         IkuWHv2PBGcI@hybrid_1_reads_metadata.json: sequences::read_metadata
-      instance_id: 1e20ddc53791518888b60969404802deb50f20af6af4eca5e7b3c30c4f6498b7ef6f
+      instance_id: 1e20d066e53ff997a01c29bbb7d3920eb24213efceddf2baecd482ae638ed5fb5aae
       origin: leaf
-    /msm_deferred/c2664060fd7347acadf09dbe3aea8332:
+    /msm_deferred/81197a8cf7dd41b18fa1ee4e3bcc129c:
       type: sequences::zipped_forward_short_reads
       parents:
         IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e203982231af1e0c2dc21930c41d5b274a47f5ab5e407786e528c32d19f369f4088
+      instance_id: 1e204caf4f7a69665c139150d97063461f4c7d39c5fbdf792b84795a2d477eb97f09
       origin: leaf
-    /msm_deferred/d6ad4d5d2a3040fa98912d013d36d8e5:
-      type: sequences::long_reads
+    /msm_deferred/b9c6968203a0412180b0f8dd96dd4c42:
+      type: sequences::zipped_reverse_short_reads
       parents:
-        IkuWHv2PBGcI@long_1_reads_metadata.json: sequences::read_metadata
-      instance_id: 1e2012d7ed2aacb8689e7f92f3e793ee5186650ca07c49034e8d7711749ee42bbf98
+        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e203fae959e200b15d379592e0de023499ab2bf3f00db4d28875911f080fddd64e6
       origin: leaf
-    /msm_deferred/e3f5793fde984ae8b6a7bfbe8948bfa4:
+    /msm_deferred/c0c6959ddd9c4992a5ac012a5576ad7e:
       type: sequences::zipped_forward_short_reads
       parents:
         IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
-      instance_id: 1e2042b48fb216858cbc8e661f4c76329427d6c2e96e7712cb67388fcd863f8b739e
+      instance_id: 1e20064b2e1fd4694099e04f8a41487b5e65ba933df14dc78e68bfd73e2df94e96d1
+      origin: leaf
+    /msm_deferred/c8a31daf74d7441d9ab75dbec343ef47:
+      type: modelling::media
+      instance_id: 1e209da6a7e66eaaccbf141e9c24c9388feac5ae55382bd8880518227ae61a198a68
+      origin: leaf
+    /msm_deferred/cc54120785984ffbac338da99dbd162f:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e204ba4f40ed5ccf19d83f0a62704b101d658497561f07c00785010126a70cfd3fc
+      origin: leaf
+    /msm_deferred/d84e7d50a8d2498bac05cf9bda544951:
+      type: modelling::medium_name
+      instance_id: 1e20db053a8d7e23b8503c6c2e0e9e2fba94f391232d5ad78ec7bc7fb92e57569a52
+      origin: leaf
+    /msm_deferred/fb1226625531487fb2e7fc3f226b7646:
+      type: sequences::long_reads
+      parents:
+        IkuWHv2PBGcI@long_1_reads_metadata.json: sequences::read_metadata
+      instance_id: 1e205f3b54f92e3de0f40067301b7c3109066f72782adc481fa1db0355679b5dd347
       origin: leaf
     contig_study.json:
       type: viromics::contig_study
