@@ -213,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--channel", type=Path, help="local conda channel (a conda_build dir) to serve as hallamlab")
     ap.add_argument("--sif", type=Path, help="local metasmith.sif to stage on the cluster; needs --image-tag")
     ap.add_argument("--image-tag", help="the image tag the candidate pulls, e.g. 0.25.1-abc1234")
+    ap.add_argument("--warm", action="store_true",
+                    help="reuse the cluster dir's task_cache and container_images from an earlier round; delete the rest")
     ap.add_argument("--model", default="haiku")
     ap.add_argument("--max-iters", type=int, default=20)
     ap.add_argument("--iter-timeout", type=float, default=4 * 3600.0)
@@ -236,7 +238,11 @@ def main(argv: list[str] | None = None) -> int:
     if run_dir.exists():
         raise SystemExit(f"{run_dir} exists; read and delete it before starting {tag}")
     if args.goal != "dry" and remote_exists(host, remote):
-        raise SystemExit(f"{host.ssh}:{remote} exists; read and delete it before starting {tag}")
+        if not args.warm:
+            raise SystemExit(f"{host.ssh}:{remote} exists; read and delete it before starting {tag}, or pass --warm")
+        # Finished steps are cache hits and a half-fetched download resumes from its .part.
+        subprocess.run(["ssh", host.ssh, f"find {shlex.quote(remote)} -mindepth 1 -maxdepth 1 "
+                        "! -name task_cache ! -name container_images -exec rm -rf {} +"], check=True)
 
     subset_file, subset = (args.keep, "keep") if args.keep else (args.drop, "drop") if args.drop else (None, None)
     subset_text = read_subset(subset_file) if subset_file else None
