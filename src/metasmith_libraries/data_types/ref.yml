@@ -91,6 +91,27 @@ types:
     - reference_data
     properties:
       _: KOfam release as fetched -- profiles.tar.gz and ko_list.gz from one archives/<date>/, unpacked by buildKofamDB
+  # The fetch halves of mnxr_lookup and label_transfer_landmarks, each as released.
+  metanetx_reactions:
+    extends:
+    - reference_data
+    properties:
+      _: MNXref 4.5 reac_prop.tsv and reac_xref.tsv, md5-verified against MetaNetX's sidecars
+  rhea_uniprot:
+    extends:
+    - reference_data
+    properties:
+      _: Rhea's rhea2uniprot.tsv (Swiss-Prot) and rhea2uniprot_trembl.tsv.gz (TrEMBL) from one release, with rhea-release.properties naming it
+  kegg_ko_reaction:
+    extends:
+    - reference_data
+    properties:
+      _: KEGG REST link/reaction/ko saved verbatim as ko2reaction.tsv, with kegg-info.txt naming the release
+  swissprot_sequences:
+    extends:
+    - reference_data
+    properties:
+      _: UniProtKB/Swiss-Prot uniprot_sprot.fasta.gz with reldate.txt and RELEASE.metalink naming its release
   interproscan_data:
     extends:
     - reference_data

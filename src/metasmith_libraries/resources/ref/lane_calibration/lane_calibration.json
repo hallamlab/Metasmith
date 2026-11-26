@@ -1,0 +1,541 @@
+{
+  "schema": "lane_calibration/v1",
+  "apply": "llr = max(0, A * transform(clip(score, score_min, score_max)) + B - reference_lam0)",
+  "units": "nats",
+  "prior": {
+    "reference_lam0": -3.0,
+    "pi_fit": 0.94691,
+    "n_calls": 5312,
+    "n_correct": 5030,
+    "note": "`reference_lam0` is the prior llr is measured against AND the one `pool_logodds` adds back, so a reaction with one assertion comes out at that assertion's own calibrated accuracy. `pi_fit` is the share of correct calls among calls the lanes MADE on adjudicable ORFs -- what the fitted intercept B is relative to, reported so sigmoid(B) reads as a lane's precision. Subtracting pi_fit instead would floor every below-average call to zero and pin the pooled belief into [pi_fit, 1]."
+  },
+  "truth_set": {
+    "host": "e_coli_dh10b",
+    "accession": "NC_010473.1",
+    "method": "Swiss-Prot K-12 entries carrying a level-4 EC, keyed by the md5 of their sequence; a run ORF is adjudicable when its own sequence md5 hits that key",
+    "adjudicable_orfs": 1300,
+    "level": "EC",
+    "level_note": "Reaction-level would measure the same fan-out dilution the mapper's 1/F_n divisor already applies. Moving to it means removing that divisor in the same change."
+  },
+  "caveats": [
+    "kofam and uniref50 ship as constants. Their score did not beat its own intercept on ORF-grouped held-out folds (z = 0.62 and 0.23), so the fitted slope was dropped rather than shipped as noise.",
+    "CLEAN's abstain point was tuned against this same truth family, so its curve is not fully independent of it. The curve is conditioned on the score, so the tuning moves WHICH calls exist rather than the score-to-error relation, but the fit is not a clean holdout for that lane.",
+    "The ProteinBERT lane retrieves against Swiss-Prot and the truth set is Swiss-Prot, so most of these ORFs find themselves. That populates the top of the score range and leaves the bottom thin; it does not bias the curve, which is conditioned on the score.",
+    "Over half of ProteinBERT's calls sit at exactly vote = 1.0, because an ORF admitting a single neighbour votes 1.0 whatever that neighbour is worth. The lane's score cannot separate unanimous-among-many from only-one-voter.",
+    "score_min/score_max bound where each curve has support. Outside them the apply rule clamps rather than continuing the trend."
+  ],
+  "lanes": {
+    "kofam": {
+      "model": "constant",
+      "transform": "log",
+      "eps": 0.0001,
+      "A": 0.0,
+      "B": 3.14485,
+      "score_min": 1.00008,
+      "score_max": 39.17484,
+      "llr_at_min": 6.1448,
+      "llr_at_max": 6.1448,
+      "llr_at_median": 6.1448,
+      "p_correct_at_median": 0.95871,
+      "n_calls": 1260,
+      "n_errors": 52,
+      "cv_logloss": 0.17276,
+      "cv_brier": 0.03958,
+      "slope_gain_z": 0.62
+    },
+    "clean": {
+      "model": "sloped",
+      "transform": "logit",
+      "eps": 0.0001,
+      "A": 0.45028,
+      "B": 1.00176,
+      "score_min": 0.0251,
+      "score_max": 0.9989,
+      "llr_at_min": 2.354,
+      "llr_at_max": 7.0688,
+      "llr_at_median": 6.6473,
+      "p_correct_at_median": 0.9746,
+      "n_calls": 1309,
+      "n_errors": 85,
+      "cv_logloss": 0.19299,
+      "cv_brier": 0.05242,
+      "slope_gain_z": 5.09
+    },
+    "uniref50": {
+      "model": "constant",
+      "transform": "identity",
+      "eps": 0.0001,
+      "A": 0.0,
+      "B": 5.86945,
+      "score_min": 0.5872,
+      "score_max": 1.0119,
+      "llr_at_min": 8.8694,
+      "llr_at_max": 8.8694,
+      "llr_at_median": 8.8694,
+      "p_correct_at_median": 0.99718,
+      "n_calls": 1086,
+      "n_errors": 3,
+      "cv_logloss": 0.01954,
+      "cv_brier": 0.00276,
+      "slope_gain_z": 0.23
+    },
+    "pbert": {
+      "model": "sloped",
+      "transform": "logit",
+      "eps": 0.0001,
+      "A": 0.25361,
+      "B": 0.82117,
+      "score_min": 0.03267,
+      "score_max": 1.0,
+      "llr_at_min": 2.9619,
+      "llr_at_max": 6.157,
+      "llr_at_median": 6.157,
+      "p_correct_at_median": 0.95918,
+      "n_calls": 1657,
+      "n_errors": 142,
+      "cv_logloss": 0.24011,
+      "cv_brier": 0.06782,
+      "slope_gain_z": 6.4
+    }
+  },
+  "reliability": [
+    {
+      "lane": "kofam",
+      "decile": 0,
+      "n": 126,
+      "score_lo": 1.0001,
+      "score_hi": 1.1298,
+      "obs_err": 0.1429,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 1,
+      "n": 126,
+      "score_lo": 1.1304,
+      "score_hi": 1.2478,
+      "obs_err": 0.0238,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 2,
+      "n": 126,
+      "score_lo": 1.2504,
+      "score_hi": 1.3803,
+      "obs_err": 0.0556,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 3,
+      "n": 126,
+      "score_lo": 1.3804,
+      "score_hi": 1.5543,
+      "obs_err": 0.0238,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 4,
+      "n": 126,
+      "score_lo": 1.5546,
+      "score_hi": 1.7653,
+      "obs_err": 0.0079,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 5,
+      "n": 126,
+      "score_lo": 1.7655,
+      "score_hi": 2.0548,
+      "obs_err": 0.0238,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 6,
+      "n": 126,
+      "score_lo": 2.0583,
+      "score_hi": 2.5419,
+      "obs_err": 0.0397,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 7,
+      "n": 126,
+      "score_lo": 2.542,
+      "score_hi": 3.3326,
+      "obs_err": 0.0317,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 8,
+      "n": 126,
+      "score_lo": 3.3338,
+      "score_hi": 4.7993,
+      "obs_err": 0.0159,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "kofam",
+      "decile": 9,
+      "n": 126,
+      "score_lo": 4.8018,
+      "score_hi": 39.1748,
+      "obs_err": 0.0476,
+      "fit_err": 0.0413,
+      "llr": 6.145
+    },
+    {
+      "lane": "clean",
+      "decile": 0,
+      "n": 131,
+      "score_lo": 0.0251,
+      "score_hi": 0.8296,
+      "obs_err": 0.3053,
+      "fit_err": 0.3259,
+      "llr": 3.797
+    },
+    {
+      "lane": "clean",
+      "decile": 1,
+      "n": 131,
+      "score_lo": 0.832,
+      "score_hi": 0.9717,
+      "obs_err": 0.1298,
+      "fit_err": 0.1051,
+      "llr": 5.167
+    },
+    {
+      "lane": "clean",
+      "decile": 2,
+      "n": 131,
+      "score_lo": 0.972,
+      "score_hi": 0.9905,
+      "obs_err": 0.0763,
+      "fit_err": 0.0539,
+      "llr": 5.874
+    },
+    {
+      "lane": "clean",
+      "decile": 3,
+      "n": 131,
+      "score_lo": 0.9905,
+      "score_hi": 0.9952,
+      "obs_err": 0.0611,
+      "fit_err": 0.0363,
+      "llr": 6.281
+    },
+    {
+      "lane": "clean",
+      "decile": 4,
+      "n": 131,
+      "score_lo": 0.9953,
+      "score_hi": 0.9972,
+      "obs_err": 0.0076,
+      "fit_err": 0.0282,
+      "llr": 6.542
+    },
+    {
+      "lane": "clean",
+      "decile": 5,
+      "n": 130,
+      "score_lo": 0.9972,
+      "score_hi": 0.9979,
+      "obs_err": 0.0154,
+      "fit_err": 0.0239,
+      "llr": 6.709
+    },
+    {
+      "lane": "clean",
+      "decile": 6,
+      "n": 131,
+      "score_lo": 0.9979,
+      "score_hi": 0.9983,
+      "obs_err": 0.0305,
+      "fit_err": 0.0216,
+      "llr": 6.812
+    },
+    {
+      "lane": "clean",
+      "decile": 7,
+      "n": 131,
+      "score_lo": 0.9983,
+      "score_hi": 0.9986,
+      "obs_err": 0.0153,
+      "fit_err": 0.0194,
+      "llr": 6.923
+    },
+    {
+      "lane": "clean",
+      "decile": 8,
+      "n": 131,
+      "score_lo": 0.9986,
+      "score_hi": 0.9988,
+      "obs_err": 0.0,
+      "fit_err": 0.0178,
+      "llr": 7.011
+    },
+    {
+      "lane": "clean",
+      "decile": 9,
+      "n": 131,
+      "score_lo": 0.9988,
+      "score_hi": 0.9989,
+      "obs_err": 0.0076,
+      "fit_err": 0.0169,
+      "llr": 7.065
+    },
+    {
+      "lane": "uniref50",
+      "decile": 0,
+      "n": 109,
+      "score_lo": 0.5872,
+      "score_hi": 0.9754,
+      "obs_err": 0.0092,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 1,
+      "n": 109,
+      "score_lo": 0.9754,
+      "score_hi": 0.9846,
+      "obs_err": 0.0092,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 2,
+      "n": 108,
+      "score_lo": 0.9846,
+      "score_hi": 0.9886,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 3,
+      "n": 109,
+      "score_lo": 0.9886,
+      "score_hi": 0.9914,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 4,
+      "n": 108,
+      "score_lo": 0.9914,
+      "score_hi": 0.9936,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 5,
+      "n": 109,
+      "score_lo": 0.9936,
+      "score_hi": 0.9953,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 6,
+      "n": 108,
+      "score_lo": 0.9953,
+      "score_hi": 0.9971,
+      "obs_err": 0.0093,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 7,
+      "n": 109,
+      "score_lo": 0.9971,
+      "score_hi": 0.9991,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 8,
+      "n": 108,
+      "score_lo": 0.9991,
+      "score_hi": 1.0015,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "uniref50",
+      "decile": 9,
+      "n": 109,
+      "score_lo": 1.0016,
+      "score_hi": 1.0119,
+      "obs_err": 0.0,
+      "fit_err": 0.0028,
+      "llr": 8.869
+    },
+    {
+      "lane": "pbert",
+      "decile": 0,
+      "n": 166,
+      "score_lo": 0.0327,
+      "score_hi": 0.505,
+      "obs_err": 0.4036,
+      "fit_err": 0.4124,
+      "llr": 3.362
+    },
+    {
+      "lane": "pbert",
+      "decile": 1,
+      "n": 166,
+      "score_lo": 0.5066,
+      "score_hi": 1.0,
+      "obs_err": 0.1265,
+      "fit_err": 0.1173,
+      "llr": 5.419
+    },
+    {
+      "lane": "pbert",
+      "decile": 2,
+      "n": 165,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0242,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 3,
+      "n": 166,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0482,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 4,
+      "n": 166,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0542,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 5,
+      "n": 165,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0485,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 6,
+      "n": 166,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0301,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 7,
+      "n": 165,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0485,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 8,
+      "n": 166,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0482,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    },
+    {
+      "lane": "pbert",
+      "decile": 9,
+      "n": 166,
+      "score_lo": 1.0,
+      "score_hi": 1.0,
+      "obs_err": 0.0241,
+      "fit_err": 0.0408,
+      "llr": 6.157
+    }
+  ],
+  "inputs": {
+    "truth_sprot_k12": {
+      "path": "data/fabfos/benchmarks/lane_dh10b/generators/sprot_k12.tsv",
+      "md5": "0d80f3a7a7ed89e1f82af2f378dd57f5"
+    },
+    "query_orfs": {
+      "path": "data/fabfos/originals/genomes/e_coli_dh10b/genome/NC_010473.1.faa",
+      "md5": "575fff147007c2d46b53c08b978d174d"
+    },
+    "kofam": {
+      "path": "data/fabfos/runs/e_coli_dh10b/annotations/lanes/kofamscan.csv",
+      "md5": "ddf34742b7f822803849e727af9cc073"
+    },
+    "kofam_descriptions": {
+      "path": "data/fabfos/runs/e_coli_dh10b/annotations/lanes/kofamscan_descriptions.csv",
+      "md5": "320b7d5461ef487780a5df55b3b64443"
+    },
+    "clean": {
+      "path": "data/fabfos/runs/e_coli_dh10b/annotations/lanes/clean.tsv",
+      "md5": "2e5988dd5177de2a232b0cdb73873d4e"
+    },
+    "uniref50": {
+      "path": "data/fabfos/runs/e_coli_dh10b/annotations/lanes/diamond_uniref50.tsv",
+      "md5": "7d0ce24919dc490c692b3bc2d289aad7"
+    },
+    "pbert_embeddings": {
+      "path": "data/fabfos/runs/e_coli_dh10b/annotations/lanes/proteinbert_embeddings.parquet",
+      "md5": "236cc87e0000a365636060dd5aabf05e"
+    },
+    "landmarks": {
+      "path": "data/fabfos/processed/label_transfer_landmarks/landmarks/landmarks.parquet",
+      "md5": "ae8472cf74151148168c4a5132f850de"
+    },
+    "reac_prop": {
+      "path": "data/fabfos/originals/metanetx/4.5/reac_prop.tsv",
+      "md5": "24c8cf3371399919fc2668d31afd5091"
+    }
+  }
+}

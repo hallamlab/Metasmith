@@ -1,0 +1,8 @@
+ref::lane_calibration -- per-lane score-to-log-likelihood-ratio calibration
+
+built by  research/fabfos/annotation_lanes/calibration/{build_labeled,fit_calibration,emit_reference}.py
+at commit 37b1b7226c2e5edb351f2b40171a982a84fe0f39
+
+Read `lane_calibration.json`. `apply` states the rule; `caveats` states what
+the fit does and does not support. `fabfos_evidence.load_calibration` is the
+only consumer and is where the rule is implemented once.
