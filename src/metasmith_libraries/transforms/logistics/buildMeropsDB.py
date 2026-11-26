@@ -23,8 +23,14 @@ def protocol(context: ExecutionContext):
         raise SystemExit("[merops] pepunit.lib headers do not carry the #family# tag "
                          "DRAM reads the peptidase family from; it is not MEROPS pepunit.lib")
 
+    # MEROPS ships CRLF line ends and stray spaces inside sequences, which DIAMOND rejects.
+    with open(isrc.local/"pepunit.lib", errors="replace") as src, open("pepunit.clean.fa", "w") as out:
+        for line in src:
+            line = line.rstrip("\r\n")
+            out.write((line if line.startswith(">") else "".join(c for c in line if c.isalpha() or c == "*")) + "\n")
+
     context.ExecWithEnv(env=image, cmd=f"""
-        diamond makedb --in {isrc.container}/pepunit.lib -d merops --threads {threads}
+        diamond makedb --in pepunit.clean.fa -d merops --threads {threads}
         mv merops.dmnd {idb.container}
     """)
 
