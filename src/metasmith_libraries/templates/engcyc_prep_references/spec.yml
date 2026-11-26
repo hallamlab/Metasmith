@@ -28,6 +28,7 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
+- ref
 cases:
 - name: case
   sample_type: null
@@ -55,9 +56,11 @@ cases:
   - ref::kofamscan_ko_list
   - ref::kofamscan_profiles
   - ref::kraken2_db
+  - ref::label_transfer_landmarks
   - ref::merops_diamond_db
   - ref::metabuli_ref
   - ref::metaphlan_db
+  - ref::mnxr_lookup
   - ref::pathofact_db
   - ref::refseq_viral_diamond_db
   - ref::sylph_db
@@ -71,25 +74,13 @@ cases:
 input_library:
   schema: v1
   manifest:
-    /msm_deferred/59eaa735a0a74d5fa32a941f87300ae5:
-      type: ref::label_transfer_landmarks
-      instance_id: 1e20ecb4ab4b96f0090e1ce7cca91b440f7953af5510820d54d6cff981a56b90eb8e
-      origin: leaf
-    /msm_deferred/86adfd85ff5a4f02ba04e0248328714e:
-      type: modelling::media
-      instance_id: 1e209ea2026e4b40a32b879cf27f0733cbd5ccb20d7f84d55db6290e8e7f0a3afe3d
-      origin: leaf
-    /msm_deferred/93be1ffd67024aafba7cf25d91193310:
-      type: ref::lane_calibration
-      instance_id: 1e20386adcef57981aab7393247d1e4264b5912f139953d3f836cf45145d41d317c3
-      origin: leaf
-    /msm_deferred/d1929f3086ea479d8b1c457e3c2473fc:
-      type: ref::mnxr_lookup
-      instance_id: 1e20371776d92b4e310502c6decec5f9e6ca6714258a8e097e231e46253b3e6badb0
-      origin: leaf
-    /msm_deferred/d1eb043299fa4ba89ff2d24bd9adbbde:
+    /msm_deferred/8d1ad950ba0b445cb917f5632a482d77:
       type: modelling::medium_name
-      instance_id: 1e20607e6ff11930ad49be6f618e4ed59cc6e1e16584bd3745dc265239e7d260a90e
+      instance_id: 1e2080ef198e7b646c3fa8d9a6d56e609983c5aa55e23ae8d9ff260786a5b43512f5
+      origin: leaf
+    /msm_deferred/8e7875a3f1ed433e86408aefe8d1825c:
+      type: modelling::media
+      instance_id: 1e205816bb9b45a86a97a41817869afc0bcf9f361ae2dc4dbe4b24d4a8763c164e37
       origin: leaf
     contig_study.json:
       type: viromics::contig_study

@@ -102,6 +102,14 @@ types:
     properties:
       src: fabfos_gpr
       usage: command line
+  mnxr_lookup.py:
+    properties:
+      src: mnxr_lookup
+      usage: command line
+  label_transfer_landmarks.py:
+    properties:
+      src: label_transfer_landmarks
+      usage: command line
   fabfos_evidence.py:
     properties:
       src: fabfos_evidence
