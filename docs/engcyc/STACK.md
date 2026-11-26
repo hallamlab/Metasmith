@@ -6,7 +6,13 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-2026-11-24 evening (newest): all pre-run-4 work landed on rc (pushed, head 642debb4). Four templates: engcyc_metagenomics (full), engcyc_metagenomics_lite, engcyc_prep_references, engcyc_prep_references_lite (DECISIONS engcyc-lite). Binner-set fences: das_tool.py needs binning::metabat2_semibin2_comebin (full gives it), das_tool_metadecoder.py needs binning::metabat2_semibin2_metadecoder (lite gives it); lite keeps das_tool_summary; hybrid lite needs the extra metadecoder_contig_to_bin_table target (two BAMs). Lineage bug fixed 9dad1457 (re-met ancestor lost lineage; was the Sept "four-ancestor" limit). virus_host_links merged. Golden regenerated in rc, 18/18; libraries -b 17/17. MetaDecoder image pushed (quay.io/hallamlab/external_metadecoder:1.2.2) but the repo is PRIVATE: Tony must make it public before sockeye lite can pull it. Run-4 harness merged (first_install.py --host sockeye|fir|nibi, --prep/--template, hosts.py; docs/e2e-install/e2e-test/runs/run-4/README.md). Scratch: fir ~17 TiB free, sockeye ~0.95 TB shared, nibi unreachable. Run 4 = lite on sockeye, full unsplit on fir.
+2026-11-24 night (newest): run 4 round 1 ran at RC 0.26.0+ea75c3f and failed early on both stations; triage in docs/e2e-install/e2e-test/runs/run-4/ISSUES.md. Fixed on rc 2d3c6af5: setup staged no pullContainer and walked a pruned index (setup never worked on a staged workflow); harness stages the SIF under the remote APPTAINER_CACHEDIR (fir sets /scratch/phyberos/cache/apptainer). Run dirs deleted. MetaDecoder repo is public. Tony 2026-11-24: GPR and ProteinBERT references are built from fabfos/ECSPr in the pipeline; CarveMe gapfills on a complete medium we supply by default; gapseq medium prediction dropped ("dubious").
+Next, in order:
+1. Merge workers gpr-refs and complete-medium into rc; regenerate the golden in rc; dev/libraries.sh -b.
+2. Rebuild the RC (build_local_artifacts.sh then dev/metasmith.sh -bs, run_in_background).
+3. Relaunch run 4 round 2 (lite sockeye, full fir) per runs/run-4/README.md.
+Follow-ups: research drivers edited but unrun for the binner marker (eecbe80b); full plans run CheckM twice; aggregator with open-ended inputs after release; GUI flags every empty row even when no step reads it (moot once no template has a non-sample deferred row).
+2026-11-24 evening: all pre-run-4 work landed on rc (pushed, head 642debb4). Four templates: engcyc_metagenomics (full), engcyc_metagenomics_lite, engcyc_prep_references, engcyc_prep_references_lite (DECISIONS engcyc-lite). Binner-set fences: das_tool.py needs binning::metabat2_semibin2_comebin (full gives it), das_tool_metadecoder.py needs binning::metabat2_semibin2_metadecoder (lite gives it); lite keeps das_tool_summary; hybrid lite needs the extra metadecoder_contig_to_bin_table target (two BAMs). Lineage bug fixed 9dad1457 (re-met ancestor lost lineage; was the Sept "four-ancestor" limit). virus_host_links merged. Golden regenerated in rc, 18/18; libraries -b 17/17. MetaDecoder image pushed (quay.io/hallamlab/external_metadecoder:1.2.2) but the repo is PRIVATE: Tony must make it public before sockeye lite can pull it. Run-4 harness merged (first_install.py --host sockeye|fir|nibi, --prep/--template, hosts.py; docs/e2e-install/e2e-test/runs/run-4/README.md). Scratch: fir ~17 TiB free, sockeye ~0.95 TB shared, nibi unreachable. Run 4 = lite on sockeye, full unsplit on fir.
 Next, in order:
 1. RC build running detached since ~17:40 UTC-7 (build_local_artifacts.sh then dev/metasmith.sh -bs; log /home/tony/.claude/jobs/7892d031/tmp/tb/rcbuild.log; no harness notification, check the log and `ps` for build_local_artifacts). Outputs: conda channel engine/rc/conda_build, docker quay.io/hallamlab/metasmith:0.26.0-<hash>, SIF engine/rc/metasmith.sif.
 2. Confirm the MetaDecoder repo is public (anonymous curl https://quay.io/api/v1/repository/hallamlab/external_metadecoder returns 200).
@@ -18,7 +24,6 @@ Roadmap to 0.26.1 approved 2026-11-23: /home/tony/.claude/plans/formal-plan-seri
 engcyc-cases — after both workers land: engcyc template as two cases (short reads -> engcyc targets; long reads -> modified set incl. long-read taxonomy lanes), isolate/hybrid templates take accessions, probes short/hybrid/isolate/SRA-short/SRA-long/long-only/mixed two-case.
 
 ## Waiting on the user
-- Make quay.io/hallamlab/external_metadecoder public (API refuses docker creds).
 - (at T13) release route: bioconda peer reports Tony said "dont worry about PR, just adds more manual churn" for its 0.26.2 and phy0x1a79ed now has write on hallamlab/Metasmith. Confirm with Tony whether 0.26.1 also pushes release + tag straight to hallamlab.
 
 ## Preferences
@@ -60,8 +65,8 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- hostlink (feat/engine/hostlink, worktree engine/hostlink): virus-host link table over the existing spacer BLASTn lane. Tony: "report the mismatches rather than filter so that filter can be run after the fact. lets just also do the prophage join."
-- metadecoder (feat/engine/metadecoder, worktree engine/metadecoder): MetaDecoder binning transform and image, local build only.
+- gpr-refs (feat/engine/gpr-refs, worktree engine/gpr-refs, opus): port fabfos mnxr_lookup and label_transfer_landmarks builds (+acquire steps) into the standard library; ship lane_calibration as a resource; templates give/build all three.
+- complete-medium (feat/engine/complete-medium, worktree engine/complete-medium, sonnet): default complete medium for CarveMe, supplied by the templates; real CarveMe test.
 - peer metasmith-bioconda (feat/engine/bioconda, 0.26.2): agreed split 2026-11-23 — it owns conda_recipe/bioconda, MANIFEST.in, the 0.26.2 cut; merges after I message it the v0.26.1 tag. It takes the docs install page for 0.26.2.
 (Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
 
