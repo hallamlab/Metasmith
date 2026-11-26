@@ -577,7 +577,7 @@ Upstream chain
 The first DAG demonstrates how :python:`fastani` plugs into the *existing*
 :python:`getNcbiAssembly` transform. We start from NCBI accessions and
 target :python:`ani::table`; the solver discovers the chain
-:python:`getNcbiAssembly → fastani` automatically.
+``getNcbiAssembly → fastani`` automatically.
 
 .. code-block:: python
     :caption: Jupyter
@@ -615,7 +615,7 @@ Downstream chain
 The second DAG demonstrates how :python:`fastani` plugs into the *new*
 :python:`ani_heatmap` stub. We mock a starting set of
 :python:`sequences::assembly` samples and target :python:`pangenome::heatmap`;
-the solver discovers the chain :python:`fastani → ani_heatmap`.
+the solver discovers the chain ``fastani → ani_heatmap``.
 
 .. code-block:: python
     :caption: Jupyter
@@ -663,7 +663,7 @@ Chaining all three
 
     Targeting :python:`pangenome::heatmap` from :python:`ncbi::assembly_accession`
     sources directly would produce the full chain
-    :python:`accession → assembly → ani::table → heatmap` in a single DAG.
+    ``accession → assembly → ani::table → heatmap`` in a single DAG.
     The construction is identical — change only the target on the upstream
     plan above and let the solver discover the full chain. We don't
     demonstrate it here; the two demonstrations above already cover both

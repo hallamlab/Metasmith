@@ -54,7 +54,7 @@ we recommend :bash:`mamba`, which is a significantly more performant drop-in rep
 .. code-block:: console
     :caption: Terminal
 
-    $ mamba create -n msm_env -c hallamlab -c bioconda metasmith
+    $ mamba create -n msm_env -c conda-forge -c bioconda -c hallamlab metasmith
     $ mamba activate msm_env
     (msm_env)$ msm
 
@@ -191,6 +191,11 @@ This gives you a *setuid* Apptainer, which metasmith deploys as a single ``.sif`
 
 Next Steps
 ============================================================
+
+.. button-link:: gui.html
+    :color: primary
+
+    **Run a template in the web GUI**
 
 .. button-link:: tutorials.html
     :color: primary

@@ -33,6 +33,7 @@ You can use these APIs when generating a workflow. For example:
         transforms = [transforms],
         targets    = [dtypes["functional_annotation"]]
     )
+
 assuming :python:`inputs` is a :python:`DataInstanceLibrary` with some user-provided inputs.
 
 
@@ -61,21 +62,21 @@ Annotation
 Databases
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- :python:`bakta_database`: the BAKTA database, hosted `here <https://zenodo.org/records/14916843>`_
+- :python:`bakta_database`: the BAKTA database, hosted `here <https://zenodo.org/records/14916843>`__
 
   - :python:`bakta_database_light`: the lightweight BAKTA database
   - :python:`bakta_database_full`: the default BAKTA database
 
 - Kofamscan
 
-  - :python:`kofamscan_profile`: the Kofamscan profile database, hosted `here <https://www.genome.jp/ftp/db/kofam/>`_
-  - :python:`kofamscan_ko_list`: the Kofamscan KO identifier database, hosted `here <https://www.genome.jp/ftp/db/kofam/>`_
+  - :python:`kofamscan_profile`: the Kofamscan profile database, hosted `here <https://www.genome.jp/ftp/db/kofam/>`__
+  - :python:`kofamscan_ko_list`: the Kofamscan KO identifier database, hosted `here <https://www.genome.jp/ftp/db/kofam/>`__
 
-- :python:`cazy_ref`: the CAZy database, hosted `here <https://www.cazy.org/>`_
+- :python:`cazy_ref`: the CAZy database, hosted `here <https://www.cazy.org/>`__
 
 - BUSCO
 
-  - All lineage databases are hosted `here <https://busco-data.ezlab.org/v5/data/lineages/>`_
+  - All lineage databases are hosted `here <https://busco-data.ezlab.org/v5/data/lineages/>`__
   - :python:`busco_ref`: the :python:`refseq_db.faa` file from a lineage database
   - :python:`busco_map`: the :python:`species.info` file from a lineage database
 

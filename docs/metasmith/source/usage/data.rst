@@ -299,6 +299,7 @@ A prefix is added to ensure that file names are unique.
 
 .. code-block:: python
     :linenos:
+
     inputs.Consolidate()
 
 This creates the following directory structure:

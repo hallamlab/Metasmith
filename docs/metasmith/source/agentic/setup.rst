@@ -4,14 +4,13 @@ Setup
 Installing the CLI
 ============================================================
 
-``pip install -e .`` (from the repo root) installs the ``metasmith``
-entry point (with ``msm`` as a shorter alias). There is no daemon to
-launch — each invocation is a self-contained shell call.
+Install Metasmith from conda, as in :doc:`../setup/install`. It provides the
+``metasmith`` entry point, with ``msm`` as a shorter alias. There is no daemon
+to launch. Each invocation is a self-contained shell call.
 
 .. code-block:: bash
     :caption: Terminal
 
-    pip install -e .
     metasmith --version
     metasmith --help
 
