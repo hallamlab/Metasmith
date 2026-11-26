@@ -6,7 +6,14 @@ then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
 ## Current
-2026-11-24 night (newest): run 4 round 1 ran at RC 0.26.0+ea75c3f and failed early on both stations; triage in docs/e2e-install/e2e-test/runs/run-4/ISSUES.md. Fixed on rc 2d3c6af5: setup staged no pullContainer and walked a pruned index (setup never worked on a staged workflow); harness stages the SIF under the remote APPTAINER_CACHEDIR (fir sets /scratch/phyberos/cache/apptainer). Run dirs deleted. MetaDecoder repo is public. Tony 2026-11-24: GPR and ProteinBERT references are built from fabfos/ECSPr in the pipeline; CarveMe gapfills on a complete medium we supply by default; gapseq medium prediction dropped ("dubious").
+2026-11-26 ~16:00 (newest): rc head aa64f7b8 (pushed). Since round 1: setup pullContainer fix (2d3c6af5), GPR refs built in-pipeline (gpr-refs), complete medium default, CheckM pinned to DAS bins + CarveMe on assembly ORFs (e9b231b6, witness re-solve ties), MEROPS CRLF/space clean (127c2c04), dbCAN lane on S3 db_v5-2-9_11-3-2026 (a44d3707), harness --warm (aa64f7b8). Full 204 steps, lite 99.
+Run 4 round 2 (RC 0.26.0+07c4db2, started 13:30) still running: sockeye lite setup (~140 GB, watcher unit msm-e2e-run-4-sockeye-watch cap 450 GB, slow find samples); fir full setup (~2.1 TB, watcher unit msm-e2e-run-4-fir-watch2 cap 4000 GB; failed downloadDbcanDB + buildMeropsDB, both fixed on rc; EBI downloads UniRef50/InterProScan ~0.5 MB/s, Metabuli 19 MB/s). Agents are waiting on the setup runs. Status script $CLAUDE_JOB_DIR/tmp/r4/status.sh. Round-2 issues to file: size-confirm button needs double click; `metasmith workflow wait` wants the agent YAML path, docs silent; dbCAN 503; MEROPS CRLF; caps too low (fir peak >2 TB vs 861 GB estimate).
+Peers: geospatial-query-dfs cuts 0.26.1 from ef3b443b (option C, Tony approved "unblock geoquery"); it sends the tag, then I message metasmith-bioconda and merge release into rc. metasmith-dynamic-aggregator-inputs (scope engine/variadic) lands variadic requirements on rc from aa64f7b8: replaces das_tool_metadecoder.py and the binner markers, edits target building, case_merge, steps.py, bootstrap. Stay out of those files; regenerate golden after it merges. Do not message it.
+Next, in order (Tony 2026-11-26: "compact soon / then lets clean up the engcyc template to prevent redundant transforms (interleaving and 3 split lanes -> 2 split) / then resume run4 if possible"):
+1. engcyc cleanup: fold each merge_X into X_lane so every lane is tool(batched) -> lane (19 lanes, ~25 steps); find redundant interleave steps; decide the viral prodigal-gv second pass (interproscan, kofamscan, dbcan, merops, refseq_viral, uniref50). Avoid das_tool/binner files (variadic). Golden in rc.
+2. Rebuild RC, stop round 2 (scopes + watcher units), relaunch with --warm so finished downloads are cache hits.
+Open with Tony: DRAM 1.5 dbCAN path (recommend retire downloadDramDB/buildDramDB; V11 fam-activities has no source) and GT descriptions empty; release cut owner for variadic.
+2026-11-24 night: run 4 round 1 ran at RC 0.26.0+ea75c3f and failed early on both stations; triage in docs/e2e-install/e2e-test/runs/run-4/ISSUES.md. Fixed on rc 2d3c6af5: setup staged no pullContainer and walked a pruned index (setup never worked on a staged workflow); harness stages the SIF under the remote APPTAINER_CACHEDIR (fir sets /scratch/phyberos/cache/apptainer). Run dirs deleted. MetaDecoder repo is public. Tony 2026-11-24: GPR and ProteinBERT references are built from fabfos/ECSPr in the pipeline; CarveMe gapfills on a complete medium we supply by default; gapseq medium prediction dropped ("dubious").
 Next, in order:
 1. Merge workers gpr-refs and complete-medium into rc; regenerate the golden in rc; dev/libraries.sh -b.
 2. Rebuild the RC (build_local_artifacts.sh then dev/metasmith.sh -bs, run_in_background).
@@ -65,10 +72,8 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
 ## Workers
-- gpr-refs (feat/engine/gpr-refs, worktree engine/gpr-refs, opus): port fabfos mnxr_lookup and label_transfer_landmarks builds (+acquire steps) into the standard library; ship lane_calibration as a resource; templates give/build all three.
-- complete-medium (feat/engine/complete-medium, worktree engine/complete-medium, sonnet): default complete medium for CarveMe, supplied by the templates; real CarveMe test.
-- peer metasmith-bioconda (feat/engine/bioconda, 0.26.2): agreed split 2026-11-23 — it owns conda_recipe/bioconda, MANIFEST.in, the 0.26.2 cut; merges after I message it the v0.26.1 tag. It takes the docs install page for 0.26.2.
-(Merged into rc 2026-11-22: mp-fix, hybrid-solve, shape-targets, licensed-build 86592509, dramv-port incl. dram-port + annotation-aggregate; pathofact-port 875a1f6e. Merge again when lab-sifs, mp-faithful, pathofact-port land.)
+- none running. Merged: gpr-refs, complete-medium, dbcan-host.
+- peers: geospatial-query-dfs (0.26.1 cut), metasmith-dynamic-aggregator-inputs (variadic), metasmith-bioconda (0.26.2 after the tag).
 
 ## Closed
 - prep-footprint — decided 2026-11-23 (DECISIONS prep-footprint)
