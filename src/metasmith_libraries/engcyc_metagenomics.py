@@ -2,6 +2,7 @@
 import sys
 
 import _authoring as A
+import _complete_medium as complete_medium
 from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "engcyc_metagenomics"
@@ -55,8 +56,9 @@ table; licensed::pathway_tools_package, which also builds MetaCyc 27.0, plus
 UniProt 2025_04 Swiss-Prot and UniRef90, ~270 GB of archives) and SignalP 6
 (annotation::signalp6_results; licensed::signalp6_package). The every-lane
 annotation::annotation_table includes the MetaCyc lane, so it needs the Pathway
-Tools package too. CarveMe needs a growth medium: give modelling::media and
-modelling::medium_name.
+Tools package too. CarveMe gapfills on a complete medium by default (every exchange of its bacteria
+universe open); give modelling::media and modelling::medium_name rows in place of the
+default to use your own.
 """
 
 ASSEMBLY = "sequences::assembly"
@@ -201,9 +203,6 @@ def lite(targets: list) -> list:
 
 LITE_CASE_TARGETS = {case: lite(ts) for case, ts in CASE_TARGETS.items()}
 
-# Consumed and produced by nothing, so they are given, and shared because they
-# belong to no one sample.
-SHARED_REFS = ("modelling::media", "modelling::medium_name")
 TYPE_LIBS = ("sequences.yml", "alignment.yml", "ref.yml", "annotation.yml", "taxonomy.yml",
              "binning.yml", "binning_local.yml", "viromics.yml", "modelling.yml", "licensed.yml",
              "ncbi.yml")
@@ -250,12 +249,6 @@ def _lineage(library) -> dict[str, set[str]]:
     return {str(p): {str(m.path) for m in library.parents.get(p, [])} for p in library.manifest}
 
 
-def _dtypes(library) -> dict[str, str]:
-    if isinstance(library, dict):
-        return {p: entry["type"] for p, entry in library["manifest"].items()}
-    return {str(p): dtype for p, dtype in library.manifest.items()}
-
-
 def case_rows(library, metas: list[str], shared: list[str]) -> list[str]:
     # A case lists every row of its samples rather than naming a sample type: the form
     # the GUI writes, so a GUI plan and a direct one read the same request. A sample's
@@ -292,15 +285,16 @@ def template_for(name, samples=None, rebuild=False, targets=None, description=DE
                              "viromics::contig_study")
         for case, sample, accessions in samples:
             add_sample(lib, study, case, sample, accessions)
-        for t in SHARED_REFS:
-            lib.AddItem(DEFERRED, t)
+        # CarveMe gapfills on this medium; a user's own medium replaces these two rows.
+        lib.AddValue("complete_medium.tsv", complete_medium.TSV, "modelling::media")
+        lib.AddValue("complete_medium_name.txt", complete_medium.NAME, "modelling::medium_name")
         # Opts the run into eggNOG's fetch; its content is not read.
         lib.AddValue("eggnog_source.json", {"release": "emapperdb-5.0.2"}, "annotation::eggnog_source")
         lib.AddValue(f"{binners}.json", {"binners": binners.replace("_", " ")}, f"binning::{binners}")
 
     input_library = A.deferred_inputs(name, inputs, rebuild=rebuild)
-    shared = ["contig_study.json", "eggnog_source.json", f"{binners}.json"] + sorted(
-        path for path, dtype in _dtypes(input_library).items() if dtype in SHARED_REFS)
+    shared = ["contig_study.json", "eggnog_source.json", "complete_medium.tsv",
+              "complete_medium_name.txt", f"{binners}.json"]
     if not samples:
         cases = [Spec(input_library=input_library, target_types=targets)]
     else:
