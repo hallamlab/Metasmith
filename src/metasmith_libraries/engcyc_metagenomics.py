@@ -63,8 +63,8 @@ default to use your own.
 
 ASSEMBLY = "sequences::assembly"
 
-# Each entry hangs off the assembly (0) or the ORFs (ORFS).
-ORFS = 3
+# Each entry hangs off the assembly (0), the ORFs (ORFS) or DAS Tool's bins (DAS).
+ORFS, DAS = 3, 5
 _A, _O = [0], [ORFS]
 TARGETS = [
     ASSEMBLY,                                                          # 0
@@ -72,9 +72,10 @@ TARGETS = [
     {"type": "sequences::assembly_stats", "parents": _A},              # 2
     {"type": "sequences::assembly_orfs", "parents": _A},               # 3
     {"type": "sequences::gff", "parents": _A},                         # 4
-    # binning
+    # binning; CheckM on DAS Tool's bins, the ones quality_mags filters, not one binner's
+    {"type": "sequences::das_tool_bin_fasta", "parents": _A},          # 5
     {"type": "binning::das_tool_summary", "parents": _A},
-    {"type": "taxonomy::checkm_stats", "parents": _A},
+    {"type": "taxonomy::checkm_stats", "parents": [DAS]},
     {"type": "binning_local::quality_bin_fasta", "parents": _A},
     # taxonomy
     {"type": "taxonomy::gtdbtk_quality", "parents": _A},
@@ -126,6 +127,7 @@ TARGETS = [
     "viromics::virus_host_links",
 ]
 assert TARGETS[ORFS]["type"] == "sequences::assembly_orfs"
+assert TARGETS[DAS]["type"] == "sequences::das_tool_bin_fasta"
 METABULI = [{"type": t, "parents": _A} for t in ("taxonomy::metabuli", "taxonomy::metabuli_report")]
 # inStrain, Centrifuger and phyloFlash document short reads only.
 SHORT_ONLY = {"annotation::instrain_genome_info", "taxonomy::centrifuger_kreport",

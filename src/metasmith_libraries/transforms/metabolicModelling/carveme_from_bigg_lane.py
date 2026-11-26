@@ -5,7 +5,7 @@ model   = Transform()
 image   = model.AddRequirement(lib.GetType("env::carveme.env"))
 python  = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 asm     = model.AddRequirement(lib.GetType("sequences::assembly"))
-orfs    = model.AddRequirement(lib.GetType("sequences::orfs"), parents={asm})
+orfs    = model.AddRequirement(lib.GetType("sequences::assembly_orfs"), parents={asm})
 # CarveMe annotates nothing itself: the bigg lane is its DIAMOND search, run once on the
 # assembly's ORFs, and each MAG takes the hits on its own contigs.
 bigg    = model.AddRequirement(lib.GetType("annotation::bigg_lane_table"), parents={orfs})
