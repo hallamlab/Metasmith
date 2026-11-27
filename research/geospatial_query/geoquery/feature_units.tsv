@@ -180,28 +180,26 @@ cdl_frac_shrubland	1
 cdl_frac_soybeans	1
 cdl_frac_woody_wetlands	1
 cdl_n_classes	count
-clay_emb_c0	1
-clay_emb_c1	1
-clay_emb_c2	1
-clay_emb_c3	1
-clay_emb_component_std	1
-clay_emb_cos_to_tile_mean	1
-clay_emb_dim	count
-clay_emb_l2_norm	1
-clay_emb_l2_norm_patch_mean	1
-clay_emb_mgrs_tile	
+clay_emb_mean_c0	1
+clay_emb_mean_c1	1
+clay_emb_mean_c2	1
+clay_emb_mean_c3	1
+clay_emb_mean_component_std	1
+clay_emb_mean_cos_to_tile_patch_mean	1
+clay_emb_mean_l2_norm	1
 clay_emb_patch_count	count
+clay_emb_patch_l2_norm_mean	1
 clim_annual_precip_mm	mm
 clim_coldest_day_c	degC
 clim_hottest_day_c	degC
 clim_mean_annual_temp_c	degC
 clim_n_days	d
-csb_aoi_frac_in_field	1
+csb_aoi_frac_in_polygon	1
 csb_dominant_crop	
-csb_field_area_max_ha	ha
-csb_field_area_median_ha	ha
-csb_field_count	count
 csb_n_crop_classes	count
+csb_polygon_area_max_ha	ha
+csb_polygon_area_median_ha	ha
+csb_polygon_count	count
 echo_bbox_pad_km	km
 echo_caa_facilities	count
 echo_clean_air_act_n	count
@@ -254,8 +252,6 @@ etopo_bed_elev_m_p10	m
 etopo_bed_elev_m_p90	m
 etopo_bed_elev_m_std	m
 etopo_frac_below_sea_level	1
-etopo_is_submarine	
-etopo_max_depth_m	m
 etopo_min_elev_m	m
 fcsi_active_sites_25km	count
 fcsi_closed_sites_25km	count
@@ -321,18 +317,14 @@ gppd_nearest_km	km
 gppd_nearest_name	
 gppd_plants_50km	count
 gppd_plants_in_bbox	count
-gsc_surf_description	
-gsc_surf_dominant_frac	1
-gsc_surf_label	
-gsc_surf_n_units_in_aoi	count
-gsc_surf_unit	
+gsc_surf_frac_in_aoi	1
+gsc_surf_polygon_count_in_aoi	count
 hansen_gain_frac_2000_2012	1
-hansen_loss_frac_2001_2024	1
-hansen_loss_last_year	yr
-hansen_loss_modal_year	yr
-hansen_loss_n_years_affected	yr
-hansen_n_px	count
-hansen_net_change_frac	1
+hansen_loss_frac_2001_2025	1
+hansen_loss_last_year	year
+hansen_loss_modal_year	year
+hansen_loss_n_years_affected	count
+hansen_px_sampled	count
 hansen_treecover2000_frac_ge25pct	1
 hansen_treecover2000_pct_mean	%
 hansen_treecover2000_pct_p90	%
@@ -387,8 +379,7 @@ mrdem_elev_m_p90	m
 mrdem_elev_m_std	m
 namrad_k_pct_max	%
 namrad_k_pct_mean	%
-namrad_sample_pad_deg	deg
-namrad_th_k_ratio	1
+namrad_th_k_ratio	ppm/%
 namrad_th_ppm_max	ppm
 namrad_th_ppm_mean	ppm
 namrad_u_ppm_max	ppm
@@ -416,12 +407,12 @@ naps_so2_src_km	km
 naps_stations_25km	count
 naps_stations_50km	count
 naps_year	yr
-neglac_count_within_100km	count
-neglac_count_within_250km	count
-neglac_frac_in_aoi	1
-neglac_nearest_km	km
-neglac_nearest_name	
-neglac_present_in_aoi	
+ne_glaciated_frac_in_aoi	1
+ne_glaciated_nearest_km	km
+ne_glaciated_nearest_name	
+ne_glaciated_polygon_count_within_100km	count
+ne_glaciated_polygon_count_within_250km	count
+ne_glaciated_present_in_aoi	
 nndss_campylobacteriosis_ytd	count
 nndss_cases_current_week	count
 nndss_conditions_tabulated	count
@@ -460,7 +451,6 @@ nrcan900a_count_within_25km	count
 nrcan900a_nearest_commodity	
 nrcan900a_nearest_km	km
 nrcan900a_nearest_name	
-nrcan900a_total_records	count
 nrcanlc_dominant	
 nrcanlc_frac_barren	1
 nrcanlc_frac_cropland	1
@@ -477,19 +467,18 @@ nrcanlc_frac_urban	1
 nrcanlc_frac_water	1
 nrcanlc_frac_wetland	1
 nrcanlc_n_classes	count
-nrcanpf_count_within_100km	count
 nrcanpf_frac_in_aoi	1
-nrcanpf_ice_class	
+nrcanpf_ice_frac_in_aoi	1
 nrcanpf_nearest_km	km
+nrcanpf_polygon_count_within_100km	count
 nrcanpf_present_in_aoi	
-nrcanpf_zone_class	
-nrcanpf_zone_code	
+nrcanpf_zone_frac_in_aoi	1
 nsidc_sic_cells_in_aoi	count
-nsidc_sic_frac_max	1
-nsidc_sic_frac_mean	1
+nsidc_sic_conc_max	1
+nsidc_sic_conc_mean	1
+nsidc_sic_ge15pct_present	
 nsidc_sic_in_grid_footprint	
 nsidc_sic_nearest_cell_km	km
-nsidc_sic_present	
 nsidc_sic_valid_cells	count
 nwss_county	
 nwss_county_fips	
@@ -794,7 +783,6 @@ usgsmineplant_nearest_km	km
 usgsmineplant_nearest_name	
 usgsmineplant_plant_count_within_25km	count
 usgsmineplant_plant_nearest_km	km
-usgsmineplant_total_records	count
 water_frac_ge50pct	1
 water_occurrence_pct_mean	%
 water_occurrence_pct_n_px	count

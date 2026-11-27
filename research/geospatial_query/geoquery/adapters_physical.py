@@ -5,7 +5,7 @@ embeddings, bathymetry, surficial_geology, gamma_radiometrics,
 tailings_facilities, mines_producing.
 
 Contract matches pipeline.py:  _a_<name>(aoi) -> (features: dict[str, scalar], meta: dict)
-  * flat scalars only, source-prefixed lowercase names
+  * scalars, {"value","unit"} records or [{"class","value"}] lists; source-prefixed lowercase names
   * PermissionError  -> out of coverage      (recorded not-attempted)
   * any other raise   -> unavailable
   * ADAPTERS is a list of (slot, source_id, family, licence, auth, fn)
@@ -73,14 +73,16 @@ ETOPO = ("https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/30s/"
          "30s_bed_elev_gtif/ETOPO_2022_v1_30s_N90W180_bed.tif")
 CSB = "https://data.source.coop/fiboa/us-usda-cropland/us_usda_cropland.parquet"
 CLAY = "https://data.source.coop/clay/clay-model-v0-embeddings/"
-SIC_ROOT = "https://www.ncei.noaa.gov/data/sea-ice-concentration/access/"
+SIC_VER = "G02202_V6"
+SIC_ROOT = f"https://noaadata.apps.nsidc.org/NOAA/{SIC_VER}/north/daily/"
+NE_TAG = "v5.1.2"
 NE_GLAC = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
-           "master/geojson/ne_10m_glaciated_areas.geojson")
+           f"{NE_TAG}/geojson/ne_10m_glaciated_areas.geojson")
 NRCAN_FTP = "https://ftp.maps.canada.ca/pub/nrcan_rncan/"
 PERMAFROST = (NRCAN_FTP + "Surficial-geology_Geologie-des-depots-meubles/"
               "permafrost-pergelisol/permafrost_atlas_of_canada_en.shp.zip")
-SURFICIAL = (NRCAN_FTP + "Surficial-geology_Geologie-des-depots-meubles/"
-             "surficial_geology_index_geologie_surface/gsc_surficial_geology.gdb.zip")
+SURFICIAL = (NRCAN_FTP + "Geology_Geologie/surficial_geology_geologie_de_surface/"
+             "gsc_surficial_geology.gdb.zip")
 MINES_900A = (NRCAN_FTP + "Mining-industry_Industrie-miniere/900A_and_top_100/"
               "SHP/900A_75th_2025_shape.zip")
 MINEPLANT = "https://mrdata.usgs.gov/mineplant/mineplant-csv.zip"
@@ -193,17 +195,17 @@ def _hansen_tile(bbox):
 
 
 def _a_hansen(aoi):
-    """Hansen/UMD Global Forest Change v1.13 -- windowed COG read, 30 m."""
+    """Hansen/UMD Global Forest Change GFC-2025-v1.13 (loss 2001-2025) -- windowed read, 30 m."""
     tile = _hansen_tile(aoi["bbox"])
-    tc = _rwin(HANSEN.format(lyr="treecover2000", tile=tile),
-               aoi["bbox"], aoi["geom"], nodata=None)
+    tc_url = HANSEN.format(lyr="treecover2000", tile=tile)
+    tc = _rwin(tc_url, aoi["bbox"], aoi["geom"], nodata=None)
     v = tc.compressed().astype("f8")
     if v.size == 0:
         raise LookupError(f"no pixels inside AOI for Hansen tile {tile}")
     f = {"hansen_treecover2000_pct_mean": round(float(v.mean()), 2),
          "hansen_treecover2000_pct_p90": round(float(np.percentile(v, 90)), 1),
          "hansen_treecover2000_frac_ge25pct": round(float((v >= 25).mean()), 4),
-         "hansen_n_px": int(v.size)}
+         "hansen_px_sampled": int(v.size)}
 
     # lossyear / gain tiles are published only where the layer has content, so
     # a 404 on them is data, not a failure: keep the tree-cover features.
@@ -213,18 +215,15 @@ def _a_hansen(aoi):
         lv = ly.compressed().astype("int16")
     except rasterio.errors.RasterioIOError:
         lv = np.array([], dtype="int16")
-        f["hansen_lossyear_tile_published"] = False
     if lv.size:
         lost = lv[lv > 0]
-        f["hansen_loss_frac_2001_2024"] = round(float(lost.size / lv.size), 5)
+        f["hansen_loss_frac_2001_2025"] = round(float(lost.size / lv.size), 5)
+        f["hansen_loss_n_years_affected"] = 0
         if lost.size:
             yrs, cnt = np.unique(lost, return_counts=True)
             f["hansen_loss_modal_year"] = int(2000 + int(yrs[int(np.argmax(cnt))]))
             f["hansen_loss_n_years_affected"] = int(yrs.size)
             f["hansen_loss_last_year"] = int(2000 + int(yrs.max()))
-        else:
-            f["hansen_loss_modal_year"] = 0
-            f["hansen_loss_n_years_affected"] = 0
 
     try:
         gn = _rwin(HANSEN.format(lyr="gain", tile=tile),
@@ -232,13 +231,12 @@ def _a_hansen(aoi):
         gv = gn.compressed()
     except rasterio.errors.RasterioIOError:
         gv = np.array([], dtype="uint8")
-        f["hansen_gain_tile_published"] = False
     if gv.size:
         f["hansen_gain_frac_2000_2012"] = round(float((gv > 0).mean()), 5)
-    net = f.get("hansen_gain_frac_2000_2012", 0.0) - f.get("hansen_loss_frac_2001_2024", 0.0)
-    f["hansen_net_change_frac"] = round(float(net), 5)
-    return f, {"obs_date": "2000-2024", "res_m": 30,
-               "item": f"Hansen_{HANSEN_VER}_{tile}"}
+    return f, {"obs_date": "2000-2025", "res_m": 30,
+               "item": f"Hansen_{HANSEN_VER}_{tile}",
+               "release": f"Hansen/UMD/Google/USGS/NASA Global Forest Change {HANSEN_VER}",
+               "url": tc_url}
 
 
 # ========================================================= field_boundaries
@@ -252,7 +250,7 @@ def _csb_fs():
 
 def _a_field_boundaries(aoi):
     """USDA NASS Crop Sequence Boundaries 2023 as fiboa GeoParquet (16.2 M
-    fields, EPSG:5070, GeoParquet 1.1 bbox covering -> row-group pruning)."""
+    polygons, adjacent same-crop fields dissolved; EPSG:5070)."""
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (USDA CSB is conterminous-US only)")
     tr = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True)
@@ -265,25 +263,27 @@ def _a_field_boundaries(aoi):
                               columns=["geometry", "crop:name", "crop:code"])
     aoi_g = gpd.GeoSeries([shape(aoi["geom"])], crs="EPSG:4326").to_crs(5070).iloc[0]
     if len(gdf) == 0:
-        return ({"csb_field_count": 0, "csb_aoi_frac_in_field": 0.0,
-                 "csb_field_area_median_ha": 0.0},
-                {"obs_date": "2023", "res_m": "vector",
-                 "note": "verified absence: no CSB field polygon intersects AOI"})
+        return ({"csb_polygon_count": 0, "csb_aoi_frac_in_polygon": 0.0},
+                {"obs_date": "2023", "res_m": "vector", "release": "USDA NASS Crop Sequence Boundaries 2016-2023 rev23, fiboa GeoParquet (2023 crop)",
+                 "url": CSB,
+                 "note": "verified absence: no CSB polygon intersects AOI"})
     gdf = gdf[gdf.intersects(aoi_g)]
     if len(gdf) == 0:
-        return ({"csb_field_count": 0, "csb_aoi_frac_in_field": 0.0,
-                 "csb_field_area_median_ha": 0.0},
-                {"obs_date": "2023", "res_m": "vector",
+        return ({"csb_polygon_count": 0, "csb_aoi_frac_in_polygon": 0.0},
+                {"obs_date": "2023", "res_m": "vector", "release": "USDA NASS Crop Sequence Boundaries 2016-2023 rev23, fiboa GeoParquet (2023 crop)",
+                 "url": CSB,
                  "note": "verified absence: bbox hits but no AOI intersection"})
     inter = gdf.geometry.intersection(aoi_g)
     a_ha = gdf.geometry.area / 1e4                       # EPSG:5070 is equal-area
-    f = {"csb_field_count": int(len(gdf)),
-         "csb_field_area_median_ha": round(float(a_ha.median()), 2),
-         "csb_field_area_max_ha": round(float(a_ha.max()), 2),
-         "csb_aoi_frac_in_field": round(float(min(1.0, inter.area.sum() / aoi_g.area)), 4),
+    f = {"csb_polygon_count": int(len(gdf)),
+         "csb_polygon_area_median_ha": round(float(a_ha.median()), 2),
+         "csb_polygon_area_max_ha": round(float(a_ha.max()), 2),
+         "csb_aoi_frac_in_polygon": round(float(min(1.0, inter.area.sum() / aoi_g.area)), 4),
          "csb_n_crop_classes": int(gdf["crop:name"].nunique()),
-         "csb_dominant_crop": str(gdf["crop:name"].mode().iloc[0])[:40]}
-    return f, {"obs_date": "2023", "res_m": "vector", "item": "usda_csb_2023"}
+         "csb_dominant_crop": str(gdf["crop:name"].mode().iloc[0])}
+    return f, {"obs_date": "2023", "res_m": "vector", "item": "usda_csb_2023",
+               "release": "USDA NASS Crop Sequence Boundaries 2016-2023 rev23, fiboa GeoParquet (2023 crop)",
+               "url": CSB}
 
 
 # ================================================================ embeddings
@@ -352,47 +352,49 @@ def _a_clay_embeddings(aoi):
     E = np.vstack(sel["embeddings"].values).astype("f8")
     m = E.mean(axis=0)
     cos = float(m @ tile_mean / (np.linalg.norm(m) * np.linalg.norm(tile_mean) + 1e-12))
-    f = {"clay_emb_dim": int(E.shape[1]),
-         "clay_emb_patch_count": int(E.shape[0]),
-         "clay_emb_l2_norm": round(float(np.linalg.norm(m)), 4),
-         "clay_emb_l2_norm_patch_mean": round(float(np.linalg.norm(E, axis=1).mean()), 4),
-         "clay_emb_cos_to_tile_mean": round(cos, 5),
-         "clay_emb_component_std": round(float(m.std()), 5),
-         "clay_emb_c0": round(float(m[0]), 5), "clay_emb_c1": round(float(m[1]), 5),
-         "clay_emb_c2": round(float(m[2]), 5), "clay_emb_c3": round(float(m[3]), 5),
-         "clay_emb_mgrs_tile": tid}
+    f = {"clay_emb_patch_count": int(E.shape[0]),
+         "clay_emb_mean_l2_norm": round(float(np.linalg.norm(m)), 4),
+         "clay_emb_patch_l2_norm_mean": round(float(np.linalg.norm(E, axis=1).mean()), 4),
+         "clay_emb_mean_cos_to_tile_patch_mean": round(cos, 5),
+         "clay_emb_mean_component_std": round(float(m.std()), 5),
+         "clay_emb_mean_c0": round(float(m[0]), 5), "clay_emb_mean_c1": round(float(m[1]), 5),
+         "clay_emb_mean_c2": round(float(m[2]), 5), "clay_emb_mean_c3": round(float(m[3]), 5)}
     return f, {"obs_date": str(sel["date"].iloc[0])[:10], "res_m": 10,
-               "item": os.path.basename(key)}
+               "item": os.path.basename(key),
+               "release": "Clay Foundation clay-model-v0 embeddings (768-d, Sentinel-2 L2A patches)",
+               "url": CLAY + os.path.basename(key)}
 
 
 # =================================================================== sea_ice
 def _sic_grid():
     def build():
         import re
-        yrs = sorted(re.findall(r'href="(\d{4})/?"',
-                                S.get(SIC_ROOT, timeout=120).text))
+        yrs = sorted(re.findall(r'href="(\d{4})/"', S.get(SIC_ROOT, timeout=120).text))
         if not yrs:
-            raise LookupError("NCEI sea-ice CDR year index empty")
+            raise LookupError("NSIDC sea-ice CDR year index empty")
         y = yrs[-1]
-        fl = sorted(set(re.findall(r'href="(seaice_conc_daily_nh_[^"]+\.nc)"',
+        fl = sorted(set(re.findall(r'href="(sic_psn25_\d{8}_[a-z0-9]+_v06r\d\d\.nc)"',
                                    S.get(SIC_ROOT + y + "/", timeout=120).text)))
         if not fl:
-            raise LookupError(f"NCEI sea-ice CDR {y} file index empty")
+            raise LookupError(f"NSIDC sea-ice CDR {y} file index empty")
         fn = fl[-1]
         p = _fetch(SIC_ROOT + y + "/" + fn, os.path.join(CACHE, fn))
         import netCDF4
         d = netCDF4.Dataset(p)
-        lat = np.asarray(d.variables["latitude"][:], dtype="f8")
-        lon = np.asarray(d.variables["longitude"][:], dtype="f8")
-        sic = d.variables["seaice_conc_cdr"][0]
-        return dict(lat=lat, lon=lon, sic=sic, file=fn,
-                    date=fn.split("_")[-2])
+        xx, yy = np.meshgrid(np.asarray(d.variables["x"][:], dtype="f8"),
+                             np.asarray(d.variables["y"][:], dtype="f8"))
+        lon, lat = pyproj.Transformer.from_crs(
+            pyproj.CRS.from_proj4(d.variables["crs"].proj4text), "EPSG:4326",
+            always_xy=True).transform(xx, yy)
+        return dict(lat=lat, lon=lon, sic=d.variables["cdr_seaice_conc"][0],
+                    file=fn, url=SIC_ROOT + y + "/" + fn, version=d.product_version,
+                    date=fn.split("_")[2])
     return _once("sic", build)
 
 
 def _a_sea_ice(aoi):
-    """NOAA/NSIDC passive-microwave Sea Ice Concentration CDR, 25 km northern-
-    hemisphere polar-stereographic grid.  A continental AOI is land-masked in
+    """NOAA/NSIDC passive-microwave Sea Ice Concentration CDR (G02202 V6), 25 km
+    northern-hemisphere polar-stereographic grid.  A continental AOI is land-masked in
     this grid: that is a verified zero, not a failure."""
     g = _sic_grid()
     lat, lon, sic = g["lat"], g["lon"], g["sic"]
@@ -413,10 +415,11 @@ def _a_sea_ice(aoi):
     f = {"nsidc_sic_cells_in_aoi": cells,
          "nsidc_sic_valid_cells": 0 if outside else nval,
          "nsidc_sic_nearest_cell_km": round(near_km, 2),
-         "nsidc_sic_frac_mean": round(float(np.ma.mean(v)), 4) if (nval and not outside) else 0.0,
-         "nsidc_sic_frac_max": round(float(np.ma.max(v)), 4) if (nval and not outside) else 0.0,
-         "nsidc_sic_present": bool(nval and not outside and float(np.ma.max(v)) > 0.15),
          "nsidc_sic_in_grid_footprint": bool(not outside)}
+    if nval and not outside:
+        f["nsidc_sic_conc_mean"] = round(float(np.ma.mean(v)), 4)
+        f["nsidc_sic_conc_max"] = round(float(np.ma.max(v)), 4)
+        f["nsidc_sic_ge15pct_present"] = bool(float(np.ma.max(v)) > 0.15)
     if outside:
         note = (f"verified absence: AOI lies {near_km:.0f} km outside the NH "
                 "25-km sea-ice grid footprint")
@@ -425,20 +428,22 @@ def _a_sea_ice(aoi):
     else:
         note = ""
     return f, {"obs_date": f"{g['date'][:4]}-{g['date'][4:6]}-{g['date'][6:8]}",
-               "res_m": 25000, "item": g["file"], "note": note}
+               "res_m": 25000, "item": g["file"], "note": note,
+               "release": f"NOAA/NSIDC Climate Data Record of Passive Microwave Sea Ice Concentration {SIC_VER.split('_')[1]} ({g['version']})",
+               "url": g["url"]}
 
 
 # ================================================================== glaciers
 def _ne_glaciers():
     def build():
-        p = _fetch(NE_GLAC, os.path.join(CACHE, "ne_10m_glaciated_areas.geojson"))
+        p = _fetch(NE_GLAC, os.path.join(CACHE, f"ne_10m_glaciated_areas_{NE_TAG}.geojson"))
         g = gpd.read_file(p)
-        g["gname"] = g.get("name").fillna("unnamed") if "name" in g else "unnamed"
+        g["gname"] = g["name"] if "name" in g else None
         return g[["gname", "geometry"]].set_crs(4326, allow_override=True)
     return _once("ne_glac", build)
 
 
-def _a_glaciers(aoi):
+def _a_glaciated_areas(aoi):
     """Natural Earth 10 m glaciated areas -- generalised global ice extent
     (~1:10 M).  Reports presence, AOI fraction and distance to nearest."""
     g = _ne_glaciers()
@@ -449,14 +454,18 @@ def _a_glaciers(aoi):
     d_m = sub.distance(aoi_g)
     k = int(np.argmin(d_m.values))
     inter = sub.geometry.intersection(aoi_g).area.sum()
-    f = {"neglac_nearest_km": round(float(d_m.min()) / 1000.0, 2),
-         "neglac_nearest_name": str(sub["gname"].iloc[k])[:48],
-         "neglac_frac_in_aoi": round(float(min(1.0, inter / aoi_g.area)), 5),
-         "neglac_count_within_100km": int((d_m <= 100_000).sum()),
-         "neglac_count_within_250km": int((d_m <= 250_000).sum()),
-         "neglac_present_in_aoi": bool(inter > 0)}
-    return f, {"obs_date": "2023 (NE v5.1.1)", "res_m": "vector (1:10M generalised)",
+    f = {"ne_glaciated_nearest_km": round(float(d_m.min()) / 1000.0, 2),
+         "ne_glaciated_frac_in_aoi": round(float(min(1.0, inter / aoi_g.area)), 5),
+         "ne_glaciated_polygon_count_within_100km": int((d_m <= 100_000).sum()),
+         "ne_glaciated_polygon_count_within_250km": int((d_m <= 250_000).sum()),
+         "ne_glaciated_present_in_aoi": bool(inter > 0)}
+    name = sub["gname"].iloc[k]
+    if isinstance(name, str) and name:
+        f["ne_glaciated_nearest_name"] = name
+    return f, {"obs_date": "2023", "res_m": "vector (1:10M generalised)",
                "item": "ne_10m_glaciated_areas",
+               "release": f"Natural Earth vector {NE_TAG}, 10m Glaciated Areas",
+               "url": NE_GLAC,
                "note": "coarse extent: use for >=10 km presence/distance only"}
 
 
@@ -471,8 +480,8 @@ def _permafrost():
 
 
 def _a_permafrost(aoi):
-    """Permafrost Atlas of Canada (GSC) -- permafrost zonation and ground-ice
-    content polygons."""
+    """Permafrost, Atlas of Canada 5th Edition (NRCan/GSC) -- permafrost extent and
+    ground-ice polygons."""
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (Permafrost Atlas of Canada is CA-only)")
     g = _permafrost()
@@ -480,27 +489,27 @@ def _a_permafrost(aoi):
     if sub is None or sub.empty:
         raise LookupError("permafrost atlas returned no polygon near AOI")
     aoi_g = gpd.GeoSeries([shape(aoi["geom"])], crs="EPSG:4326").to_crs(crs).iloc[0]
-    # the atlas maps "No permafrost (0%)" as a zone too; only the other zones are permafrost
-    sub = sub[~sub["PMF_E"].astype(str).str.startswith("No permafrost")]
-    if sub.empty:
+    zone = sub["PMF_E"].astype(str)
+    pf = sub[~zone.str.startswith("No permafrost")]
+    if pf.empty:
         raise LookupError("no permafrost zone near AOI")
-    d_m = sub.distance(aoi_g)
-    hit = sub[d_m <= 0]
+    d_m = pf.distance(aoi_g)
+    hit = sub[sub.intersects(aoi_g)]
+    ihit = hit.geometry.intersection(aoi_g).area / aoi_g.area
     f = {"nrcanpf_nearest_km": round(float(d_m.min()) / 1000.0, 2),
-         "nrcanpf_present_in_aoi": bool(len(hit) > 0),
-         "nrcanpf_count_within_100km": int((d_m <= 100_000).sum())}
-    if len(hit):
-        inter = hit.geometry.intersection(aoi_g)
-        f["nrcanpf_frac_in_aoi"] = round(float(min(1.0, inter.area.sum() / aoi_g.area)), 4)
-        dom = hit.loc[inter.area.idxmax()]
-        f["nrcanpf_zone_class"] = str(dom.get("PMF_E") or "")[:48]
-        f["nrcanpf_ice_class"] = str(dom.get("ICE_E") or "")[:40]
-        f["nrcanpf_zone_code"] = str(dom.get("PMF_CLASS") or "")[:8]
-    else:
-        f["nrcanpf_frac_in_aoi"] = 0.0
-        f["nrcanpf_zone_class"] = "no permafrost"
-    return f, {"obs_date": "2019 (Atlas of Canada, permafrost)", "res_m": "vector",
-               "item": "permafrost_pg"}
+         "nrcanpf_present_in_aoi": bool((d_m <= 0).any()),
+         "nrcanpf_polygon_count_within_100km": int((d_m <= 100_000).sum()),
+         "nrcanpf_frac_in_aoi": round(float(min(1.0, ihit[~hit["PMF_E"].astype(str).str.startswith("No permafrost")].sum())), 4)}
+    for feat, col in (("nrcanpf_zone_frac_in_aoi", "PMF_E"), ("nrcanpf_ice_frac_in_aoi", "ICE_E")):
+        by = ihit.groupby(hit[col].astype(str)).sum()
+        recs = [{"class": c, "value": round(float(min(1.0, v)), 4)}
+                for c, v in by.items() if c not in ("nan", "None") and v > 0]
+        if recs:
+            f[feat] = recs
+    return f, {"obs_date": "2016", "res_m": "vector",
+               "item": "permafrost_pg",
+               "release": "Permafrost, Atlas of Canada, 5th Edition (published 2016-09-25)",
+               "url": PERMAFROST}
 
 
 # ================================================================ bathymetry
@@ -513,11 +522,11 @@ def _a_bathymetry(aoi):
         raise LookupError("ETOPO window returned no valid cells")
     f = stats(arr, "etopo_bed_elev_m", nd=1)
     f.update({"etopo_min_elev_m": round(float(v.min()), 1),
-              "etopo_frac_below_sea_level": round(float((v < 0).mean()), 4),
-              "etopo_max_depth_m": round(float(-v.min()), 1) if v.min() < 0 else 0.0,
-              "etopo_is_submarine": bool((v < 0).mean() > 0.5)})
+              "etopo_frac_below_sea_level": round(float((v < 0).mean()), 4)})
     return f, {"obs_date": "2022", "res_m": 926,
                "item": "ETOPO_2022_v1_30s_bed",
+               "release": "NOAA NCEI ETOPO 2022 v1, 30 arc-second bedrock elevation",
+               "url": ETOPO,
                "note": "global relief model: negative = below sea level"}
 
 
@@ -544,8 +553,8 @@ def _surficial():
 
 
 def _a_surficial(aoi):
-    """Surficial Geology of Canada (GSC Map 1880A, 1:5 M) -- Quaternary
-    sediment units."""
+    """Surficial geology of Canada (GSC Canadian Geoscience Map 195, 1:5 M; converted
+    from Map 1880A) -- fraction of the AOI in each geology category."""
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (GSC surficial geology is CA-only)")
     g = _surficial()
@@ -553,15 +562,18 @@ def _a_surficial(aoi):
     hit = g[g.intersects(aoi_g)]
     if len(hit) == 0:
         raise LookupError("no GSC surficial polygon intersects AOI")
-    inter = hit.geometry.intersection(aoi_g)
-    dom = hit.loc[inter.area.idxmax()]
-    f = {"gsc_surf_unit": str(dom.get("geology") or "")[:60],
-         "gsc_surf_label": str(dom.get("label") or "")[:12],
-         "gsc_surf_description": str(dom.get("description_en") or "")[:110],
-         "gsc_surf_n_units_in_aoi": int(len(hit)),
-         "gsc_surf_dominant_frac": round(float(min(1.0, inter.area.max() / aoi_g.area)), 4)}
-    return f, {"obs_date": "2014 (GSC Map 1880A)", "res_m": "vector (1:5M)",
-               "item": "gsc_surficial_geology/geology"}
+    crs = _aeqd(*aoi["centroid"])
+    aoi_a = gpd.GeoSeries([aoi_g], crs="EPSG:4326").to_crs(crs).iloc[0]
+    hit_a = hit.to_crs(crs)
+    frac = hit_a.geometry.intersection(aoi_a).area / aoi_a.area
+    by = frac.groupby(hit["geology"].astype(str).values).sum()
+    f = {"gsc_surf_frac_in_aoi": [{"class": c, "value": round(float(min(1.0, v)), 4)}
+                                  for c, v in by.items() if v > 0],
+         "gsc_surf_polygon_count_in_aoi": int(len(hit))}
+    return f, {"obs_date": "2014", "res_m": "vector (1:5M)",
+               "item": "gsc_surficial_geology/geology",
+               "release": "GSC Canadian Geoscience Map 195, Surficial geology of Canada (prelim. ed., ver. 2.0, 2014)",
+               "url": SURFICIAL}
 
 
 # ======================================================== gamma_radiometrics
@@ -591,14 +603,14 @@ def _namrad(el):
 
 
 def _a_radiometrics(aoi):
-    """USGS/GSC North American airborne gamma-ray compilation (Duval, Darnley &
-    Garrett 1990) -- %K, ppm eU, ppm eTh on a 2 km Geosoft '*Dnag' grid."""
+    """USGS/GSC aerial gamma-ray grids (Duval, Carson, Holman & Darnley 2005, USGS
+    OFR 2005-1413) -- %K, ppm eU, ppm eTh on a 2 km Geosoft '*Dnag' grid."""
     # the grid cell is 2 km, so a 5 km2 AOI is sub-pixel: sample the cells
     # overlapping the AOI padded by one cell and do not apply a sub-pixel mask
     x0, y0, x1, y1 = aoi["bbox"]
     pad = 0.02
     bb = [x0 - pad, y0 - pad, x1 + pad, y1 + pad]
-    out, got = {"namrad_sample_pad_deg": pad}, 0
+    out, got = {}, 0
     for el, nm, unit in (("K", "k_pct", "%K"), ("U", "u_ppm", "ppm eU"),
                          ("Th", "th_ppm", "ppm eTh")):
         tif = _namrad(el)
@@ -618,8 +630,10 @@ def _a_radiometrics(aoi):
         out["namrad_th_k_ratio"] = round(th / k, 3)
     if th and u:
         out["namrad_u_th_ratio"] = round(u / th, 4)
-    return out, {"obs_date": "1960-1983 (NURE/GSC surveys, 2009 compilation)",
-                 "res_m": 2000, "item": "NAMrad_K/U/Th"}
+    return out, {"obs_date": "1975-1983 (NURE aerial surveys; grids processed 1999-2005)",
+                 "res_m": 2000, "item": "NAMrad_K/U/Th",
+                 "release": "USGS Open-File Report 2005-1413, Terrestrial radioactivity and gamma-ray exposure in the United States and Canada (gridded images)",
+                 "url": "https://mrdata.usgs.gov/radiometric/"}
 
 
 # =========================================================== mines_producing
@@ -663,10 +677,9 @@ def _mines_feats(g, aoi, pref, namecol, prodcol):
          f"{pref}_count_in_aoi": int((d_m <= 0).sum()),
          f"{pref}_count_within_25km": int((d_m <= 25_000).sum()),
          f"{pref}_count_within_100km": int((d_m <= 100_000).sum()),
-         f"{pref}_nearest_name": str(sub.loc[k, namecol])[:48],
-         f"{pref}_total_records": int(len(g))}
+         f"{pref}_nearest_name": str(sub.loc[k, namecol])}
     if prodcol and prodcol in sub.columns:
-        f[f"{pref}_nearest_commodity"] = str(sub.loc[k, prodcol])[:48]
+        f[f"{pref}_nearest_commodity"] = str(sub.loc[k, prodcol])
     return f
 
 
@@ -676,19 +689,18 @@ def _a_mines_ca(aoi):
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (NRCan Map 900A is CA-only)")
     f = _mines_feats(_mines_ca(), aoi, "nrcan900a", "NAME_E", "PRD_DESC_E")
-    return f, {"obs_date": "2025 (900A 75th edition)", "res_m": "point",
-               "item": "900A_75th_ProducingMines"}
+    return f, {"obs_date": "2025", "res_m": "point",
+               "item": "900A_75th_ProducingMines",
+               "release": "NRCan Map 900A 75th edition (2025), ProducingMines layer",
+               "url": MINES_900A}
 
 
 def _a_mines_us(aoi):
-    """USGS MRData 'Mines and mineral plants' (mineplant) -- active US mines and
-    mineral processing plants."""
+    """USGS MRData mineplant -- US mines and mineral processing plants active in 2003."""
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (USGS mineplant is US-only)")
     g = _mines_us()
     mines = g[g["PLANT_MIN"].astype(str).str.upper().str.startswith("M")]
-    if mines.empty:                       # schema drift -> fall back to all sites
-        mines = g
     f = _mines_feats(mines, aoi, "usgsmineplant", "SITE_NAME", "COMMODITY")
     plants = g[~g.index.isin(mines.index)]
     if len(plants):
@@ -699,8 +711,10 @@ def _a_mines_us(aoi):
             dp = sub.distance(aoi_g)
             f["usgsmineplant_plant_nearest_km"] = round(float(dp.min()) / 1000.0, 3)
             f["usgsmineplant_plant_count_within_25km"] = int((dp <= 25_000).sum())
-    return f, {"obs_date": "2016 (USGS MRData mineplant)", "res_m": "point",
-               "item": "usgs_mineplant"}
+    return f, {"obs_date": "2003", "res_m": "point",
+               "item": "usgs_mineplant",
+               "release": "USGS Active Mines and Mineral Processing Plants in the United States in 2003 (2005; MRData mineplant)",
+               "url": MINEPLANT}
 
 
 # -------------------------------------------------------------------- registry
@@ -710,10 +724,10 @@ ADAPTERS = [
  ("field_boundaries",   "usda_csb_fiboa",     "macrobiology", "public-domain (USDA NASS)",               "none", _a_field_boundaries),
  ("embeddings",         "clay_v0_embeddings", "embeddings",   "CC-BY-4.0 (Clay Foundation)",             "none", _a_clay_embeddings),
  ("sea_ice",            "noaa_nsidc_sic_cdr", "cryosphere",   "public-domain (NOAA/NSIDC CDR)",          "none", _a_sea_ice),
- ("glaciers",           "natural_earth_10m",  "cryosphere",   "public-domain (Natural Earth)",           "none", _a_glaciers),
+ ("glaciers",           "natural_earth_10m",  "cryosphere",   "public-domain (Natural Earth)",           "none", _a_glaciated_areas),
  ("permafrost_extent",  "nrcan_permafrost",   "cryosphere",   "OGL-Canada-2.0",                          "none", _a_permafrost),
  ("bathymetry",         "etopo_2022_30s_bed", "geology",      "public-domain (NOAA NCEI)",               "none", _a_bathymetry),
- ("surficial_geology",  "gsc_surficial_1880a","geology",      "OGL-Canada-2.0",                          "none", _a_surficial),
+ ("surficial_geology",  "gsc_surficial_cgm195","geology",      "OGL-Canada-2.0",                          "none", _a_surficial),
  ("gamma_radiometrics", "usgs_namrad",        "geology",      "public-domain (USGS)",                    "none", _a_radiometrics),
  ("mines_producing",    "nrcan_900a",         "infrastructure","OGL-Canada-2.0",                         "none", _a_mines_ca),
  ("mines_producing",    "usgs_mineplant",     "infrastructure","public-domain (USGS)",                   "none", _a_mines_us),
