@@ -52,3 +52,9 @@
 - User: "We're still in dev, so renaming everything is fine, as long as the final package is internally coherent. It depends on who does the computation and where does the name come from. Essentially, like, the source wins ... if it's named incorrectly, well, we got to match the source. And if the computation isn't what the source expects, then, well, we match the source."
 - Decision: rename freely; no old-to-new mapping table while in dev, but the package (adapters, feature_units.tsv, feature_descriptions.csv, README, docs) must agree with itself. The source wins: a source-provided value takes the source's name and the source's computation. A geoquery-computed feature is named for exactly what geoquery computes.
 - Landed: fixes-plan (pending).
+
+## class-column (2026-11-27)
+- Question: class values (virus, land-cover class, substance, pollutant, facility type) are baked into feature names; where should a class column apply, and what shape does the wide table take.
+- User: "some class data is put into a label that should probably be made into a column with classes instead" (rvdss-aggregate), then "Option A it is then."
+- Decision: source tables and observations_long gain a `class` column; `feature` names the measure and `class` holds the source's published class name, blank for unclassed features. Applies to every source that publishes a class list, found by the published-names scan. features_wide stays one row per AOI, with columns named `feature[class]`. Class definitions go in a sourced `class_descriptions.csv`; feature_descriptions.csv becomes one row per measure.
+- Landed: fixes-plan (pending).

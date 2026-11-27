@@ -6,7 +6,7 @@ Decisions: docs/geospatial_query/DECISIONS.md
 Email content stays out of this repo, journals and commits. Koonkie's AOI KML is data under no NDA and is DVC-tracked (aoi-handling). Source: the KML Koonkie sent on 2026-11-12.
 
 ## Current
-class-column: move class values out of feature names into a class column; decide where it applies
+fixes-plan: all seven judgement topics closed; write the formal plan in plan mode
 
 ## Waiting on the user
 none
@@ -19,8 +19,7 @@ none
 
 ## Stack
 - fixes-plan: a formal plan for the dictionary-pass fixes (feature_descriptions_issues.md), written in plan mode
-  - class-column: move class values out of feature names into a class column; decide where it applies
-  - class-column: class values (virus, land-cover class, substance, pollutant, facility type) move from feature names into a class column; decide where it applies
+  - fixes-plan: all seven judgement topics closed; write the formal plan in plan mode
 - deliverable: send Tomer the rerun dataset (fir run bZZhVN3O), feature_descriptions.csv, the driver on archive/geoquery-tomer-0.26.1 and metasmith 0.26.2
 - probed-features: adapters for the 152 probed features
 - query-time: build Query.time after the fixes; selects time-indexed editions per source (decision source-pinning)
@@ -34,6 +33,7 @@ none
 none
 
 ## Closed
+- class-column (2026-11-27)
 - feature-renames (2026-11-27)
 - source-pinning (2026-11-27)
 - ghsl-urban (2026-11-27)
