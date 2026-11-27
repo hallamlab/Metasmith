@@ -6,7 +6,7 @@ Decisions: docs/geospatial_query/DECISIONS.md
 Email content stays out of this repo, journals and commits. Koonkie's AOI KML is data under no NDA and is DVC-tracked (aoi-handling). Source: the KML Koonkie sent on 2026-11-12.
 
 ## Current
-ghsl-urban: GHSL settlement class names and where "urban" starts
+source-pinning: pin each source to a version or always fetch the latest
 
 ## Waiting on the user
 none
@@ -19,7 +19,6 @@ none
 
 ## Stack
 - fixes-plan: a formal plan for the dictionary-pass fixes (feature_descriptions_issues.md), written in plan mode
-  - ghsl-urban: GHSL class names, where "urban" starts
   - source-pinning: pin source versions or fetch latest
   - feature-renames: confirm renaming features is fine before release
   - class-column: class values (virus, land-cover class, substance, pollutant, facility type) move from feature names into a class column; decide where it applies
@@ -36,6 +35,7 @@ none
 none
 
 ## Closed
+- ghsl-urban (2026-11-27)
 - rvdss-aggregate (2026-11-27)
 - phac-wastewater (2026-11-27)
 - census-multi-csd (2026-11-27)

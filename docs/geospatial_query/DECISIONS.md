@@ -34,3 +34,9 @@
 - User: "It looks to me that some class data is put into a label that should probably be made into a column with classes instead", "you're sure these are just bugs? ... Okay, seems good."
 - Decision: keep RVDSS as the province's values, labelled by `rvdss_jurisdiction` and native_res_m admin:province. Report each virus exactly as PHAC publishes it (tests, detections, percent positive), matched by exact virus name. Drop the cross-virus sums of tests and detections. The virus becomes a class column rather than part of the feature name; the general rule is topic class-column.
 - Landed: fixes-plan (pending).
+
+## ghsl-urban (2026-11-27)
+- Question: geoquery's GHS-SMOD class labels ("dense town", "very dispersed rural") differ from GHSL's published names, and `ghssmod_is_urban` is a geoquery-made 50% rule.
+- User: "This is a serious issue. I agree on drop. For the changed names, we should do like a full scan and make sure we're using the actual original published names or categories. At least for the data output. We do, I think, make simplified names for the transforms, and that's fine."
+- Decision: use GHSL's published class names. Report GHSL's first-level groups (rural 11-13, urban cluster 21-23, urban centre 30) in place of `ghssmod_urban_frac`; class 21 is inside Urban Clusters by GHSL's own definition, so the >=21 rule stands under its proper name. Drop `ghssmod_is_urban`. Rule for every source: class and category values in the data outputs are the source's own published names, verified by a full scan of all sources; simplified names stay allowed in transform code and feature identifiers.
+- Landed: fixes-plan (pending).
