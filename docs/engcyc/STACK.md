@@ -1,7 +1,7 @@
 # engcyc library and template — discussion stack
 
 Goal: one curated library that serves every template, and an "engcyc metagenomics" template
-(E5 + cyanoverse taxonomy + Beth annotation + viromics) replacing metagenomics_from_paired_reads,
+(E5 + cyanoverse taxonomy + the collaborator annotation + viromics) replacing metagenomics_from_paired_reads,
 then run 4 (a naive agent installs msm end to end and runs it).
 Decisions: docs/engcyc/DECISIONS.md
 
@@ -67,7 +67,7 @@ engcyc-cases — after both workers land: engcyc template as two cases (short re
 - cache-issues — from mp-fix: resource edits do not invalidate the cache; adding an env recompiles every env id and misses the whole cache; a rerun refuses on a stale lock of an exited driver; comparison.md section is hand-written over a generated file
 - port-gaps — mature gaps after run 4, one at a time: MS ion ID (pilot ok) + MS ordination (figures tuned, https://claude.ai/artifact/6EbejKytP9ZMrtv5Bt1n8V); MZmine feature table; matchms/LipidBlast; RNA-seq extras; amplicon thresholds; trees/TreeSAPP; ONT methylation; fosmid insert recovery
 - exploratory-gaps — stay in their projects until methods settle.
-- experiment-libs — fate of benchmark/library, beth_rnaseq/library, kalen mocklib, compound_id mock
+- experiment-libs — fate of benchmark/library, rnaseq/library, kalen mocklib, compound_id mock
 - rival-audit — list every rival per job and move it to transforms/alternatives/ (from library-shape) (deferred by Tony 2026-11-21)
 - later-templates — pangenome, isolate assembly, hybrid assembly, asv, transcriptomics from the same library
 
