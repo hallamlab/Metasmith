@@ -6,7 +6,7 @@ Decisions: docs/geospatial_query/DECISIONS.md
 Email content stays out of this repo, journals and commits. Koonkie's AOI KML is data under no NDA and is DVC-tracked (aoi-handling). Source: the KML Koonkie sent on 2026-11-12.
 
 ## Current
-fixes-plan: all seven judgement topics closed; write the formal plan in plan mode
+fixes-plan: plan approved 2026-11-27, executing; plan data/geospatial_query/plans/03-dictionary-fixes.md, todo list mirrors T0-T16
 
 ## Waiting on the user
 none
