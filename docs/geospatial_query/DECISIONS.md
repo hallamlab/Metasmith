@@ -40,3 +40,9 @@
 - User: "This is a serious issue. I agree on drop. For the changed names, we should do like a full scan and make sure we're using the actual original published names or categories. At least for the data output. We do, I think, make simplified names for the transforms, and that's fine."
 - Decision: use GHSL's published class names. Report GHSL's first-level groups (rural 11-13, urban cluster 21-23, urban centre 30) in place of `ghssmod_urban_frac`; class 21 is inside Urban Clusters by GHSL's own definition, so the >=21 rule stands under its proper name. Drop `ghssmod_is_urban`. Rule for every source: class and category values in the data outputs are the source's own published names, verified by a full scan of all sources; simplified names stay allowed in transform code and feature identifiers.
 - Landed: fixes-plan (pending).
+
+## source-pinning (2026-11-27)
+- Question: whether sources fetch a pinned version or the latest; a dozen pick "newest at run time" unrecorded, others are frozen on old editions (census 2016).
+- User: "The data just needs to line up with what's available online", "You don't want to fetch the latest by default. You want to fetch by the timeline, as part of the query. Can we do version per source ... a separate versions table?", then "The proposed design looks correct."
+- Decision: query time and release version are separate. Query time (topic query-time) selects time-indexed editions (NPRI year, census year, scenes, CAMS window); "latest" is only the default query time, now. Release versions (Overture release, GPPD commit, GHSL R2023A, Hansen v1.13) default to the latest release. Now, in fixes-plan: a `_logs/versions.csv`, one row per source (query time requested, data time returned, release or edition used, URL fetched), and editions frozen in code move to the current one (census 2021). Query time itself is built after the fixes.
+- Landed: fixes-plan (versions table); query-time topic (time selection).

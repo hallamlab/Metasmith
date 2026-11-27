@@ -6,7 +6,7 @@ Decisions: docs/geospatial_query/DECISIONS.md
 Email content stays out of this repo, journals and commits. Koonkie's AOI KML is data under no NDA and is DVC-tracked (aoi-handling). Source: the KML Koonkie sent on 2026-11-12.
 
 ## Current
-source-pinning: pin each source to a version or always fetch the latest
+feature-renames: confirm renaming features is fine before release
 
 ## Waiting on the user
 none
@@ -19,12 +19,11 @@ none
 
 ## Stack
 - fixes-plan: a formal plan for the dictionary-pass fixes (feature_descriptions_issues.md), written in plan mode
-  - source-pinning: pin source versions or fetch latest
   - feature-renames: confirm renaming features is fine before release
   - class-column: class values (virus, land-cover class, substance, pollutant, facility type) move from feature names into a class column; decide where it applies
 - deliverable: send Tomer the rerun dataset (fir run bZZhVN3O), feature_descriptions.csv, the driver on archive/geoquery-tomer-0.26.1 and metasmith 0.26.2
 - probed-features: adapters for the 152 probed features
-- query-time: build Query.time after the MVP
+- query-time: build Query.time after the fixes; selects time-indexed editions per source (decision source-pinning)
 - postgis-loader: whether the tool ships a PostGIS loader
 - packaging: standalone open-source CLI vs metasmith workflow
 - osm: get OpenStreetMap working (Tomer asked)
@@ -35,6 +34,7 @@ none
 none
 
 ## Closed
+- source-pinning (2026-11-27)
 - ghsl-urban (2026-11-27)
 - rvdss-aggregate (2026-11-27)
 - phac-wastewater (2026-11-27)
