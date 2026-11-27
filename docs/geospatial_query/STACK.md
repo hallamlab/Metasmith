@@ -19,13 +19,12 @@ none
 
 ## Stack
 - fixes-plan: a formal plan for the dictionary-pass fixes (feature_descriptions_issues.md), written in plan mode
-  - fixes-plan: all seven judgement topics closed; write the formal plan in plan mode
 - deliverable: send Tomer the rerun dataset (fir run bZZhVN3O), feature_descriptions.csv, the driver on archive/geoquery-tomer-0.26.1 and metasmith 0.26.2
 - probed-features: adapters for the 152 probed features
 - query-time: build Query.time after the fixes; selects time-indexed editions per source (decision source-pinning)
 - postgis-loader: whether the tool ships a PostGIS loader
 - packaging: standalone open-source CLI vs metasmith workflow
-- osm: get OpenStreetMap working (Tomer asked)
+- osm: get OpenStreetMap working (Tomer asked); the fir rerun found osm_overpass for 6 more AOIs, check before closing
 - country-coverage: parked unless Tomer raises it again
 - claude-plan: follow up with Hallam (not build work)
 
