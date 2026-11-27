@@ -11,7 +11,6 @@ fixes-plan: executing data/geospatial_query/plans/03-dictionary-fixes.md (todo l
 ## Waiting on the user
 - census-db: StatCan 2021 dissemination-block files sit behind a Cloudflare challenge; census runs on dissemination areas until the block files are staged (2021_92-151_X.zip, ldb_000b21a_e.zip).
 - rvdss-regions: outside QC/ON/BC PHAC publishes only SARS-CoV-2 at province level; add region-level virus rows?
-none
 
 ## Preferences
 - 2026-11-17: discuss before building; drafts go to the user before anything is sent
