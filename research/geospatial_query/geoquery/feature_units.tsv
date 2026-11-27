@@ -86,12 +86,10 @@ agb_mgha_n_px	count
 agb_mgha_p10	Mg/ha
 agb_mgha_p90	Mg/ha
 agb_mgha_std	Mg/ha
-aiannh_aoi_area_km2	km2
+aiannh_frac	1
 aiannh_n_areas	count
 aiannh_overlap_frac	1
 aiannh_overlap_km2	km2
-aiannh_reservation_frac	1
-aiannh_trust_land_frac	1
 alta_n_parcels_in_province	count
 alta_n_parcels_intersecting	count
 alta_nearest_km	km
@@ -118,7 +116,6 @@ aqs_sites_50km	count
 aqs_so2_ppb_mean	ppb
 aqs_so2_src_km	km
 aqs_year	yr
-bccrown_crown_frac_lower_bound	1
 bccrown_crown_frac_of_aoi	1
 bccrown_crown_frac_of_parcelled	1
 bccrown_crown_frac_upper_bound	1
@@ -126,10 +123,8 @@ bccrown_crown_km2	km2
 bccrown_dominant_owner_type	
 bccrown_dominant_tenure_purpose	
 bccrown_dominant_tenure_type	
-bccrown_frac_crown_provincial	1
-bccrown_frac_private	1
-bccrown_frac_untitled_provincial	1
 bccrown_n_owner_types	count
+bccrown_owner_type_frac	1
 bccrown_parcelled_frac_of_aoi	1
 bccrown_tenure_area_km2	km2
 bccrown_tenure_count	count
@@ -286,24 +281,12 @@ ghspop_cell_p90	count
 ghspop_density_km2	1/km2
 ghspop_n_cells	count
 ghspop_populated_cell_frac	1
-ghspop_tiles	
 ghspop_total_persons	count
 ghssmod_dominant_class	
-ghssmod_dominant_label	
-ghssmod_frac_dense_town	1
-ghssmod_frac_low_rural	1
-ghssmod_frac_rural_cluster	1
-ghssmod_frac_semi_dense_town	1
-ghssmod_frac_suburban	1
-ghssmod_frac_urban_centre	1
-ghssmod_frac_very_low_rural	1
-ghssmod_frac_water	1
-ghssmod_is_urban	
+ghssmod_frac	1
+ghssmod_group_frac	1
 ghssmod_n_cells	count
 ghssmod_subpixel_aoi	
-ghssmod_tiles	
-ghssmod_urban_centre_frac	1
-ghssmod_urban_frac	1
 ghssmod_window_deg	deg
 gppd_capacity_mw_50km	MW
 gppd_control_plants_50km	count
@@ -329,20 +312,9 @@ hansen_treecover2000_frac_ge25pct	1
 hansen_treecover2000_pct_mean	%
 hansen_treecover2000_pct_p90	%
 iolulc_built_area_km2	km2
-iolulc_built_frac	1
 iolulc_dominant	
-iolulc_frac_bare	1
-iolulc_frac_built	1
-iolulc_frac_clouds	1
-iolulc_frac_crops	1
-iolulc_frac_flooded_veg	1
-iolulc_frac_rangeland	1
-iolulc_frac_snow_ice	1
-iolulc_frac_trees	1
-iolulc_frac_water	1
-iolulc_is_urban	
+iolulc_frac	1
 iolulc_n_classes	count
-iolulc_year	yr
 lodes_flow_records_matched	count
 lodes_internal_job_frac	1
 lodes_jobs_balance_ratio	1
@@ -354,14 +326,11 @@ lodes_n_blocks_queried	count
 lodes_n_destination_blocks	count
 lodes_n_origin_blocks	count
 lodes_p90_inbound_commute_km	km
-lodes_scope	
 lodes_state	
-lodes_verified_absence	
 lodes_wac_frac_earn_high	1
 lodes_wac_frac_earn_low	1
 lodes_wac_frac_earn_mid	1
 lodes_wac_jobs_total	count
-lodes_year	yr
 lst_c_mean	degC
 lst_c_n_px	count
 lst_c_p10	degC
@@ -491,19 +460,15 @@ nwss_percentile_max_county	%
 nwss_population_served	count
 nwss_records_county	count
 nwss_sites_county	count
-odhf_n_ambulatory_within_25km	count
-odhf_n_hospital_within_25km	count
-odhf_n_nursing_within_25km	count
+odhf_n_by_type_within_25km	count
 odhf_n_within_10km	count
 odhf_n_within_25km	count
 odhf_n_within_50km	count
 odhf_n_within_5km	count
-odhf_nearest_ambulatory_km	km
+odhf_nearest_by_type_km	km
 odhf_nearest_facility_km	km
 odhf_nearest_facility_name	
 odhf_nearest_facility_type	
-odhf_nearest_hospital_km	km
-odhf_nearest_nursing_km	km
 osm_building_per_km2	1/km2
 osm_building_ways	count
 osm_highway_ways	count
@@ -641,7 +606,6 @@ places_no_dental_visit_pct	%
 places_routine_checkup_pct	%
 places_tract_population	count
 places_uninsured_pct	%
-qc_assessment_catalogue_hits	count
 relief_m	m
 rvdss_detections_latest_week	count
 rvdss_influenza_pct_positive	%
@@ -738,32 +702,25 @@ sems_sites_25km	count
 sems_sites_5km	count
 slope_deg_mean	deg
 slope_deg_p90	deg
-statcan_aoi_area_km2	km2
-statcan_avg_dwelling_value_cad	CAD
-statcan_cma_name	
-statcan_cma_uid	
+statcan_avg_dwelling_value_approx	CAD
 statcan_csd_dominant_frac	1
-statcan_csd_households_2016	count
-statcan_csd_land_area_km2	km2
-statcan_csd_med_hh_income_cad	CAD
 statcan_csd_n_overlapping	count
 statcan_csd_name	
-statcan_csd_pop_2016	count
-statcan_csd_pop_density_km2	1/km2
 statcan_csd_type	
 statcan_csd_uid	
-statcan_ct_n_overlapping	count
-statcan_ct_uid	
-statcan_dwelling_value_csd_uid	
-statcan_dwelling_value_n_csd	count
-statcan_owner_occupied_dwellings	count
+statcan_dwelling_value_n_da	count
+statcan_median_dwelling_value_approx	CAD
+statcan_median_household_income_approx	CAD
+statcan_n_da	count
+statcan_occupied_private_dwellings	count
+statcan_owner_households	count
+statcan_popest	count
 statcan_popest_geo_code	
 statcan_popest_geo_level	
-statcan_popest_latest	count
-statcan_popest_ref_period	date
-statcan_popest_vector_id	
 statcan_popest_yoy_pct	%
-statcan_province	
+statcan_population	count
+statcan_private_dwellings	count
+statcan_private_households	count
 tiger_block_housing_units_2020	count
 tiger_block_pop_2020	count
 tiger_county_fips	
@@ -774,7 +731,6 @@ tiger_n_tracts	count
 tiger_persons_per_housing_unit	1
 tiger_pop_density_km2	1/km2
 tiger_state_fips	
-tiger_transfer_limit_hit	
 usgsmineplant_count_in_aoi	count
 usgsmineplant_count_within_100km	count
 usgsmineplant_count_within_25km	count

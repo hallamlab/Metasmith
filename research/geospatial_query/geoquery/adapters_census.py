@@ -1,13 +1,15 @@
 """adapters_census.py -- census, population and socio-economic lane.
 
 Adapter contract (see pipeline.py):
-    _a_<name>(aoi) -> (features: dict[str, scalar], meta: dict)
+    _a_<name>(aoi) -> (features: dict[str, value | [{class, value}]], meta: dict)
     PermissionError  -> out of coverage      (pipeline records 'not-attempted')
     any other raise  -> unavailable          (pipeline records 'unavailable')
 
 Every source here is plain public HTTPS: no API keys, no credentials, no
 connectors.  Hosts used:
-    www150.statcan.gc.ca              StatCan WDS (census / population cubes)
+    www150.statcan.gc.ca              StatCan WDS (population estimate cube)
+    geo.statcan.gc.ca                 StatCan 2021 boundary map service
+    api.statcan.gc.ca                 StatCan 2021 Census Profile (SDMX)
     ftp.maps.canada.ca                Open Government Canada static archive
     tigerweb.geo.census.gov           US Census TIGERweb ArcGIS REST
     lehd.ces.census.gov               LEHD LODES commute flows
@@ -25,14 +27,14 @@ NOT used, and why:
                      median household income are therefore absent for US AOIs.
                      No key is embedded -- see _a_acs_income, which records the
                      wall.
-    donneesquebec.ca / donnees.montreal.ca   not on the sandbox allowlist; the
-                     Quebec/Montreal property-assessment roll is recorded as
-                     blocked rather than silently dropped (_a_qc_assessment).
+    www12.statcan.gc.ca   Census downloads (boundary, attribute and profile
+                     files, dissemination-block counts) answer scripts with a
+                     Cloudflare browser challenge (HTTP 403, verified 2026-11).
 
 Admin-aggregate features carry meta['res_m'] = 'admin:<level>' so the dossier
 can tell an areal-interpolated statistic from a measurement.
 """
-import os, json, threading, warnings
+import io, os, json, threading, warnings
 
 import numpy as np
 import pandas as pd
@@ -40,7 +42,7 @@ import geopandas as gpd
 from shapely.geometry import shape
 
 from . import pipeline as P
-from .pipeline import S, read_window, read_best, class_fractions, pc_item, _dt
+from .pipeline import S, read_best, pc_item, _dt
 
 import rasterio
 from rasterio.windows import from_bounds as win_from_bounds
@@ -53,7 +55,6 @@ CACHE = os.path.abspath("./cache")
 os.makedirs(CACHE, exist_ok=True)
 
 EQA = 6933                                # World Cylindrical Equal Area, for areas
-CONTROL_BBOX = [-140.0, -20.0, -139.0, -19.0]     # mid-Pacific filtering control
 
 _LOCKS = {}
 _MEM = {}
@@ -78,10 +79,6 @@ def _get(url, dest, timeout=900, **kw):
             fh.write(ch)
     os.replace(tmp, dest)
     return dest
-
-
-def _aoi_gdf(aoi):
-    return gpd.GeoDataFrame({"i": [0]}, geometry=[shape(aoi["geom"])], crs=4326)
 
 
 def _area_km2(geom_4326):
@@ -119,88 +116,81 @@ def _haversine(lat1, lon1, lat2, lon2):
 # and drops the bulky original.  Thread-safe: the pipeline runs an 8-thread pool.
 
 FTP = "https://ftp.maps.canada.ca/pub"
-SOCIO = (FTP + "/statcan_statcan/Socioeconomic-data_Donnees-socio-economiques"
-             + "/csd_socioeconomic_variables_2016_sdr_variables_socioeconomiques")
-CENSUS = FTP + "/statcan_statcan/Census_Recensement"
+
+# 2021 Census.  www12.statcan.gc.ca (the boundary, attribute and profile downloads) sits behind a
+# Cloudflare browser challenge, so units and values come from the two StatCan APIs that answer
+# scripts: the boundary map service and the Census Profile SDMX service.  Neither publishes
+# dissemination-block counts, so the dissemination area is the finest unit reachable.
+STATCAN_GEO = "https://geo.statcan.gc.ca/geo_wa/rest/services/2021/Cartographic_boundary_files/MapServer"
+CSD_LAYER, DA_LAYER = 9, 12
+CENSUS_PROFILE = "https://api.statcan.gc.ca/census-recensement/profile/sdmx/rest/data/STC_CP,DF_DA"
+CENSUS_RELEASE = "2021 Census of Population, Census Profile 98-316-X2021001 (DA), 2021 cartographic boundary files"
+# Census Profile characteristic id -> StatCan's label, as the CL_CHARACTERISTIC code list names it
+PROFILE = {"1": "Population, 2021",
+           "4": "Total private dwellings",
+           "5": "Private dwellings occupied by usual residents",
+           "50": "Total - Private households by household size - 100% data",
+           "229": "Median total income of household in 2020 ($)",
+           "1468": "Total - Owner households in non-farm, non-reserve private dwellings - 25% sample data",
+           "1474": "Median value of dwellings ($)",
+           "1475": "Average value of dwellings ($)"}
 
 
-def ca_csd():
-    """2016 census subdivisions + median household income + dwelling value.
-
-    Two StatCan map-ready geodatabases (53 MB + 60 MB) joined on CSDUID and
-    reduced to a ~30 MB GeoParquet; the .gdb.zip originals are deleted.
-    """
-    key = "ca_csd"
-    if key in _MEM:
-        return _MEM[key]
-    with _lock(key):
-        if key in _MEM:
-            return _MEM[key]
-        pq = os.path.join(CACHE, "ca_csd_2016.parquet")
-        if not os.path.exists(pq):
-            zi = _get(f"{SOCIO}/csd_median_household_income_2016.gdb.zip",
-                      os.path.join(CACHE, "_csd_income.gdb.zip"))
-            zd = _get(f"{SOCIO}/csd_average_value_dwelling_2016.gdb.zip",
-                      os.path.join(CACHE, "_csd_dwell.gdb.zip"))
-            inc = gpd.read_file(zi, layer="csd_sdr_median_income_revenu",
-                                columns=["CSDUID_EN", "NAME_EN", "CSDTYPE_EN", "PROV_TERR_EN",
-                                         "POP_2016_EN", "LAND_AREA_EN", "H_COUNTS_EN",
-                                         "MED_H_INCOME_EN"])
-            dwl = pd.DataFrame(gpd.read_file(
-                zd, layer="csd_sdr_dwelling_logements_2016",
-                columns=["CSDUID_EN", "TOTAL_DW_OWN_EN", "AVG_DWELLING_EN"],
-                ignore_geometry=True))
-            inc = inc.rename(columns={"CSDUID_EN": "csduid", "NAME_EN": "name",
-                                      "CSDTYPE_EN": "csdtype", "PROV_TERR_EN": "prov",
-                                      "POP_2016_EN": "pop2016", "LAND_AREA_EN": "land_km2",
-                                      "H_COUNTS_EN": "households",
-                                      "MED_H_INCOME_EN": "med_hh_income"})
-            dwl = dwl.rename(columns={"CSDUID_EN": "csduid",
-                                      "TOTAL_DW_OWN_EN": "dw_owned",
-                                      "AVG_DWELLING_EN": "avg_dwelling_value"})
-            g = inc.merge(dwl, on="csduid", how="left").to_crs(4326)
-            g["csduid"] = g["csduid"].astype(str)
-            # CSD outlines are coastline-detailed (93 MB raw).  AOIs are km-scale
-            # and the join only needs which subdivision they sit in, so a ~30 m
-            # tolerance is well inside the positional error that matters here.
-            g["geometry"] = g.geometry.simplify(0.0003, preserve_topology=True).buffer(0)
-            g.to_parquet(pq, index=False)
-            for p in (zi, zd):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
-        g = gpd.read_parquet(pq)
-        g.sindex
-        _MEM[key] = g
-        return g
+def _apportion(units, aoi):
+    """Units clipped to the AOI, each with _w = the share of its own area inside the AOI."""
+    g = shape(aoi["geom"])
+    out = units.assign(_full=units.to_crs(EQA).area)
+    out["geometry"] = out.geometry.intersection(g)
+    out = out[~out.geometry.is_empty & out.geometry.notna()].copy()
+    out["_cut"] = out.to_crs(EQA).area
+    out["_w"] = np.where(out["_full"] > 0, out["_cut"] / out["_full"], 0.0)
+    return out
 
 
-def ca_ct():
-    """2016 census tracts (CTUID / CMA attribution); 5 MB source."""
-    key = "ca_ct"
-    if key in _MEM:
-        return _MEM[key]
-    with _lock(key):
-        if key in _MEM:
-            return _MEM[key]
-        pq = os.path.join(CACHE, "ca_ct_2016.parquet")
-        if not os.path.exists(pq):
-            z = _get(f"{CENSUS}/census_tracts/census_tracts_en.gdb.zip",
-                     os.path.join(CACHE, "_ct.gdb.zip"))
-            g = gpd.read_file(z, layer="Census_Tracts",
-                              columns=["CTUID", "CTNAME", "PRUID", "PRNAME",
-                                       "CMAUID", "CMANAME", "CMATYPE"]).to_crs(4326)
-            g.columns = [c.lower() if c != "geometry" else c for c in g.columns]
-            g.to_parquet(pq, index=False)
-            try:
-                os.remove(z)
-            except OSError:
-                pass
-        g = gpd.read_parquet(pq)
-        g.sindex
-        _MEM[key] = g
-        return g
+def statcan_units(aoi, layer, fields):
+    """2021 census units of one boundary layer that intersect the AOI, apportioned."""
+    feats, over = arcgis_query(f"{STATCAN_GEO}/{layer}", geom=aoi["geom"], out_fields=fields,
+                               return_geometry=True, count=6000, timeout=180)
+    if over:
+        raise LookupError(f"StatCan boundary layer {layer} truncated its answer for this AOI")
+    if not feats:
+        raise LookupError(f"AOI intersects no 2021 census unit of boundary layer {layer}")
+    return _apportion(_esri_gdf(feats), aoi)
+
+
+def da_profile(dguids):
+    """Census Profile values (columns PROFILE ids) for each DA DGUID; suppressed values are NaN."""
+    parts = []
+    for i in range(0, len(dguids), 40):
+        key = f"A5.{'+'.join(dguids[i:i + 40])}.1.{'+'.join(PROFILE)}.1"
+        r = S.get(f"{CENSUS_PROFILE}/{key}", timeout=180,
+                  headers={"Accept": "application/vnd.sdmx.data+csv"})
+        if r.status_code == 404:
+            continue
+        r.raise_for_status()
+        parts.append(pd.read_csv(io.StringIO(r.text), dtype={"REF_AREA": str, "CHARACTERISTIC": str}))
+    if not parts:
+        raise LookupError("the Census Profile has no record for any DA in the AOI")
+    t = pd.concat(parts)
+    return (t.pivot_table(index="REF_AREA", columns="CHARACTERISTIC", values="OBS_VALUE", aggfunc="first")
+             .reindex(index=dguids, columns=list(PROFILE)))
+
+
+def _census_das(aoi):
+    das = statcan_units(aoi, DA_LAYER, "DGUID")
+    p = da_profile(sorted(set(das["DGUID"])))
+    return p.reindex(das["DGUID"]).assign(_w=das["_w"].to_numpy())
+
+
+def _apportioned(p, col):
+    ok = p[col].notna()
+    return round(float((p[col][ok] * p["_w"][ok]).sum()), 1) if ok.any() else None
+
+
+def _weighted_mean(p, col, by):
+    w = p[by] * p["_w"]
+    ok = p[col].notna() & (w > 0)
+    return round(float((p[col][ok] * w[ok]).sum() / w[ok].sum())) if ok.any() else None
 
 
 ALTA = FTP + "/nrcan_rncan/vector/geobase_al_ta/shp_eng"
@@ -246,24 +236,30 @@ def ca_alta(prov):
         return g
 
 
+# ODHF facility types as the ODHF Version 1.0 metadata names them (NAICS 621-623):
+# https://ftp.maps.canada.ca/pub/statcan_statcan/Health-care-facilities_Etablissement-de-sante/ODHF_BDOES/ODHF_Metadata.pdf
+ODHF_URL = FTP + "/statcan_statcan/Health-care-facilities_Etablissement-de-sante/ODHF_BDOES/odhf_bdoes_v1.csv"
+ODHF_TYPES = ["Ambulatory health care services", "Hospitals", "Nursing and residential care facilities"]
+
+
 def ca_odhf():
-    """Open Database of Healthcare Facilities (StatCan 13-26-0001), 9 039 rows."""
+    """Open Database of Healthcare Facilities v1.0 (StatCan 13-26-0001), geocoded rows."""
     key = "odhf"
     if key in _MEM:
         return _MEM[key]
     with _lock(key):
         if key in _MEM:
             return _MEM[key]
-        pq = os.path.join(CACHE, "odhf.parquet")
+        pq = os.path.join(CACHE, "odhf_v1.parquet")
         if not os.path.exists(pq):
-            c = _get(FTP + "/statcan_statcan/Health-care-facilities_Etablissement-de-sante"
-                           "/ODHF_BDOES/odhf_bdoes_v1.csv",
-                     os.path.join(CACHE, "_odhf.csv"))
+            c = _get(ODHF_URL, os.path.join(CACHE, "_odhf.csv"))
             d = pd.read_csv(c, encoding="latin-1", low_memory=False,
                             usecols=["facility_name", "odhf_facility_type", "province",
                                      "CSDname", "CSDuid", "latitude", "longitude"])
             d = d[d["latitude"].notna() & d["longitude"].notna()].reset_index(drop=True)
-            d["odhf_facility_type"] = d["odhf_facility_type"].str.strip().str.lower()
+            # two rows spell a type in lower case
+            d["odhf_facility_type"] = (d["odhf_facility_type"].str.strip().str.lower()
+                                       .map({t.lower(): t for t in ODHF_TYPES}))
             d.to_parquet(pq, index=False)
             try:
                 os.remove(c)
@@ -378,7 +374,7 @@ def lodes_state(st):
 
 
 # ============================================================= live-query APIs
-TIGER = "https://tigerweb.geo.census.gov/arcgis/rest/services"
+TIGER2020 = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Census2020/MapServer"
 BCWFS = "https://openmaps.gov.bc.ca/geo/pub/wfs"
 GHSL = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL"
 PLACES = "https://data.cdc.gov/resource/yjkw-uj5s.json"      # PLACES tract, 2025
@@ -396,13 +392,13 @@ def _esri_rings(geom):
     rings = []
     for poly in polys:
         for ring in poly:
-            rings.append([[float(x), float(y)] for x, y in ring])
+            rings.append([[float(c[0]), float(c[1])] for c in ring])
     return rings
 
 
-def tiger_query(service, layer, geom=None, bbox=None, out_fields="*",
-                return_geometry=False, count=2000, timeout=90):
-    """TIGERweb spatial query. Pass `geom` (GeoJSON) or `bbox`."""
+def arcgis_query(layer_url, geom=None, bbox=None, out_fields="*",
+                 return_geometry=False, count=2000, timeout=90):
+    """ArcGIS MapServer layer spatial query. Pass `geom` (GeoJSON) or `bbox`."""
     if geom is not None:
         g = {"rings": _esri_rings(geom), "spatialReference": {"wkid": 4326}}
         gtype = "esriGeometryPolygon"
@@ -414,16 +410,16 @@ def tiger_query(service, layer, geom=None, bbox=None, out_fields="*",
          "outSR": 4326, "spatialRel": "esriSpatialRelIntersects",
          "outFields": out_fields, "returnGeometry": str(bool(return_geometry)).lower(),
          "resultRecordCount": count}
-    r = S.get(f"{TIGER}/{service}/MapServer/{layer}/query", params=p, timeout=timeout)
+    r = S.post(f"{layer_url}/query", data=p, timeout=timeout)
     if r.status_code != 200:
-        raise ConnectionError(f"TIGERweb HTTP {r.status_code}")
+        raise ConnectionError(f"ArcGIS HTTP {r.status_code} from {layer_url}")
     d = r.json()
     if d.get("error"):
-        raise ConnectionError(f"TIGERweb error {d['error'].get('message')}")
+        raise ConnectionError(f"ArcGIS error {d['error'].get('message')} from {layer_url}")
     return d.get("features", []), bool(d.get("exceededTransferLimit"))
 
 
-def _tiger_gdf(feats):
+def _esri_gdf(feats):
     """Esri JSON polygon features -> GeoDataFrame (rings unioned per feature)."""
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
@@ -582,69 +578,35 @@ def ghs_pop_window(bbox, geom, maxside=4096):
 
 
 # ================================================== census_demography (Canada)
-def _a_statcan_csd(aoi):
-    """2016 census subdivision the AOI falls in: population, income, dwellings.
+def _csds(aoi):
+    return statcan_units(aoi, CSD_LAYER, "CSDUID,CSDNAME,CSDTYPE,PRUID").sort_values("_cut", ascending=False)
 
-    Area-weighted across every CSD the AOI touches (AOIs that straddle a
-    municipal boundary get a blend, with the dominant CSD named).
-    """
+
+def _a_statcan_census(aoi):
+    """2021 Census counts apportioned to the AOI from dissemination areas, with the CSD context."""
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (Canada-only)")
-    g = ca_csd()
-    inter, aoi_km2 = _overlap(aoi, g)
-    if len(inter) == 0:
-        raise LookupError("AOI does not intersect any 2016 census subdivision")
-    inter["_a"] = inter.geometry.area / 1e6
-    inter = inter.sort_values("_a", ascending=False)
-    w = inter["_a"].to_numpy()
-    tot = float(w.sum())
-    dom = inter.iloc[0]
-
-    def wmean(col):
-        v = pd.to_numeric(inter[col], errors="coerce").to_numpy(dtype="f8")
-        ok = np.isfinite(v)
-        return float((v[ok] * w[ok]).sum() / w[ok].sum()) if ok.any() and w[ok].sum() > 0 else None
-
-    pop = pd.to_numeric(inter["pop2016"], errors="coerce").to_numpy(dtype="f8")
-    land = pd.to_numeric(inter["land_km2"], errors="coerce").to_numpy(dtype="f8")
-    ok = np.isfinite(pop) & np.isfinite(land) & (land > 0)
-    dens = float((pop[ok] / land[ok] * w[ok]).sum() / w[ok].sum()) if ok.any() else None
-    inc = wmean("med_hh_income")
-    f = {"statcan_csd_uid": str(dom["csduid"]),
-         "statcan_csd_name": str(dom["name"])[:60],
-         "statcan_csd_type": str(dom["csdtype"])[:40],
-         "statcan_province": str(dom["prov"])[:40],
-         "statcan_csd_n_overlapping": int(len(inter)),
-         "statcan_csd_dominant_frac": round(float(w[0] / tot), 4) if tot > 0 else None,
-         "statcan_csd_pop_2016": int(round(wmean("pop2016"))) if wmean("pop2016") is not None else None,
-         "statcan_csd_pop_density_km2": round(dens, 2) if dens is not None else None,
-         "statcan_csd_households_2016": int(round(wmean("households"))) if wmean("households") is not None else None,
-         "statcan_csd_med_hh_income_cad": int(round(inc)) if inc is not None else None,
-         "statcan_csd_land_area_km2": round(wmean("land_km2"), 2) if wmean("land_km2") is not None else None,
-         "statcan_aoi_area_km2": round(aoi_km2, 3)}
-    # census-tract / CMA attribution where the AOI sits inside a CMA or CA
-    try:
-        ct, _ = _overlap(aoi, ca_ct())
-        if len(ct):
-            ct = ct.assign(_a=ct.geometry.area).sort_values("_a", ascending=False)
-            f["statcan_ct_uid"] = str(ct.iloc[0]["ctuid"])
-            f["statcan_cma_name"] = str(ct.iloc[0]["cmaname"])[:50]
-            f["statcan_cma_uid"] = str(ct.iloc[0]["cmauid"])
-            f["statcan_ct_n_overlapping"] = int(len(ct))
-        else:
-            f["statcan_ct_uid"] = "none (outside any census tract / CMA)"
-    except Exception:
-        pass
-    f = {k: v for k, v in f.items() if v is not None}
-    if len(f) <= 2:
-        raise LookupError("CSD matched but every census attribute was suppressed")
-    return f, {"obs_date": "2016", "res_m": "admin:csd",
-               "item": f"CSDUID={f['statcan_csd_uid']}",
-               "provenance": "StatCan 2016 Census, map-ready CSD geodatabases"}
+    p = _census_das(aoi)
+    csd = _csds(aoi)
+    dom = csd.iloc[0]
+    f = {"statcan_population": _apportioned(p, "1"),
+         "statcan_private_dwellings": _apportioned(p, "4"),
+         "statcan_occupied_private_dwellings": _apportioned(p, "5"),
+         "statcan_private_households": _apportioned(p, "50"),
+         "statcan_median_household_income_approx": _weighted_mean(p, "229", "50"),
+         "statcan_n_da": int(len(p)),
+         "statcan_csd_uid": str(dom["CSDUID"]),
+         "statcan_csd_name": str(dom["CSDNAME"]),
+         "statcan_csd_type": str(dom["CSDTYPE"]),
+         "statcan_csd_n_overlapping": int(len(csd)),
+         "statcan_csd_dominant_frac": round(float(dom["_cut"] / csd["_cut"].sum()), 4)}
+    return {k: v for k, v in f.items() if v is not None}, {
+        "obs_date": "2021", "res_m": "admin:da", "item": f"DA n={len(p)}",
+        "release": CENSUS_RELEASE, "url": CENSUS_PROFILE}
 
 
 def _a_statcan_wds_popest(aoi):
-    """Current CSD population estimate from StatCan WDS cube 17-10-0155.
+    """Population estimate (July 1) of the AOI's dominant 2021 CSD, StatCan cube 17-10-0155.
 
     Falls back to the province row when the CSD code is not in the cube
     (the estimate programme does not carry every small subdivision); res_m
@@ -652,13 +614,7 @@ def _a_statcan_wds_popest(aoi):
     """
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (Canada-only)")
-    g = ca_csd()
-    inter, _ = _overlap(aoi, g)
-    if len(inter) == 0:
-        raise LookupError("AOI does not intersect any census subdivision")
-    inter["_a"] = inter.geometry.area
-    dom = inter.sort_values("_a", ascending=False).iloc[0]
-    csduid = str(dom["csduid"])
+    csduid = str(_csds(aoi).iloc[0]["CSDUID"])
     mem = wds_csd_members()
     level, code = "csd", csduid
     mid = mem.get(csduid)
@@ -670,58 +626,49 @@ def _a_statcan_wds_popest(aoi):
         raise LookupError(f"neither CSDUID {csduid} nor PRUID {csduid[:2]} in cube 17-10-0155")
     r = S.post(f"{WDS}/getDataFromCubePidCoordAndLatestNPeriods",
                json=[{"productId": WDS_POPEST_PID,
-                      "coordinate": f"{mid}.0.0.0.0.0.0.0.0.0", "latestN": 3}],
+                      "coordinate": f"{mid}.0.0.0.0.0.0.0.0.0", "latestN": 2}],
                headers={"Content-Type": "application/json"}, timeout=90)
     if r.status_code != 200:
         raise ConnectionError(f"StatCan WDS HTTP {r.status_code}")
     o = r.json()[0]
     if o.get("status") != "SUCCESS":
         raise LookupError(f"WDS status {o.get('status')}")
-    dps = [p for p in o["object"]["vectorDataPoint"] if p.get("value") is not None]
+    dps = {p["refPerRaw"][:4]: p["value"] for p in o["object"]["vectorDataPoint"]
+           if p.get("value") is not None}
     if not dps:
         raise LookupError("WDS returned no population data points")
-    dps.sort(key=lambda p: p["refPer"])
-    latest, prev = dps[-1], (dps[-2] if len(dps) > 1 else None)
-    f = {"statcan_popest_latest": int(latest["value"]),
-         "statcan_popest_ref_period": str(latest.get("refPerRaw") or latest["refPer"])[:10],
+    year = max(dps)
+    prev = dps.get(str(int(year) - 1))
+    f = {"statcan_popest": int(dps[year]),
          "statcan_popest_geo_level": level,
-         "statcan_popest_geo_code": code,
-         "statcan_popest_vector_id": int(o["object"]["vectorId"])}
-    if prev and prev["value"]:
-        f["statcan_popest_yoy_pct"] = round(
-            100.0 * (latest["value"] - prev["value"]) / prev["value"], 3)
-    return f, {"obs_date": f["statcan_popest_ref_period"],
-               "res_m": f"admin:{level}", "item": f"pid=17100155,coord={mid}",
-               "provenance": "StatCan WDS table 17-10-0155, 2021 boundaries"}
+         "statcan_popest_geo_code": code}
+    if prev:
+        f["statcan_popest_yoy_pct"] = round(100.0 * (dps[year] - prev) / prev, 3)
+    return f, {"obs_date": f"{year}-07-01", "res_m": f"admin:{level}",
+               "item": f"vector {o['object']['vectorId']}",
+               "release": "StatCan table 17-10-0155-01, 2021 boundaries",
+               "url": f"{WDS}/getDataFromCubePidCoordAndLatestNPeriods"}
 
 
 # ====================================================== census_demography (US)
 def _tiger_blocks(aoi):
     """2020 decennial blocks intersecting the AOI, with areal weights."""
-    feats, over = tiger_query("TIGERweb/tigerWMS_Census2020", 10, geom=aoi["geom"],
+    feats, over = arcgis_query(f"{TIGER2020}/10", geom=aoi["geom"],
                               out_fields="GEOID,POP100,HU100,AREALAND,TRACT,STATE,COUNTY",
                               return_geometry=True, count=4000)
     if not feats:
         raise LookupError("no 2020 census block intersects this AOI "
                           "(outside US TIGERweb coverage)")
-    gdf = _tiger_gdf(feats)
-    if len(gdf) == 0:
-        raise LookupError("TIGERweb returned attributes but no usable geometry")
-    aoi_g = shape(aoi["geom"])
-    gdf["_full"] = gdf.to_crs(EQA).area
-    clipped = gdf.copy()
-    clipped["geometry"] = gdf.geometry.intersection(aoi_g)
-    clipped = clipped[~clipped.geometry.is_empty & clipped.geometry.notna()]
-    clipped["_cut"] = clipped.to_crs(EQA).area
-    clipped["_w"] = np.where(clipped["_full"] > 0, clipped["_cut"] / clipped["_full"], 0.0)
-    return clipped, over
+    if over:
+        raise LookupError("TIGERweb truncated the 2020 block answer for this AOI")
+    return _apportion(_esri_gdf(feats), aoi)
 
 
 def _a_tigerweb_blocks(aoi):
     """US 2020 decennial population / housing, areally apportioned to the AOI."""
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (US-only)")
-    b, over = _tiger_blocks(aoi)
+    b = _tiger_blocks(aoi)
     if len(b) == 0:
         raise LookupError("blocks returned but none overlap the AOI polygon")
     pop = pd.to_numeric(b["POP100"], errors="coerce").fillna(0).to_numpy(dtype="f8")
@@ -738,12 +685,11 @@ def _a_tigerweb_blocks(aoi):
          "tiger_mean_block_area_km2": round(float(b["_full"].mean()) / 1e6, 4),
          "tiger_persons_per_housing_unit": round(apop / ahu, 3) if ahu > 0 else None,
          "tiger_state_fips": str(b["STATE"].iloc[0]),
-         "tiger_county_fips": str(b["STATE"].iloc[0]) + str(b["COUNTY"].iloc[0]),
-         "tiger_transfer_limit_hit": bool(over)}
+         "tiger_county_fips": str(b["STATE"].iloc[0]) + str(b["COUNTY"].iloc[0])}
     f = {k: v for k, v in f.items() if v is not None}
     return f, {"obs_date": "2020-04-01", "res_m": "admin:block",
-               "item": f"tigerWMS_Census2020/10 n={len(b)}",
-               "provenance": "US Census TIGERweb, 2020 Census POP100/HU100"}
+               "item": f"blocks n={len(b)}", "release": "TIGERweb tigerWMS_Census2020, 2020 Census POP100/HU100",
+               "url": f"{TIGER2020}/10"}
 
 
 def _a_acs_income(aoi):
@@ -792,23 +738,36 @@ def _a_ghs_pop(aoi):
          "ghspop_cell_p90": round(float(np.percentile(v, 90)), 3),
          "ghspop_cell_mean": round(float(v.mean()), 4),
          "ghspop_populated_cell_frac": round(float((v > 0.1).mean()), 4),
-         "ghspop_n_cells": int(v.size),
-         "ghspop_tiles": ",".join(tiles)}
+         "ghspop_n_cells": int(v.size)}
     f = {k: val for k, val in f.items() if val is not None}
-    return f, {"obs_date": "2020", "res_m": 100,
-               "item": "GHS_POP_E2020_GLOBE_R2023A_4326_3ss_V1_0",
-               "provenance": "JRC GHSL GHS-POP R2023A"}
+    return f, {"obs_date": "2020", "res_m": 100, "item": ",".join(tiles),
+               "release": "GHS_POP_E2020_GLOBE_R2023A_4326_3ss V1-0",
+               "url": f"{GHSL}/GHS_POP_GLOBE_R2023A/GHS_POP_E2020_GLOBE_R2023A_4326_3ss/V1-0/tiles/"}
 
 
 # =============================================================== urban_extent
-SMOD = {10: "water", 11: "very_low_rural", 12: "low_rural", 13: "rural_cluster",
-        21: "suburban", 22: "semi_dense_town", 23: "dense_town", 30: "urban_centre"}
-SMOD_LABEL = {10: "water", 11: "very dispersed rural", 12: "dispersed rural",
-              13: "rural cluster", 21: "suburban / peri-urban", 22: "semi-dense town",
-              23: "dense town", 30: "urban centre"}
-
-
+# GHS-SMOD class names as GHSL publishes them: GHSL Data Package 2023 (JRC 133256), section
+# 2.6, level-2 classes 10-30 and level-1 classes 1-3 (the "per-urban" typo in the class-21
+# line is corrected from Table 21's grid-level term "SUBURBAN OR PERI-URBAN GRID CELL").
+# https://ghsl.jrc.ec.europa.eu/documents/GHSL_Data_Package_2023.pdf
+SMOD_L2 = {30: "Urban Centre grid cell", 23: "Dense Urban Cluster grid cell",
+           22: "Semi-dense Urban Cluster grid cell", 21: "Suburban or peri-urban grid cell",
+           13: "Rural cluster grid cell", 12: "Low Density Rural grid cell",
+           11: "Very low density rural grid cell", 10: "Water grid cell"}
+SMOD_L1 = {30: "Urban Centre grid cell", 23: "Urban Cluster grid cell", 22: "Urban Cluster grid cell",
+           21: "Urban Cluster grid cell", 13: "Rural grid cell", 12: "Rural grid cell",
+           11: "Rural grid cell"}
 SMOD_CELL = 1.0 / 120.0          # 30 arcsec
+
+
+def class_records(v, names):
+    """One {class, value} record per published class name (zeros included) and the dominant name."""
+    codes, cnt = np.unique(v, return_counts=True)
+    frac = dict(zip(codes.tolist(), (cnt / v.size).tolist()))
+    by = {}
+    for code, name in names.items():
+        by[name] = by.get(name, 0.0) + frac.get(code, 0.0)
+    return [{"class": n, "value": round(x, 4)} for n, x in by.items()], max(by, key=by.get)
 
 
 def _a_ghs_smod(aoi):
@@ -851,7 +810,7 @@ def _a_ghs_smod(aoi):
             m = geometry_mask([mask_geom], out_shape=a.shape, transform=tr, invert=True)
             a = np.ma.masked_array(a, mask=a.mask | ~m)
         v = a.compressed()
-        v = v[(v >= 10) & (v <= 30)]
+        v = v[np.isin(v, list(SMOD_L2))]
         if v.size:
             arrs.append(v)
             used.append(tid)
@@ -861,35 +820,28 @@ def _a_ghs_smod(aoi):
             f"(candidates {[t for t, _ in _ghs_tiles(bb, 'smod')]}, "
             f"outside-extent {skipped})")
     v = np.concatenate(arrs)
-    vals, cnt = np.unique(v, return_counts=True)
-    frac = {int(k): c / v.size for k, c in zip(vals, cnt)}
-    f = {f"ghssmod_frac_{SMOD[k]}": round(val, 4) for k, val in frac.items() if k in SMOD}
-    dom = int(vals[int(np.argmax(cnt))])
-    urban = sum(val for k, val in frac.items() if k >= 21)
-    f.update({"ghssmod_dominant_class": SMOD.get(dom, f"class_{dom}"),
-              "ghssmod_dominant_label": SMOD_LABEL.get(dom, f"class_{dom}"),
-              "ghssmod_urban_frac": round(float(urban), 4),
-              "ghssmod_urban_centre_frac": round(float(frac.get(30, 0.0)), 4),
-              "ghssmod_is_urban": bool(urban >= 0.5),
-              "ghssmod_n_cells": int(v.size),
-              "ghssmod_subpixel_aoi": bool(sub),
-              "ghssmod_window_deg": round(max(bb[2] - bb[0], bb[3] - bb[1]), 5),
-              "ghssmod_tiles": ",".join(used)})
-    return f, {"obs_date": "2020", "res_m": 1000,
-               "item": "GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss_V2_0",
-               "provenance": "JRC GHSL GHS-SMOD R2023A"}
+    l2, dom = class_records(v, SMOD_L2)
+    # level 1 has no water class, so its fractions share level 2's denominator and omit water
+    l1, _ = class_records(v, SMOD_L1)
+    f = {"ghssmod_frac": l2,
+         "ghssmod_group_frac": l1,
+         "ghssmod_dominant_class": dom,
+         "ghssmod_n_cells": int(v.size),
+         "ghssmod_subpixel_aoi": bool(sub),
+         "ghssmod_window_deg": round(max(bb[2] - bb[0], bb[3] - bb[1]), 5)}
+    return f, {"obs_date": "2020", "res_m": 1000, "item": ",".join(used),
+               "release": "GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss V2-0",
+               "url": f"{GHSL}/GHS_SMOD_GLOBE_R2023A/GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss/V2-0/tiles/"}
 
 
-IO_LULC = {0: "nodata", 1: "water", 2: "trees", 4: "flooded_veg", 5: "crops",
-           7: "built", 8: "bare", 9: "snow_ice", 10: "clouds", 11: "rangeland"}
+# Impact Observatory class names as the collection's item_assets file:values publish them:
+# https://planetarycomputer.microsoft.com/api/stac/v1/collections/io-lulc-annual-v02
+IO_LULC = {1: "Water", 2: "Trees", 4: "Flooded vegetation", 5: "Crops", 7: "Built area",
+           8: "Bare ground", 9: "Snow/ice", 10: "Clouds", 11: "Rangeland"}
 
 
-def _a_iolulc_built(aoi):
-    """Impact Observatory 10 m annual LULC built-area fraction.
-
-    Independent cross-check on GHS-SMOD: a 10 m optical classification rather
-    than a 1 km degree-of-urbanisation model.
-    """
+def _a_iolulc(aoi):
+    """Impact Observatory 10 m annual land use / land cover class fractions."""
     it = pc_item("io-lulc-annual-v02", aoi["bbox"], limit=20)
     if not it:
         raise LookupError("no io-lulc-annual-v02 item for this AOI")
@@ -898,15 +850,15 @@ def _a_iolulc_built(aoi):
     v = v[v != 0]
     if v.size == 0:
         raise LookupError("io-lulc window is all nodata")
-    f = class_fractions(np.ma.masked_array(v, mask=np.zeros(v.shape, bool)),
-                        IO_LULC, "iolulc")
+    recs, dom = class_records(v, IO_LULC)
     built = float((v == 7).mean())
-    f.update({"iolulc_built_frac": round(built, 4),
-              "iolulc_built_area_km2": round(built * _area_km2(shape(aoi["geom"])), 4),
-              "iolulc_is_urban": bool(built >= 0.5),
-              "iolulc_year": int((_dt(i) or "0000")[:4])})
+    f = {"iolulc_frac": recs,
+         "iolulc_dominant": dom,
+         "iolulc_n_classes": int(len(np.unique(v))),
+         "iolulc_built_area_km2": round(built * _area_km2(shape(aoi["geom"])), 4)}
     return f, {"obs_date": (_dt(i) or "unknown")[:10], "res_m": 10, "item": i.id,
-               "provenance": "Impact Observatory io-lulc-annual-v02 via Planetary Computer"}
+               "release": "io-lulc-annual-v02",
+               "url": "https://planetarycomputer.microsoft.com/api/stac/v1/collections/io-lulc-annual-v02"}
 
 
 # =============================================================== mobility_flows
@@ -921,7 +873,7 @@ def _a_lodes_flows(aoi):
     """
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (LODES is US-only)")
-    b, _ = _tiger_blocks(aoi)
+    b = _tiger_blocks(aoi)
     if len(b) == 0:
         raise LookupError("no 2020 census block overlaps the AOI")
     st_fips = str(b["STATE"].iloc[0])
@@ -942,13 +894,10 @@ def _a_lodes_flows(aoi):
         return ({"lodes_jobs_in_aoi": 0, "lodes_jobs_held_by_residents": 0,
                  "lodes_flow_records_matched": 0,
                  "lodes_n_blocks_queried": int(len(blocks)),
-                 "lodes_state": st.upper(), "lodes_year": int(year),
-                 "lodes_scope": "od_main JT00 (within-state flows only)",
-                 "lodes_verified_absence": True},
+                 "lodes_state": st.upper()},
                 {"obs_date": str(year), "res_m": "admin:block",
-                 "item": f"LODES8/{st}/od_main_JT00_{year}",
-                 "note": "verified absence: AOI blocks in no flow record",
-                 "provenance": "US Census LEHD LODES8"})
+                 "item": f"{st}_od_main_JT00_{year}", "release": "LODES8",
+                 "url": f"{LODES}/{st}/od/{st}_od_main_JT00_{year}.csv.gz"})
 
     def wdist(df, acol, bcol):
         if len(df) == 0:
@@ -985,8 +934,7 @@ def _a_lodes_flows(aoi):
          "lodes_internal_job_frac": round(
              float(inb[inb["h_geocode"].isin(blocks)]["S000"].sum()) / jobs_in, 4)
              if jobs_in else None,
-         "lodes_state": st.upper(), "lodes_year": int(year),
-         "lodes_scope": "od_main JT00 (within-state flows only)"}
+         "lodes_state": st.upper()}
     we = wac.reindex(sorted(blocks)).dropna(how="all")
     if len(we) and float(we["C000"].sum()) > 0:
         tot = float(we["C000"].sum())
@@ -996,83 +944,34 @@ def _a_lodes_flows(aoi):
                   "lodes_wac_frac_earn_high": round(float(we["CE03"].sum()) / tot, 4)})
     f = {k: v for k, v in f.items() if v is not None}
     return f, {"obs_date": str(year), "res_m": "admin:block",
-               "item": f"LODES8/{st}/od_main_JT00_{year}",
-               "provenance": "US Census LEHD LODES8"}
+               "item": f"{st}_od_main_JT00_{year}", "release": "LODES8",
+               "url": f"{LODES}/{st}/od/{st}_od_main_JT00_{year}.csv.gz"}
 
 
 # ========================================================== property_assessment
 def _a_statcan_dwelling_value(aoi):
-    """Average value of owner-occupied dwellings, 2016 census, CSD level.
+    """2021 Census owner-reported dwelling value across the AOI's dissemination areas.
 
-    This is a census self-reported dwelling value, NOT an assessment roll --
-    labelled admin:csd so the dossier does not mistake it for a parcel-level
-    assessed value.
+    A census self-reported value, NOT an assessment roll.
     """
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (Canada-only)")
-    g = ca_csd()
-    inter, _ = _overlap(aoi, g)
-    if len(inter) == 0:
-        raise LookupError("AOI does not intersect any 2016 census subdivision")
-    inter["_a"] = inter.geometry.area
-    w = inter["_a"].to_numpy(dtype="f8")
-    val = pd.to_numeric(inter["avg_dwelling_value"], errors="coerce").to_numpy(dtype="f8")
-    own = pd.to_numeric(inter["dw_owned"], errors="coerce").to_numpy(dtype="f8")
-    ok = np.isfinite(val) & (w > 0)
-    if not ok.any():
-        raise LookupError("dwelling value suppressed for every overlapping CSD "
+    p = _census_das(aoi)
+    f = {"statcan_avg_dwelling_value_approx": _weighted_mean(p, "1475", "1468"),
+         "statcan_median_dwelling_value_approx": _weighted_mean(p, "1474", "1468"),
+         "statcan_owner_households": _apportioned(p, "1468")}
+    f = {k: v for k, v in f.items() if v is not None}
+    if not f:
+        raise LookupError("dwelling value suppressed for every overlapping DA "
                           "(StatCan confidentiality screen)")
-    dom = inter.sort_values("_a", ascending=False).iloc[0]
-    f = {"statcan_avg_dwelling_value_cad": int(round(float((val[ok] * w[ok]).sum() / w[ok].sum()))),
-         "statcan_owner_occupied_dwellings": int(round(float(np.nansum(own[ok])))),
-         "statcan_dwelling_value_csd_uid": str(dom["csduid"]),
-         "statcan_dwelling_value_n_csd": int(int(ok.sum()))}
-    return f, {"obs_date": "2016", "res_m": "admin:csd",
-               "item": f"CSDUID={f['statcan_dwelling_value_csd_uid']}",
-               "provenance": "StatCan 2016 Census, average value of dwellings (CSD)"}
-
-
-def _a_qc_assessment(aoi):
-    """Quebec / Montreal property-assessment roll (role d'evaluation fonciere).
-
-    Kept in ADAPTERS deliberately: donneesquebec.ca and donnees.montreal.ca are
-    not on the sandbox allowlist, so the dossier records a blocked source rather
-    than a silently missing slot.  Anyone running this outside the sandbox gets
-    a real answer.
-    """
-    if aoi["country"] != "CA":
-        raise PermissionError("out of coverage (Quebec-only)")
-    prov = ""
-    try:
-        inter, _ = _overlap(aoi, ca_csd())
-        prov = ", ".join(sorted(set(inter["prov"].astype(str))))
-    except Exception:
-        pass
-    if "Qu" not in prov:                       # any overlapping CSD in Quebec
-        raise PermissionError(f"out of coverage (Quebec-only; AOI province '{prov}')")
-    last = None
-    for host, path in (("www.donneesquebec.ca", "/recherche/api/3/action/package_search"),
-                       ("donnees.montreal.ca", "/api/3/action/package_search")):
-        try:
-            r = S.get(f"https://{host}{path}",
-                      params={"q": "role evaluation fonciere", "rows": 5}, timeout=45)
-            if r.status_code == 200:
-                n = r.json().get("result", {}).get("count")
-                return ({"qc_assessment_catalogue_hits": int(n or 0),
-                         "qc_assessment_source_host": host},
-                        {"obs_date": "live", "res_m": "vector",
-                         "provenance": f"{host} CKAN catalogue"})
-            last = f"{host} HTTP {r.status_code}"
-        except Exception as e:
-            last = f"{host} {type(e).__name__}"
-    raise ConnectionError(
-        f"Quebec/Montreal assessment roll unreachable ({last}); neither "
-        f"donneesquebec.ca nor donnees.montreal.ca is on the sandbox allowlist")
+    f["statcan_dwelling_value_n_da"] = int(p["1475"].notna().sum())
+    return f, {"obs_date": "2021", "res_m": "admin:da", "item": f"DA n={len(p)}",
+               "release": CENSUS_RELEASE, "url": CENSUS_PROFILE}
 
 
 # ===================================================== healthcare_accessibility
 def _a_odhf_access(aoi):
-    """Distance to the nearest healthcare facility (StatCan ODHF, 7 543 geocoded).
+    """Distance from the AOI centroid to the nearest healthcare facility (StatCan ODHF).
 
     A proximity measurement from point data, not an areal statistic.
     """
@@ -1087,22 +986,20 @@ def _a_odhf_access(aoi):
     order = np.argsort(km)
     nearest = d.iloc[int(order[0])]
     f = {"odhf_nearest_facility_km": round(float(km[order[0]]), 3),
-         "odhf_nearest_facility_type": str(nearest["odhf_facility_type"])[:60],
-         "odhf_nearest_facility_name": str(nearest["facility_name"])[:70],
+         "odhf_nearest_facility_type": nearest["odhf_facility_type"] if pd.notna(nearest["odhf_facility_type"]) else None,
+         "odhf_nearest_facility_name": str(nearest["facility_name"]),
          "odhf_n_within_5km": int((km <= 5).sum()),
          "odhf_n_within_10km": int((km <= 10).sum()),
          "odhf_n_within_25km": int((km <= 25).sum()),
          "odhf_n_within_50km": int((km <= 50).sum())}
-    for t, tag in (("hospitals", "hospital"),
-                   ("ambulatory health care services", "ambulatory"),
-                   ("nursing and residential care facilities", "nursing")):
-        m = (d["odhf_facility_type"].to_numpy() == t)
-        if m.any():
-            f[f"odhf_nearest_{tag}_km"] = round(float(km[m].min()), 3)
-            f[f"odhf_n_{tag}_within_25km"] = int((km[m] <= 25).sum())
-    return f, {"obs_date": "2020", "res_m": "point",
-               "item": "StatCan 13-26-0001 ODHF v1.1",
-               "provenance": "Open Database of Healthcare Facilities"}
+    types = d["odhf_facility_type"].to_numpy()
+    f["odhf_nearest_by_type_km"] = [{"class": t, "value": round(float(km[types == t].min()), 3)}
+                                    for t in ODHF_TYPES]
+    f["odhf_n_by_type_within_25km"] = [{"class": t, "value": int((km[types == t] <= 25).sum())}
+                                       for t in ODHF_TYPES]
+    f = {k: v for k, v in f.items() if v is not None}
+    return f, {"obs_date": "2020", "res_m": "point", "item": "odhf_bdoes_v1.csv",
+               "release": "ODHF Version 1.0 (StatCan 13-26-0001)", "url": ODHF_URL}
 
 
 def _a_places_access(aoi):
@@ -1114,7 +1011,7 @@ def _a_places_access(aoi):
     """
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (CDC PLACES is US-only)")
-    b, _ = _tiger_blocks(aoi)
+    b = _tiger_blocks(aoi)
     if len(b) == 0:
         raise LookupError("no 2020 census block overlaps the AOI")
     tracts = sorted({f"{r.STATE}{r.COUNTY}{r.TRACT}" for r in b.itertuples()})
@@ -1153,9 +1050,8 @@ def _a_places_access(aoi):
          for k, v in f.items() if v is not None}
     if len(f) <= 2:
         raise LookupError("PLACES rows carried no usable prevalence measures")
-    return f, {"obs_date": "2025-release", "res_m": "admin:tract",
-               "item": f"data.cdc.gov/yjkw-uj5s tracts={len(df)}",
-               "provenance": "CDC PLACES census-tract data, 2025 release"}
+    return f, {"obs_date": "2025-release", "res_m": "admin:tract", "item": f"tracts n={len(df)}",
+               "release": "PLACES 2025 release, census tract", "url": PLACES}
 
 
 # ============================================================ indigenous_lands
@@ -1169,8 +1065,7 @@ def _a_alta_indigenous(aoi):
         raise PermissionError("out of coverage (Canada-only)")
     # every province the AOI touches: an AOI on a border (Labrador / Quebec) has its
     # nearest parcels in the neighbouring province's extract
-    inter, _ = _overlap(aoi, ca_csd())
-    provs = sorted({PRUID2PROV[u[:2]] for u in inter["csduid"].astype(str) if u[:2] in PRUID2PROV})
+    provs = sorted({PRUID2PROV[u] for u in _csds(aoi)["PRUID"].astype(str) if u in PRUID2PROV})
     if not provs:
         raise LookupError("could not resolve AOI province for the ALTA extract")
     al = pd.concat([ca_alta(p) for p in provs], ignore_index=True)
@@ -1191,17 +1086,18 @@ def _a_alta_indigenous(aoi):
          "alta_n_parcels_in_province": int(len(al))}
     if len(clip):
         top = clip.assign(_a=clip.geometry.area).sort_values("_a", ascending=False).iloc[0]
-        f["alta_dominant_name"] = str(top.get("name1") or "")[:60]
-        f["alta_dominant_type"] = str(top.get("altype") or "")[:40]
-        f["alta_dominant_code"] = str(top.get("alcode") or "")[:12]
+        f["alta_dominant_name"] = top.get("name1")
+        f["alta_dominant_type"] = top.get("altype")
+        f["alta_dominant_code"] = top.get("alcode")
     else:
         i = int(dists.to_numpy().argmin())
-        f["alta_nearest_name"] = str(al.iloc[i].get("name1") or "")[:60]
-        f["alta_nearest_type"] = str(al.iloc[i].get("altype") or "")[:40]
-    f = {k: v for k, v in f.items() if v is not None}
+        f["alta_nearest_name"] = al.iloc[i].get("name1")
+        f["alta_nearest_type"] = al.iloc[i].get("altype")
+    f = {k: v for k, v in f.items() if v is not None and v == v}
     return f, {"obs_date": "2026-10 (CLSS snapshot)", "res_m": "vector",
-               "item": f"AL_TA_{prov}_SHP_DCM_eng",
-               "provenance": "NRCan Aboriginal Lands of Canada (CLSS/CanVec)"}
+               "item": ",".join(f"AL_TA_{p}_SHP_DCM_eng.zip" for p in provs),
+               "release": "Aboriginal Lands of Canada Legislative Boundaries (NRCan CLSS), per-province SHP",
+               "url": f"{ALTA}/"}
 
 
 def _a_tiger_aiannh(aoi):
@@ -1209,34 +1105,26 @@ def _a_tiger_aiannh(aoi):
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (US-only)")
     aoi_km2 = _area_km2(shape(aoi["geom"]))
-    f = {"aiannh_overlap_frac": 0.0, "aiannh_overlap_km2": 0.0,
-         "aiannh_n_areas": 0, "aiannh_aoi_area_km2": round(aoi_km2, 3)}
-    names, total, nareas = [], 0.0, 0
-    for lid, tag in ((34, "reservation"), (36, "trust_land")):
-        feats, _ = tiger_query("TIGERweb/tigerWMS_Census2020", lid, geom=aoi["geom"],
-                               out_fields="GEOID,NAME,AREALAND", return_geometry=True,
-                               count=500)
-        sub = round(0.0, 6)
+    recs, names, total = [], [], 0.0
+    # layer names as TIGERweb publishes them
+    for lid, layer in ((34, "Federal American Indian Reservations"), (36, "Off-Reservation Trust Lands")):
+        feats, _ = arcgis_query(f"{TIGER2020}/{lid}", geom=aoi["geom"],
+                                out_fields="GEOID,NAME,AREALAND", return_geometry=True, count=500)
+        sub = 0.0
         if feats:
-            gdf = _tiger_gdf(feats)
-            if len(gdf):
-                clip = gdf.copy()
-                clip["geometry"] = gdf.geometry.intersection(shape(aoi["geom"]))
-                clip = clip[~clip.geometry.is_empty & clip.geometry.notna()]
-                if len(clip):
-                    sub = float(clip.to_crs(EQA).area.sum()) / 1e6
-                    total += sub
-                    nareas += len(clip)
-                    names += [str(x)[:40] for x in clip["NAME"].tolist()[:3]]
-        f[f"aiannh_{tag}_frac"] = round(min(sub / aoi_km2, 1.0) if aoi_km2 > 0 else 0.0, 5)
-    f["aiannh_overlap_km2"] = round(total, 5)
-    f["aiannh_overlap_frac"] = round(min(total / aoi_km2, 1.0) if aoi_km2 > 0 else 0.0, 5)
-    f["aiannh_n_areas"] = int(nareas)
+            clip = _apportion(_esri_gdf(feats), aoi)
+            sub = float(clip["_cut"].sum()) / 1e6
+            names += clip["NAME"].astype(str).tolist()
+        total += sub
+        recs.append({"class": layer, "value": round(min(sub / aoi_km2, 1.0), 5)})
+    f = {"aiannh_frac": recs,
+         "aiannh_overlap_km2": round(total, 5),
+         "aiannh_overlap_frac": round(min(total / aoi_km2, 1.0), 5),
+         "aiannh_n_areas": len(names)}
     if names:
-        f["aiannh_names"] = "; ".join(names)[:90]
-    return f, {"obs_date": "2020", "res_m": "vector",
-               "item": "tigerWMS_Census2020/34+36",
-               "provenance": "US Census TIGERweb AIANNH areas, 2020 vintage"}
+        f["aiannh_names"] = "; ".join(names)
+    return f, {"obs_date": "2020", "res_m": "vector", "item": "layers 34,36",
+               "release": "TIGERweb tigerWMS_Census2020", "url": TIGER2020}
 
 
 # ====================================== parcels_cadastre / crown_land (BC only)
@@ -1278,19 +1166,19 @@ def _a_bc_parcels(aoi):
     if "PARCEL_CLASS" in clip:
         vc = clip["PARCEL_CLASS"].value_counts()
         if len(vc):
-            f["bcpmbc_dominant_parcel_class"] = str(vc.index[0])[:40]
+            f["bcpmbc_dominant_parcel_class"] = str(vc.index[0])
             f["bcpmbc_n_parcel_classes"] = int(len(vc))
     if "MUNICIPALITY" in clip:
         vc = clip["MUNICIPALITY"].value_counts()
         if len(vc):
-            f["bcpmbc_municipality"] = str(vc.index[0])[:60]
+            f["bcpmbc_municipality"] = str(vc.index[0])
     if "REGIONAL_DISTRICT" in clip:
         vc = clip["REGIONAL_DISTRICT"].value_counts()
         if len(vc):
-            f["bcpmbc_regional_district"] = str(vc.index[0])[:60]
+            f["bcpmbc_regional_district"] = str(vc.index[0])
     f = {k: v for k, v in f.items() if v is not None}
     return f, {"obs_date": "live (ParcelMap BC)", "res_m": "vector",
-               "item": PMBC, "provenance": "BC Data Catalogue WFS, ParcelMap BC parcel fabric"}
+               "item": PMBC, "release": "live", "url": BCWFS}
 
 
 def _a_bc_crown_land(aoi):
@@ -1308,8 +1196,8 @@ def _a_bc_crown_land(aoi):
     if len(clip) == 0:
         raise LookupError("parcels found in bbox but none intersect the AOI polygon")
     clip = clip.assign(_a=clip.geometry.area / 1e6)
-    byown = clip.groupby(clip["OWNER_TYPE"].fillna("Unknown"))["_a"].sum()
-    tot_parcelled = float(byown.sum())
+    byown = clip.groupby("OWNER_TYPE")["_a"].sum()
+    tot_parcelled = float(clip["_a"].sum())
     crown = float(sum(v for k, v in byown.items() if str(k).lower().startswith("crown")))
     f = {"bccrown_crown_frac_of_aoi": round(min(crown / aoi_km2, 1.0), 4) if aoi_km2 > 0 else None,
          "bccrown_crown_frac_of_parcelled": round(crown / tot_parcelled, 4)
@@ -1317,55 +1205,45 @@ def _a_bc_crown_land(aoi):
          "bccrown_crown_km2": round(crown, 5),
          "bccrown_parcelled_frac_of_aoi": round(min(tot_parcelled / aoi_km2, 1.0), 4)
              if aoi_km2 > 0 else None,
-         "bccrown_dominant_owner_type": str(byown.idxmax())[:40],
-         "bccrown_n_owner_types": int(len(byown))}
-    for k, v in byown.items():
-        tag = str(k).lower().replace(" ", "_").replace("/", "_")[:24]
-        f[f"bccrown_frac_{tag}"] = round(min(float(v) / aoi_km2, 1.0), 4) if aoi_km2 > 0 else None
+         "bccrown_dominant_owner_type": str(byown.idxmax()) if len(byown) else None,
+         "bccrown_n_owner_types": int(len(byown)),
+         "bccrown_owner_type_frac": [{"class": str(k), "value": round(min(float(v) / aoi_km2, 1.0), 4)}
+                                     for k, v in byown.items()]}
     # The parcel fabric only covers SURVEYED land.  Unsurveyed BC land is Crown
     # by default, so the Crown share of the AOI is bracketed: the surveyed
     # Crown fraction is a lower bound, plus the unparcelled remainder an upper.
     if aoi_km2 > 0:
         unp = max(0.0, 1.0 - min(tot_parcelled / aoi_km2, 1.0))
         f["bccrown_unparcelled_frac_of_aoi"] = round(unp, 4)
-        f["bccrown_crown_frac_lower_bound"] = round(min(crown / aoi_km2, 1.0), 4)
         f["bccrown_crown_frac_upper_bound"] = round(min(crown / aoi_km2 + unp, 1.0), 4)
-    try:
-        t = wfs_features(TANTALIS, aoi["bbox"], count=5000)
-        tclip, _ = _overlap(aoi, t)
-        f["bccrown_tenure_count"] = int(len(tclip))
-        if len(tclip):
-            f["bccrown_tenure_area_km2"] = round(float(tclip.geometry.area.sum()) / 1e6, 5)
-            if "TENURE_PURPOSE" in tclip:
-                vc = tclip["TENURE_PURPOSE"].value_counts()
-                if len(vc):
-                    f["bccrown_dominant_tenure_purpose"] = str(vc.index[0])[:40]
-            if "TENURE_TYPE" in tclip:
-                vc = tclip["TENURE_TYPE"].value_counts()
-                if len(vc):
-                    f["bccrown_dominant_tenure_type"] = str(vc.index[0])[:40]
-    except Exception as e:
-        f["bccrown_tenure_error"] = f"{type(e).__name__}"[:40]
+    t = wfs_features(TANTALIS, aoi["bbox"], count=5000)
+    tclip = _overlap(aoi, t)[0] if len(t) else t
+    f["bccrown_tenure_count"] = int(len(tclip))
+    if len(tclip):
+        f["bccrown_tenure_area_km2"] = round(float(tclip.geometry.area.sum()) / 1e6, 5)
+        for col, name in (("TENURE_PURPOSE", "bccrown_dominant_tenure_purpose"),
+                          ("TENURE_TYPE", "bccrown_dominant_tenure_type")):
+            vc = tclip[col].value_counts() if col in tclip else []
+            if len(vc):
+                f[name] = str(vc.index[0])
     f = {k: v for k, v in f.items() if v is not None}
     return f, {"obs_date": "live (ParcelMap BC + TANTALIS)", "res_m": "vector",
-               "item": f"{PMBC} + {TANTALIS}",
-               "provenance": "BC Data Catalogue WFS"}
+               "item": f"{PMBC} + {TANTALIS}", "release": "live", "url": BCWFS}
 
 
 # =================================================================== registry
 # slot, source_id, family, licence, auth, fn
 OGL = "OGL-Canada-2.0"
 ADAPTERS = [
- ("census_demography",       "statcan_csd_2016",   "census", OGL,                    "none", _a_statcan_csd),
+ ("census_demography",       "statcan_census_2021", "census", OGL,                   "none", _a_statcan_census),
  ("census_demography",       "statcan_wds_popest", "census", OGL,                    "none", _a_statcan_wds_popest),
  ("census_demography",       "tigerweb_blocks2020","census", "public-domain (US Census)", "none", _a_tigerweb_blocks),
  ("census_demography",       "acs5_api",           "census", "public-domain (US Census)", "api-key-required", _a_acs_income),
  ("population_gridded",      "ghs_pop_r2023a",     "census", "CC-BY-4.0 (JRC GHSL)",  "none", _a_ghs_pop),
  ("urban_extent",            "ghs_smod_r2023a",    "census", "CC-BY-4.0 (JRC GHSL)",  "none", _a_ghs_smod),
- ("urban_extent",            "io_lulc_annual_v02", "census", "CC-BY-4.0 (Impact Observatory)", "none", _a_iolulc_built),
+ ("urban_extent",            "io_lulc_annual_v02", "census", "CC-BY-4.0 (Impact Observatory)", "none", _a_iolulc),
  ("mobility_flows",          "lehd_lodes8",        "census", "public-domain (US Census)", "none", _a_lodes_flows),
  ("property_assessment",     "statcan_dwelling_value", "census", OGL,                "none", _a_statcan_dwelling_value),
- ("property_assessment",     "donneesquebec_role", "census", "CC-BY-4.0 (Quebec)",    "none", _a_qc_assessment),
  ("healthcare_accessibility","statcan_odhf",       "census", OGL,                     "none", _a_odhf_access),
  ("healthcare_accessibility","cdc_places",         "census", "public-domain (US CDC)", "none", _a_places_access),
  ("indigenous_lands",        "nrcan_alta",         "census", OGL,                     "none", _a_alta_indigenous),

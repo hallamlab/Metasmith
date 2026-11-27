@@ -11,7 +11,6 @@ cdc_nwss	public health & microbiology	field sample
 cdc_places	public health & microbiology	survey
 clay_v0_embeddings	latent	satellite
 cop_dem_glo30	geology	satellite
-donneesquebec_role	socio-economic	survey
 eccc_ghgrp	hazards	survey
 eccc_naps	hazards	fixed sensor
 eccc_npri	hazards	survey
@@ -59,7 +58,7 @@ phac_wastewater	public health & microbiology	field sample
 s2_signature_v1	spectral	satellite
 sentinel1_rtc	spectral	satellite
 sentinel2_l2a	spectral	satellite
-statcan_csd_2016	socio-economic	survey
+statcan_census_2021	socio-economic	survey
 statcan_dwelling_value	socio-economic	survey
 statcan_odhf	public health & microbiology	survey
 statcan_wds_popest	socio-economic	survey
