@@ -8,18 +8,17 @@ geoquery takes one table of areas of interest (KML or GeoJSON polygons) and quer
 
 ## Run
 
-The pipeline is a metasmith scatter-gather. `normalise_aois` runs once, `fetch_source` runs once per source, and `aggregate` gathers every source table. The library sits in `../msm/`: types in `data_types/`, transforms in `transforms/geoquery/`, the rendered plan in `dag.svg`.
+The pipeline is the shipped metasmith template `geoquery_from_aoi_table`, a scatter-gather. `normalise_aois` runs once, `fetch_source` runs once per source, and `aggregate` gathers every source table. The types and transforms live in the standard library under `src/metasmith_libraries/`. https://metasmith.readthedocs.io/en/latest/workflows/geoquery.html describes the template.
 
-1. Build the image with `docker/geoquery/dev.sh`. It builds the tag that `msm/resources/containers/geoquery.oci` names.
-2. Run the driver from the worktree root:
-   `PYTHONPATH=src python research/geospatial_query/msm/main/geoquery.py --aois <table.kml> --dataset <id> --work <dir> --run --publish data/geospatial_query/<id>`
+1. Install metasmith: `conda create -n msm -c conda-forge -c bioconda -c hallamlab metasmith`.
+2. Run the driver: `python geoquery_run.py --aois <table.kml> --out <dataset_dir>`.
 3. Track the published folder with `dvc add` and push it with the `dvc` tool.
 
-Leave out `--run` to plan only and render `<work>/dag.svg`. Use `--sources a,b` to run a subset. The driver runs every step in local Docker. Eleven AOIs across all 75 sources take about 55 minutes.
+Add `--plan-only` to plan and stop. Use `--sources a,b` to run a subset. Run `--help` for the rest. The driver runs every step in local Docker. Three small AOIs across all 75 sources take about 70 minutes on 0.26.1.
 
-**CAUTION** Bump the tag in `geoquery.oci` for every image change. Metasmith keys the container input on its path and modification time, so `dev.sh` invalidates that key after each build. Without it, every step reuses the old image's cached result.
+**WARNING** The driver deletes `<dataset_dir>` before it writes the new one.
 
-**WARNING** `--publish` deletes the dataset folder before it writes the new one.
+**CAUTION** For an image change, build with `docker/geoquery/dev.sh -p`. It pins `geoquery.env` to the new tag and digest. Metasmith keys each cached step on that file, so an unpinned rebuild reuses the old image's results.
 
 `fetch_source` gives each source 20 minutes. AOIs still waiting at the deadline get a `DeadlineExceeded` gap row, so one stalled API cannot stop the run.
 
