@@ -4,13 +4,13 @@
     python republish_07.py --src mmap_canada_mining --out mmap_canada_mining.new \\
         --produced 2026-11-19 --image geoquery:0.7@sha256:944cd4a4120c
 """
-import argparse, tarfile, tempfile
+import argparse, shutil, tarfile, tempfile
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
-from geoquery_run import INTEGRATED, publish
+from geoquery_run import INTEGRATED, publish, type_dir
 
 
 def _tsv(p: Path) -> pd.DataFrame:
@@ -18,14 +18,13 @@ def _tsv(p: Path) -> pd.DataFrame:
 
 
 def results_from_07(src: Path, results: Path) -> tuple[Path, str]:
-    """Lay the 0.7 files out as the pipeline's results folder that publish() reads."""
     def dest(type_name: str, name: str) -> Path:
-        d = results / f"geoquery-{type_name}"
+        d = type_dir(results, type_name)
         d.mkdir(parents=True, exist_ok=True)
         return d / name
 
     (aoi_table,) = [p for p in (src / "aois").iterdir() if p.name != "aois.geojson"]
-    dest("aois", "aois.geojson").write_bytes((src / "aois" / "aois.geojson").read_bytes())
+    shutil.copyfile(src / "aois" / "aois.geojson", dest("aois", "aois.geojson"))
 
     tables = {p.stem: p for p in src.glob("*/*.tsv") if p.parent.name not in ("_logs", "integrated")}
     coverage = _tsv(src / "integrated" / "coverage.tsv")
@@ -36,11 +35,9 @@ def results_from_07(src: Path, results: Path) -> tuple[Path, str]:
             t = pd.DataFrame({"aoi": coverage.aoi, "source": source, "family": "none", "status": coverage[source]})
         t.to_csv(dest("source_table", f"{source}.csv"), index=False)
 
-    for name, fname in INTEGRATED.items():
-        if fname.endswith(".parquet"):
-            dest(name, fname).write_bytes((src / "integrated" / fname).read_bytes())
-        else:
-            coverage.to_csv(dest(name, fname), index=False)
+    for name in ("observations_long", "features_wide"):
+        shutil.copyfile(src / "integrated" / INTEGRATED[name], dest(name, INTEGRATED[name]))
+    coverage.to_csv(dest("coverage", INTEGRATED["coverage"]), index=False)
 
     gaps = _tsv(src / "_logs" / "gaps.tsv").rename(
         columns={"product": "source", "stem": "aoi", "reason": "gap", "detail": "reason"})
