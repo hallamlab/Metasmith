@@ -73,7 +73,7 @@ tile 2024/17N/xegut5h9lqo3093nm-0000000000-0000000000 at window
 (1888, 116, 73, 73) gives 5329 valid pixels against the adapter's 4761
 polygon-masked pixels, and the mean vector agrees to ~3 decimals
 (a00 -0.02969 vs -0.02978, L2 0.79683 vs 0.80187).  Where an AOI spans several
-tiles (aef_emb_n_tiles > 1) the emitted summary is the area-weighted mosaic;
+tiles (aef_emb_n_tiles_read > 1) the emitted summary is the area-weighted mosaic;
 the reference points at the largest-overlap tile.
 
 Requires, beyond pipeline.py's own imports: geopandas, pyarrow, shapely.
@@ -124,8 +124,6 @@ GENV.update(GDAL_HTTP_MERGE_CONSECUTIVE_RANGES="YES",
             VSI_CACHE_SIZE="134217728",
             GDAL_HTTP_VERSION="2")
 
-CONTROL_BBOX = [-140.0, -20.0, -139.0, -19.0]     # mid-Pacific filtering control
-
 _LOCK = threading.Lock()
 _MEM = {}
 
@@ -156,12 +154,12 @@ def _fetch(url, path):
 def _aef_index():
     """Footprint index for the whole archive, as a GeoDataFrame keyed by year.
 
-    One row per published COG: WGS84 footprint polygon, year, UTM zone, CRS and
+    One row per published COG: WGS84 footprint polygon, year, CRS and
     the s3:// path (rewritten to the public HTTPS mirror).
     """
     def build():
         p = _fetch(AEF_INDEX, os.path.join(CACHE, "aef_index.parquet"))
-        t = pq.read_table(p, columns=["geom", "year", "path", "utm_zone", "crs"])
+        t = pq.read_table(p, columns=["geom", "year", "path", "crs"])
         d = t.to_pandas()
         d["rel"] = d["path"].str.replace(AEF_S3_PREFIX, "", regex=False)
         g = gpd.GeoDataFrame(d.drop(columns=["geom", "path"]),
@@ -297,31 +295,23 @@ def _a_aef_embeddings(aoi):
     except Exception:
         cos = None
 
-    f = {"aef_emb_dim": AEF_DIM,
-         "aef_emb_year": int(year),
-         "aef_emb_n_tiles": int(len(hits)),
-         "aef_emb_pixel_count": int(norms_n),
-         "aef_emb_primary_window_native_px": int(win["native_px"]),
-         "aef_emb_l2_norm": round(float(np.linalg.norm(m)), 5),
-         "aef_emb_l2_norm_pixel_mean": round(norms_sum / max(norms_n, 1), 5),
-         "aef_emb_component_std": round(float(m.std()), 6),
-         "aef_emb_component_absmax": round(float(np.abs(m).max()), 6),
+    f = {"aef_emb_n_tiles_read": int(len(hits)),
+         "aef_emb_px_sampled": int(norms_n),
+         "aef_emb_mean_vector_l2_norm": round(float(np.linalg.norm(m)), 5),
+         "aef_emb_pixel_l2_norm_mean": round(norms_sum / max(norms_n, 1), 5),
          "aef_emb_cos_to_tile_context": cos,
-         # re-read reference for the FULL 64-dim vector
+         # re-read reference for the FULL 64-dim vector; the window is north-up
          "aef_emb_tile_path": str(row["rel"]),
          "aef_emb_tile_crs": str(row["crs"]),
-         "aef_emb_tile_utm_zone": str(row["utm_zone"]),
          "aef_emb_win_col_off": int(win["col_off"]),
          "aef_emb_win_row_off": int(win["row_off"]),
          "aef_emb_win_width": int(win["width"]),
-         "aef_emb_win_height": int(win["height"]),
-         "aef_emb_win_orientation": "north-up (tile is bottom-up; flip rows)"}
+         "aef_emb_win_height": int(win["height"])}
     for i in range(len(m)):                       # all 64 components: this vector IS
                                                          # the join key for analogue fills
         f[f"aef_emb_a{i:02d}"] = round(float(m[i]), 6)
-    return f, {"obs_date": f"{year}-01-01/{year}-12-31", "res_m": 10,
-               "item": os.path.basename(row["rel"]),
-               "n_tiles_available": int(len(hits))}
+    return f, {"obs_date": f"{year}-01-01/{year}-12-31", "res_m": 10, "item": str(row["rel"]),
+               "release": f"aef v1 annual {year}", "url": AEF_INDEX}
 
 
 # slot, source_id, family, licence, auth, fn

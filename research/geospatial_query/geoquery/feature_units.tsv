@@ -1,4 +1,7 @@
 feature	SI_unit
+aafc_aci_dominant	
+aafc_aci_frac	1
+aafc_aci_n_classes	count
 aef_emb_a00	1
 aef_emb_a01	1
 aef_emb_a02	1
@@ -63,29 +66,22 @@ aef_emb_a60	1
 aef_emb_a61	1
 aef_emb_a62	1
 aef_emb_a63	1
-aef_emb_component_absmax	1
-aef_emb_component_std	1
 aef_emb_cos_to_tile_context	1
-aef_emb_dim	count
-aef_emb_l2_norm	1
-aef_emb_l2_norm_pixel_mean	1
-aef_emb_n_tiles	count
-aef_emb_pixel_count	count
-aef_emb_primary_window_native_px	count
+aef_emb_mean_vector_l2_norm	1
+aef_emb_n_tiles_read	count
+aef_emb_pixel_l2_norm_mean	1
+aef_emb_px_sampled	count
 aef_emb_tile_crs	
 aef_emb_tile_path	
-aef_emb_tile_utm_zone	
 aef_emb_win_col_off	count
 aef_emb_win_height	count
-aef_emb_win_orientation	
 aef_emb_win_row_off	count
 aef_emb_win_width	count
-aef_emb_year	yr
-agb_mgha_mean	Mg/ha
-agb_mgha_n_px	count
-agb_mgha_p10	Mg/ha
-agb_mgha_p90	Mg/ha
-agb_mgha_std	Mg/ha
+agb_carbon_mgc_ha_mean	Mg C/ha
+agb_carbon_mgc_ha_n_px	count
+agb_carbon_mgc_ha_p10	Mg C/ha
+agb_carbon_mgc_ha_p90	Mg C/ha
+agb_carbon_mgc_ha_std	Mg C/ha
 aiannh_frac	1
 aiannh_n_areas	count
 aiannh_overlap_frac	1
@@ -134,22 +130,7 @@ cams_grid_lon	deg
 cams_hourly_mean_30d	
 cams_hourly_p95_30d	
 cdl_dominant	
-cdl_frac_alfalfa	1
-cdl_frac_barren	1
-cdl_frac_corn	1
-cdl_frac_deciduous_forest	1
-cdl_frac_developed_high	1
-cdl_frac_developed_low	1
-cdl_frac_developed_med	1
-cdl_frac_developed_open	1
-cdl_frac_fallow	1
-cdl_frac_grass_pasture	1
-cdl_frac_herb_wetlands	1
-cdl_frac_mixed_forest	1
-cdl_frac_open_water	1
-cdl_frac_shrubland	1
-cdl_frac_soybeans	1
-cdl_frac_woody_wetlands	1
+cdl_frac	1
 cdl_n_classes	count
 clay_emb_mean_c0	1
 clay_emb_mean_c1	1
@@ -161,8 +142,8 @@ clay_emb_mean_l2_norm	1
 clay_emb_patch_count	count
 clay_emb_patch_l2_norm_mean	1
 clim_annual_precip_mm	mm
-clim_coldest_day_c	degC
-clim_hottest_day_c	degC
+clim_daily_mean_temp_max_c	degC
+clim_daily_mean_temp_min_c	degC
 clim_mean_annual_temp_c	degC
 clim_n_days	d
 csb_aoi_frac_in_polygon	1
@@ -235,10 +216,11 @@ fcsi_sites_by_classification_25km	count
 fcsi_sites_by_status_25km	count
 gbif_distinct_species	count
 gbif_occurrences	count
-geo_age_bottom_ma	Ma
-geo_age_top_ma	Ma
+geo_b_int_age_ma	Ma
 geo_lithology	
-geo_n_units	count
+geo_map_scale	
+geo_n_map_units_at_centroid	count
+geo_t_int_age_ma	Ma
 geo_unit_name	
 ghgrp_co2e_excl_co2bio_kt_25km	kt
 ghgrp_facilities_25km	count
@@ -301,21 +283,20 @@ lodes_wac_frac_earn_high	1
 lodes_wac_frac_earn_low	1
 lodes_wac_frac_earn_mid	1
 lodes_wac_jobs_total	count
-lst_c_mean	degC
-lst_c_n_px	count
-lst_c_p10	degC
-lst_c_p90	degC
-lst_c_std	degC
-mgnify_control_count	count
+lst_k_mean	K
+lst_k_n_px	count
+lst_k_p10	K
+lst_k_p90	K
+lst_k_std	K
 mgnify_samples_25km	count
 modis_n_composites	count
 modis_ndvi_amplitude	1
 modis_ndvi_mean	1
-mrdem_elev_m_mean	m
-mrdem_elev_m_n_px	count
-mrdem_elev_m_p10	m
-mrdem_elev_m_p90	m
-mrdem_elev_m_std	m
+mrdem_dtm_elev_m_mean	m
+mrdem_dtm_elev_m_n_px	count
+mrdem_dtm_elev_m_p10	m
+mrdem_dtm_elev_m_p90	m
+mrdem_dtm_elev_m_std	m
 namrad_k_pct_max	%
 namrad_k_pct_mean	%
 namrad_th_k_ratio	ppm/%
@@ -357,20 +338,7 @@ nrcan900a_nearest_commodity
 nrcan900a_nearest_km	km
 nrcan900a_nearest_name	
 nrcanlc_dominant	
-nrcanlc_frac_barren	1
-nrcanlc_frac_cropland	1
-nrcanlc_frac_grassland	1
-nrcanlc_frac_mixed_forest	1
-nrcanlc_frac_shrubland	1
-nrcanlc_frac_subpolar_barren	1
-nrcanlc_frac_subpolar_grass	1
-nrcanlc_frac_subpolar_needleleaf	1
-nrcanlc_frac_subpolar_shrub	1
-nrcanlc_frac_temperate_broadleaf	1
-nrcanlc_frac_temperate_needleleaf	1
-nrcanlc_frac_urban	1
-nrcanlc_frac_water	1
-nrcanlc_frac_wetland	1
+nrcanlc_frac	1
 nrcanlc_n_classes	count
 nrcanpf_frac_in_aoi	1
 nrcanpf_ice_frac_in_aoi	1
@@ -405,8 +373,8 @@ odhf_nearest_by_type_km	km
 odhf_nearest_facility_km	km
 odhf_nearest_facility_name	
 odhf_nearest_facility_type	
-osm_building_per_km2	1/km2
 osm_building_ways	count
+osm_building_ways_per_km2	1/km2
 osm_highway_ways	count
 ovt_address_n	count
 ovt_address_n_postcodes	count
@@ -485,7 +453,7 @@ rvdss_jurisdiction
 rvdss_percent_positive	%
 rvdss_tests	count
 s1_vv_db_mean	dB
-s2_cloud_cover_pct	%
+s2_eo_cloud_cover_pct	%
 s2_ndvi_mean	1
 s2_ndvi_n_px	count
 s2_ndvi_p10	1
@@ -497,7 +465,6 @@ s2_ndwi_p10	1
 s2_ndwi_p90	1
 s2_ndwi_std	1
 s2_red_reflect_mean	1
-s2sig_dim	count
 s2sig_n_scenes	count
 s2sig_norm	1
 s2sig_raw_b02_med	1
@@ -530,40 +497,37 @@ s2sig_raw_ndvi_spatial_sd	1
 s2sig_raw_ndwi_amp	1
 s2sig_raw_ndwi_med	1
 s2sig_raw_swir_vis_ratio	1
-s2sig_ref_n	count
-s2sig_version	
-s2sig_w00_b02_med	1
-s2sig_w01_b02_p10	1
-s2sig_w02_b02_p90	1
-s2sig_w03_b03_med	1
-s2sig_w04_b03_p10	1
-s2sig_w05_b03_p90	1
-s2sig_w06_b04_med	1
-s2sig_w07_b04_p10	1
-s2sig_w08_b04_p90	1
-s2sig_w09_b08_med	1
-s2sig_w10_b08_p10	1
-s2sig_w11_b08_p90	1
-s2sig_w12_b11_med	1
-s2sig_w13_b11_p10	1
-s2sig_w14_b11_p90	1
-s2sig_w15_b12_med	1
-s2sig_w16_b12_p10	1
-s2sig_w17_b12_p90	1
-s2sig_w18_brightness_med	1
-s2sig_w19_brightness_sd	1
-s2sig_w20_nbr_amp	1
-s2sig_w21_nbr_med	1
-s2sig_w22_ndbi_amp	1
-s2sig_w23_ndbi_med	1
-s2sig_w24_ndvi_amp	1
-s2sig_w25_ndvi_med	1
-s2sig_w26_ndvi_spatial_sd	1
-s2sig_w27_ndwi_amp	1
-s2sig_w28_ndwi_med	1
-s2sig_w29_swir_vis_ratio	1
+s2sig_w_b02_med	1
+s2sig_w_b02_p10	1
+s2sig_w_b02_p90	1
+s2sig_w_b03_med	1
+s2sig_w_b03_p10	1
+s2sig_w_b03_p90	1
+s2sig_w_b04_med	1
+s2sig_w_b04_p10	1
+s2sig_w_b04_p90	1
+s2sig_w_b08_med	1
+s2sig_w_b08_p10	1
+s2sig_w_b08_p90	1
+s2sig_w_b11_med	1
+s2sig_w_b11_p10	1
+s2sig_w_b11_p90	1
+s2sig_w_b12_med	1
+s2sig_w_b12_p10	1
+s2sig_w_b12_p90	1
+s2sig_w_brightness_med	1
+s2sig_w_brightness_sd	1
+s2sig_w_nbr_amp	1
+s2sig_w_nbr_med	1
+s2sig_w_ndbi_amp	1
+s2sig_w_ndbi_med	1
+s2sig_w_ndvi_amp	1
+s2sig_w_ndvi_med	1
+s2sig_w_ndvi_spatial_sd	1
+s2sig_w_ndwi_amp	1
+s2sig_w_ndwi_med	1
+s2sig_w_swir_vis_ratio	1
 s2sig_whitened_norm	1
-s2sig_year	yr
 sems_nearest_km	km
 sems_nearest_name	
 sems_sites_10km	count
@@ -615,16 +579,7 @@ water_occurrence_pct_p10	%
 water_occurrence_pct_p90	%
 water_occurrence_pct_std	%
 wc_dominant	
-wc_frac_bare	1
-wc_frac_builtup	1
-wc_frac_crop	1
-wc_frac_grass	1
-wc_frac_moss	1
-wc_frac_shrub	1
-wc_frac_snowice	1
-wc_frac_tree	1
-wc_frac_water	1
-wc_frac_wetland	1
+wc_frac	1
 wc_n_classes	count
 wd_distinct_classes	count
 wd_dominant_class_label	

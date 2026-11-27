@@ -13,25 +13,25 @@ system in which two AOIs can be compared, which is the minimum the donor-matchin
 
 Fill type stays `observed`: every component is a statistic of measured reflectance.
 """
-import os, sys, math, threading, concurrent.futures as cf
+import concurrent.futures as cf
 import numpy as np
 
-from .pipeline import pc_item, read_window, _dt   # noqa: E402
+from .pipeline import pc_item, read_window, s2_offsets, _dt, PC_SEARCH
 
 BANDS = ["B02", "B03", "B04", "B08", "B11", "B12"]
 YEAR = "2024"
 N_SCENES = 4          # seasonal sample; deterministic pick
 MAXPIX = 48           # per-scene decimated window
-_LOCK = threading.Lock()
+VERSION = "s2sig-v3 (sentinel-2-l2a, BOA offset applied)"
 
-# Reference statistics over 28 Sentinel-2 boxes spread across North American land
-# (seed 11, 2 scenes each). Used to z-score components before similarity: cosine on raw
-# positive reflectance features is dominated by the shared mean direction and does not
-# separate land-cover types (measured: within-class 0.9453 vs between-class 0.9450).
+# Reference statistics over 28 Sentinel-2 0.1-degree boxes on North American land (random
+# centres in -125..-65 E, 30..60 N, seed 11, water-dominated boxes rejected), computed by this
+# adapter with the BOA offset applied. Used to z-score components before similarity: cosine on
+# raw positive reflectance features is dominated by the shared mean direction and does not
+# separate land-cover types.
 REF_NAMES = ['b02_med', 'b02_p10', 'b02_p90', 'b03_med', 'b03_p10', 'b03_p90', 'b04_med', 'b04_p10', 'b04_p90', 'b08_med', 'b08_p10', 'b08_p90', 'b11_med', 'b11_p10', 'b11_p90', 'b12_med', 'b12_p10', 'b12_p90', 'brightness_med', 'brightness_sd', 'nbr_amp', 'nbr_med', 'ndbi_amp', 'ndbi_med', 'ndvi_amp', 'ndvi_med', 'ndvi_spatial_sd', 'ndwi_amp', 'ndwi_med', 'swir_vis_ratio']
-REF_MU = [0.236616, 0.174186, 0.338513, 0.252735, 0.188653, 0.355499, 0.259053, 0.186992, 0.371159, 0.358038, 0.264317, 0.472615, 0.282106, 0.221339, 0.34698, 0.24064, 0.186657, 0.29912, 0.266878, 0.116896, 0.140303, 0.17931, 0.15229, -0.10445, 0.124093, 0.189448, 0.034073, 0.107812, -0.197705, 1.457693]
-REF_SD = [0.14315, 0.091632, 0.223625, 0.139546, 0.089518, 0.216129, 0.144786, 0.098729, 0.214129, 0.123777, 0.10074, 0.170365, 0.095237, 0.090107, 0.101513, 0.084068, 0.068592, 0.089927, 0.114397, 0.063529, 0.159974, 0.165551, 0.187674, 0.170242, 0.115453, 0.109136, 0.022132, 0.098327, 0.114041, 0.621895]
-REF_N = 28
+REF_MU = [0.093812, 0.044219, 0.155501, 0.108798, 0.055919, 0.174412, 0.118163, 0.058025, 0.194747, 0.246054, 0.152217, 0.343451, 0.177972, 0.116832, 0.245571, 0.126762, 0.079828, 0.182169, 0.12081, 0.104012, 0.309446, 0.340025, 0.355288, -0.167864, 0.345799, 0.42934, 0.072685, 0.271853, -0.462918, 3.608376]
+REF_SD = [0.120266, 0.041955, 0.176321, 0.107877, 0.039725, 0.161619, 0.112334, 0.048526, 0.163725, 0.081754, 0.052132, 0.120616, 0.081659, 0.07691, 0.09292, 0.075812, 0.064485, 0.084705, 0.068874, 0.044045, 0.212035, 0.262618, 0.275038, 0.242055, 0.254649, 0.224684, 0.051646, 0.233551, 0.186961, 2.05436]
 
 
 
@@ -59,14 +59,15 @@ def _scenes(aoi):
 
 
 def _stack(aoi, item):
-    """One scene -> dict band -> 1-D array of reflectance (0-1), AOI-clipped."""
-    out = {}
+    """One scene -> dict band -> 1-D array of BOA reflectance, AOI-clipped."""
+    out, off = {}, s2_offsets(item)
     for b in BANDS:
         if b not in item.assets:
             continue
         a = read_window(item.assets[b].href, aoi["bbox"], aoi["geom"], maxpix=MAXPIX)
-        v = a.compressed().astype("float64") / 10000.0
-        v = v[(v > 0) & (v < 1.6)]
+        v = a.compressed().astype("float64")
+        v = (v[v < 16000] + off.get(b, 0)) / 10000.0
+        v = v[v > 0]
         if v.size:
             out[b] = v
     return out
@@ -126,17 +127,12 @@ def _a_s2_signature(aoi):
     z = np.array([(comp[k] - REF_MU[idx[k]]) / REF_SD[idx[k]] if k in idx else 0.0 for k in keys])
     zn = float(np.linalg.norm(z))
     unit = z / (zn + 1e-12)
-    feats.update({f"s2sig_w{i:02d}_{k}": round(float(u), 6) for i, (k, u) in enumerate(zip(keys, unit))})
+    feats.update({f"s2sig_w_{k}": round(float(u), 6) for k, u in zip(keys, unit)})
     feats["s2sig_norm"] = round(norm, 6)
     feats["s2sig_whitened_norm"] = round(zn, 6)
-    feats["s2sig_dim"] = len(keys)
     feats["s2sig_n_scenes"] = len(scenes)
-    feats["s2sig_year"] = int(YEAR)
-    feats["s2sig_version"] = "s2sig-v2-whitened"
-    feats["s2sig_ref_n"] = REF_N
-    return feats, {"obs_date": YEAR, "res_m": 10,
-                   "item": ";".join(i.id for i in items)[:200],
-                   "note": "deterministic spectral-temporal signature; s2sig_w* is the unit-length whitened matching vector, s2sig_raw_* the interpretable components. Not a learned embedding."}
+    return feats, {"obs_date": f"{_dt(items[0])[:10]}/{_dt(items[-1])[:10]}", "res_m": 10,
+                   "item": ";".join(i.id for i in items), "release": VERSION, "url": PC_SEARCH}
 
 
 ADAPTERS = [("embeddings", "s2_signature_v1", "embeddings",
