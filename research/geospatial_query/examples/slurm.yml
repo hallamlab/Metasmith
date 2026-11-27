@@ -1,0 +1,5 @@
+# Nextflow params for --config slurm. One Slurm job per source: cached steps run on the
+# driver's local executor, which refuses job arrays.
+slurmAccount: def-shallam_cpu
+process:
+  array: 0

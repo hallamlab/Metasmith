@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Run geoquery on one AOI table with metasmith and publish one CSV per source, with gaps and a README.
 
-Needs metasmith (conda install -c conda-forge -c bioconda -c hallamlab metasmith) and Docker.
+Needs metasmith (conda install -c conda-forge -c bioconda -c hallamlab metasmith) and Docker, by default.
+--home, --runtime, --config and --params send the steps elsewhere, e.g. a Slurm cluster over ssh:
 
     python geoquery_run.py --aois my_aois.kml --out my_aois
+    python geoquery_run.py --aois my_aois.kml --out my_aois --home ssh://cluster/scratch/me/geoquery \\
+        --runtime apptainer --setup "module load apptainer" --config slurm --params slurm.yml
 """
-import argparse, dataclasses, json, hashlib, re, shutil, tarfile
+import argparse, dataclasses, json, hashlib, re, shutil, subprocess, tarfile
 from datetime import date
 from pathlib import Path
 
@@ -152,8 +155,9 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
     return dict(tables=len(tables), empty=len(empty), gaps=len(gaps))
 
 
-def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_only: bool, timeout: float):
-    from metasmith.python_api import Agent, Plan, Runtime, Source, Template
+def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_only: bool, timeout: float,
+        home: str | None, runtime: str, setup: list[str], config: str | None, params: Path | None):
+    from metasmith.python_api import Agent, Plan, Runtime, Source, SshSource, Template
     from metasmith.gui.stdlib import clone_stdlib
 
     # The installed package ships the library uncompiled; a clone is the compiled copy the GUI also plans from.
@@ -167,11 +171,27 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
         raise SystemExit(f"unknown sources: {sorted(unknown)}")
     adapters = [a for a in adapters if not sources or a in sources]
 
-    agent = Agent(home=Source.FromLocal(work / "msm_home"), runtime=Runtime.DOCKER)
+    host, remote = "", ""
+    if home and home.startswith("ssh://"):
+        host, _, remote = home.removeprefix("ssh://").partition("/")
+        remote = f"/{remote}"
+    if host:
+        agent = Agent(home=SshSource(host=host, path=Path(remote)).AsSource(), runtime=Runtime[runtime.upper()],
+                      setup_commands=setup)
+        given_table = f"{remote}/inputs/{aoi_table.name}"
+    else:
+        agent = Agent(home=Source.FromLocal(Path(home) if home else work / "msm_home"),
+                      runtime=Runtime[runtime.upper()], setup_commands=setup)
+        given_table = aoi_table
     if not plan_only:
         agent.Deploy()
+        if host:
+            # Tasks that replay the home's setup_commands fail their relay check; the client still runs them.
+            subprocess.run(["ssh", host, f"sed -i '/^setup_commands:/,$d' {remote}/lib/agent.yml"
+                                         f" && mkdir -p {remote}/inputs"], check=True)
+            subprocess.run(["rsync", "-c", str(aoi_table), f"{host}:{given_table}"], check=True)
     givens = agent.PoolGivens()
-    table = givens.Add(aoi_table, case.sample_type, name=f"{out.name}/aoi_table")
+    table = givens.Add(given_table, case.sample_type, name=f"{out.name}/aoi_table")
     for a in adapters:
         givens.Value(f"{out.name}/source/{a}", {"adapter": a}, "geoquery::source", parents=[table])
     inputs = givens.Build(work / "inputs.xgdb", type_library_paths=[root / "data_types" / "geoquery.yml"])
@@ -183,12 +203,17 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
     if plan_only:
         return
     agent.StageWorkflow(task, on_exist="update")
-    agent.RunWorkflow(task)
+    presets = agent.GetNxfConfigPresets()
+    agent.RunWorkflow(task, config_file=presets.get(config, Path(config)) if config else None, params=params)
     result = agent.WaitForWorkflow(task, timeout_s=timeout, poll_s=10.0)
     print(f"run {result['status']} after {result['elapsed_s']:.0f}s")
     if result["status"] != "completed":
         raise SystemExit("\n".join(result["tail"]))
     results = Path(agent.GetResultSource(task).GetPath())
+    if host:
+        local = work / "results"
+        subprocess.run(["rsync", "-aL", "--delete", f"{host}:{results}/", f"{local}/"], check=True)
+        results = local
     missing = [t for t in case.target_types if not any(type_dir(results, t.removeprefix("geoquery::")).glob("*"))]
     if missing:  # a run that launched nothing can still report completed
         raise SystemExit(f"run produced no {missing}; see {results}/_metadata/logs.latest")
@@ -205,10 +230,16 @@ def main():
     ap.add_argument("--sources", help="comma-separated subset of sources (default: all)")
     ap.add_argument("--plan-only", action="store_true", help="plan and stop")
     ap.add_argument("--timeout", type=float, default=4 * 3600, help="seconds to wait for the run")
+    ap.add_argument("--home", help="metasmith agent home: a local path or ssh://<host>/<path> (default: <work>/msm_home)")
+    ap.add_argument("--runtime", choices=["docker", "apptainer"], default="docker", help="container runtime on the home's host")
+    ap.add_argument("--setup", action="append", default=[], help="shell line to run before metasmith on the home's host; repeatable")
+    ap.add_argument("--config", help="Nextflow config: a metasmith preset name (local, slurm) or a config file (default: local)")
+    ap.add_argument("--params", type=Path, help="YAML or JSON of Nextflow params for that config, e.g. slurmAccount")
     a = ap.parse_args()
     out = a.out.resolve()
     run(a.aois.resolve(), out, (a.work or out.with_name(out.name + "_work")).resolve(),
-        a.sources.split(",") if a.sources else None, a.plan_only, a.timeout)
+        a.sources.split(",") if a.sources else None, a.plan_only, a.timeout,
+        a.home, a.runtime, a.setup, a.config, a.params.resolve() if a.params else None)
 
 
 if __name__ == "__main__":
