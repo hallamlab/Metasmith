@@ -2,13 +2,13 @@
 
 > we should create journal brief as deliverable for next task to fix all of this.
 
-This is the draft of the journal post that hands the fix to the next task. The full record is `docs/fir-maxjobs/` on `feat/lab/beth-mp-port`.
+This is the draft of the journal post that hands the fix to the next task. The full record is `docs/fir-maxjobs/` on `the MetaPathways port branch`.
 
 ---
 
 **Next task: metasmith tasks read inputs once from local scratch and write once at the end.**
 
-**Why.** Alliance capped phyberos on fir at max_jobs=1 on 2026-11-06 (Ticket#0331813). Beth's two CPE3 parent `bgc_func` runs (`sTKo4WlC`, `C9htVb7I`) held about 200 `eggnog_mapper` chunks at once, 16 CPUs each, about 3,100 cores. Each chunk read the shared `eggnog.db` (41 GB SQLite) in place on Lustre. SQLite's per-read probes for `eggnog.db-journal` and `-wal` flooded the Lustre metadata server. The root cause is `stageInMode = 'symlink'` in `src/metasmith/nextflow_config/slurm.nf`: every input, references included, is a link back to Lustre for the life of the task.
+**Why.** Alliance capped phyberos on fir at max_jobs=1 on 2026-11-06 (Ticket#0331813). the collaborator's two CPE3 parent `bgc_func` runs (`sTKo4WlC`, `C9htVb7I`) held about 200 `eggnog_mapper` chunks at once, 16 CPUs each, about 3,100 cores. Each chunk read the shared `eggnog.db` (41 GB SQLite) in place on Lustre. SQLite's per-read probes for `eggnog.db-journal` and `-wal` flooded the Lustre metadata server. The root cause is `stageInMode = 'symlink'` in `src/metasmith/nextflow_config/slurm.nf`: every input, references included, is a link back to Lustre for the life of the task.
 
 **Decided (Tony, 2026-11-10)**
 1. Every task input copies into node-local scratch by default, reference DBs included.

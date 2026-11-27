@@ -19,7 +19,7 @@ The fix is on `feat/engine/local-staging` (b29cc953). It has two parts: each tas
 - **Page cache:** the copy fills the job's memory cgroup with page cache up to `memory.max`. The kernel reclaims it, with 0 OOM kills. Slurm's MaxRSS reports it, so a copying task shows MaxRSS near its memory request.
 - **Not finished:** no run reached the end of emapper on the copy. One ran 15 minutes of the DIAMOND search on fc30562 before that node's CVMFS dropped, with a bus error and "Transport endpoint is not connected". Three more attempts landed on fc30556, fc30629 and fc30568, and each had broken CVMFS or `/home` at job start. The status page showed no fir incident.
 
- `/scratch/phyberos/beth_mp/tmp/emapper_strace/`, which holds `L.summary`, `L/strace.log.gz`, `hits200.tsv`, `annot.sh` and `run.sh`.
+ `/scratch/phyberos/metapathways_mp/tmp/emapper_strace/`, which holds `L.summary`, `L/strace.log.gz`, `hits200.tsv`, `annot.sh` and `run.sh`.
 
 Sample lines:
 

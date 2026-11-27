@@ -45,8 +45,8 @@ are grouped by mode rather than parked in `alternatives/`.
 
 Question: did the MetaPathways port succeed, and does it ship in engcyc metagenomics?
 
-Evidence: `research/beth_metapathways/comparison.md` (15 CPE3 assemblies against the MP4 results in
-`data/beth_mp/mp4`). Genes 98.3-99.8% identical. The port names more genes and assigns more ECs.
+Evidence: `research/metapathways/comparison.md` (15 CPE3 assemblies against the MP4 results in
+`data/metapathways_mp/mp4`). Genes 98.3-99.8% identical. The port names more genes and assigns more ECs.
 Pathway overlap is only 0.52-0.57 (community) and 0.46-0.60 (per MAG). The report blames the
 Pathway Tools input: MP4 gives product names plus ECs, the port gives CLEAN ECs only. Untested.
 
@@ -80,7 +80,7 @@ CheckM1 becomes a rival.
 Question: which taxonomy targets go into engcyc metagenomics?
 
 Decision:
-- GTDB-Tk on the quality MAGs (Beth's `gtdbtk_quality`, GTDB r232).
+- GTDB-Tk on the quality MAGs (the collaborator's `gtdbtk_quality`, GTDB r232).
 - rRNA scan on the assembly (barrnap + BLAST against GTDB rRNA). It replaces phyloFlash and works
   for long reads.
 - Metabuli and LCA* are left out of the template. Tony: "Metabuli requires a large reference and may
