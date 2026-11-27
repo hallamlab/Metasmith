@@ -157,8 +157,8 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
     work.mkdir(parents=True, exist_ok=True)
     root = Path(clone_stdlib(work)["path"])
     (template,) = [t for t in Template.Discover(root) if t.name == TEMPLATE]
-    spec = template.spec
-    adapters = [json.loads(v)["adapter"] for v in spec.input_library["values"].values()]
+    (case,) = template.cases
+    adapters = [json.loads(v)["adapter"] for v in template.input_library["values"].values()]
     unknown = set(sources or []) - set(adapters)
     if unknown:
         raise SystemExit(f"unknown sources: {sorted(unknown)}")
@@ -168,17 +168,17 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
     if not plan_only:
         agent.Deploy()
     givens = agent.PoolGivens()
-    table = givens.Add(aoi_table, spec.sample_type, name=f"{out.name}/aoi_table")
+    table = givens.Add(aoi_table, case.sample_type, name=f"{out.name}/aoi_table")
     for a in adapters:
         givens.Value(f"{out.name}/source/{a}", {"adapter": a}, "geoquery::source", parents=[table])
     inputs = givens.Build(work / "inputs.xgdb", type_library_paths=[root / "data_types" / "geoquery.yml"])
     targets = TargetBuilder()
-    for t in spec.target_types:
+    for t in case.target_types:
         targets.Add(t)
     task = agent.GenerateWorkflow(
-        samples=list(inputs.AsSamples(spec.sample_type)),
-        resources=[*(DataInstanceLibrary.Load(p) for p in spec.resource_libraries), inputs],
-        transforms=[TransformInstanceLibrary.Load(p) for p in spec.transform_libraries],
+        samples=list(inputs.AsSamples(case.sample_type)),
+        resources=[*(DataInstanceLibrary.Load(p) for p in template.resource_libraries), inputs],
+        transforms=[TransformInstanceLibrary.Load(p) for p in template.transform_libraries],
         targets=targets,
     )
     if not task.ok:
@@ -193,7 +193,7 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
     if result["status"] != "completed":
         raise SystemExit("\n".join(result["tail"]))
     results = Path(agent.GetResultSource(task).GetPath())
-    missing = [t for t in spec.target_types if not any((results / t.replace("::", "-")).glob("*"))]
+    missing = [t for t in case.target_types if not any((results / t.replace("::", "-")).glob("*"))]
     if missing:  # a run that launched nothing can still report completed
         raise SystemExit(f"run produced no {missing}; see {results}/_metadata/logs.latest")
     env = (root / "resources" / "env" / "geoquery.env").read_text()
