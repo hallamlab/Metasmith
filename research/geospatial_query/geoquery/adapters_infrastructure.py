@@ -1,39 +1,11 @@
-"""Infrastructure & built-form adapters for the AOI -> feature pipeline.
-
-LANE: infrastructure and built form.
-Slots filled: railways, pipelines, transmission_lines, power_plants,
-industrial_facilities, addresses, cell_towers, ground_level_imagery, gazetteer.
-
-ROUTE NOTE (deviation from the task's preferred route #1, Geofabrik):
-    Measured 2026-10-13 with HEAD on download.geofabrik.de, the
-    `-latest-free.shp.zip` sub-region extracts needed to cover the test AOIs are
-        saskatchewan 252 MB | ontario 2059 MB | alberta 671 MB | quebec 2145 MB
-        iowa 265 MB | utah 327 MB | michigan 665 MB | british-columbia: none published (404)
-    Every one exceeds the lane's ~150 MB per-extract rule and the ~300 MB total
-    cache budget, and BC ships no shapefile at all.  The Geofabrik *free
-    shapefile* schema also has no power, pipeline or address layers
-    (railways/roads/buildings/pois/landuse/places/traffic/transport only), so
-    three of the nine slots are unreachable by that route regardless of size.
-    Substituted route: Overture Maps public GeoParquet (keyless anonymous HTTPS,
-    bbox predicate pushdown via parquet row-group statistics).  Overture carries
-    the OSM planet plus Google/Microsoft open buildings and OpenAddresses, so it
-    covers the same ODbL content with ~12 MB of cache instead of ~6.8 GB.
-
-ALL ROUTES ARE KEYLESS PUBLIC HTTPS.  No credentials, no connectors, no host.*
-calls.  Token-gated sources (OpenCelliD, Mapillary, KartaView) are probed and
-reported as auth-blocked rather than silently filled.
-
-Cache: ./cache/ -- ovt_manifest_<theme>_<type>.json (file-level bboxes, ~180 KB
-total) + gppd_power_plants.csv (12 MB).  Total lane footprint ~12.2 MB.
-Call warm_cache() once before a batch run to pay the manifest build (~40 s) up
-front; afterwards every adapter is a few MB of HTTP range reads per AOI.
-"""
-import os, sys, io, json, time, math, threading, collections
+"""Infrastructure and built-form adapters: Overture Maps GeoParquet (range reads, keyless), WRI GPPD, EPA ECHO, Wikidata, street-level imagery probes."""
+import os, io, json, time, math, threading, collections
 
 import numpy as np
 import pandas as pd
 import requests
 import shapely
+import shapely.affinity
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pyarrow.compute as pc
@@ -52,16 +24,13 @@ os.makedirs(CACHE, exist_ok=True)
 
 OVT = "https://overturemaps-us-west-2.s3.amazonaws.com/"
 OVT_PIN = "2026-09-23.1"                  # fallback if the release listing is unavailable
-CONTROL_BBOX = [-140.0, -20.0, -139.0, -19.0]     # mid-Pacific no-data control
 _S3NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 
-# Scoped locks.  _MLOCK/_GLOCK are reentrant and may be held across network IO
-# (one-time builds); _CLOCK/_XLOCK only ever guard a dict access, never IO.
-_MLOCK = threading.RLock()                # release id + manifest build
-_GLOCK = threading.RLock()                # GPPD CSV fetch
-_CLOCK = threading.Lock()                 # read cache dict
-_XLOCK = threading.Lock()                 # control-probe dict
-_REL, _MAN, _CTRL, _GPPD = {}, {}, {}, {}
+# _MLOCK/_GLOCK may be held across network IO (one-time builds); _CLOCK only guards a dict access.
+_MLOCK = threading.RLock()
+_GLOCK = threading.RLock()
+_CLOCK = threading.Lock()
+_REL, _MAN, _GPPD = {}, {}, {}
 _RDC = collections.OrderedDict()          # bounded read cache, shared across threads
 
 DEG_LAT_M = 110540.0
@@ -170,7 +139,7 @@ def _manifest(theme, tp):
     with _MLOCK:
         if k in _MAN:
             return _MAN[k]
-        fp = os.path.join(CACHE, f"ovt_manifest_{theme}_{tp}.json")
+        fp = os.path.join(CACHE, f"ovt_manifest_{_release()}_{theme}_{tp}.json")
         if os.path.exists(fp):
             _MAN[k] = json.load(open(fp))
             return _MAN[k]
@@ -237,49 +206,6 @@ def _read(theme, tp, bbox, columns):
         while len(_RDC) > 20:
             _RDC.popitem(last=False)
     return out
-
-
-def _fp(tb):
-    """Content fingerprint of a read: (row count, summed x-centroid).
-
-    Equality of counts alone is a weak control test -- a remote AOI holding 1
-    feature trivially 'equals' a 1-feature control box.  The fingerprint only
-    collides when the endpoint actually returned the *same rows*, which is what
-    'this source is not filtering on geometry' means.
-    """
-    if tb is None or tb.num_rows == 0:
-        return (0, 0.0)
-    x, _ = _xy(tb)
-    return (int(tb.num_rows), round(float(np.nansum(x)), 2))
-
-
-def _ctrl_fp(theme, tp):
-    """Memoised mid-Pacific control fingerprint for one Overture theme/type."""
-    return _ctrl(f"fp_{theme}_{tp}", lambda: _fp(_read(theme, tp, CONTROL_BBOX, ["bbox"])))
-
-
-def _ctrl_rows(c):
-    return c[0] if isinstance(c, tuple) else c
-
-
-def _guard(tb, ctl, what="rows"):
-    """Raise if this AOI's read is byte-for-byte the control's read."""
-    if isinstance(ctl, tuple) and tb is not None and tb.num_rows and _fp(tb) == ctl:
-        raise ValueError(f"filter_unverified: AOI {what} fingerprint {_fp(tb)} == control {ctl}")
-
-
-def _ctrl(tag, fn):
-    """Memoised mid-Pacific control measurement (one per process, per tag)."""
-    with _XLOCK:
-        if tag in _CTRL:
-            return _CTRL[tag]
-    try:                                   # computed OUTSIDE the lock: fn() does network
-        v = fn()                           # IO and re-enters _read/_manifest
-    except Exception as e:
-        v = f"control-probe-failed:{type(e).__name__}"
-    with _XLOCK:
-        _CTRL.setdefault(tag, v)
-        return _CTRL[tag]
 
 
 # ------------------------------------------------------------------- geometry
@@ -353,6 +279,35 @@ def _pad(bbox, km):
     return [x0 - dx, y0 - dy, x1 + dx, y1 + dy]
 
 
+def _buffer(g, km, lat0):
+    """AOI polygon grown by km on the ground (local equirectangular)."""
+    f = DEG_LON_M * math.cos(math.radians(lat0)) / DEG_LAT_M
+    b = shapely.affinity.scale(shapely.affinity.scale(g, f, 1, origin=(0, 0)).buffer(km * 1000.0 / DEG_LAT_M),
+                               1 / f, 1, origin=(0, 0))
+    shapely.prepare(b)
+    return b
+
+
+def _bbox_km2(bbox):
+    x0, y0, x1, y1 = bbox
+    return (x1 - x0) * DEG_LON_M * math.cos(math.radians((y0 + y1) / 2)) * (y1 - y0) * DEG_LAT_M / 1e6
+
+
+def _by_class(cls, w=None, nd=3):
+    """One record per published class value; counts when w is None, else summed w."""
+    s = collections.defaultdict(float)
+    for c, x in zip(cls, np.ones(len(cls)) if w is None else w):
+        if c:
+            s[str(c)] += x
+    return [{"class": c, "value": int(v) if w is None else _r(v, nd)} for c, v in sorted(s.items())]
+
+
+def _ovt_meta(theme, tp, res, part=""):
+    rel = _release()
+    return {"obs_date": rel[:10], "res_m": res, "item": f"overture/{rel}/{theme}.{tp}{part}",
+            "release": rel, "url": f"s3://overturemaps-us-west-2/release/{rel}/theme={theme}/type={tp}/"}
+
+
 def _lat(aoi):
     return aoi["centroid"][1]
 
@@ -365,24 +320,20 @@ def _col(tb, name):
     return np.asarray(tb[name].combine_chunks(), dtype=object)
 
 
+
+
 # ------------------------------------------------------------------- adapters
-_ROADCLS = ("motorway", "trunk", "primary", "secondary", "tertiary",
-            "residential", "service", "track", "unclassified", "footway")
+def _need(tb, what):
+    if tb is None:
+        raise LookupError(f"no Overture {what} coverage for bbox")
+    return tb
 
 
 def _a_rail(aoi):
-    """railways -- Overture transportation/segment: rail network length by class.
-
-    Also emits road-network length by class from the same single read (the lane's
-    'highway length by class' derivation).
-    """
-    tb = _read("transportation", "segment", aoi["bbox"], ["subtype", "class", "geometry"])
-    if tb is None:
-        raise LookupError("no Overture transportation coverage for bbox")
-    ctl = _ctrl_fp("transportation", "segment")
+    """railways -- Overture transportation/segment: rail and road network length, total and by class."""
+    tb = _need(_read("transportation", "segment", aoi["bbox"], ["subtype", "class", "geometry"]), "transportation")
     if tb.num_rows == 0:
-        raise LookupError(f"no transportation segments in AOI bbox (control={ctl})")
-    _guard(tb, ctl, "segment")
+        raise LookupError("no transportation segments in AOI bbox")
     g, lat = _aoi_geom(aoi), _lat(aoi)
     sub, cls = _col(tb, "subtype"), _col(tb, "class")
     geoms, keep = _clip(tb, g)
@@ -393,141 +344,89 @@ def _a_rail(aoi):
     f = {"ovt_rail_km": _r(km[rail].sum(), 3),
          "ovt_rail_km_per_km2": _r(km[rail].sum() / a, 4),
          "ovt_rail_n_segments": int(rail.sum()),
-         "ovt_rail_present": bool(km[rail].sum() > 0),
+         "ovt_rail_km_by_class": _by_class(cls[rail], km[rail]),
          "ovt_road_km": _r(km[road].sum(), 3),
          "ovt_road_km_per_km2": _r(km[road].sum() / a, 4),
          "ovt_road_n_segments": int(road.sum()),
-         "ovt_segment_n_bbox": int(tb.num_rows),
-         "ovt_control_segment_rows": _ctrl_rows(ctl)}
-    for c in ("standard_gauge", "light_rail", "subway", "tram", "monorail", "narrow_gauge"):
-        v = km[rail & (cls == c)].sum()
-        if v > 0:
-            f[f"ovt_rail_km_{c}"] = _r(v, 3)
-    for c in _ROADCLS:
-        v = km[road & (cls == c)].sum()
-        if v > 0:
-            f[f"ovt_road_km_{c}"] = _r(v, 3)
-    if road.any():
-        f["ovt_road_dominant_class"] = str(collections.Counter(cls[road].tolist()).most_common(1)[0][0])
-    return f, {"obs_date": _release()[:10], "res_m": "vector",
-               "item": f"overture/{_release()}/transportation.segment"}
+         "ovt_road_km_by_class": _by_class(cls[road], km[road])}
+    return f, _ovt_meta("transportation", "segment", "vector")
 
 
-def _infra(aoi, subtypes, want_geom=True):
-    """Shared base/infrastructure read + control differential for the power/utility/comms slots."""
-    cols = ["subtype", "class"] + (["geometry"] if want_geom else [])
-    tb = _read("base", "infrastructure", aoi["bbox"], cols)
-    if tb is None:
-        raise LookupError("no Overture base/infrastructure coverage for bbox")
-    ctl = _ctrl_fp("base", "infrastructure")
-    _guard(tb, ctl, "infrastructure")
-    sub = _col(tb, "subtype") if tb.num_rows else np.empty(0, object)
-    sel = np.isin(sub, list(subtypes)) if tb.num_rows else np.zeros(0, bool)
-    return tb, sel, ctl
+def _infra(aoi, subtype, geom=True, columns=()):
+    """Overture base/infrastructure rows of one published subtype."""
+    tb = _need(_read("base", "infrastructure", aoi["bbox"],
+                     ["subtype", "class"] + (["geometry"] if geom else []) + list(columns)), "base/infrastructure")
+    if tb.num_rows == 0:
+        return tb
+    return tb.filter(pa.array(_col(tb, "subtype") == subtype))
 
 
 def _a_pipelines(aoi):
     """pipelines -- Overture base/infrastructure subtype=utility."""
-    tb, sel, ctl = _infra(aoi, ("utility",))
+    s2 = _infra(aoi, "utility")
     g, lat = _aoi_geom(aoi), _lat(aoi)
-    a = max(aoi["area_km2"], 1e-6)
-    f = {"ovt_pipeline_km": 0.0, "ovt_pipeline_km_per_km2": 0.0, "ovt_pipeline_n": 0,
-         "ovt_pipeline_present": False, "ovt_storage_tank_n": 0, "ovt_utility_n_aoi": 0,
-         "ovt_infra_n_bbox": int(tb.num_rows), "ovt_control_infra_rows": _ctrl_rows(ctl)}
-    if sel.any():
-        s2 = tb.filter(pa.array(sel))
-        cls = _col(s2, "class")
-        geoms, keep = _clip(s2, g)
-        cls = cls[keep]
-        km = _km(geoms, lat)
-        pipe = cls == "pipeline"
-        f.update({"ovt_pipeline_km": _r(km[pipe].sum(), 3),
-                  "ovt_pipeline_km_per_km2": _r(km[pipe].sum() / a, 4),
-                  "ovt_pipeline_n": int(pipe.sum()),
-                  "ovt_pipeline_present": bool(km[pipe].sum() > 0),
-                  "ovt_storage_tank_n": int((cls == "storage_tank").sum()),
-                  "ovt_utility_n_aoi": int(len(cls))})
-        if len(cls):
-            f["ovt_utility_dominant_class"] = str(collections.Counter(cls.tolist()).most_common(1)[0][0])
-    return f, {"obs_date": _release()[:10], "res_m": "vector",
-               "item": f"overture/{_release()}/base.infrastructure[utility]"}
-
-
-_PWR_PT = ("power_tower", "power_pole", "substation", "transformer", "portal")
+    geoms, keep = _clip(s2, g)
+    cls = _col(s2, "class")[keep] if s2.num_rows else np.empty(0, object)
+    km = _km(geoms, lat)
+    pipe = cls == "pipeline"
+    f = {"ovt_pipeline_km": _r(km[pipe].sum(), 3),
+         "ovt_pipeline_km_per_km2": _r(km[pipe].sum() / max(aoi["area_km2"], 1e-6), 4),
+         "ovt_utility_n_by_class": _by_class(cls)}
+    return f, _ovt_meta("base", "infrastructure", "vector", "[utility]")
 
 
 def _a_transmission(aoi):
-    """transmission_lines -- Overture base/infrastructure subtype=power (lines + supports)."""
-    tb, sel, ctl = _infra(aoi, ("power",))
+    """transmission_lines -- Overture base/infrastructure subtype=power: lines and supports by class."""
+    s2 = _infra(aoi, "power")
     g, lat = _aoi_geom(aoi), _lat(aoi)
     a = max(aoi["area_km2"], 1e-6)
-    f = {"ovt_powerline_km": 0.0, "ovt_powerline_km_per_km2": 0.0, "ovt_powerline_n": 0,
-         "ovt_minor_line_km": 0.0, "ovt_power_n_aoi": 0, "ovt_powerline_present": False,
-         "ovt_power_tower_per_km2": 0.0, "ovt_control_infra_rows": _ctrl_rows(ctl)}
-    for c in _PWR_PT:
-        f[f"ovt_power_{c}_n"] = 0
-    if sel.any():
-        s2 = tb.filter(pa.array(sel))
-        cls = _col(s2, "class")
-        geoms, keep = _clip(s2, g)
-        cls = cls[keep]
-        km = _km(geoms, lat)
-        pl = cls == "power_line"
-        f.update({"ovt_powerline_km": _r(km[pl].sum(), 3),
-                  "ovt_powerline_km_per_km2": _r(km[pl].sum() / a, 4),
-                  "ovt_powerline_n": int(pl.sum()),
-                  "ovt_minor_line_km": _r(km[cls == "minor_line"].sum(), 3),
-                  "ovt_power_n_aoi": int(len(cls)),
-                  "ovt_powerline_present": bool(km[pl].sum() > 0)})
-        for c in _PWR_PT:
-            f[f"ovt_power_{c}_n"] = int((cls == c).sum())
-        f["ovt_power_tower_per_km2"] = _r(f["ovt_power_power_tower_n"] / a, 3)
-    return f, {"obs_date": _release()[:10], "res_m": "vector",
-               "item": f"overture/{_release()}/base.infrastructure[power]"}
+    geoms, keep = _clip(s2, g)
+    cls = _col(s2, "class")[keep] if s2.num_rows else np.empty(0, object)
+    line = np.isin(shapely.get_type_id(geoms), [1, 2, 5])
+    km = _km(geoms, lat) * line
+    f = {"ovt_powerline_km_per_km2": _r(km[cls == "power_line"].sum() / a, 4),
+         "ovt_power_tower_per_km2": _r((cls == "power_tower").sum() / a, 3),
+         "ovt_power_n_by_class": _by_class(cls),
+         "ovt_power_km_by_class": [r for r in _by_class(cls, km) if r["value"] > 0]}
+    return f, _ovt_meta("base", "infrastructure", "vector", "[power]")
 
 
 def _a_power_plants_ovt(aoi):
-    """power_plants -- Overture base/infrastructure power generation assets."""
-    cols = ["subtype", "class", "geometry", "names"]
-    tb = _read("base", "infrastructure", aoi["bbox"], cols)
-    if tb is None:
-        raise LookupError("no Overture base/infrastructure coverage for bbox")
-    ctl = _ctrl_fp("base", "infrastructure")
-    _guard(tb, ctl, "infrastructure")
+    """power_plants -- Overture base/infrastructure power plant and generator features."""
+    tb = _infra(aoi, "power", columns=["names"])
     g, lat = _aoi_geom(aoi), _lat(aoi)
-    f = {"ovt_power_plant_n": 0, "ovt_power_plant_area_km2": 0.0, "ovt_generator_n": 0,
-         "ovt_substation_n_aoi": 0, "ovt_power_plant_present": False,
-         "ovt_power_plant_named": "", "ovt_control_infra_rows": _ctrl_rows(ctl)}
+    f = {"ovt_power_plant_n": 0, "ovt_power_plant_area_km2": 0.0, "ovt_generator_n": 0}
     if tb.num_rows:
-        cls = _col(tb, "class")
-        pm = (_col(tb, "subtype") == "power") & np.isin(cls, ["plant", "generator", "substation"])
+        pm = np.isin(_col(tb, "class"), ["plant", "generator"])
         if pm.any():
             s2 = tb.filter(pa.array(pm))
-            cls2 = _col(s2, "class")
             geoms, keep = _clip(s2, g)
-            cls2 = cls2[keep]
-            ar = _area_km2(geoms, lat)
-            f.update({"ovt_power_plant_n": int((cls2 == "plant").sum()),
-                      "ovt_power_plant_area_km2": _r(ar[cls2 == "plant"].sum(), 5),
-                      "ovt_generator_n": int((cls2 == "generator").sum()),
-                      "ovt_substation_n_aoi": int((cls2 == "substation").sum())})
-            f["ovt_power_plant_present"] = bool(f["ovt_power_plant_n"] + f["ovt_generator_n"] > 0)
+            cls = _col(s2, "class")[keep]
+            plant = cls == "plant"
             nm = [(d.get("primary") if isinstance(d, dict) else None)
                   for d in s2.filter(pa.array(keep))["names"].to_pylist()]
-            f["ovt_power_plant_named"] = str(next((n for n in nm if n), ""))[:60]
-    return f, {"obs_date": _release()[:10], "res_m": "vector",
-               "item": f"overture/{_release()}/base.infrastructure[power/plant]"}
+            f.update({"ovt_power_plant_n": int(plant.sum()),
+                      "ovt_power_plant_area_km2": _r(_area_km2(geoms, lat)[plant].sum(), 5),
+                      "ovt_generator_n": int((cls == "generator").sum())})
+            names = [n for n, p in zip(nm, plant) if p and n]
+            if names:
+                f["ovt_power_plant_names"] = "; ".join(names)
+    return f, _ovt_meta("base", "infrastructure", "vector", "[power]")
+
+
+GPPD_SHA = "7a91cfbb2a4e272597acbc00506d61fc1ec73b3d"
+GPPD_URL = ("https://raw.githubusercontent.com/wri/global-power-plant-database/"
+            f"{GPPD_SHA}/output_database/global_power_plant_database.csv")
 
 
 def _gppd():
-    """WRI Global Power Plant Database -- cached once (12 MB CSV)."""
+    """WRI Global Power Plant Database v1.3.0 (last commit of the unmaintained repository), cached once."""
     if "df" not in _GPPD:
         with _GLOCK:
             if "df" not in _GPPD:
-                fp = os.path.join(CACHE, "gppd_power_plants.csv")
+                fp = os.path.join(CACHE, f"gppd_power_plants_{GPPD_SHA[:7]}.csv")
                 if not os.path.exists(fp):
-                    r = S.get("https://raw.githubusercontent.com/wri/global-power-plant-database/"
-                              "master/output_database/global_power_plant_database.csv", timeout=180)
+                    r = S.get(GPPD_URL, timeout=180)
                     r.raise_for_status()
                     open(fp, "wb").write(r.content)
                 d = pd.read_csv(fp, low_memory=False,
@@ -538,188 +437,123 @@ def _gppd():
 
 
 def _a_gppd(aoi):
-    """power_plants -- WRI GPPD: generating capacity within 50 km of the AOI centroid."""
+    """power_plants -- WRI GPPD: plants and capacity within 50 km of the AOI centroid, by primary_fuel."""
     d = _gppd()
     lon, lat = d["longitude"].to_numpy(), d["latitude"].to_numpy()
     cx, cy = aoi["centroid"]
     kx = DEG_LON_M * math.cos(math.radians(cy)) / 1000.0
     dist = np.hypot((lon - cx) * kx, (lat - cy) * (DEG_LAT_M / 1000.0))
     near = dist <= 50.0
-    x0, y0, x1, y1 = aoi["bbox"]
-    inb = (lon >= x0) & (lon <= x1) & (lat >= y0) & (lat <= y1)
-    def _cf():
-        cd = np.hypot((lon + 139.5) * DEG_LON_M * math.cos(math.radians(-19.5)) / 1000.0,
-                      (lat + 19.5) * DEG_LAT_M / 1000.0)
-        return (int((cd <= 50.0).sum()), str(d.at[int(np.argmin(cd)), "name"])[:60])
-    ctl = _ctrl("gppd_control", _cf)
+    inside = shapely.contains_xy(_aoi_geom(aoi), lon, lat)
+    s = d.loc[near]
     f = {"gppd_plants_50km": int(near.sum()),
-         "gppd_capacity_mw_50km": _r(d.loc[near, "capacity_mw"].sum(), 1),
-         "gppd_plants_in_bbox": int(inb.sum()),
+         "gppd_capacity_mw_50km": _r(s["capacity_mw"].sum(), 1),
+         "gppd_plants_in_aoi": int(inside.sum()),
          "gppd_nearest_km": _r(dist.min(), 2),
-         "gppd_control_plants_50km": _ctrl_rows(ctl)}
+         "gppd_plants_50km_by_fuel": _by_class(s["primary_fuel"].tolist()),
+         "gppd_capacity_mw_50km_by_fuel": _by_class(s["primary_fuel"].tolist(), s["capacity_mw"].fillna(0).to_numpy(), 1)}
     if near.any():
-        s = d.loc[near]
-        f["gppd_dominant_fuel_50km"] = str(s["primary_fuel"].mode().iloc[0])
         f["gppd_max_capacity_mw_50km"] = _r(s["capacity_mw"].max(), 1)
-        f["gppd_n_fuel_types_50km"] = int(s["primary_fuel"].nunique())
         cy_ = s["commissioning_year"].dropna()
         if len(cy_):
-            f["gppd_median_commission_year_50km"] = _r(cy_.median(), 0)
+            f["gppd_median_commission_year_50km"] = int(round(cy_.median()))
     j = int(np.argmin(dist))
-    f["gppd_nearest_name"] = str(d.at[j, "name"])[:60]
+    f["gppd_nearest_name"] = str(d.at[j, "name"])
     f["gppd_nearest_fuel"] = str(d.at[j, "primary_fuel"])
     f["gppd_nearest_capacity_mw"] = _r(d.at[j, "capacity_mw"], 1)
-    if isinstance(ctl, tuple) and (f["gppd_plants_50km"], f["gppd_nearest_name"]) == ctl:
-        raise ValueError(f"filter_unverified: AOI (n={f['gppd_plants_50km']}, "
-                         f"nearest={f['gppd_nearest_name']}) == control {ctl}")
-    return f, {"obs_date": "2021 (GPPD v1.3.0)", "res_m": "point",
-               "item": "wri/global-power-plant-database@master"}
-
-
-_IND = ("industrial", "quarry", "brownfield", "landfill", "military", "railway",
-        "commercial", "retail", "construction", "port", "harbour", "depot")
+    return f, {"obs_date": "2022-01-26", "res_m": "point", "item": f"wri/global-power-plant-database@{GPPD_SHA[:7]}",
+               "release": f"v1.3.0 ({GPPD_SHA[:7]})", "url": GPPD_URL}
 
 
 def _a_landuse(aoi):
-    """industrial_facilities -- Overture base/land_use industrial-class polygons."""
-    tb = _read("base", "land_use", aoi["bbox"], ["subtype", "class", "geometry"])
-    if tb is None:
-        raise LookupError("no Overture base/land_use coverage for bbox")
-    ctl = _ctrl_fp("base", "land_use")
-    _guard(tb, ctl, "land_use")
+    """industrial_facilities -- Overture base/land_use: area by published class, and resource_extraction subtype area."""
+    tb = _need(_read("base", "land_use", aoi["bbox"], ["subtype", "class", "geometry"]), "base/land_use")
     g, lat = _aoi_geom(aoi), _lat(aoi)
-    a = max(aoi["area_km2"], 1e-6)
-    f = {"ovt_landuse_n_bbox": int(tb.num_rows), "ovt_industrial_area_km2": 0.0,
-         "ovt_industrial_frac": 0.0, "ovt_industrial_n": 0, "ovt_extractive_area_km2": 0.0,
-         "ovt_landuse_n_classes": 0, "ovt_control_landuse_rows": _ctrl_rows(ctl)}
+    f = {"ovt_extractive_area_km2": 0.0, "ovt_landuse_km2_by_class": []}
     if tb.num_rows:
-        cls = _col(tb, "class")
+        sub, cls = _col(tb, "subtype"), _col(tb, "class")
         geoms, keep = _clip(tb, g)
-        cls = cls[keep]
+        sub, cls = sub[keep], cls[keep]
         ar = _area_km2(geoms, lat)
-        ind = np.isin(cls, list(_IND))
-        f.update({"ovt_industrial_area_km2": _r(ar[ind].sum(), 5),
-                  "ovt_industrial_frac": _r(min(ar[ind].sum() / a, 1.0), 4),
-                  "ovt_industrial_n": int(ind.sum()),
-                  "ovt_extractive_area_km2": _r(ar[np.isin(cls, ["quarry", "landfill"])].sum(), 5),
-                  "ovt_landuse_n_classes": int(len(set(cls.tolist())))})
-        for c in ("industrial", "quarry", "brownfield", "landfill", "commercial",
-                  "retail", "military"):
-            v = ar[cls == c].sum()
-            if v > 0:
-                f[f"ovt_landuse_km2_{c}"] = _r(v, 5)
-        if len(cls):
-            f["ovt_landuse_dominant_class"] = str(collections.Counter(cls.tolist()).most_common(1)[0][0])
-    return f, {"obs_date": _release()[:10], "res_m": "vector",
-               "item": f"overture/{_release()}/base.land_use"}
+        f["ovt_extractive_area_km2"] = _r(ar[sub == "resource_extraction"].sum(), 5)
+        f["ovt_landuse_km2_by_class"] = _by_class(cls, ar, 5)
+    return f, _ovt_meta("base", "land_use", "vector")
 
 
-_ECHO = {"QueryRows": "echo_facilities_bbox", "CAARows": "echo_clean_air_act_n",
-         "CWARows": "echo_clean_water_act_n", "RCRRows": "echo_rcra_hazwaste_n",
-         "TRIRows": "echo_tri_releasers_n", "INSPRows": "echo_inspections_n",
-         "FEARows": "echo_formal_enforcement_n", "CVRows": "echo_current_violations_n",
-         "SVRows": "echo_significant_violations_n"}
+_ECHO = {"QueryRows": "echo_facilities_bbox", "CAARows": "echo_caa_facilities_bbox",
+         "CWARows": "echo_cwa_facilities_bbox", "RCRRows": "echo_rcra_facilities_bbox",
+         "TRIRows": "echo_tri_facilities_bbox", "INSPRows": "echo_inspected_facilities_5yr_bbox",
+         "FEARows": "echo_formal_action_facilities_5yr_bbox", "CVRows": "echo_violation_facilities_bbox",
+         "SVRows": "echo_significant_violation_facilities_bbox"}
+ECHO_URL = "https://echodata.epa.gov/echo/echo_rest_services.get_facilities"
 
 
 def _echo_rows(bbox):
     x0, y0, x1, y1 = bbox
-    r = S.get("https://echodata.epa.gov/echo/echo_rest_services.get_facilities",
-              params={"output": "JSON", "p_c1lon": x0, "p_c1lat": y1,
-                      "p_c2lon": x1, "p_c2lat": y0, "responseset": "1"},
+    r = S.get(ECHO_URL, params={"output": "JSON", "p_c1lon": x0, "p_c1lat": y1,
+                                "p_c2lon": x1, "p_c2lat": y0, "responseset": "1"},
               headers=UA, timeout=90)
     if r.status_code != 200:
         raise ConnectionError(f"HTTP {r.status_code}")
     j = r.json().get("Results", {})
     if j.get("Error"):
-        raise LookupError(str(j["Error"])[:140])
+        raise LookupError(str(j["Error"]))
     return j
 
 
 def _a_echo(aoi):
-    """industrial_facilities -- US EPA ECHO regulated-facility census in the AOI bbox."""
+    """industrial_facilities -- US EPA ECHO facility counts over the AOI bounding box (the service takes no polygon)."""
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (US-only: EPA ECHO)")
     j = _echo_rows(aoi["bbox"])
-    def _cf():
-        c = _echo_rows(CONTROL_BBOX)
-        return (int(c.get("QueryRows", -1)), str(c.get("TotalPenalties", "")))
-    ctl = _ctrl("echo_control", _cf)
     f = {}
     for k, name in _ECHO.items():
-        v = j.get(k)
-        if v is None:
-            continue
         try:
-            f[name] = int(str(v).replace(",", ""))
-        except ValueError:
+            f[name] = int(str(j[k]).replace(",", ""))
+        except (KeyError, ValueError):
             pass
     if "echo_facilities_bbox" not in f:
         raise LookupError("ECHO returned no QueryRows")
-    f["echo_facilities_per_km2"] = _r(f["echo_facilities_bbox"] / max(aoi["area_km2"], 1e-6), 3)
+    f["echo_facilities_per_bbox_km2"] = _r(f["echo_facilities_bbox"] / max(_bbox_km2(aoi["bbox"]), 1e-6), 3)
     pen = str(j.get("TotalPenalties") or "").replace("$", "").replace(",", "")
     if pen.replace(".", "").isdigit():
-        f["echo_total_penalties_usd"] = _r(float(pen), 0)
-    f["echo_control_facilities"] = _ctrl_rows(ctl)
-    if isinstance(ctl, tuple) and ctl[0] > 0 and \
-            (f["echo_facilities_bbox"], str(j.get("TotalPenalties", ""))) == ctl:
-        raise ValueError(f"filter_unverified: AOI (n={f['echo_facilities_bbox']}) == control {ctl}")
-    return f, {"obs_date": "current (ECHO live)", "res_m": "point",
-               "item": "epa_echo_all_programs"}
+        f["echo_total_penalties_5yr_usd_bbox"] = _r(float(pen), 0)
+    return f, {"obs_date": "current (ECHO live)", "res_m": "point", "item": "epa_echo_all_programs",
+               "release": j.get("Version"), "url": ECHO_URL}
 
 
 def _a_addresses(aoi):
-    """addresses -- Overture addresses/address point census (addressed-node count)."""
+    """addresses -- Overture addresses/address point census."""
     big = aoi["area_km2"] > 50.0                      # cost guard: skip string decode
-    cols = ["bbox"] if big else ["street", "postcode"]
-    tb = _read("addresses", "address", aoi["bbox"], cols)
-    if tb is None:
-        raise LookupError("no Overture addresses coverage for bbox")
-    ctl = _ctrl_fp("addresses", "address")
-    _guard(tb, ctl, "address")
-    g = _aoi_geom(aoi)
-    m = _in_aoi(tb, g)
-    n = int(m.sum())
-    f = {"ovt_address_n": n,
-         "ovt_address_per_km2": _r(n / max(aoi["area_km2"], 1e-6), 2),
-         "ovt_address_n_bbox": int(tb.num_rows),
-         "ovt_address_present": bool(n > 0),
-         "ovt_control_address_rows": _ctrl_rows(ctl)}
-    if not big and n:
-        s2 = tb.filter(pa.array(m))
-        st = [s for s in s2["street"].to_pylist() if s]
-        pcs = [s for s in s2["postcode"].to_pylist() if s]
-        if st:
-            f["ovt_address_n_streets"] = int(len(set(st)))
-            f["ovt_address_street_density"] = _r(len(set(st)) / max(aoi["area_km2"], 1e-6), 2)
-        if pcs:
-            f["ovt_address_dominant_postcode"] = str(collections.Counter(pcs).most_common(1)[0][0])[:12]
-            f["ovt_address_n_postcodes"] = int(len(set(pcs)))
-    if n == 0:
-        # regional context: separates a true local absence from a source coverage gap
-        reg = _read("addresses", "address", _pad(aoi["bbox"], 25.0), ["bbox"])
-        f["ovt_address_n_within_25km"] = int(0 if reg is None else reg.num_rows)
-        f["ovt_address_regional_coverage"] = bool(f["ovt_address_n_within_25km"] > 0)
-    return f, {"obs_date": _release()[:10], "res_m": "point",
-               "item": f"overture/{_release()}/addresses.address"}
-
-
-def _a_buildings(aoi):
-    """addresses -- Overture buildings/building: built-form count, density, height.
-
-    Registered on the `addresses` slot: both are parcel-level built-form measures
-    from the same provider, and the lane's slot vocabulary has no building slot.
-    """
-    tb = _read("buildings", "building", aoi["bbox"], ["height", "class", "geometry"])
-    if tb is None:
-        raise LookupError("no Overture buildings coverage for bbox")
-    ctl = _ctrl_fp("buildings", "building")
-    _guard(tb, ctl, "building")
+    tb = _need(_read("addresses", "address", aoi["bbox"], ["bbox"] if big else ["street", "postcode"]), "addresses")
     g, lat = _aoi_geom(aoi), _lat(aoi)
     m = _in_aoi(tb, g)
     n = int(m.sum())
     a = max(aoi["area_km2"], 1e-6)
-    f = {"ovt_building_n": n, "ovt_building_per_km2": _r(n / a, 2),
-         "ovt_building_n_bbox": int(tb.num_rows), "ovt_control_building_rows": _ctrl_rows(ctl)}
+    f = {"ovt_address_n": n, "ovt_address_per_km2": _r(n / a, 2)}
+    if not big and n:
+        s2 = tb.filter(pa.array(m))
+        st = {s for s in s2["street"].to_pylist() if s}
+        pcs = {s for s in s2["postcode"].to_pylist() if s}
+        if st:
+            f["ovt_address_n_streets"] = len(st)
+            f["ovt_address_street_density"] = _r(len(st) / a, 2)
+        if pcs:
+            f["ovt_address_n_postcodes"] = len(pcs)
+    if n == 0:
+        reg = _read("addresses", "address", _pad(aoi["bbox"], 25.0), ["bbox"])
+        f["ovt_address_n_within_25km"] = int(_in_aoi(reg, _buffer(g, 25.0, lat)).sum()) if reg is not None else 0
+    return f, _ovt_meta("addresses", "address", "point")
+
+
+def _a_buildings(aoi):
+    """addresses -- Overture buildings/building: count, density, height, footprint, count by published class."""
+    tb = _need(_read("buildings", "building", aoi["bbox"], ["height", "class", "geometry"]), "buildings")
+    g, lat = _aoi_geom(aoi), _lat(aoi)
+    m = _in_aoi(tb, g)
+    n = int(m.sum())
+    a = max(aoi["area_km2"], 1e-6)
+    f = {"ovt_building_n": n, "ovt_building_per_km2": _r(n / a, 2)}
     if n:
         s2 = tb.filter(pa.array(m))
         h = np.asarray(s2["height"].combine_chunks().to_numpy(zero_copy_only=False), dtype="float64")
@@ -730,50 +564,27 @@ def _a_buildings(aoi):
             f["ovt_building_height_m_max"] = _r(hv.max(), 2)
             f["ovt_building_n_with_height"] = int(hv.size)
             f["ovt_building_n_over_20m"] = int((hv > 20).sum())
-        cls = [c for c in s2["class"].to_pylist() if c]
-        if cls:
-            f["ovt_building_dominant_class"] = str(collections.Counter(cls).most_common(1)[0][0])
-            f["ovt_building_n_classes"] = int(len(set(cls)))
+        f["ovt_building_n_by_class"] = _by_class(s2["class"].to_pylist())
         if n <= 60000:                     # exact footprint area, bounded decode cost
-            geoms, keep = _clip(s2, g)
+            geoms, _ = _clip(s2, g)
             ar = _area_km2(geoms, lat)
             f["ovt_building_footprint_km2"] = _r(ar.sum(), 5)
             f["ovt_built_frac"] = _r(min(ar.sum() / a, 1.0), 5)
-            f["ovt_building_mean_footprint_m2"] = _r(ar.sum() * 1e6 / n, 1)
-        else:
-            f["ovt_building_footprint_skipped_n"] = n
-    return f, {"obs_date": _release()[:10], "res_m": "vector",
-               "item": f"overture/{_release()}/buildings.building"}
+            f["ovt_building_mean_footprint_m2"] = _r(ar.sum() * 1e6 / len(ar), 1)
+    return f, _ovt_meta("buildings", "building", "vector")
 
 
 def _a_cell_towers(aoi):
-    """cell_towers -- Overture base/infrastructure subtype=communication.
-
-    OpenCelliD is the preferred route but both of its open endpoints are
-    token-gated (/cell/getInArea -> HTTP 401 {"error":"API Key not known"}; the
-    bulk MCC download needs an account token), so per the task this falls back to
-    OSM-derived communication masts carried in Overture.
-    """
-    tb, sel, ctl = _infra(aoi, ("communication",), want_geom=False)
-    g = _aoi_geom(aoi)
-    f = {"ovt_comm_tower_n": 0, "ovt_mobile_phone_tower_n": 0, "ovt_comm_n_aoi": 0,
-         "ovt_comm_tower_present": False, "ovt_control_infra_rows": _ctrl_rows(ctl),
-         "ovt_opencellid_status": "auth-blocked-401"}
-    if sel.any():
-        s2 = tb.filter(pa.array(sel))
-        m = _in_aoi(s2, g)
-        cls = _col(s2, "class")[m]
-        f.update({"ovt_comm_tower_n": int((cls == "communication_tower").sum()),
-                  "ovt_mobile_phone_tower_n": int((cls == "mobile_phone_tower").sum()),
-                  "ovt_comm_n_aoi": int(len(cls))})
-        f["ovt_comm_tower_present"] = bool(f["ovt_comm_n_aoi"] > 0)
-    # 10 km context: masts are sparse, so an AOI-only count is often a true zero
-    wide = _read("base", "infrastructure", _pad(aoi["bbox"], 10.0), ["subtype", "class"])
-    if wide is not None and wide.num_rows:
-        ws = _col(wide, "subtype")
-        f["ovt_comm_n_within_10km"] = int((ws == "communication").sum())
-    return f, {"obs_date": _release()[:10], "res_m": "point",
-               "item": f"overture/{_release()}/base.infrastructure[communication]"}
+    """cell_towers -- Overture base/infrastructure subtype=communication (OpenCelliD needs a token)."""
+    s2 = _infra(aoi, "communication", geom=False)
+    g, lat = _aoi_geom(aoi), _lat(aoi)
+    cls = _col(s2, "class")[_in_aoi(s2, g)] if s2.num_rows else np.empty(0, object)
+    f = {"ovt_comm_n_by_class": _by_class(cls)}
+    wide = _need(_read("base", "infrastructure", _pad(aoi["bbox"], 10.0), ["subtype", "class"]), "base/infrastructure")
+    if wide.num_rows:
+        near = _in_aoi(wide, _buffer(g, 10.0, lat)) & (_col(wide, "subtype") == "communication")
+        f["ovt_comm_n_within_10km"] = int(near.sum())
+    return f, _ovt_meta("base", "infrastructure", "point", "[communication]")
 
 
 def _a_ground_imagery(aoi):
@@ -792,7 +603,8 @@ def _a_ground_imagery(aoi):
         if r.status_code == 200 and "data" in j:
             return ({"mly_imagery_available": bool(j["data"]),
                      "mly_images_probe_n": len(j["data"])},
-                    {"obs_date": "live", "res_m": "point", "item": "mapillary_graph_v4"})
+                    {"obs_date": "live", "res_m": "point", "item": "mapillary_graph_v4",
+                     "release": "graph v4", "url": "https://graph.mapillary.com/images"})
         e = j.get("error", {})
         msgs.append(f"mapillary HTTP {r.status_code} code={e.get('code')} "
                     f"{str(e.get('message'))[:50]}")
@@ -807,31 +619,25 @@ def _a_ground_imagery(aoi):
             d = r.json().get("result", {}).get("data", [])
             return ({"kartaview_imagery_available": bool(d),
                      "kartaview_images_probe_n": len(d)},
-                    {"obs_date": "live", "res_m": "point", "item": "kartaview_v2"})
+                    {"obs_date": "live", "res_m": "point", "item": "kartaview_v2",
+                     "release": "2.0", "url": "https://api.kartaview.org/2.0/photo/"})
         msgs.append(f"kartaview apiCode={st.get('apiCode')} {str(st.get('apiMessage'))[:30]}")
     except Exception as e:
         msgs.append(f"kartaview {type(e).__name__}: {str(e)[:50]}")
     raise ConnectionError("street-level imagery needs an account token and none is configured; " + "; ".join(msgs))
 
 
-_WD_TOTAL = """SELECT (COUNT(DISTINCT ?i) AS ?n) (COUNT(DISTINCT ?t) AS ?nt) WHERE {
+WD_URL = "https://query.wikidata.org/sparql"
+_WD_ITEMS = """SELECT ?i ?c (GROUP_CONCAT(DISTINCT STRAFTER(STR(?t), "entity/"); separator=" ") AS ?ts) WHERE {
   SERVICE wikibase:box { ?i wdt:P625 ?c .
     bd:serviceParam wikibase:cornerWest "Point(%.6f %.6f)"^^geo:wktLiteral .
     bd:serviceParam wikibase:cornerEast "Point(%.6f %.6f)"^^geo:wktLiteral }
-  OPTIONAL { ?i wdt:P31 ?t } }"""
-_WD_TOP = """SELECT ?t ?tLabel (COUNT(DISTINCT ?i) AS ?n) WHERE {
-  SERVICE wikibase:box { ?i wdt:P625 ?c .
-    bd:serviceParam wikibase:cornerWest "Point(%.6f %.6f)"^^geo:wktLiteral .
-    bd:serviceParam wikibase:cornerEast "Point(%.6f %.6f)"^^geo:wktLiteral }
-  ?i wdt:P31 ?t .
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } }
-GROUP BY ?t ?tLabel ORDER BY DESC(?n) LIMIT 5"""
+  OPTIONAL { ?i wdt:P31 ?t } } GROUP BY ?i ?c"""
+_WD_LABELS = """SELECT ?q ?l WHERE { VALUES ?q { %s } ?q rdfs:label ?l . FILTER(LANG(?l) = "en") }"""
 
 
-def _sparql(q, bbox):
-    x0, y0, x1, y1 = bbox
-    r = S.get("https://query.wikidata.org/sparql",
-              params={"query": q % (x0, y0, x1, y1), "format": "json"},
+def _sparql(q):
+    r = S.get(WD_URL, params={"query": q, "format": "json"},
               headers=dict(UA, Accept="application/sparql-results+json"), timeout=90)
     if r.status_code != 200:
         raise ConnectionError(f"WDQS HTTP {r.status_code}: {r.text[:90]}")
@@ -839,34 +645,27 @@ def _sparql(q, bbox):
 
 
 def _a_wikidata(aoi):
-    """gazetteer -- Wikidata entity census in the AOI bbox (bbox service around P625)."""
-    b = _sparql(_WD_TOTAL, aoi["bbox"])
-    if not b:
-        raise LookupError("WDQS returned no rows")
-    n = int(b[0]["n"]["value"])
-    nt = int(b[0].get("nt", {}).get("value", 0))
-    def _cf():
-        cb = _sparql(_WD_TOTAL, CONTROL_BBOX)
-        cn = int(cb[0]["n"]["value"])
-        ct = _sparql(_WD_TOP, CONTROL_BBOX) if cn else []
-        return (cn, str(ct[0]["t"]["value"].rsplit("/", 1)[-1]) if ct else "")
-    ctl = _ctrl("wd_control", _cf)
-    f = {"wd_entities_bbox": n, "wd_distinct_classes": nt,
-         "wd_entities_per_km2": _r(n / max(aoi["area_km2"], 1e-6), 3),
-         "wd_control_entities": _ctrl_rows(ctl)}
-    qid = ""
-    if n:
-        top = _sparql(_WD_TOP, aoi["bbox"])
-        if top:
-            qid = str(top[0]["t"]["value"].rsplit("/", 1)[-1])
-            f["wd_dominant_class_qid"] = qid
-            f["wd_dominant_class_label"] = str(top[0].get("tLabel", {}).get("value", ""))[:50]
-            f["wd_dominant_class_n"] = int(top[0]["n"]["value"])
-            f["wd_top5_class_share"] = _r(min(sum(int(x["n"]["value"]) for x in top) / max(n, 1), 1.0), 4)
-    # count equality alone is weak for tiny counts, so the dominant class must match too
-    if isinstance(ctl, tuple) and n > 0 and (n, qid) == ctl:
-        raise ValueError(f"filter_unverified: AOI (n={n}, class={qid}) == control {ctl}")
-    return f, {"obs_date": "live", "res_m": "point", "item": "wikidata_query_service"}
+    """gazetteer -- Wikidata items with a P625 coordinate inside the AOI polygon, and their P31 classes."""
+    x0, y0, x1, y1 = aoi["bbox"]
+    g = _aoi_geom(aoi)
+    ents = {}
+    for b in _sparql(_WD_ITEMS % (x0, y0, x1, y1)):
+        lon, lat = map(float, b["c"]["value"][6:-1].split())
+        if shapely.contains_xy(g, lon, lat):
+            ents[b["i"]["value"]] = b.get("ts", {}).get("value", "").split()
+    n = len(ents)
+    cnt = collections.Counter(q for ts in ents.values() for q in ts)
+    f = {"wd_entities": n, "wd_entities_per_km2": _r(n / max(aoi["area_km2"], 1e-6), 3),
+         "wd_distinct_classes": len(cnt)}
+    top = cnt.most_common(5)
+    if top:
+        lab = {b["q"]["value"].rsplit("/", 1)[-1]: b["l"]["value"]
+               for b in _sparql(_WD_LABELS % " ".join(f"wd:{q}" for q, _ in top))}
+        names = [lab.get(q, q) for q, _ in top]
+        f["wd_entities_by_class"] = [{"class": nm if names.count(nm) == 1 else f"{nm} ({q})", "value": v}
+                                     for nm, (q, v) in zip(names, top)]
+    return f, {"obs_date": "live", "res_m": "point", "item": "wikidata_query_service",
+               "release": time.strftime("%Y-%m-%d"), "url": WD_URL}
 
 
 _PLACE_SUB = ["locality", "county", "region", "country", "macrohood", "neighborhood",
@@ -874,19 +673,19 @@ _PLACE_SUB = ["locality", "county", "region", "country", "macrohood", "neighborh
 
 
 def _a_divisions(aoi):
-    """gazetteer -- Overture divisions/division: named places and admin context."""
+    """gazetteer -- Overture divisions/division: named places and admin context within 15 km, else 60 km, of the AOI."""
+    g, lat0 = _aoi_geom(aoi), _lat(aoi)
     cols = ["names", "subtype", "population", "country", "region"]
     for rad in (15.0, 60.0):               # remote AOIs have no named place nearby
-        tb = _read("divisions", "division", _pad(aoi["bbox"], rad), cols)
-        if tb is None:
-            raise LookupError("no Overture divisions coverage for bbox")
+        tb = _need(_read("divisions", "division", _pad(aoi["bbox"], rad), cols), "divisions")
         if tb.num_rows:
-            break
-    ctl = _ctrl_fp("divisions", "division")
-    if tb.num_rows == 0:
-        raise LookupError(f"no Overture named place within {rad:.0f} km of the AOI")
-    _guard(tb, ctl, "division")
-    g = _aoi_geom(aoi)
+            x, y = _xy(tb)
+            m = shapely.contains_xy(_buffer(g, rad, lat0), x, y)
+            if m.any():
+                tb = tb.filter(pa.array(m))
+                break
+    else:
+        raise LookupError("no Overture named place within 60 km of the AOI")
     x, y = _xy(tb)
     cx, cy = aoi["centroid"]
     kx = DEG_LON_M * math.cos(math.radians(cy)) / 1000.0
@@ -898,30 +697,27 @@ def _a_divisions(aoi):
     f = {"ovt_division_n_in_aoi": int(inside.sum()),
          "ovt_division_n_in_radius": int(tb.num_rows),
          "ovt_division_search_radius_km": _r(rad, 0),
-         "ovt_division_n_subtypes": int(len(set(sub.tolist()))),
-         "ovt_control_division_rows": _ctrl_rows(ctl)}
+         "ovt_division_n_by_subtype": _by_class(sub)}
     loc = np.isin(sub, _PLACE_SUB)
     cand = np.where(loc)[0] if loc.any() else np.arange(tb.num_rows)
     j = int(cand[np.argmin(dist[cand])])
-    f["ovt_nearest_place"] = str(nm[j] or "")[:60]
+    f["ovt_nearest_place"] = str(nm[j] or "")
     f["ovt_nearest_place_subtype"] = str(sub[j])
     f["ovt_nearest_place_km"] = _r(dist[j], 3)
     reg = [v for v in tb["region"].to_pylist() if v]
     cty = [v for v in tb["country"].to_pylist() if v]
     if reg:
-        f["ovt_region_code"] = str(collections.Counter(reg).most_common(1)[0][0])[:8]
+        f["ovt_region_code"] = str(collections.Counter(reg).most_common(1)[0][0])
     if cty:
-        f["ovt_country_code"] = str(collections.Counter(cty).most_common(1)[0][0])[:4]
+        f["ovt_country_code"] = str(collections.Counter(cty).most_common(1)[0][0])
     pv = pop[np.isfinite(pop) & (pop > 0)]
     if pv.size:
         f["ovt_max_place_population_radius"] = int(pv.max())
         f["ovt_n_places_with_population"] = int(pv.size)
-    if inside.any():
-        inm = [nm[i] for i in np.where(inside)[0] if nm[i]]
-        if inm:
-            f["ovt_place_names_in_aoi"] = "; ".join(inm[:4])[:120]
-    return f, {"obs_date": _release()[:10], "res_m": "admin",
-               "item": f"overture/{_release()}/divisions.division"}
+    inm = [nm[i] for i in np.where(inside)[0] if nm[i]]
+    if inm:
+        f["ovt_place_names_in_aoi"] = "; ".join(inm)
+    return f, _ovt_meta("divisions", "division", "admin")
 
 
 # ------------------------------------------------------------------ registry
@@ -954,10 +750,7 @@ _THEMES = (("transportation", "segment"), ("base", "infrastructure"), ("base", "
 
 
 def warm_cache(themes=_THEMES):
-    """Build every Overture manifest and fetch the GPPD CSV.  ~40 s, ~12 MB on disk.
-
-    Call once before a batch run so no individual adapter pays the build cost.
-    """
+    """Build every Overture manifest and fetch the GPPD CSV, so no adapter pays the build cost."""
     out = {f"{th}/{tp}": len(_manifest(th, tp)) for th, tp in themes}
     out["gppd_rows"] = len(_gppd())
     out["release"] = _release()

@@ -197,31 +197,30 @@ csb_polygon_area_median_ha	ha
 csb_polygon_count	count
 echo_bbox_pad_km	km
 echo_caa_facilities	count
-echo_clean_air_act_n	count
-echo_clean_water_act_n	count
-echo_control_facilities	count
+echo_caa_facilities_bbox	count
 echo_current_violations	count
-echo_current_violations_n	count
 echo_cwa_facilities	count
+echo_cwa_facilities_bbox	count
 echo_facilities	count
 echo_facilities_bbox	count
-echo_facilities_per_km2	1/km2
+echo_facilities_per_bbox_km2	1/km2
+echo_formal_action_facilities_5yr_bbox	count
 echo_formal_actions_5yr	count
-echo_formal_enforcement_n	count
 echo_informal_actions_5yr	count
 echo_insp_per_facility	1
+echo_inspected_facilities_5yr_bbox	count
 echo_inspections_5yr	count
-echo_inspections_n	count
 echo_penalties_usd_5yr	USD
 echo_rcra_facilities	count
-echo_rcra_hazwaste_n	count
+echo_rcra_facilities_bbox	count
 echo_sig_violation_rate	1
+echo_significant_violation_facilities_bbox	count
 echo_significant_violations	count
-echo_significant_violations_n	count
-echo_total_penalties_usd	USD
+echo_total_penalties_5yr_usd_bbox	USD
 echo_tri_facilities	count
-echo_tri_releasers_n	count
+echo_tri_facilities_bbox	count
 echo_tribal_facilities	count
+echo_violation_facilities_bbox	count
 echo_violations_3yr	count
 echotri_caa_air_sources_10km	count
 echotri_caa_air_sources_25km	count
@@ -289,17 +288,16 @@ ghssmod_n_cells	count
 ghssmod_subpixel_aoi	
 ghssmod_window_deg	deg
 gppd_capacity_mw_50km	MW
-gppd_control_plants_50km	count
-gppd_dominant_fuel_50km	
+gppd_capacity_mw_50km_by_fuel	MW
 gppd_max_capacity_mw_50km	MW
 gppd_median_commission_year_50km	yr
-gppd_n_fuel_types_50km	count
 gppd_nearest_capacity_mw	MW
 gppd_nearest_fuel	
 gppd_nearest_km	km
 gppd_nearest_name	
 gppd_plants_50km	count
-gppd_plants_in_bbox	count
+gppd_plants_50km_by_fuel	count
+gppd_plants_in_aoi	count
 gsc_surf_frac_in_aoi	1
 gsc_surf_polygon_count_in_aoi	count
 hansen_gain_frac_2000_2012	1
@@ -472,117 +470,59 @@ odhf_nearest_facility_type
 osm_building_per_km2	1/km2
 osm_building_ways	count
 osm_highway_ways	count
-ovt_address_dominant_postcode	
 ovt_address_n	count
-ovt_address_n_bbox	count
 ovt_address_n_postcodes	count
 ovt_address_n_streets	count
 ovt_address_n_within_25km	count
 ovt_address_per_km2	1/km2
 ovt_address_present	
-ovt_address_regional_coverage	
 ovt_address_street_density	1/km2
-ovt_building_dominant_class	
 ovt_building_footprint_km2	km2
-ovt_building_footprint_skipped_n	count
 ovt_building_height_m_max	m
 ovt_building_height_m_mean	m
 ovt_building_height_m_p90	m
 ovt_building_mean_footprint_m2	m2
 ovt_building_n	count
-ovt_building_n_bbox	count
-ovt_building_n_classes	count
+ovt_building_n_by_class	count
 ovt_building_n_over_20m	count
 ovt_building_n_with_height	count
 ovt_building_per_km2	1/km2
 ovt_built_frac	1
-ovt_comm_n_aoi	count
+ovt_comm_n_by_class	count
 ovt_comm_n_within_10km	count
-ovt_comm_tower_n	count
-ovt_comm_tower_present	
-ovt_control_address_rows	count
-ovt_control_building_rows	count
-ovt_control_division_rows	count
-ovt_control_infra_rows	count
-ovt_control_landuse_rows	count
-ovt_control_segment_rows	count
 ovt_country_code	
+ovt_division_n_by_subtype	count
 ovt_division_n_in_aoi	count
 ovt_division_n_in_radius	count
-ovt_division_n_subtypes	count
 ovt_division_search_radius_km	km
 ovt_extractive_area_km2	km2
 ovt_generator_n	count
-ovt_industrial_area_km2	km2
-ovt_industrial_frac	1
-ovt_industrial_n	count
-ovt_infra_n_bbox	count
-ovt_landuse_dominant_class	
-ovt_landuse_km2_brownfield	km2
-ovt_landuse_km2_commercial	km2
-ovt_landuse_km2_industrial	km2
-ovt_landuse_km2_landfill	km2
-ovt_landuse_km2_military	km2
-ovt_landuse_km2_quarry	km2
-ovt_landuse_km2_retail	km2
-ovt_landuse_n_bbox	count
-ovt_landuse_n_classes	count
+ovt_landuse_km2_by_class	km2
 ovt_max_place_population_radius	count
-ovt_minor_line_km	km
-ovt_mobile_phone_tower_n	count
 ovt_n_places_with_population	count
 ovt_nearest_place	
 ovt_nearest_place_km	km
 ovt_nearest_place_subtype	
-ovt_opencellid_status	
 ovt_pipeline_km	km
 ovt_pipeline_km_per_km2	km/km2
-ovt_pipeline_n	count
-ovt_pipeline_present	
 ovt_place_names_in_aoi	
-ovt_power_n_aoi	count
+ovt_power_km_by_class	km
+ovt_power_n_by_class	count
 ovt_power_plant_area_km2	km2
 ovt_power_plant_n	count
-ovt_power_plant_named	
-ovt_power_plant_present	
-ovt_power_portal_n	count
-ovt_power_power_pole_n	count
-ovt_power_power_tower_n	count
-ovt_power_substation_n	count
+ovt_power_plant_names	
 ovt_power_tower_per_km2	1/km2
-ovt_power_transformer_n	count
-ovt_powerline_km	km
 ovt_powerline_km_per_km2	km/km2
-ovt_powerline_n	count
-ovt_powerline_present	
 ovt_rail_km	km
-ovt_rail_km_light_rail	km
+ovt_rail_km_by_class	km
 ovt_rail_km_per_km2	km/km2
-ovt_rail_km_standard_gauge	km
-ovt_rail_km_subway	km
-ovt_rail_km_tram	km
 ovt_rail_n_segments	count
-ovt_rail_present	
-ovt_region_code	count
-ovt_road_dominant_class	
+ovt_region_code	
 ovt_road_km	km
-ovt_road_km_footway	km
-ovt_road_km_motorway	km
+ovt_road_km_by_class	km
 ovt_road_km_per_km2	km/km2
-ovt_road_km_primary	km
-ovt_road_km_residential	km
-ovt_road_km_secondary	km
-ovt_road_km_service	km
-ovt_road_km_tertiary	km
-ovt_road_km_track	km
-ovt_road_km_trunk	km
-ovt_road_km_unclassified	km
 ovt_road_n_segments	count
-ovt_segment_n_bbox	count
-ovt_storage_tank_n	count
-ovt_substation_n_aoi	count
-ovt_utility_dominant_class	
-ovt_utility_n_aoi	count
+ovt_utility_n_by_class	count
 palsar_hh_db_mean	dB
 palsar_hh_db_std	dB
 palsar_hv_db_mean	dB
@@ -757,12 +697,10 @@ wc_frac_tree	1
 wc_frac_water	1
 wc_frac_wetland	1
 wc_n_classes	count
-wd_control_entities	count
 wd_distinct_classes	count
 wd_dominant_class_label	
 wd_dominant_class_n	count
-wd_dominant_class_qid	
-wd_entities_bbox	count
+wd_entities	count
+wd_entities_by_class	count
 wd_entities_per_km2	1/km2
-wd_top5_class_share	1
 wqp_stations_20km	count
