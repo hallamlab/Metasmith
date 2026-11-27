@@ -1,0 +1,66 @@
+Location,lat,lon,coord_source
+Assiniboia,49.633333,-105.983333,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Bathurst,47.629395,-65.662024,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Bathurst (NML Historical Data),47.629395,-65.662024,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (Bathurst site)"
+Battery Point,46.16306,-60.22455,"OpenStreetMap https://www.openstreetmap.org/way/1061598557 man_made=wastewater_plant (unnamed); nearest wastewater plant to Battery Point, Sydney NS"
+Battleford,52.733333,-108.3,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Birch Hills,52.98333,-105.44417,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Brandon,49.83581,-99.85521,OpenStreetMap https://www.openstreetmap.org/way/617692129 man_made=wastewater_plant (unnamed); only wastewater plant within 10 km of Brandon
+Bridgewater,44.37261,-64.49727,OpenStreetMap https://www.openstreetmap.org/way/1217275677 man_made=wastewater_plant (unnamed)
+Campbellton,48.005346,-66.656057,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Campbellton (NML Historical Data),48.005346,-66.656057,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (Campbellton site)"
+Canora,51.636411,-102.431301,Nominatim town centre (plant not located in OpenStreetMap)
+Central Colchester,45.36654,-63.34419,OpenStreetMap https://www.openstreetmap.org/way/474901546 man_made=wastewater_plant 'Colchester Wastewater Treatment Facility'
+Dominion-Bridgeport,46.21478,-59.99889,OpenStreetMap https://www.openstreetmap.org/way/909298463 man_made=wastewater_plant 'Dominion Water Treatment Plant'; tagged wastewater plant; identity not confirmed
+Edmonton Goldbar,53.561208,-113.415216,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Edmundston,47.368893,-68.324768,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Estevan,49.133333,-102.983333,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Fredericton,45.958731,-66.618452,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Fredericton (NML Historical Data),45.958731,-66.618452,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (Fredericton site)"
+Haines Junction,60.752721,-137.510038,Nominatim town centre (plant not located in OpenStreetMap)
+Halifax Dartmouth,44.65886,-63.55549,OpenStreetMap https://www.openstreetmap.org/way/96159870 man_made=wastewater_plant 'Dartmouth Wastewater TreatmentPlant'
+Halifax Halifax,44.562813,-63.560216,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (PHAC names the site Herring COVE WWTP)"
+Halifax Millcove,44.715933,-63.673365,OpenStreetMap https://www.openstreetmap.org/way/819517315 man_made=wastewater_plant 'Mill Cove Wastewater Treatment Facility'
+La Ronge,55.1,-105.283333,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Lancaster,45.23888,-66.11199,OpenStreetMap https://www.openstreetmap.org/way/909680295 man_made=wastewater_plant 'Lancaster Wastewater Treatment Facility'; Saint John NB; PHAC pruid 13
+Lumsden,50.646302,-104.865936,Nominatim town centre (plant not located in OpenStreetMap)
+Maple Creek,49.916667,-109.483333,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Meadow Lake,54.11707,-108.45792,OpenStreetMap https://www.openstreetmap.org/way/849872322 man_made=wastewater_plant 'Waste Water Logoon System'
+Melville,50.930724,-102.807296,Nominatim town centre (plant not located in OpenStreetMap)
+Miramichi,47.001269,-65.565982,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Miramichi (NML Historical Data),47.001269,-65.565982,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (Miramichi site)"
+Moncton,46.076613,-64.7678,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Moncton (NML Historical Data),46.076613,-64.7678,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (Moncton site)"
+Montreal North,45.680297,-73.521959,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Montreal South,45.671238,-73.524195,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Moose Jaw,50.36385,-105.495,OpenStreetMap https://www.openstreetmap.org/way/854040180 man_made=wastewater_plant (unnamed); only wastewater plant within 8 km of Moose Jaw
+North Battleford,52.72447,-108.2432,"OpenStreetMap https://www.openstreetmap.org/way/1512328345 man_made=wastewater_plant 'North Battleford Wastewater Treatment Plant'; PHAC siteLoc1.json gives 52.7642,-108.3228, 6.9 km away"
+Pasqua,50.374671,-105.384873,"Nominatim town centre (plant not located in OpenStreetMap); ambiguous: Pasqua hamlet, not Pasqua First Nation"
+Prince Albert,53.206847,-105.690873,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Regina,50.476042,-104.752495,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Sackville,45.907943,-64.372371,Nominatim town centre (plant not located in OpenStreetMap)
+Saint John,45.262556,-66.019886,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Saskatoon,52.182314,-106.605958,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Southey,50.933333,-104.5,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+St. John's,47.554313,-52.710144,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+St. Stephen,45.19786,-67.25975,OpenStreetMap https://www.openstreetmap.org/way/682304624 water=wastewater (unnamed)
+Swift Current,50.30763,-107.75989,OpenStreetMap https://www.openstreetmap.org/way/301009418 man_made=wastewater_plant 'Swift Current Wastewater Treatment Plant'; PHAC siteLoc1.json gives the town centre
+Toronto Ashbridges Bay,43.655278,-79.322039,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Toronto Highland Creek,43.76667,-79.15051,OpenStreetMap https://www.openstreetmap.org/way/706684277 man_made=wastewater_plant 'Highland Creek Treatment Plant'
+Toronto Humber,43.631593,-79.481334,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Toronto North Toronto,43.69946,-79.35645,OpenStreetMap https://www.openstreetmap.org/way/407269354 man_made=wastewater_plant 'North Toronto Wastewater Treatment Plant'
+Trenton,45.60543,-62.64172,OpenStreetMap https://www.openstreetmap.org/way/1321864329 man_made=wastewater_plant (unnamed); Trenton NS
+Unity,52.442851,-109.154899,Nominatim town centre (plant not located in OpenStreetMap)
+Vancouver Annacis Island,49.165393,-122.950598,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Vancouver Iona Island,49.217398,-123.201825,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Vancouver Lions Gate,49.31919,-123.13611,OpenStreetMap https://www.openstreetmap.org/way/42277870 man_made=wastewater_plant 'Lions Gate Wastewater Treatment Plant'
+Vancouver Lulu Island,49.11491,-123.14498,OpenStreetMap https://www.openstreetmap.org/way/178068184 man_made=wastewater_plant 'Lulu Island Wastewater Treatment Plant'
+Vancouver Northwest Langley,49.18966,-122.6664,OpenStreetMap https://www.openstreetmap.org/way/621633938 man_made=wastewater_plant 'Northwest Langley Wastewater Treatment Plant'
+Watrous,51.675148,-105.465539,Nominatim town centre (plant not located in OpenStreetMap)
+Weyburn,49.63558,-103.82983,OpenStreetMap https://www.openstreetmap.org/way/231502643 water=wastewater (unnamed); lagoon 3.8 km from the town centre
+Winnipeg North End,49.95087,-97.105557,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Winnipeg South End,49.795451,-97.096968,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json"
+Winnipeg West End,49.8305,-97.33631,OpenStreetMap https://www.openstreetmap.org/way/108626129 man_made=wastewater_plant 'West End Water Pollution Control Centre'
+Yarmouth,43.837265,-66.1157,Nominatim town centre (plant not located in OpenStreetMap)
+Yorkton,51.216667,-102.466667,"PHAC siteLoc1.json, https://health-infobase.canada.ca/src/json/wastewater/siteLoc1.json (town-centre coordinate; no plant found in OSM nearby)"
+Île-à-la-Crosse,55.44862,-107.89802,OpenStreetMap https://www.openstreetmap.org/way/1430184864 man_made=wastewater_plant (unnamed); only wastewater plant within 2 km

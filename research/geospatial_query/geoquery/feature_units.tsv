@@ -98,24 +98,13 @@ alta_nearest_type
 alta_overlap_frac	1
 alta_overlap_km2	km2
 alta_province_extract	
-aqs_co_ppm_mean	ppm
-aqs_co_src_km	km
+aqs_annual_mean	
+aqs_annual_mean_site_km	km
 aqs_nearest_monitor_km	km
 aqs_nearest_site_id	
 aqs_nearest_site_name	
-aqs_no2_ppb_mean	ppb
-aqs_no2_src_km	km
-aqs_o3_ppm_mean	ppm
-aqs_o3_src_km	km
-aqs_pm10_src_km	km
-aqs_pm10_ugm3_mean	ug/m3
-aqs_pm25_src_km	km
-aqs_pm25_ugm3_mean	ug/m3
 aqs_sites_25km	count
 aqs_sites_50km	count
-aqs_so2_ppb_mean	ppb
-aqs_so2_src_km	km
-aqs_year	yr
 bccrown_crown_frac_of_aoi	1
 bccrown_crown_frac_of_parcelled	1
 bccrown_crown_frac_upper_bound	1
@@ -140,23 +129,10 @@ bcpmbc_parcel_count	count
 bcpmbc_parcel_coverage_frac	1
 bcpmbc_parcel_density_per_km2	km2
 bcpmbc_regional_district	
-cams_aod550_mean	1
-cams_aod550_p95	1
-cams_co_ugm3_mean	ug/m3
-cams_co_ugm3_p95	ug/m3
 cams_grid_lat	deg
 cams_grid_lon	deg
-cams_n_hours	h
-cams_no2_ugm3_mean	ug/m3
-cams_no2_ugm3_p95	ug/m3
-cams_o3_ugm3_mean	ug/m3
-cams_o3_ugm3_p95	ug/m3
-cams_pm10_ugm3_mean	ug/m3
-cams_pm10_ugm3_p95	ug/m3
-cams_pm25_ugm3_mean	ug/m3
-cams_pm25_ugm3_p95	ug/m3
-cams_so2_ugm3_mean	ug/m3
-cams_so2_ugm3_p95	ug/m3
+cams_hourly_mean_30d	
+cams_hourly_p95_30d	
 cdl_dominant	
 cdl_frac_alfalfa	1
 cdl_frac_barren	1
@@ -222,16 +198,14 @@ echo_tri_facilities_bbox	count
 echo_tribal_facilities	count
 echo_violation_facilities_bbox	count
 echo_violations_3yr	count
-echotri_caa_air_sources_10km	count
-echotri_caa_air_sources_25km	count
-echotri_density_per_km2_25km	1/km2
-echotri_rcra_handlers_10km	count
-echotri_rcra_handlers_25km	count
-echotri_regulated_facilities_10km	count
-echotri_regulated_facilities_25km	count
-echotri_tri_frac_of_regulated_25km	1
-echotri_tri_reporters_10km	count
-echotri_tri_reporters_25km	count
+echotri_caa_air_sources_bbox_pad10km	count
+echotri_caa_air_sources_bbox_pad25km	count
+echotri_rcra_handlers_bbox_pad10km	count
+echotri_rcra_handlers_bbox_pad25km	count
+echotri_regulated_facilities_bbox_pad10km	count
+echotri_regulated_facilities_bbox_pad25km	count
+echotri_tri_reporters_bbox_pad10km	count
+echotri_tri_reporters_bbox_pad25km	count
 elev_m_mean	m
 elev_m_n_px	count
 elev_m_p10	m
@@ -247,11 +221,8 @@ etopo_bed_elev_m_p90	m
 etopo_bed_elev_m_std	m
 etopo_frac_below_sea_level	1
 etopo_min_elev_m	m
-fcsi_active_sites_25km	count
-fcsi_closed_sites_25km	count
 fcsi_contaminated_area_ha_25km	ha
-fcsi_contaminated_soil_m3_25km	m3
-fcsi_high_priority_sites_25km	count
+fcsi_contamination_volume_m3_25km	m3
 fcsi_nearest_site_km	km
 fcsi_nearest_site_name	
 fcsi_nearest_site_org	
@@ -260,6 +231,8 @@ fcsi_reporting_orgs_25km	count
 fcsi_sites_10km	count
 fcsi_sites_25km	count
 fcsi_sites_5km	count
+fcsi_sites_by_classification_25km	count
+fcsi_sites_by_status_25km	count
 gbif_distinct_species	count
 gbif_occurrences	count
 geo_age_bottom_ma	Ma
@@ -267,13 +240,12 @@ geo_age_top_ma	Ma
 geo_lithology	
 geo_n_units	count
 geo_unit_name	
-ghgrp_co2e_kt_25km	kt
+ghgrp_co2e_excl_co2bio_kt_25km	kt
 ghgrp_facilities_25km	count
-ghgrp_max_facility_co2e_kt	kt
+ghgrp_max_facility_co2e_excl_co2bio_kt_25km	kt
 ghgrp_nearest_facility_km	km
 ghgrp_nearest_facility_name	
 ghgrp_top_sector_25km	
-ghgrp_year	yr
 ghspop_cell_max	count
 ghspop_cell_mean	count
 ghspop_cell_p90	count
@@ -352,66 +324,32 @@ namrad_th_ppm_mean	ppm
 namrad_u_ppm_max	ppm
 namrad_u_ppm_mean	ppm
 namrad_u_th_ratio	1
-naps_co_ppm_mean	ppm
-naps_co_src_km	km
-naps_nearest_station_city	
-naps_nearest_station_id	
-naps_nearest_station_km	km
-naps_no2_ppb_mean	ppb
-naps_no2_src_km	km
-naps_no_ppb_mean	ppb
-naps_no_src_km	km
-naps_nox_ppb_mean	ppb
-naps_nox_src_km	km
-naps_o3_ppb_mean	ppb
-naps_o3_src_km	km
-naps_pm10_src_km	km
-naps_pm10_ugm3_mean	ug/m3
-naps_pm25_src_km	km
-naps_pm25_ugm3_mean	ug/m3
-naps_so2_ppb_mean	ppb
-naps_so2_src_km	km
-naps_stations_25km	count
-naps_stations_50km	count
-naps_year	yr
+naps_annual_mean	
+naps_annual_mean_station_km	km
+naps_continuous_stations_25km	count
+naps_continuous_stations_50km	count
+naps_nearest_continuous_station_city	
+naps_nearest_continuous_station_id	
+naps_nearest_continuous_station_km	km
 ne_glaciated_frac_in_aoi	1
 ne_glaciated_nearest_km	km
 ne_glaciated_nearest_name	
 ne_glaciated_polygon_count_within_100km	count
 ne_glaciated_polygon_count_within_250km	count
 ne_glaciated_present_in_aoi	
-nndss_campylobacteriosis_ytd	count
 nndss_cases_current_week	count
-nndss_conditions_tabulated	count
-nndss_conditions_with_cases_ytd	count
-nndss_legionellosis_ytd	count
-nndss_pertussis_ytd	count
+nndss_cases_prev_year_ytd	count
+nndss_cases_ytd	count
 nndss_state	
-nndss_top_condition	
-nndss_top_condition_cases_ytd	count
-nndss_total_cases_prev_year_ytd	count
-nndss_total_cases_ytd	count
-nndss_tuberculosis_ytd	count
-nndss_week	wk
-nndss_year	yr
-npri_air_releases_kg_25km	kg
-npri_co_kg_25km	kg
+npri_air_releases_25km	
 npri_facilities_10km	count
 npri_facilities_25km	count
-npri_land_releases_kg_25km	kg
+npri_land_releases_25km	
 npri_nearest_facility_km	km
 npri_nearest_facility_name	
 npri_nearest_facility_sector	
-npri_nox_kg_25km	kg
-npri_pm10_kg_25km	kg
-npri_pm25_kg_25km	kg
-npri_so2_kg_25km	kg
 npri_substances_25km	count
-npri_top_substance	
-npri_top_substance_kg_25km	kg
-npri_total_releases_kg_25km	kg
-npri_water_releases_kg_25km	kg
-npri_year	yr
+npri_water_releases_25km	
 nrcan900a_count_in_aoi	count
 nrcan900a_count_within_100km	count
 nrcan900a_count_within_25km	count
@@ -527,16 +465,11 @@ palsar_hh_db_mean	dB
 palsar_hh_db_std	dB
 palsar_hv_db_mean	dB
 palsar_hv_db_std	dB
-phacww_7day_avg_latest	copies/mL
-phacww_7day_avg_p90_1yr	copies/mL
-phacww_latest_date	date
-phacww_latest_vs_1yr_p90	1
-phacww_province	
-phacww_pruid	
-phacww_records_province	count
-phacww_sites_latest_date	count
-phacww_sites_province	count
-phacww_viral_load_latest	copies/mL
+phacww_date	date
+phacww_location	
+phacww_location_km	km
+phacww_seven_day_rolling_avg	copies/mL
+phacww_viral_load	copies/mL
 places_disability_pct	%
 places_fair_poor_health_pct	%
 places_food_insecurity_pct	%
@@ -547,14 +480,10 @@ places_routine_checkup_pct	%
 places_tract_population	count
 places_uninsured_pct	%
 relief_m	m
-rvdss_detections_latest_week	count
-rvdss_influenza_pct_positive	%
+rvdss_detections	count
 rvdss_jurisdiction	
-rvdss_rsv_pct_positive	%
-rvdss_sarscov2_pct_positive	%
-rvdss_tests_latest_week	count
-rvdss_viruses_reported	count
-rvdss_week	
+rvdss_percent_positive	%
+rvdss_tests	count
 s1_vv_db_mean	dB
 s2_cloud_cover_pct	%
 s2_ndvi_mean	1

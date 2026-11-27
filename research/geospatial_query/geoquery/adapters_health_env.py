@@ -1,26 +1,24 @@
 """adapters_health_env.py -- health, air quality and emissions lane.
 
 Slots filled: air_quality_monitors, air_quality_modelled, emissions_releases,
-facility_compliance, disease_surveillance, wastewater_surveillance, contaminated_sites.
+disease_surveillance, wastewater_surveillance, contaminated_sites.
 
 Every route is a plain public HTTPS endpoint: no API keys, no registration, no
 credentials, no connectors.  Sources that are key-gated (EPA AQS REST API) are
 recorded in AUTH_BLOCKED below and deliberately NOT shipped.
 
-Admin-aggregate sources (CDC NNDSS / NWSS, PHAC RVDSS / wastewater) are county-,
-province- or state-level statistics joined to the AOI by point-in-polygon.  They
-are NOT AOI measurements, and they say so: every such feature name starts with a
-jurisdiction prefix, and `meta['res_m']` is `admin:county` / `admin:state` /
-`admin:province` rather than a length scale.
+Admin-aggregate sources (CDC NNDSS / NWSS, PHAC RVDSS) are county-, province- or
+state-level statistics joined to the AOI by point-in-polygon, and `meta['res_m']` says
+so (`admin:county` / `admin:state` / `admin:province`).  Point-source distances and
+`_<N>km` counts are measured from the AOI polygon (0 inside it), not its centroid.
 """
-import os, io, csv, json, time, math, zipfile, threading
+import os, io, csv, time, math, zipfile, threading
 import xml.etree.ElementTree as ET
 
 import numpy as np
 import pandas as pd
 import requests
 
-from . import pipeline
 from .pipeline import S                      # shared requests.Session
 
 CACHE = os.path.abspath("./cache")
@@ -34,10 +32,14 @@ NPRI_DIR = ("substances/plansreports/reporting-facilities-pollutant-release-and-
 GHGRP_DIR = ("substances/monitor/greenhouse-gas-reporting-program-ghgrp-facility-"
              "greenhouse-gas-ghg-data")
 AQS_BASE = "https://aqs.epa.gov/aqsweb/airdata"
+CAMS_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 FRS = "https://frs-public.epa.gov/ords/frs_public2/frs_rest_services.get_facilities"
 ECHO = "https://echodata.epa.gov/echo/echo_rest_services.get_facilities"
 CDC = "https://data.cdc.gov/resource"
 INFOBASE = "https://health-infobase.canada.ca/src/data"
+RVDSS_URL = f"{INFOBASE}/respiratory-virus-detections/RVD_WeeklyData.csv"
+PHAC_WW_URL = f"{INFOBASE}/covidLive/wastewater/covid19-wastewater.csv"
+PHAC_WW_SITES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phac_ww_sites.csv")
 TIGER_COUNTY = ("https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/"
                 "State_County/MapServer/1/query")
 NE_ADMIN1 = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
@@ -46,7 +48,6 @@ FCSI_ZIP = "https://map-carte.tbs-sct.gc.ca/fcsi-rscf/oddo/fcsi-rscf.zip"
 FCSI_AIA = "http://crt.sectigo.com/EntrustOVTLSIssuingRSACA2.crt"
 
 BUF_KM = 25.0            # AOI buffer for point-source joins
-CTRL_BOX = [-140.0, -20.0, -139.0, -19.0]   # mid-Pacific geometry control
 
 # Sources checked and deliberately not shipped because they need a credential.
 AUTH_BLOCKED = {
@@ -93,6 +94,29 @@ def _hav_km(lat0, lon0, lats, lons):
     return 6371.0088 * 2 * np.arcsin(np.sqrt(np.clip(d, 0, 1)))
 
 
+def _aoi_km(aoi, lats, lons):
+    """Distance in km from the AOI polygon (0 inside) to each point, in an azimuthal
+    equidistant frame centred on the AOI, so near distances are true to well under 1%."""
+    import shapely
+    from shapely.geometry import shape
+    from shapely.ops import transform
+    from pyproj import Transformer
+    cx, cy = aoi["centroid"]
+    t = Transformer.from_crs("EPSG:4326", f"+proj=aeqd +lat_0={cy} +lon_0={cx} +units=km",
+                             always_xy=True)
+    g = transform(lambda x, y, z=None: t.transform(x, y), shape(aoi["geom"]))
+    x, y = t.transform(np.asarray(lons, dtype="f8"), np.asarray(lats, dtype="f8"))
+    return shapely.distance(g, shapely.points(x, y))
+
+
+def _ranked(aoi, df):
+    """Rows with `km` from the AOI, nearest first; points inside the AOI rank by centroid distance."""
+    cx, cy = aoi["centroid"]
+    return (df.assign(km=_aoi_km(aoi, df["lat"], df["lon"]),
+                      ckm=_hav_km(cy, cx, df["lat"], df["lon"]))
+            .sort_values(["km", "ckm"], kind="stable"))
+
+
 def _fold(s):
     """Accent- and case-insensitive key (Natural Earth says 'Québec', PHAC 'Quebec')."""
     import unicodedata
@@ -105,6 +129,10 @@ def _pad_bbox(bbox, km):
     dy = km / 110.574
     dx = km / max(1e-6, 111.320 * math.cos(math.radians((y0 + y1) / 2)))
     return [x0 - dx, y0 - dy, x1 + dx, y1 + dy]
+
+
+def _eccc_url(path):
+    return requests.Request("GET", ECCC, params={"path": path}).prepare().url
 
 
 def _eccc_get(path, dest=None, timeout=300):
@@ -121,14 +149,10 @@ def _eccc_get(path, dest=None, timeout=300):
     return dest
 
 
-def _eccc_latest_year(parent, prefix="", suffix=""):
+def _eccc_ls(parent):
     r = S.get(ECCC_LS, params={"path": parent}, timeout=90)
     r.raise_for_status()
-    names = [e["name"] for e in r.json().get("path_contents", [])]
-    yrs = sorted(n for n in names if n.isdigit() and len(n) == 4)
-    if not yrs:
-        raise LookupError(f"no year directories under {parent}")
-    return yrs[-1]
+    return [e["name"] for e in r.json().get("path_contents", [])]
 
 
 def _fcsi_ca_bundle():
@@ -176,7 +200,6 @@ def _admin1():
 
 
 def _admin1_at(lon, lat):
-    import geopandas as gpd
     from shapely.geometry import Point
     g = _admin1()
     hit = g.iloc[list(g.sindex.query(Point(lon, lat), predicate="intersects"))]
@@ -185,16 +208,6 @@ def _admin1_at(lon, lat):
     r = hit.iloc[0]
     return {"name": str(r["name"]), "postal": str(r["postal"]),
             "iso_3166_2": str(r["iso_3166_2"]), "country": str(r["iso_a2"])}
-
-
-# pruid (Statistics Canada province/territory SGC code) by province postal abbreviation
-PRUID = {"NL": 10, "PE": 11, "NS": 12, "NB": 13, "QC": 24, "ON": 35, "MB": 46,
-         "SK": 47, "AB": 48, "BC": 59, "YT": 60, "NT": 61, "NU": 62}
-# PHAC RVDSS reporting regions by province
-RVDSS_REGION = {"BC": "British Columbia", "AB": "Prairies", "SK": "Prairies",
-                "MB": "Prairies", "ON": "Ontario", "QC": "Quebec", "NB": "Atlantic",
-                "NS": "Atlantic", "PE": "Atlantic", "NL": "Atlantic",
-                "YT": "Territories", "NT": "Territories", "NU": "Territories"}
 
 
 def _us_county(lon, lat):
@@ -212,12 +225,12 @@ def _us_county(lon, lat):
 
 # =============================================================== air quality
 def _naps_means():
-    """NAPS annual means table (one row per station x pollutant). ~0.3 MB cached."""
+    """NAPS continuous annual means table (one row per station x pollutant). ~0.3 MB cached."""
     def build():
-        pq = os.path.join(CACHE, "naps_means.parquet")
+        pq = os.path.join(CACHE, "naps_means_v2.parquet")
         if os.path.exists(pq):
             return pd.read_parquet(pq)
-        year = _eccc_latest_year(f"{NAPS_DIR}/Data-Donnees")
+        year = max(n for n in _eccc_ls(f"{NAPS_DIR}/Data-Donnees") if n.isdigit() and len(n) == 4)
         last_err = None
         for y in (year, str(int(year) - 1), str(int(year) - 2)):
             p = (f"{NAPS_DIR}/Data-Donnees/{y}/ContinuousData-DonneesContinu/"
@@ -235,14 +248,13 @@ def _naps_means():
                               columns=cols)
             df = df.rename(columns={"NAPS ID": "naps_id", "Latitude": "lat",
                                     "Longitude": "lon", "Pollutant": "pollutant",
-                                    "Average": "annual_mean", "%Complete": "pct_complete",
-                                    "City": "city"})
-            for c in ("lat", "lon", "annual_mean", "pct_complete"):
+                                    "Average": "annual_mean", "City": "city"})
+            for c in ("lat", "lon", "annual_mean"):
                 df[c] = pd.to_numeric(df[c], errors="coerce")
             df = df.dropna(subset=["lat", "lon"])
             df["year"] = int(y)
-            df = df[["naps_id", "city", "lat", "lon", "pollutant", "annual_mean",
-                     "pct_complete", "year"]]
+            df["src"] = p
+            df = df[["naps_id", "city", "lat", "lon", "pollutant", "annual_mean", "year", "src"]]
             df.to_parquet(pq + ".part")
             os.replace(pq + ".part", pq)
             return df
@@ -251,49 +263,43 @@ def _naps_means():
     return _once("naps", build)
 
 
-NAPS_UNITS = {"NO2": "ppb", "O3": "ppb", "SO2": "ppb", "NO": "ppb", "NOX": "ppb",
-              "CO": "ppm", "PM2.5": "ugm3", "PM10": "ugm3"}
-
-
-def _naps_features(lat, lon, df, pref="naps"):
-    d = _hav_km(lat, lon, df["lat"].values, df["lon"].values)
-    stn = df.assign(km=d).sort_values("km")
-    uniq = stn.drop_duplicates("naps_id")
-    f = {f"{pref}_nearest_station_km": round(float(uniq["km"].iloc[0]), 2),
-         f"{pref}_nearest_station_id": str(uniq["naps_id"].iloc[0]),
-         f"{pref}_nearest_station_city": str(uniq["city"].iloc[0])[:48],
-         f"{pref}_stations_25km": int((uniq["km"] <= 25).sum()),
-         f"{pref}_stations_50km": int((uniq["km"] <= 50).sum()),
-         f"{pref}_year": int(df["year"].iloc[0])}
-    near = stn[(stn["km"] <= 50) & stn["annual_mean"].notna()]
-    for pol, unit in NAPS_UNITS.items():
-        sub = near[near["pollutant"] == pol]
-        if sub.empty:
-            continue
-        key = pol.replace(".", "").lower()
-        f[f"{pref}_{key}_{unit}_mean"] = round(float(sub["annual_mean"].iloc[0]), 4)
-        f[f"{pref}_{key}_src_km"] = round(float(sub["km"].iloc[0]), 2)
-    return f
+# units as the Means file header states them
+NAPS_UNITS = {"SO2": "ppb", "NO2": "ppb", "O3": "ppb", "NO": "ppb", "NOX": "ppb",
+              "CO": "ppm", "PM10": "ug/m3", "PM2.5": "ug/m3"}
 
 
 def _a_naps(aoi):
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (NAPS is Canada-only)")
     df = _naps_means()
-    cx, cy = aoi["centroid"]
-    f = _naps_features(cy, cx, df)
-    return f, {"obs_date": str(int(df["year"].iloc[0])), "res_m": "point",
-               "item": f"NAPS {int(df['year'].iloc[0])} annual means"}
+    stn = _ranked(aoi, df)
+    uniq = stn.drop_duplicates("naps_id")
+    f = {"naps_nearest_continuous_station_km": round(float(uniq["km"].iloc[0]), 2),
+         "naps_nearest_continuous_station_id": str(uniq["naps_id"].iloc[0]),
+         "naps_nearest_continuous_station_city": str(uniq["city"].iloc[0]),
+         "naps_continuous_stations_25km": int((uniq["km"] <= 25).sum()),
+         "naps_continuous_stations_50km": int((uniq["km"] <= 50).sum())}
+    near = stn[(stn["km"] <= 50) & stn["annual_mean"].notna()].drop_duplicates("pollutant")
+    if len(near):
+        f["naps_annual_mean"] = [{"class": r.pollutant, "value": round(float(r.annual_mean), 4),
+                                  "unit": NAPS_UNITS.get(r.pollutant, "")}
+                                 for r in near.itertuples()]
+        f["naps_annual_mean_station_km"] = [{"class": r.pollutant, "value": round(float(r.km), 2)}
+                                            for r in near.itertuples()]
+    y = int(df["year"].iloc[0])
+    return f, {"obs_date": str(y), "res_m": "point", "item": f"{y}_Means_EN.csv",
+               "release": f"NAPS {y} continuous annual means", "url": _eccc_url(df["src"].iloc[0])}
+
+
+# EPA parameter code -> unit as AirData's 'Units of Measure' gives it
+AQS_PARAMS = {"88101": "ug/m3", "44201": "ppm", "42602": "ppb", "42401": "ppb",
+              "42101": "ppm", "81102": "ug/m3", "88502": "ug/m3"}
 
 
 def _aqs_annual():
     """EPA AirData pre-generated annual concentrations by monitor (keyless). ~4 MB."""
-    PARAMS = {"88101": ("pm25", "ugm3"), "44201": ("o3", "ppm"), "42602": ("no2", "ppb"),
-              "42401": ("so2", "ppb"), "42101": ("co", "ppm"), "81102": ("pm10", "ugm3"),
-              "88502": ("pm25_nonfrm", "ugm3")}
-
     def build():
-        pq = os.path.join(CACHE, "aqs_annual.parquet")
+        pq = os.path.join(CACHE, "aqs_annual_v2.parquet")
         if os.path.exists(pq):
             return pd.read_parquet(pq)
         this = time.gmtime().tm_year
@@ -303,218 +309,171 @@ def _aqs_annual():
             if r.status_code != 200 or r.content[:2] != b"PK":
                 continue
             z = zipfile.ZipFile(io.BytesIO(r.content))
-            name = z.namelist()[0]
-            df = pd.read_csv(z.open(name), low_memory=False, dtype={"Parameter Code": str},
+            df = pd.read_csv(z.open(z.namelist()[0]), low_memory=False,
+                             dtype={"Parameter Code": str},
                              usecols=["State Code", "County Code", "Site Num",
-                                      "Parameter Code", "Parameter Name", "POC",
-                                      "Sample Duration", "Latitude", "Longitude",
-                                      "Year", "Units of Measure", "Arithmetic Mean",
+                                      "Parameter Code", "Parameter Name", "Sample Duration",
+                                      "Latitude", "Longitude", "Year", "Arithmetic Mean",
                                       "Observation Percent", "Local Site Name"])
-            df = df[df["Parameter Code"].isin(PARAMS)]
+            df = df[df["Parameter Code"].isin(AQS_PARAMS)]
             df = df.rename(columns={"Latitude": "lat", "Longitude": "lon",
-                                    "Parameter Code": "pcode", "Arithmetic Mean": "mean",
-                                    "Observation Percent": "obs_pct", "Year": "year",
-                                    "Local Site Name": "site_name",
+                                    "Parameter Code": "pcode", "Parameter Name": "param",
+                                    "Arithmetic Mean": "mean", "Observation Percent": "obs_pct",
+                                    "Year": "year", "Local Site Name": "site_name",
                                     "Sample Duration": "duration"})
             df["site_id"] = (df["State Code"].astype(str).str.zfill(2)
                              + df["County Code"].astype(str).str.zfill(3)
                              + df["Site Num"].astype(str).str.zfill(4))
-            df = df[["site_id", "site_name", "lat", "lon", "pcode", "duration",
-                     "mean", "obs_pct", "year"]].dropna(subset=["lat", "lon"])
+            df["src"] = u
+            df = df[["site_id", "site_name", "lat", "lon", "pcode", "param", "duration",
+                     "mean", "obs_pct", "year", "src"]].dropna(subset=["lat", "lon"])
             df.to_parquet(pq + ".part")
             os.replace(pq + ".part", pq)
             return df
         raise LookupError("no annual_conc_by_monitor_<year>.zip reachable on aqs.epa.gov")
-    return _once("aqs", build), PARAMS
+    return _once("aqs", build)
 
 
 def _a_aqs(aoi):
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (EPA AQS is US-only)")
-    df, PARAMS = _aqs_annual()
-    cx, cy = aoi["centroid"]
-    d = _hav_km(cy, cx, df["lat"].values, df["lon"].values)
-    m = df.assign(km=d).sort_values("km")
+    df = _aqs_annual()
+    m = _ranked(aoi, df)
     sites = m.drop_duplicates("site_id")
     f = {"aqs_nearest_monitor_km": round(float(sites["km"].iloc[0]), 2),
          "aqs_nearest_site_id": str(sites["site_id"].iloc[0]),
-         "aqs_nearest_site_name": str(sites["site_name"].iloc[0])[:48],
+         "aqs_nearest_site_name": str(sites["site_name"].iloc[0]),
          "aqs_sites_25km": int((sites["km"] <= 25).sum()),
-         "aqs_sites_50km": int((sites["km"] <= 50).sum()),
-         "aqs_year": int(df["year"].iloc[0])}
-    near = m[(m["km"] <= 50) & m["mean"].notna() & (m["obs_pct"] >= 50)]
-    for pc, (nm, unit) in PARAMS.items():
-        sub = near[near["pcode"] == pc]
-        if sub.empty:
-            continue
-        f[f"aqs_{nm}_{unit}_mean"] = round(float(sub["mean"].iloc[0]), 5)
-        f[f"aqs_{nm}_src_km"] = round(float(sub["km"].iloc[0]), 2)
-    return f, {"obs_date": str(int(df["year"].iloc[0])), "res_m": "point",
-               "item": f"EPA AirData annual_conc_by_monitor_{int(df['year'].iloc[0])}"}
+         "aqs_sites_50km": int((sites["km"] <= 50).sum())}
+    near = m[(m["km"] <= 50) & m["mean"].notna() & (m["obs_pct"] >= 50)].drop_duplicates("pcode")
+    if len(near):
+        f["aqs_annual_mean"] = [{"class": r.param, "value": round(float(r.mean), 5),
+                                 "unit": AQS_PARAMS[r.pcode]} for r in near.itertuples()]
+        f["aqs_annual_mean_site_km"] = [{"class": r.param, "value": round(float(r.km), 2)}
+                                        for r in near.itertuples()]
+    y = int(df["year"].iloc[0])
+    return f, {"obs_date": str(y), "res_m": "point", "item": f"annual_conc_by_monitor_{y}",
+               "release": f"EPA AirData annual concentration by monitor {y}",
+               "url": df["src"].iloc[0]}
 
 
 CAMS_VARS = ["pm2_5", "pm10", "carbon_monoxide", "nitrogen_dioxide",
              "sulphur_dioxide", "ozone", "aerosol_optical_depth"]
-CAMS_SHORT = {"pm2_5": "pm25_ugm3", "pm10": "pm10_ugm3", "carbon_monoxide": "co_ugm3",
-              "nitrogen_dioxide": "no2_ugm3", "sulphur_dioxide": "so2_ugm3",
-              "ozone": "o3_ugm3", "aerosol_optical_depth": "aod550"}
-
-
-def _cams_at(lat, lon, past_days=30):
-    r = S.get("https://air-quality-api.open-meteo.com/v1/air-quality",
-              params={"latitude": round(lat, 4), "longitude": round(lon, 4),
-                      "hourly": ",".join(CAMS_VARS), "domains": "cams_global",
-                      "past_days": past_days, "forecast_days": 0, "timezone": "UTC"},
-              timeout=60)
-    r.raise_for_status()
-    return r.json()
+CAMS_DAYS = 30
 
 
 def _a_cams(aoi):
     cx, cy = aoi["centroid"]
-    j = _cams_at(cy, cx)
-    h = j.get("hourly") or {}
+    r = S.get(CAMS_URL, params={"latitude": round(cy, 4), "longitude": round(cx, 4),
+                                "hourly": ",".join(CAMS_VARS), "domains": "cams_global",
+                                "past_days": CAMS_DAYS, "forecast_days": 0, "timezone": "UTC"},
+              timeout=60)
+    r.raise_for_status()
+    j = r.json()
+    h, units = j.get("hourly") or {}, j.get("hourly_units") or {}
     t = h.get("time") or []
     if not t:
         raise LookupError("open-meteo air-quality returned an empty hourly series")
-    f = {}
-    for v, short in CAMS_SHORT.items():
+    mean, p95 = [], []
+    for v in CAMS_VARS:
         a = np.array([x for x in (h.get(v) or []) if x is not None], dtype="f8")
         if not a.size:
             continue
-        f[f"cams_{short}_mean"] = round(float(a.mean()), 3)
-        f[f"cams_{short}_p95"] = round(float(np.percentile(a, 95)), 3)
-    if not f:
+        unit = (units.get(v) or "1").replace("μg/m³", "ug/m3")
+        mean.append({"class": v, "value": round(float(a.mean()), 3), "unit": unit})
+        p95.append({"class": v, "value": round(float(np.percentile(a, 95)), 3), "unit": unit})
+    if not mean:
         raise LookupError("open-meteo air-quality returned no valid values")
-    f["cams_n_hours"] = int(len(t))
-    f["cams_grid_lat"] = round(float(j.get("latitude")), 3)
-    f["cams_grid_lon"] = round(float(j.get("longitude")), 3)
-    return f, {"obs_date": f"{t[0][:10]}/{t[-1][:10]}", "res_m": 44000,
-               "item": "CAMS global reanalysis/forecast via open-meteo"}
+    f = {f"cams_hourly_mean_{CAMS_DAYS}d": mean, f"cams_hourly_p95_{CAMS_DAYS}d": p95,
+         "cams_grid_lat": round(float(j.get("latitude")), 3),
+         "cams_grid_lon": round(float(j.get("longitude")), 3)}
+    return f, {"obs_date": f"{t[0][:10]}/{t[-1][:10]}", "res_m": 45000,
+               "item": f"{len(t)} hourly steps", "release": "CAMS global (Open-Meteo domains=cams_global)",
+               "url": CAMS_URL}
 
 
 # =============================================================== emissions
 NPRI_COLS = {"Année / Year": "year", "ID INRP / NPRI ID": "npri_id",
              "Nom de l'installation / Facility Name": "facility",
-             "Province / Province": "prov",
              "Latitude / Latitude": "lat", "Longitude / Longitude": "lon",
              "Nom de secteur SCIAN 4 (Anglais) / NAICS 4 Sector Name (English)": "sector",
-             "No CAS / CAS Number": "cas",
              "Nom de substance (Anglais) / Substance Name (English)": "substance",
              "Unités / Units": "units"}
-NPRI_SUMS = {"Émissions à l'air - Totale / Air Emissions - Total": "air",
-             "Rejets à l'eau - Totale / Water Releases - Total": "water",
-             "Rejets au sol - Totalee / Land Releases - Total": "land"}
-_TO_KG = {"tonnes": 1000.0, "kg": 1.0, "grams": 0.001}
+NPRI_MEDIA = {"Émissions à l'air - Totale / Air Emissions - Total": "air",
+              "Rejets à l'eau - Totale / Water Releases - Total": "water",
+              "Rejets au sol - Totalee / Land Releases - Total": "land"}
+# NPRI unit -> (factor, unit written)
+NPRI_UNITS = {"tonnes": (1000.0, "kg"), "kg": (1.0, "kg"), "grams": (0.001, "kg"),
+              "g TEQ": (1.0, "g TEQ")}
 
 
 def _npri():
-    """NPRI single-year facility x substance release table. ~39 MB CSV -> ~6 MB parquet."""
+    """NPRI single-year facility x substance release table, newest year. ~39 MB CSV."""
     def build():
-        pq = os.path.join(CACHE, "npri_releases.parquet")
+        pq = os.path.join(CACHE, "npri_releases_v2.parquet")
         if os.path.exists(pq):
             return pd.read_parquet(pq)
-        r = S.get(ECCC_LS, params={"path": NPRI_DIR}, timeout=90)
-        r.raise_for_status()
-        names = [e["name"] for e in r.json().get("path_contents", [])
-                 if e["name"].endswith(".csv") and "DataDonn" in e["name"]]
+        names = [n for n in _eccc_ls(NPRI_DIR) if n.endswith(".csv") and "DataDonn" in n]
         if not names:
             raise LookupError("no NPRI-INRP_DataDonnees_<year>.csv in the NPRI directory")
-        name = sorted(names)[-1]
-        raw = os.path.join(CACHE, "_npri_raw.csv")
-        _eccc_get(f"{NPRI_DIR}/{name}", dest=raw)
-        want = list(NPRI_COLS) + list(NPRI_SUMS)
-        df = pd.read_csv(raw, encoding="latin-1", low_memory=False, usecols=want)
-        df = df.rename(columns={**NPRI_COLS, **NPRI_SUMS})
-        for c in ("lat", "lon", "air", "water", "land"):
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-        df = df.dropna(subset=["lat", "lon"])
-        u = df["units"].astype(str).str.strip().str.lower()
-        df["kg_factor"] = u.map(_TO_KG)
-        df["is_teq"] = u.str.contains("teq")
-        df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
-        df = df[["year", "npri_id", "facility", "prov", "lat", "lon", "sector",
-                 "cas", "substance", "units", "kg_factor", "is_teq",
-                 "air", "water", "land"]]
+        path = f"{NPRI_DIR}/{sorted(names)[-1]}"
+        raw = _eccc_get(path, dest=os.path.join(CACHE, "_npri_raw.csv"))
+        df = pd.read_csv(raw, encoding="latin-1", low_memory=False,
+                         usecols=list(NPRI_COLS) + list(NPRI_MEDIA))
+        df = df.rename(columns={**NPRI_COLS, **NPRI_MEDIA}).dropna(subset=["lat", "lon"])
+        bad = set(df["units"]) - set(NPRI_UNITS)
+        if bad:
+            raise LookupError(f"NPRI units not understood: {sorted(bad)}")
+        factor = df["units"].map(lambda u: NPRI_UNITS[u][0])
+        for c in ("air", "water", "land"):
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0) * factor
+        df["unit"] = df["units"].map(lambda u: NPRI_UNITS[u][1])
+        df["src"] = path
+        df = df[["year", "npri_id", "facility", "lat", "lon", "sector", "substance", "unit",
+                 "air", "water", "land", "src"]]
         df.to_parquet(pq + ".part")
         os.replace(pq + ".part", pq)
-        try:
-            os.remove(raw)
-        except OSError:
-            pass
+        os.remove(raw)
         return df
     return _once("npri", build)
-
-
-# the criteria air contaminants, reported by name in NPRI
-NPRI_CAC = {"pm25": "PM2.5 - Particulate Matter <= 2.5 Micrometers",
-            "pm10": "PM10 - Particulate Matter <= 10 Micrometers",
-            "so2": "Sulphur dioxide", "nox": "Nitrogen oxides (expressed as nitrogen dioxide)",
-            "voc": "Volatile Organic Compounds (VOCs)", "co": "Carbon monoxide"}
-
-
-def _npri_features(lat, lon, df, buf_km=BUF_KM):
-    d = _hav_km(lat, lon, df["lat"].values, df["lon"].values)
-    w = df.assign(km=d)
-    fac = w.drop_duplicates("npri_id").sort_values("km")
-    yr = int(w["year"].dropna().max()) if w["year"].notna().any() else None
-    f = {"npri_nearest_facility_km": round(float(fac["km"].iloc[0]), 2),
-         "npri_nearest_facility_name": str(fac["facility"].iloc[0])[:56],
-         "npri_nearest_facility_sector": str(fac["sector"].iloc[0])[:48],
-         "npri_facilities_25km": int((fac["km"] <= buf_km).sum()),
-         "npri_facilities_10km": int((fac["km"] <= 10).sum()),
-         "npri_year": yr}
-    near = w[w["km"] <= buf_km]
-    mass = near[near["kg_factor"].notna() & ~near["is_teq"]].copy()
-    if mass.empty:
-        f["npri_substances_25km"] = 0
-        return f
-    for col in ("air", "water", "land"):
-        mass[col + "_kg"] = mass[col].fillna(0.0) * mass["kg_factor"]
-    f["npri_air_releases_kg_25km"] = round(float(mass["air_kg"].sum()), 1)
-    f["npri_water_releases_kg_25km"] = round(float(mass["water_kg"].sum()), 1)
-    f["npri_land_releases_kg_25km"] = round(float(mass["land_kg"].sum()), 1)
-    f["npri_total_releases_kg_25km"] = round(
-        float(mass[["air_kg", "water_kg", "land_kg"]].sum().sum()), 1)
-    f["npri_substances_25km"] = int(mass["substance"].nunique())
-    tot = (mass.assign(t=mass[["air_kg", "water_kg", "land_kg"]].sum(axis=1))
-               .groupby("substance")["t"].sum().sort_values(ascending=False))
-    if len(tot):
-        f["npri_top_substance"] = str(tot.index[0])[:56]
-        f["npri_top_substance_kg_25km"] = round(float(tot.iloc[0]), 1)
-    for k, nm in NPRI_CAC.items():
-        v = tot.get(nm)
-        if v is not None:
-            f[f"npri_{k}_kg_25km"] = round(float(v), 1)
-    return f
 
 
 def _a_npri(aoi):
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (NPRI is Canada-only)")
     df = _npri()
-    cx, cy = aoi["centroid"]
-    f = _npri_features(cy, cx, df)
-    yr = f.get("npri_year")
-    return f, {"obs_date": str(yr) if yr else "unknown", "res_m": "point",
-               "item": f"NPRI reporting year {yr}"}
+    w = _ranked(aoi, df)
+    fac = w.drop_duplicates("npri_id")
+    f = {"npri_nearest_facility_km": round(float(fac["km"].iloc[0]), 2),
+         "npri_nearest_facility_name": str(fac["facility"].iloc[0]),
+         "npri_nearest_facility_sector": str(fac["sector"].iloc[0]),
+         "npri_facilities_25km": int((fac["km"] <= BUF_KM).sum()),
+         "npri_facilities_10km": int((fac["km"] <= 10).sum())}
+    near = w[w["km"] <= BUF_KM]
+    f["npri_substances_25km"] = int(near["substance"].nunique())
+    tot = near.groupby(["substance", "unit"])[["air", "water", "land"]].sum()
+    for col in ("air", "water", "land"):
+        recs = [{"class": s, "value": float(f"{v:.6g}"), "unit": u}
+                for (s, u), v in tot[col].items() if v > 0]
+        if recs:
+            f[f"npri_{col}_releases_25km"] = recs
+    y = int(df["year"].iloc[0])
+    return f, {"obs_date": str(y), "res_m": "point", "item": df["src"].iloc[0].rsplit("/", 1)[-1],
+               "release": f"NPRI {y} reporting year", "url": _eccc_url(df["src"].iloc[0])}
 
 
 def _ghgrp():
-    """ECCC GHGRP facility greenhouse-gas emissions, 2004-present. ~10 MB CSV."""
+    """ECCC GHGRP facility greenhouse-gas emissions, newest reference year. ~10 MB CSV."""
     def build():
-        pq = os.path.join(CACHE, "ghgrp.parquet")
+        pq = os.path.join(CACHE, "ghgrp_v2.parquet")
         if os.path.exists(pq):
             return pd.read_parquet(pq)
-        r = S.get(ECCC_LS, params={"path": GHGRP_DIR}, timeout=90)
-        r.raise_for_status()
-        names = [e["name"] for e in r.json().get("path_contents", [])
-                 if e["name"].endswith(".csv") and "GHGEmissionsGES" in e["name"]]
+        names = [n for n in _eccc_ls(GHGRP_DIR) if n.endswith(".csv") and "GHGEmissionsGES" in n]
         if not names:
             raise LookupError("no PDGES-GHGRP-GHGEmissionsGES*.csv in the GHGRP directory")
-        raw = _eccc_get(f"{GHGRP_DIR}/{sorted(names)[-1]}",
-                        dest=os.path.join(CACHE, "_ghgrp_raw.csv"))
-        hdr = pd.read_csv(raw, encoding="latin-1", nrows=0).columns.tolist()
+        path = f"{GHGRP_DIR}/{sorted(names)[-1]}"
+        raw = _eccc_get(path, dest=os.path.join(CACHE, "_ghgrp_raw.csv"))
+        hdr = pd.read_csv(raw, encoding="utf-8-sig", nrows=0).columns.tolist()
 
         def col(sub):
             for c in hdr:
@@ -523,51 +482,39 @@ def _ghgrp():
             raise LookupError(f"GHGRP column matching {sub!r} not found")
         cmap = {col("Reference Year"): "year", col("Facility Name"): "facility",
                 col("Latitude"): "lat", col("Longitude"): "lon",
-                col("Facility NAICS Code Description"): "sector",
-                col("TOTAL EMISSIONS (tonnes CO2e"): "co2e_t"}
-        df = pd.read_csv(raw, encoding="latin-1", low_memory=False,
+                col("English Facility NAICS Code Description"): "sector",
+                col("excl. CO2bio"): "co2e_t"}
+        df = pd.read_csv(raw, encoding="utf-8-sig", low_memory=False,
                          usecols=list(cmap)).rename(columns=cmap)
         for c in ("lat", "lon", "co2e_t", "year"):
             df[c] = pd.to_numeric(df[c], errors="coerce")
         df = df.dropna(subset=["lat", "lon", "year"])
         df["year"] = df["year"].astype(int)
-        df = df[df["year"] == df["year"].max()]
+        df = df[df["year"] == df["year"].max()].assign(src=path)
         df.to_parquet(pq + ".part")
         os.replace(pq + ".part", pq)
-        try:
-            os.remove(raw)
-        except OSError:
-            pass
+        os.remove(raw)
         return df
     return _once("ghgrp", build)
-
-
-def _ghgrp_features(lat, lon, df, buf_km=BUF_KM):
-    d = _hav_km(lat, lon, df["lat"].values, df["lon"].values)
-    w = df.assign(km=d).sort_values("km")
-    near = w[w["km"] <= buf_km]
-    f = {"ghgrp_nearest_facility_km": round(float(w["km"].iloc[0]), 2),
-         "ghgrp_nearest_facility_name": str(w["facility"].iloc[0])[:56],
-         "ghgrp_facilities_25km": int(len(near)),
-         "ghgrp_year": int(df["year"].iloc[0])}
-    if len(near):
-        f["ghgrp_co2e_kt_25km"] = round(float(near["co2e_t"].fillna(0).sum()) / 1000.0, 2)
-        f["ghgrp_max_facility_co2e_kt"] = round(float(near["co2e_t"].max()) / 1000.0, 2)
-        f["ghgrp_top_sector_25km"] = str(
-            near.groupby("sector")["co2e_t"].sum().sort_values(ascending=False).index[0])[:48]
-    else:
-        f["ghgrp_co2e_kt_25km"] = 0.0
-    return f
 
 
 def _a_ghgrp(aoi):
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (ECCC GHGRP is Canada-only)")
     df = _ghgrp()
-    cx, cy = aoi["centroid"]
-    f = _ghgrp_features(cy, cx, df)
-    return f, {"obs_date": str(int(df["year"].iloc[0])), "res_m": "point",
-               "item": f"ECCC GHGRP {int(df['year'].iloc[0])}"}
+    w = _ranked(aoi, df)
+    near = w[w["km"] <= BUF_KM]
+    f = {"ghgrp_nearest_facility_km": round(float(w["km"].iloc[0]), 2),
+         "ghgrp_nearest_facility_name": str(w["facility"].iloc[0]),
+         "ghgrp_facilities_25km": int(len(near)),
+         "ghgrp_co2e_excl_co2bio_kt_25km": round(float(near["co2e_t"].fillna(0).sum()) / 1000.0, 2)}
+    if len(near):
+        f["ghgrp_max_facility_co2e_excl_co2bio_kt_25km"] = round(float(near["co2e_t"].max()) / 1000.0, 2)
+        f["ghgrp_top_sector_25km"] = str(
+            near.groupby("sector")["co2e_t"].sum().sort_values(ascending=False).index[0])
+    y = int(df["year"].iloc[0])
+    return f, {"obs_date": str(y), "res_m": "point", "item": df["src"].iloc[0].rsplit("/", 1)[-1],
+               "release": f"GHGRP {y} reference year", "url": _eccc_url(df["src"].iloc[0])}
 
 
 # Measured throttle on frs-public.epa.gov: the 4th request inside ~10 s returns 429,
@@ -619,48 +566,6 @@ def _frs(lat, lon, radius_mi, acrnm=None, timeout=90, retries=3):
     return out
 
 
-def _a_echo_tri(aoi):
-    """US emissions-source presence from ECHO, at NPRI-comparable buffers.
-
-    These are REPORTER COUNTS, not release quantities.  TRI release tonnages are
-    published only through data.epa.gov (Envirofacts), which is not reachable from
-    this sandbox and whose lat/long operators a sister lane measured as
-    non-filtering (byte-identical payloads for an AOI and a mid-Pacific control).
-    """
-    if aoi["country"] != "US":
-        raise PermissionError("out of coverage (EPA ECHO/TRI is US-only)")
-    f = {}
-    for km in (25.0, 10.0):
-        res = _echo_box(_pad_bbox(aoi["bbox"], km))
-        tag = f"{int(km)}km"
-        for k, nm in (("TRIRows", "tri_reporters"), ("CAARows", "caa_air_sources"),
-                      ("RCRRows", "rcra_handlers"), ("QueryRows", "regulated_facilities")):
-            try:
-                f[f"echotri_{nm}_{tag}"] = int(str(res.get(k, "")).replace(",", ""))
-            except ValueError:
-                continue
-    if not f:
-        raise LookupError("ECHO returned no countable rows at either buffer")
-    if f.get("echotri_regulated_facilities_25km"):
-        f["echotri_tri_frac_of_regulated_25km"] = round(
-            f.get("echotri_tri_reporters_25km", 0)
-            / f["echotri_regulated_facilities_25km"], 5)
-    f["echotri_density_per_km2_25km"] = round(
-        f.get("echotri_regulated_facilities_25km", 0)
-        / max(aoi["area_km2"] + 4 * 25 * math.sqrt(max(aoi["area_km2"], 1)), 1.0), 4)
-    return f, {"obs_date": "current snapshot", "res_m": "vector",
-               "item": "ECHO bbox reporter counts at 25 km / 10 km buffers"}
-
-
-# =============================================================== compliance
-_ECHO_MAP = {"QueryRows": "echo_facilities", "SVRows": "echo_significant_violations",
-             "CVRows": "echo_current_violations", "V3Rows": "echo_violations_3yr",
-             "FEARows": "echo_formal_actions_5yr", "InfFEARows": "echo_informal_actions_5yr",
-             "INSPRows": "echo_inspections_5yr", "CAARows": "echo_caa_facilities",
-             "CWARows": "echo_cwa_facilities", "RCRRows": "echo_rcra_facilities",
-             "TRIRows": "echo_tri_facilities", "IndianCountryRows": "echo_tribal_facilities"}
-
-
 def _echo_box(bbox, timeout=90):
     x0, y0, x1, y1 = bbox
     r = S.get(ECHO, params={"output": "JSON", "p_c1lat": round(y0, 6),
@@ -673,40 +578,30 @@ def _echo_box(bbox, timeout=90):
     return res
 
 
-def _echo_features(res):
-    f = {}
-    for k, nm in _ECHO_MAP.items():
-        v = res.get(k)
-        if v is None:
-            continue
-        try:
-            f[nm] = int(str(v).replace(",", ""))
-        except ValueError:
-            continue
-    pen = str(res.get("TotalPenalties") or "").replace("$", "").replace(",", "")
+def _rows(res, key):
     try:
-        f["echo_penalties_usd_5yr"] = float(pen)
+        return int(str(res.get(key, "")).replace(",", ""))
     except ValueError:
-        pass
-    if f.get("echo_facilities"):
-        f["echo_insp_per_facility"] = round(f.get("echo_inspections_5yr", 0)
-                                            / f["echo_facilities"], 4)
-        f["echo_sig_violation_rate"] = round(f.get("echo_significant_violations", 0)
-                                             / f["echo_facilities"], 5)
-    return f
+        return None
 
 
-def _a_echo(aoi):
+def _a_echo_tri(aoi):
+    """US emissions-source presence from ECHO: REPORTER COUNTS in the AOI bbox padded by
+    25 km and 10 km, not release quantities (TRI tonnages need Envirofacts, see NOT_SHIPPED)."""
     if aoi["country"] != "US":
-        raise PermissionError("out of coverage (EPA ECHO is US-only)")
-    bbox = _pad_bbox(aoi["bbox"], 2.0)
-    res = _echo_box(bbox)
-    f = _echo_features(res)
+        raise PermissionError("out of coverage (EPA ECHO/TRI is US-only)")
+    f = {}
+    for km in (25, 10):
+        res = _echo_box(_pad_bbox(aoi["bbox"], km))
+        for k, nm in (("TRIRows", "tri_reporters"), ("CAARows", "caa_air_sources"),
+                      ("RCRRows", "rcra_handlers"), ("QueryRows", "regulated_facilities")):
+            v = _rows(res, k)
+            if v is not None:
+                f[f"echotri_{nm}_bbox_pad{km}km"] = v
     if not f:
-        raise LookupError("ECHO returned no countable rows")
-    f["echo_bbox_pad_km"] = 2.0
-    return f, {"obs_date": "5-year compliance window, current snapshot",
-               "res_m": "vector", "item": "ECHO " + str(res.get("Version"))[:40]}
+        raise LookupError("ECHO returned no countable rows at either buffer")
+    return f, {"obs_date": "current snapshot", "res_m": "vector",
+               "item": "ECHO bbox reporter counts", "release": "current snapshot", "url": ECHO}
 
 
 # =============================================================== contaminated sites
@@ -714,26 +609,25 @@ def _a_frs_sems(aoi):
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (EPA SEMS/Superfund is US-only)")
     cx, cy = aoi["centroid"]
-    fac = _frs(cy, cx, 16, acrnm="SEMS")       # 16 mi ~ 25 km
-    if not fac:
-        return ({"sems_sites_25km": 0, "sems_sites_10km": 0, "sems_nearest_km": None},
-                {"obs_date": "current", "res_m": "point",
-                 "note": "verified absence: FRS returned no SEMS site within 16 mi"})
-    d = _hav_km(cy, cx, [x["lat"] for x in fac], [x["lon"] for x in fac])
-    o = np.argsort(d)
-    return ({"sems_sites_25km": int((d <= 25).sum()),
-             "sems_sites_10km": int((d <= 10).sum()),
-             "sems_sites_5km": int((d <= 5).sum()),
-             "sems_nearest_km": round(float(d[o[0]]), 2),
-             "sems_nearest_name": str(fac[o[0]]["name"])[:56]},
-            {"obs_date": "current", "res_m": "point", "item": "EPA FRS pgm=SEMS"})
+    x0, y0, x1, y1 = aoi["bbox"]
+    reach_km = BUF_KM + float(_hav_km(cy, cx, [y0, y0, y1, y1], [x0, x1, x0, x1]).max())
+    fac = _frs(cy, cx, math.ceil(reach_km / 1.609344), acrnm="SEMS")
+    d = _aoi_km(aoi, [x["lat"] for x in fac], [x["lon"] for x in fac]) if fac else np.zeros(0)
+    f = {"sems_sites_25km": int((d <= 25).sum()), "sems_sites_10km": int((d <= 10).sum()),
+         "sems_sites_5km": int((d <= 5).sum())}
+    if fac:
+        i = int(np.argmin(d))
+        f["sems_nearest_km"] = round(float(d[i]), 2)
+        f["sems_nearest_name"] = str(fac[i]["name"])
+    return f, {"obs_date": "current", "res_m": "point", "item": "EPA FRS pgm_sys_acrnm=SEMS",
+               "release": "current snapshot", "url": FRS}
 
 
 def _fcsi():
     """Federal Contaminated Sites Inventory. 8 MB zip -> 287 MB XML, streamed once
     into a ~1 MB parquet of georeferenced sites."""
     def build():
-        pq = os.path.join(CACHE, "fcsi_sites.parquet")
+        pq = os.path.join(CACHE, "fcsi_sites_v2.parquet")
         if os.path.exists(pq):
             return pd.read_parquet(pq)
         zp = os.path.join(CACHE, "fcsi.zip")
@@ -750,28 +644,18 @@ def _fcsi():
             for ev, el in ET.iterparse(fh, events=("end",)):
                 if el.tag != "Site":
                     continue
-                loc = el.find("Location")
-                lat = loc.findtext("Latitude") if loc is not None else None
-                lon = loc.findtext("Longitude") if loc is not None else None
+                lat, lon = el.findtext("Location/Latitude"), el.findtext("Location/Longitude")
                 if lat and lon:
-                    st = el.find("SiteStatus/Status/EN")
-                    cl = el.find("Classification")
                     ce = el.find("ContaminationDetails/ContaminationEstimates")
-                    conts = {c.findtext("EN") for c in
-                             el.findall("ContaminationDetails/ContaminatedMedia/Contamination")}
                     try:
                         rows.append({
-                            "site_id": el.get("FederalSiteIdentifier"),
                             "org": el.get("ReportingOrganization"),
-                            "name": (el.findtext("Name/EN") or "")[:80],
-                            "status": (st.text if st is not None else "") or "",
-                            "class_code": (cl.findtext("Code") if cl is not None else "") or "",
+                            "name": el.findtext("Name/EN") or "",
+                            "status": el.findtext("SiteStatus/Status/EN") or "",
+                            "classification": el.findtext("Classification/Name/EN") or "",
                             "lat": float(lat), "lon": float(lon),
-                            "prov": (loc.findtext("Province") or ""),
                             "cubic_m": float(ce.findtext("CubicMetres") or 0) if ce is not None else 0.0,
                             "hectares": float(ce.findtext("Hectares") or 0) if ce is not None else 0.0,
-                            "n_contaminants": len([c for c in conts if c]),
-                            "contaminants": "; ".join(sorted(c for c in conts if c))[:120],
                         })
                     except ValueError:
                         pass
@@ -785,52 +669,45 @@ def _fcsi():
     return _once("fcsi", build)
 
 
-def _fcsi_features(lat, lon, df, buf_km=BUF_KM):
-    d = _hav_km(lat, lon, df["lat"].values, df["lon"].values)
-    w = df.assign(km=d).sort_values("km")
-    near = w[w["km"] <= buf_km]
-    f = {"fcsi_nearest_site_km": round(float(w["km"].iloc[0]), 2),
-         "fcsi_nearest_site_name": str(w["name"].iloc[0])[:56],
-         "fcsi_nearest_site_status": str(w["status"].iloc[0])[:24],
-         "fcsi_nearest_site_org": str(w["org"].iloc[0])[:8],
-         "fcsi_sites_25km": int(len(near)),
-         "fcsi_sites_10km": int((w["km"] <= 10).sum()),
-         "fcsi_sites_5km": int((w["km"] <= 5).sum())}
-    if len(near):
-        f["fcsi_active_sites_25km"] = int((near["status"].str.lower() == "active").sum())
-        f["fcsi_closed_sites_25km"] = int((near["status"].str.lower() == "closed").sum())
-        f["fcsi_high_priority_sites_25km"] = int((near["class_code"] == "1").sum())
-        f["fcsi_contaminated_soil_m3_25km"] = round(float(near["cubic_m"].sum()), 1)
-        f["fcsi_contaminated_area_ha_25km"] = round(float(near["hectares"].sum()), 3)
-        f["fcsi_reporting_orgs_25km"] = int(near["org"].nunique())
-    return f
-
-
 def _a_fcsi(aoi):
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (FCSI is Canada-only)")
     df = _fcsi()
-    cx, cy = aoi["centroid"]
-    f = _fcsi_features(cy, cx, df)
+    w = _ranked(aoi, df)
+    near = w[w["km"] <= BUF_KM]
+    f = {"fcsi_nearest_site_km": round(float(w["km"].iloc[0]), 2),
+         "fcsi_nearest_site_name": str(w["name"].iloc[0]),
+         "fcsi_nearest_site_status": str(w["status"].iloc[0]),
+         "fcsi_nearest_site_org": str(w["org"].iloc[0]),
+         "fcsi_sites_25km": int(len(near)),
+         "fcsi_sites_10km": int((w["km"] <= 10).sum()),
+         "fcsi_sites_5km": int((w["km"] <= 5).sum())}
+    if len(near):
+        for col, nm in (("status", "fcsi_sites_by_status_25km"),
+                        ("classification", "fcsi_sites_by_classification_25km")):
+            n = near[near[col] != ""][col].value_counts()
+            if len(n):
+                f[nm] = [{"class": k, "value": int(v)} for k, v in n.items()]
+        f["fcsi_contamination_volume_m3_25km"] = round(float(near["cubic_m"].sum()), 1)
+        f["fcsi_contaminated_area_ha_25km"] = round(float(near["hectares"].sum()), 3)
+        f["fcsi_reporting_orgs_25km"] = int(near["org"].nunique())
     return f, {"obs_date": "current inventory snapshot", "res_m": "point",
-               "item": "TBS FCSI fcsi-rscf.xml"}
+               "item": "fcsi-rscf.xml", "release": "current snapshot", "url": FCSI_ZIP}
 
 
 # =============================================================== disease surveillance
-NNDSS_WATCH = ["Lyme disease", "Salmonellosis", "Pertussis", "Hepatitis C, Acute",
-               "Campylobacteriosis", "Legionellosis", "Tuberculosis"]
+# labels exactly as the weekly table publishes them (Lyme disease is not in it)
+NNDSS_WATCH = ["Salmonellosis (excluding Salmonella Typhi infection and Salmonella Paratyphi infection)",
+               "Pertussis", "Hepatitis C, acute, Confirmed", "Campylobacteriosis",
+               "Legionellosis", "Tuberculosis"]
 
 
 def _a_nndss(aoi):
-    """CDC NNDSS notifiable-disease counts, joined at STATE level.
-
-    This is a state-wide statistic, not an AOI measurement: res_m='admin:state'.
-    """
+    """CDC NNDSS notifiable-disease counts, joined at STATE level (res_m='admin:state')."""
     if aoi["country"] != "US":
         raise PermissionError("out of coverage (CDC NNDSS is US-only)")
     cx, cy = aoi["centroid"]
-    a = _admin1_at(cx, cy)
-    st = a["name"]
+    st = _admin1_at(cx, cy)["name"]
     u = f"{CDC}/x9gk-5huc.json"
     r = S.get(u, params={"$select": "max(year) as y", "$where": f"states='{st}'"}, timeout=60)
     r.raise_for_status()
@@ -845,45 +722,34 @@ def _a_nndss(aoi):
     r = S.get(u, params={"$where": f"states='{st}' AND year='{yr}' AND week='{wk}'",
                          "$limit": 5000}, timeout=90)
     r.raise_for_status()
-    rows = r.json()
-    if not rows:
+    df = pd.DataFrame(r.json())
+    if df.empty:
         raise LookupError(f"NNDSS returned no rows for {st} {yr}w{wk}")
-    df = pd.DataFrame(rows)
-    for c in ("m1", "m3", "m4"):
-        df[c] = pd.to_numeric(df.get(c), errors="coerce")
-    f = {"nndss_state": st, "nndss_year": int(yr), "nndss_week": int(wk),
-         "nndss_conditions_tabulated": int(df["label"].nunique()),
-         "nndss_conditions_with_cases_ytd": int((df["m3"].fillna(0) > 0).sum()),
-         "nndss_total_cases_ytd": round(float(df["m3"].fillna(0).sum()), 1),
-         "nndss_total_cases_prev_year_ytd": round(float(df["m4"].fillna(0).sum()), 1),
-         "nndss_cases_current_week": round(float(df["m1"].fillna(0).sum()), 1)}
-    g = df.groupby("label")["m3"].sum().sort_values(ascending=False)
-    if len(g):
-        f["nndss_top_condition"] = str(g.index[0])[:56]
-        f["nndss_top_condition_cases_ytd"] = round(float(g.iloc[0]), 1)
-    for nm in NNDSS_WATCH:
-        v = g.get(nm)
-        if v is not None and not pd.isna(v):
-            f["nndss_" + nm.split(",")[0].lower().replace(" ", "_") + "_ytd"] = round(float(v), 1)
-    return f, {"obs_date": f"{yr}-W{wk}", "res_m": "admin:state",
-               "item": f"CDC NNDSS x9gk-5huc / {st}"}
+    df = df[df["label"].isin(NNDSS_WATCH)]
+    f = {"nndss_state": st}
+    for col, nm in (("m1", "nndss_cases_current_week"), ("m3", "nndss_cases_ytd"),
+                    ("m4", "nndss_cases_prev_year_ytd")):
+        v = df.assign(v=pd.to_numeric(df.get(col), errors="coerce")).dropna(subset=["v"])
+        if len(v):
+            f[nm] = [{"class": r.label, "value": int(r.v)} for r in v.itertuples()]
+    return f, {"obs_date": f"{yr}-W{int(wk):02d}", "res_m": "admin:state",
+               "item": f"x9gk-5huc / {st}", "release": f"NNDSS weekly tables {yr}",
+               "url": u}
 
 
 def _rvdss():
     def build():
-        r = S.get(f"{INFOBASE}/respiratory-virus-detections/RVD_WeeklyData.csv", timeout=120)
+        r = S.get(RVDSS_URL, timeout=120)
         r.raise_for_status()
         df = pd.read_csv(io.BytesIO(r.content))
         for c in ("tests", "detections", "percentpositive", "week", "year"):
-            if c in df:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        return df
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        return df.dropna(subset=["tests", "detections", "percentpositive"], how="all")
     return _once("rvdss", build)
 
 
 def _a_rvdss(aoi):
-    """PHAC Respiratory Virus Detection Surveillance, joined at PROVINCE level
-    (reported by province; res_m='admin:province'). Not an AOI measurement."""
+    """PHAC Respiratory Virus Detection Surveillance: the province's latest week, per virus."""
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (PHAC RVDSS is Canada-only)")
     cx, cy = aoi["centroid"]
@@ -891,30 +757,20 @@ def _a_rvdss(aoi):
     df = _rvdss()
     sub = df[df["province"].astype(str).map(_fold) == _fold(a["name"])]
     if sub.empty:
-        reg = RVDSS_REGION.get(a["postal"])
-        sub = df[df["region"].astype(str) == reg] if reg else sub
-        level = "admin:region"
-    else:
-        level = "admin:province"
-    if sub.empty:
         raise LookupError(f"PHAC RVDSS has no rows for province '{a['name']}'")
-    sub = sub.sort_values(["year", "week"])
-    last = sub.iloc[-1]
+    last = sub.sort_values(["year", "week"]).iloc[-1]
     latest = sub[(sub["year"] == last["year"]) & (sub["week"] == last["week"])]
-    f = {"rvdss_jurisdiction": str(last.get("province") or last.get("region"))[:40],
-         "rvdss_week": f"{int(last['year'])}-W{int(last['week'])}",
-         "rvdss_viruses_reported": int(latest["virus"].nunique()),
-         "rvdss_tests_latest_week": round(float(pd.to_numeric(latest["tests"],
-                                          errors="coerce").fillna(0).sum()), 0),
-         "rvdss_detections_latest_week": round(float(pd.to_numeric(latest["detections"],
-                                               errors="coerce").fillna(0).sum()), 0)}
-    for v, nm in (("SARS-CoV-2", "sarscov2"), ("Influenza", "influenza"), ("RSV", "rsv")):
-        s = latest[latest["virus"].astype(str).str.contains(v, case=False, na=False)]
-        if not s.empty:
-            f[f"rvdss_{nm}_pct_positive"] = round(float(
-                pd.to_numeric(s["percentpositive"], errors="coerce").mean()), 2)
-    return f, {"obs_date": f["rvdss_week"], "res_m": level,
-               "item": "PHAC RVD_WeeklyData.csv"}
+    f = {"rvdss_jurisdiction": str(last["province"])}
+    for col, nm, cast in (("tests", "rvdss_tests", int), ("detections", "rvdss_detections", int),
+                          ("percentpositive", "rvdss_percent_positive", float)):
+        recs = [{"class": r.virus, "value": cast(getattr(r, col))}
+                for r in latest.itertuples() if pd.notna(getattr(r, col))]
+        if recs:
+            f[nm] = recs
+    y0 = int(df["year"].min())
+    return f, {"obs_date": str(last["date"]), "res_m": "admin:province",
+               "item": f"{int(last['year'])} week {int(last['week'])}",
+               "release": f"RVDSS {y0}-{y0 + 1} season", "url": RVDSS_URL}
 
 
 # =============================================================== wastewater
@@ -926,6 +782,8 @@ def _a_nwss(aoi):
     cx, cy = aoi["centroid"]
     co = _us_county(cx, cy)
     u = f"{CDC}/2ew6-ywp6.json"
+    meta = {"res_m": "admin:county", "item": f"2ew6-ywp6 / {co['name']} County ({co['fips']})",
+            "release": "current snapshot", "url": u}
     r = S.get(u, params={"$where": f"county_fips like '%{co['fips']}%'",
                          "$order": "date_end DESC", "$limit": 2000}, timeout=90)
     r.raise_for_status()
@@ -934,8 +792,7 @@ def _a_nwss(aoi):
         # NWSS covers participating sewersheds only; rural counties often have none.
         return ({"nwss_county": co["name"], "nwss_county_fips": co["fips"],
                  "nwss_sites_county": 0, "nwss_records_county": 0},
-                {"obs_date": "current", "res_m": "admin:county",
-                 "note": "verified absence: no NWSS sewershed reports for this county"})
+                {**meta, "obs_date": "current"})
     df = pd.DataFrame(rows)
     for c in ("percentile", "detect_prop_15d", "population_served"):
         df[c] = pd.to_numeric(df.get(c), errors="coerce")
@@ -957,73 +814,49 @@ def _a_nwss(aoi):
             withp[withp["date_end"] == withp["date_end"].max()]["percentile"].mean()), 2)
         f["nwss_percentile_last_reported_end"] = str(withp["date_end"].max())[:10]
         f["nwss_percentile_max_county"] = round(float(withp["percentile"].max()), 2)
-    return f, {"obs_date": str(latest_end)[:10], "res_m": "admin:county",
-               "item": f"CDC NWSS 2ew6-ywp6 / {co['name']} County ({co['fips']})"}
+    return f, {**meta, "obs_date": str(latest_end)[:10]}
 
 
 def _phac_ww():
     def build():
-        r = S.get(f"{INFOBASE}/covidLive/wastewater/covid19-wastewater.csv", timeout=180)
+        r = S.get(PHAC_WW_URL, timeout=180)
         r.raise_for_status()
         df = pd.read_csv(io.BytesIO(r.content))
-        for c in ("viral_load", "seven_day_rolling_avg", "pruid"):
-            df[c] = pd.to_numeric(df.get(c), errors="coerce")
+        for c in ("viral_load", "seven_day_rolling_avg"):
+            df[c] = pd.to_numeric(df[c], errors="coerce")
         df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        return df.dropna(subset=["Date", "pruid"])
+        sites = pd.read_csv(PHAC_WW_SITES)
+        missing = set(df["Location"]) - set(sites["Location"])
+        if missing:
+            raise LookupError(f"phac_ww_sites.csv has no coordinates for {sorted(missing)}")
+        return df.dropna(subset=["Date"]).merge(sites[["Location", "lat", "lon"]], on="Location")
     return _once("phac_ww", build)
 
 
 def _a_phac_ww(aoi):
-    """PHAC SARS-CoV-2 wastewater monitoring, joined at PROVINCE level
-    (res_m='admin:province'). Sites are named, not georeferenced, in the open file."""
+    """PHAC SARS-CoV-2 wastewater: the monitored plant nearest the AOI, latest sample per fraction."""
     if aoi["country"] != "CA":
         raise PermissionError("out of coverage (PHAC wastewater is Canada-only)")
-    cx, cy = aoi["centroid"]
-    a = _admin1_at(cx, cy)
-    pr = PRUID.get(a["postal"])
-    if pr is None:
-        raise LookupError(f"no pruid mapping for province postal '{a['postal']}'")
     df = _phac_ww()
-    sub = df[df["pruid"] == pr]
-    if sub.empty:
-        raise LookupError(f"PHAC wastewater has no sites for pruid {pr} ({a['name']})")
-    last = sub["Date"].max()
-    cur = sub[sub["Date"] == last]
-    f = {"phacww_province": a["name"], "phacww_pruid": int(pr),
-         "phacww_sites_province": int(sub["Location"].nunique()),
-         "phacww_sites_latest_date": int(cur["Location"].nunique()),
-         "phacww_latest_date": last.date().isoformat(),
-         "phacww_viral_load_latest": round(float(cur["viral_load"].mean()), 4),
-         "phacww_7day_avg_latest": round(float(cur["seven_day_rolling_avg"].mean()), 4),
-         "phacww_records_province": int(len(sub))}
-    hist = sub[sub["Date"] >= last - pd.Timedelta(days=365)]["seven_day_rolling_avg"]
-    if hist.notna().any():
-        f["phacww_7day_avg_p90_1yr"] = round(float(np.nanpercentile(hist.values, 90)), 4)
-        f["phacww_latest_vs_1yr_p90"] = round(
-            float(f["phacww_7day_avg_latest"] / max(f["phacww_7day_avg_p90_1yr"], 1e-9)), 3)
-    return f, {"obs_date": f["phacww_latest_date"], "res_m": "admin:province",
-               "item": "PHAC covid19-wastewater.csv"}
+    p = _ranked(aoi, df.drop_duplicates("Location"))
+    # a plant's liquid series and its NML solid series are separate Locations at one coordinate
+    at = p[(p["lat"] == p["lat"].iloc[0]) & (p["lon"] == p["lon"].iloc[0])]["Location"]
+    s = (df[df["Location"].isin(at)].sort_values("Date")
+         .groupby("fractionid").tail(1).sort_values("fractionid"))
+    f = {"phacww_location": [{"class": r.fractionid, "value": r.Location} for r in s.itertuples()],
+         "phacww_location_km": round(float(p["km"].iloc[0]), 2),
+         "phacww_date": [{"class": r.fractionid, "value": r.Date.date().isoformat()}
+                         for r in s.itertuples()]}
+    for c in ("viral_load", "seven_day_rolling_avg"):
+        f[f"phacww_{c}"] = [{"class": r.fractionid, "value": round(float(getattr(r, c)), 4),
+                             "unit": "copies/mL"} for r in s.itertuples() if pd.notna(getattr(r, c))]
+    return f, {"obs_date": s["Date"].max().date().isoformat(), "res_m": "point",
+               "item": ", ".join(sorted(set(s["Location"]))),
+               "release": f"covid19-wastewater.csv, data to {df['Date'].max().date().isoformat()}",
+               "url": PHAC_WW_URL}
 
 
 # =============================================================== registration
-# Mid-Pacific geometry control, box [-140,-20,-139,-19] / centroid (-139.5,-19.5).
-# Measured once per source against a real AOI; every source below filters.
-CONTROL_DIFFERENTIALS = {
- "eccc_naps":       "Toronto nearest_station_km=0.71 stations_25km=7 no2=14.0 ppb  |  ctrl 7718.64 / 0 / absent",
- "epa_aqs_airdata": "Detroit nearest_monitor_km=4.06 sites_25km=11 pm25=9.655      |  ctrl 4632.46 / 0 / absent",
- "cams_open_meteo": "Toronto no2=13.674 pm25=6.254 aod=0.120 ug/m3                |  ctrl no2=0.0 pm25=8.282 aod=0.101",
- "eccc_npri":       "Sudbury nearest_facility_km=0.43 fac_25km=19 total=4.84e7 kg  |  ctrl 7720.30 / 0 / absent",
- "eccc_ghgrp":      "Syncrude nearest_km=4.64 fac_25km=5 co2e=22136 kt             |  ctrl 7720.74 / 0 / 0.0",
- "epa_echo_tri":    "Detroit tri_reporters_25km=118 regulated_25km=15182           |  ctrl 0 / 0",
- "epa_echo":        "Detroit facilities=978 inspections=50 penalties=$7.55M        |  ctrl 0 / 0 / $0",
- "cdc_nndss":       "Detroit -> Michigan, total_cases_ytd=47635                    |  ctrl raises LookupError (no admin1 polygon)",
- "phac_rvdss":      "Toronto -> Ontario, tests_latest_week=58173                   |  ctrl raises LookupError (no admin1 polygon)",
- "cdc_nwss":        "Detroit -> Wayne County 26163, sites=2                        |  ctrl raises LookupError (TIGERweb: no county)",
- "phac_wastewater": "Montreal -> Quebec pruid=24, sites=2                          |  ctrl raises LookupError (no admin1 polygon)",
- "epa_frs_sems":    "Bingham nearest_km=0.14 sites_25km=64 sites_5km=3             |  ctrl absent / 0 / absent",
- "tbs_fcsi":        "Montreal nearest_km=0.21 sites_25km=304 active_25km=119       |  ctrl 6699.87 / 0 / absent",
-}
-
 # slot, source_id, family, licence, auth, fn
 ADAPTERS = [
  ("air_quality_monitors",   "eccc_naps",      "health_env", "OGL-Canada-2.0",            "none", _a_naps),
@@ -1032,7 +865,6 @@ ADAPTERS = [
  ("emissions_releases",     "eccc_npri",      "health_env", "OGL-Canada-2.0",            "none", _a_npri),
  ("emissions_releases",     "eccc_ghgrp",     "health_env", "OGL-Canada-2.0",            "none", _a_ghgrp),
  ("emissions_releases",     "epa_echo_tri",   "health_env", "public-domain (US EPA)",    "none", _a_echo_tri),
- ("facility_compliance",    "epa_echo",       "health_env", "public-domain (US EPA)",    "none", _a_echo),
  ("disease_surveillance",   "cdc_nndss",      "health_env", "public-domain (US CDC)",    "none", _a_nndss),
  ("disease_surveillance",   "phac_rvdss",     "health_env", "OGL-Canada-2.0",            "none", _a_rvdss),
  ("wastewater_surveillance","cdc_nwss",       "health_env", "public-domain (US CDC)",    "none", _a_nwss),
