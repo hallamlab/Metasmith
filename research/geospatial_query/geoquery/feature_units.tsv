@@ -86,6 +86,9 @@ aiannh_frac	1
 aiannh_n_areas	count
 aiannh_overlap_frac	1
 aiannh_overlap_km2	km2
+alta_dominant_code	
+alta_dominant_name	
+alta_dominant_type	
 alta_n_parcels_in_province	count
 alta_n_parcels_intersecting	count
 alta_nearest_km	km
@@ -152,33 +155,22 @@ csb_n_crop_classes	count
 csb_polygon_area_max_ha	ha
 csb_polygon_area_median_ha	ha
 csb_polygon_count	count
-echo_bbox_pad_km	km
 echo_caa_facilities	count
 echo_caa_facilities_bbox	count
-echo_current_violations	count
 echo_cwa_facilities	count
 echo_cwa_facilities_bbox	count
 echo_facilities	count
 echo_facilities_bbox	count
 echo_facilities_per_bbox_km2	1/km2
 echo_formal_action_facilities_5yr_bbox	count
-echo_formal_actions_5yr	count
-echo_informal_actions_5yr	count
-echo_insp_per_facility	1
 echo_inspected_facilities_5yr_bbox	count
-echo_inspections_5yr	count
-echo_penalties_usd_5yr	USD
 echo_rcra_facilities	count
 echo_rcra_facilities_bbox	count
-echo_sig_violation_rate	1
 echo_significant_violation_facilities_bbox	count
-echo_significant_violations	count
 echo_total_penalties_5yr_usd_bbox	USD
 echo_tri_facilities	count
 echo_tri_facilities_bbox	count
-echo_tribal_facilities	count
 echo_violation_facilities_bbox	count
-echo_violations_3yr	count
 echotri_caa_air_sources_bbox_pad10km	count
 echotri_caa_air_sources_bbox_pad25km	count
 echotri_rcra_handlers_bbox_pad10km	count
@@ -381,7 +373,6 @@ ovt_address_n_postcodes	count
 ovt_address_n_streets	count
 ovt_address_n_within_25km	count
 ovt_address_per_km2	1/km2
-ovt_address_present	
 ovt_address_street_density	1/km2
 ovt_building_footprint_km2	km2
 ovt_building_height_m_max	m
@@ -582,8 +573,6 @@ wc_dominant
 wc_frac	1
 wc_n_classes	count
 wd_distinct_classes	count
-wd_dominant_class_label	
-wd_dominant_class_n	count
 wd_entities	count
 wd_entities_by_class	count
 wd_entities_per_km2	1/km2

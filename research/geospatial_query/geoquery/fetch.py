@@ -9,7 +9,7 @@ COLUMNS = ["aoi", "source", "observation_type", "time", "feature", "class", "fam
 
 
 # Shared public APIs throttle and stall when every source runs at once; these failures are retried.
-TRANSIENT = re.compile(r"429|Too Many Requests|[Tt]imeout|timed out|HTTP 5\d\d|50[234]")
+TRANSIENT = re.compile(r"429|Too Many Requests|[Tt]imeout|timed out|HTTP 5\d\d|5\d\d Server Error|50[234]|ConnectionError|Max retries exceeded")
 BACKOFF_S = (15, 60, 180)
 # inside fetch_source's 30-minute limit: a stalled API (Overpass) must cost its AOIs, not the run
 DEADLINE_S = 20 * 60

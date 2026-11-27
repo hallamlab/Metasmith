@@ -369,14 +369,19 @@ def _a_clay_embeddings(aoi):
 def _sic_grid():
     def build():
         import re
-        yrs = sorted(re.findall(r'href="(\d{4})/"', S.get(SIC_ROOT, timeout=120).text))
+        def index(url):
+            r = S.get(url, timeout=120)
+            r.raise_for_status()
+            return r.text
+        # an empty listing is a throttled reply, not a missing product, so it is retried
+        yrs = sorted(re.findall(r'href="(\d{4})/"', index(SIC_ROOT)))
         if not yrs:
-            raise LookupError("NSIDC sea-ice CDR year index empty")
+            raise ConnectionError("NSIDC sea-ice CDR year index empty")
         y = yrs[-1]
         fl = sorted(set(re.findall(r'href="(sic_psn25_\d{8}_[a-z0-9]+_v06r\d\d\.nc)"',
-                                   S.get(SIC_ROOT + y + "/", timeout=120).text)))
+                                   index(SIC_ROOT + y + "/"))))
         if not fl:
-            raise LookupError(f"NSIDC sea-ice CDR {y} file index empty")
+            raise ConnectionError(f"NSIDC sea-ice CDR {y} file index empty")
         fn = fl[-1]
         p = _fetch(SIC_ROOT + y + "/" + fn, os.path.join(CACHE, fn))
         import netCDF4
