@@ -16,3 +16,9 @@
 - User: "the pipeline should ingest 1 table of AOIs and produce tables per source" and "can I see the metasmith DAG as part of the plan?"
 - Decision: a metasmith scatter-gather (normalise_aois, fetch_source per source, aggregate) over 75 sources, in one docker image built from the POC package. Runs are local docker only; the nibi path was dropped. The driver publishes into data/geospatial_query/<dataset>/ in the engcyc layout, DVC-tracked.
 - Landed: plan data/geospatial_query/plans/01-mvp-build.md. Dataset mmap_canada_mining (run 01cwQadP, geoquery 0.7): 56 source tables, 587 found and 238 gap pairs over 11 AOIs. Pin 0a977204, README research/geospatial_query/poc/README.md.
+
+## census-multi-csd (2026-11-27)
+- Question: what a census value means for an AOI that touches several census subdivisions; statcan_csd reported whole-CSD values, area-weighted across CSDs.
+- User: "you take the area cross-section of the AOE against the CSD, and that is the value contribution from the CSD. Then you sum all the CSDs" and, after the Wood Buffalo / Elliot Lake numbers, "Yeah, that's good."
+- Decision: additive areal weighting, run on the finest StatCan units instead of CSDs: dissemination blocks for population and dwellings, dissemination areas for households and income. Counts sum each unit's overlap share; medians and averages (income, dwelling value) become a household-weighted mean across contributing areas, labelled approximate. ghs_pop stays as an independent cross-check. Confirm DB counts are downloadable before building.
+- Landed: fixes-plan (pending).

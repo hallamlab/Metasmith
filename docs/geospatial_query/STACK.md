@@ -6,7 +6,7 @@ Decisions: docs/geospatial_query/DECISIONS.md
 Email content stays out of this repo, journals and commits. Koonkie's AOI KML is data under no NDA and is DVC-tracked (aoi-handling). Source: the KML Koonkie sent on 2026-11-12.
 
 ## Current
-census-multi-csd: what a census value means for an AOI that touches several census subdivisions
+phac-wastewater: liquid vs solid samples and weighting in the PHAC wastewater features
 
 ## Waiting on the user
 none
@@ -19,7 +19,6 @@ none
 
 ## Stack
 - fixes-plan: a formal plan for the dictionary-pass fixes (feature_descriptions_issues.md), written in plan mode
-  - census-multi-csd: census values for AOIs spanning several subdivisions
   - phac-wastewater: liquid vs solid samples, population weighting
   - rvdss-aggregate: tests and detections summed across viruses
   - ghsl-urban: GHSL class names, where "urban" starts
@@ -38,6 +37,7 @@ none
 none
 
 ## Closed
+- census-multi-csd (2026-11-27)
 - reply-tomer (2026-11-17)
 - aoi-handling (2026-11-19)
 - mvp-build (2026-11-19)
