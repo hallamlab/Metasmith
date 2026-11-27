@@ -1,0 +1,9 @@
+# The solver's Rust source, so a consumer of the sdist can compile msm_solver for
+# its own platform. The three crates keep their relative layout because
+# workflow_solver names the other two as `../` path dependencies.
+include src/workflow_solver/Cargo.toml src/workflow_solver/Cargo.lock
+recursive-include src/workflow_solver/src *
+include src/solver_witness/Cargo.toml src/solver_witness/Cargo.lock
+recursive-include src/solver_witness/src *
+include src/solver_witness_audit/Cargo.toml
+recursive-include src/solver_witness_audit/src *

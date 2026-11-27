@@ -448,7 +448,6 @@ echo ""
 # dev.sh --build-gui # build the frontend bundle (needs node; not committed)
 # dev.sh -bp # build the pip package
 # dev.sh -up # test upload to testpypi
-# dev.sh -upload-pypi # release to pypi index for pip install
 #
 # example workflow 2, conda:
 # dev.sh --idev # create a local conda dev env
@@ -644,16 +643,26 @@ case $1 in
         TOKEN=$(cat secrets/${PYPI}) # https://pypi.org/help/#apitoken
         python -m twine upload --repository $PYPI dist/*.whl -u __token__ -p $TOKEN
     ;;
-    -upload-pypi) # pip (pypi)
-        echo "not all dependencies are available on pypi, so this is not a good idea..."
-        # PYPI=pypi
-        # TOKEN=$(cat secrets/${PYPI}) # https://pypi.org/help/#apitoken
-        # python -m twine upload --repository $PYPI dist/*.whl -u __token__ -p $TOKEN
-    ;;
     -uc) # conda (personal channel)
         # run `anaconda login` first
         _assert_engine_in_conda_package || exit 1
         find ./conda_build -name *.tar.bz2 | xargs -I % anaconda upload -u $DEV_USER %
+    ;;
+    -ug) # source tarball as a GitHub release, which the bioconda recipe downloads
+        # needs write access to $DEV_USER/Metasmith; run after the release PR merges
+        _assert_dist_matches_source || exit 1
+        # The asset name drops the build hash so the recipe's URL is a function
+        # of the version alone, which is what lets bioconda's update bot follow
+        # a release. The hash still travels inside, as build_hash.txt.
+        _asset="$(mktemp -d)/$NAME-$VER.tar.gz"
+        cp "$HERE/dist/$NAME-$FULL_VER.tar.gz" "$_asset" || exit 1
+        gh release create "v$VER" "$_asset" --repo "$DEV_USER/Metasmith" --target release \
+            --title "v$VER" --notes "Source of $FULL_VER. Agent image: $DOCKER_IMAGE:$DOCKER_TAG" || exit 1
+        _sha="$(sha256sum "$_asset" | cut -d' ' -f1)"
+        sed -i -e "s|^{% set version = .*|{% set version = \"$VER\" %}|" \
+               -e "s|^{% set sha256 = .*|{% set sha256 = \"$_sha\" %}|" \
+            "$HERE/conda_recipe/bioconda/meta.yaml"
+        echo "conda_recipe/bioconda/meta.yaml now names $VER, sha256 $_sha"
     ;;
     -ud) # docker
         # login and push image to quay.io
