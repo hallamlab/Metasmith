@@ -22,3 +22,9 @@
 - User: "you take the area cross-section of the AOE against the CSD, and that is the value contribution from the CSD. Then you sum all the CSDs" and, after the Wood Buffalo / Elliot Lake numbers, "Yeah, that's good."
 - Decision: additive areal weighting, run on the finest StatCan units instead of CSDs: dissemination blocks for population and dwellings, dissemination areas for households and income. Counts sum each unit's overlap share; medians and averages (income, dwelling value) become a household-weighted mean across contributing areas, labelled approximate. ghs_pop stays as an independent cross-check. Confirm DB counts are downloadable before building.
 - Landed: fixes-plan (pending).
+
+## phac-wastewater (2026-11-27)
+- Question: what the PHAC wastewater features describe; they averaged every plant in the AOI's province on its latest date, mixing liquid and solid fractions, so Baie-James got Montreal's sewage.
+- User: "stale is fine. It's just the nearest time that we can get", "all we have to do is just also add a unit column. We should do that anyways for any column with variable units", "We just report the nearest plant and then the distance. Some downstream curation step will then probably need to match the plant to its [sewershed] ... That's some processing that is really not our concern."
+- Decision: replace the provincial average with the nearest monitored plant: its latest value and 7-day average, plant name, distance in km and fraction. No distance cutoff. Never average across fractions. Keep the 2024-06-28 snapshot. General rule: every value carries its unit; a feature whose unit varies across AOIs gets a `<feature>_unit` companion column in features_wide. PHAC's unit is written as PHAC labels it, with the solid-fraction caveat.
+- Landed: fixes-plan (pending).
