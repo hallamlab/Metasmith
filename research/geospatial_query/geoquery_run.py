@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from geoquery.aggregate import versions
+
 TEMPLATE = "geoquery_from_aoi_table"
 INTEGRATED = {"observations_long": "observations_long.parquet",
               "features_wide": "features_wide.parquet",
@@ -73,9 +75,10 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
     pd.DataFrame([f["properties"] for f in norm]).to_csv(out / "aois.csv", index=False)
     record("aois.csv", out.name, "aois", aois.name)
 
-    found, tables = {}, []
+    found, tables, frames = {}, [], []
     for t in _files(results, "source_table"):
         d = pd.read_csv(t, dtype=str)
+        frames.append(d)
         src = d.source.iloc[0]
         family = re.sub(r"[^a-z0-9]+", "_", d.family.iloc[0].lower()).strip("_")
         found[src] = int((d.status == "found").sum())
@@ -94,6 +97,8 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
     pd.DataFrame(GAP_REASONS.items(), columns=["reason", "description"]).to_csv(
         out / "_logs" / "gaps_descriptions.csv", index=False)
     record("_logs/gaps_descriptions.csv", out.name, "gaps", "publish.py")
+    versions(pd.concat(frames, ignore_index=True)).to_csv(out / "_logs" / "versions.csv", index=False)
+    record("_logs/versions.csv", out.name, "versions", "publish.py")
     logs = (results / "_metadata" / "logs.latest").resolve()
     with tarfile.open(out / "_logs" / "runs" / f"{run}.tar.gz", "w:gz") as tar:
         tar.add(logs, arcname=run)
@@ -116,22 +121,29 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
         "(GeoJSON, EPSG:4326).",
         "- `<family>/<source>.csv`: one table per source that found data, grouped by feature family.",
         "- `integrated/observations_long.parquet`: every value, one row each.",
-        "- `integrated/features_wide.parquet`: one row per AOI, one column per feature. Values are text.",
+        "- `integrated/features_wide.parquet`: one row per AOI, one column per feature, named `feature[class]` "
+        "for a classed feature. Values are text. A `<column>_unit` column follows any column whose unit "
+        "differs between AOIs.",
         "- `integrated/coverage.csv`: one row per AOI, one column per source: `found`, `unavailable` or "
         "`not-attempted`.",
         "- `_logs/gaps.csv`: every AOI and source with no data, and why. `_logs/gaps_descriptions.csv` explains "
         "each reason.",
+        "- `_logs/versions.csv`: per source, the time asked for, the data times returned, and the release "
+        "and address read.",
         "- `_logs/ledger.csv`: size and sha256 of every file. `_logs/runs/`: the pipeline's run logs.",
         "",
         "## Columns in the source tables",
         "",
         "- `aoi`, `source`, `feature`: what was measured, where, and by which source.",
+        "- `class`: the source's own category name for a feature reported per category, blank otherwise.",
         "- `value`: the value as text. `value_num`: the same value as a number, blank when it is not one.",
-        "- `SI_unit`: blank for categories, names and flags.",
+        "- `SI_unit`: the unit of that row's value, blank for categories, names and flags.",
         "- `family`, `observation_type`: the feature family and how the source observes (satellite, survey, "
         "station and so on).",
         "- `time`: the date of the data. `licence`: the source's licence. `native_res_m`: the source's "
         "resolution in metres, or `vector`.",
+        "- `release`, `item`, `url`: the source edition, the item read (tile, file or record) and the address "
+        "queried.",
         "- `status`, `reason`: `found`, or why the source has no data for that AOI.",
         "",
         "Each source returns its default moment, usually its latest data or a long-term average. Raster reads "

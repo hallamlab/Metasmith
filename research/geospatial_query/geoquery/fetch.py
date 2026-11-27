@@ -4,8 +4,8 @@ import pandas as pd
 from . import pipeline as P
 from .registry import SOURCES, UNITS, specs
 
-COLUMNS = ["aoi", "source", "observation_type", "time", "feature", "family", "value",
-           "value_num", "SI_unit", "licence", "native_res_m", "status", "reason"]
+COLUMNS = ["aoi", "source", "observation_type", "time", "feature", "class", "family", "value",
+           "value_num", "SI_unit", "licence", "native_res_m", "release", "item", "url", "status", "reason"]
 
 
 # Shared public APIs throttle and stall when every source runs at once; these failures are retried.
@@ -15,15 +15,21 @@ BACKOFF_S = (15, 60, 180)
 DEADLINE_S = 20 * 60
 
 
+def records(v):
+    """An adapter's feature value: a plain value, {value, class?, unit?}, or a list of those, one per class."""
+    return v if isinstance(v, list) else [v if isinstance(v, dict) else {"value": v}]
+
+
 def rows(rec, src):
     base = {"aoi": rec["aoi_id"], "source": rec["source"], "family": src["family"],
             "observation_type": src["observation_type"], "time": rec.get("obs_date"),
-            "licence": rec["licence"], "native_res_m": rec.get("res_m"),
-            "status": rec["status"], "reason": rec["reason"]}
+            "licence": rec["licence"], "native_res_m": rec.get("res_m"), "release": rec.get("release"),
+            "item": rec.get("item"), "url": rec.get("url"), "status": rec["status"], "reason": rec["reason"]}
     if rec["status"] != "found":
         return [base]
-    return [{**base, "feature": k, "value": v, "SI_unit": UNITS.get(k, "")}
-            for k, v in rec["features"].items()]
+    return [{**base, "feature": k, "class": r.get("class"), "value": r["value"],
+             "SI_unit": r.get("unit", UNITS.get(k, ""))}
+            for k, v in rec["features"].items() for r in records(v)]
 
 
 def _run(todo, nwork, end):
