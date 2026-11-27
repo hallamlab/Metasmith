@@ -5,7 +5,7 @@ Needs metasmith (conda install -c conda-forge -c bioconda -c hallamlab metasmith
 
     python geoquery_run.py --aois my_aois.kml --out my_aois
 """
-import argparse, json, hashlib, re, shutil, tarfile
+import argparse, dataclasses, json, hashlib, re, shutil, tarfile
 from datetime import date
 from pathlib import Path
 
@@ -30,8 +30,12 @@ NOTES = {"phac_wastewater": (
     "which are often measured per gram. PHAC's open CSV ends 2024-06-28.")}
 
 
+def type_dir(results: Path, type_name: str) -> Path:
+    return results / f"geoquery-{type_name}"
+
+
 def _files(results: Path, type_name: str) -> list[Path]:
-    return sorted(p.resolve() for p in (results / f"geoquery-{type_name}").glob("*"))
+    return sorted(p.resolve() for p in type_dir(results, type_name).glob("*"))
 
 
 def _sha256(p: Path) -> str:
@@ -149,8 +153,7 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
 
 
 def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_only: bool, timeout: float):
-    from metasmith.python_api import (Agent, DataInstanceLibrary, Runtime, Source, Template,
-                                      TargetBuilder, TransformInstanceLibrary)
+    from metasmith.python_api import Agent, Plan, Runtime, Source, Template
     from metasmith.gui.stdlib import clone_stdlib
 
     # The installed package ships the library uncompiled; a clone is the compiled copy the GUI also plans from.
@@ -172,15 +175,8 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
     for a in adapters:
         givens.Value(f"{out.name}/source/{a}", {"adapter": a}, "geoquery::source", parents=[table])
     inputs = givens.Build(work / "inputs.xgdb", type_library_paths=[root / "data_types" / "geoquery.yml"])
-    targets = TargetBuilder()
-    for t in case.target_types:
-        targets.Add(t)
-    task = agent.GenerateWorkflow(
-        samples=list(inputs.AsSamples(case.sample_type)),
-        resources=[*(DataInstanceLibrary.Load(p) for p in template.resource_libraries), inputs],
-        transforms=[TransformInstanceLibrary.Load(p) for p in template.transform_libraries],
-        targets=targets,
-    )
+    task = Plan([dataclasses.replace(case, input_library=inputs)],
+                template.transform_libraries, template.resource_libraries)
     if not task.ok:
         raise SystemExit(f"plan failed, dropped targets: {sorted(task.plan.dropped_targets)}")
     print(f"plan {task.GetKey()}: {len(adapters)} sources, {len(task.plan.steps)} transforms")
@@ -193,7 +189,7 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
     if result["status"] != "completed":
         raise SystemExit("\n".join(result["tail"]))
     results = Path(agent.GetResultSource(task).GetPath())
-    missing = [t for t in case.target_types if not any((results / t.replace("::", "-")).glob("*"))]
+    missing = [t for t in case.target_types if not any(type_dir(results, t.removeprefix("geoquery::")).glob("*"))]
     if missing:  # a run that launched nothing can still report completed
         raise SystemExit(f"run produced no {missing}; see {results}/_metadata/logs.latest")
     env = (root / "resources" / "env" / "geoquery.env").read_text()
