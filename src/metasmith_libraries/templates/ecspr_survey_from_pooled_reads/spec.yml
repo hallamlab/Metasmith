@@ -7,37 +7,6 @@ description: 'Recover fosmid inserts from pooled reads, build their canonical ch
   inserts, the per-lane annotations and the GPR table as outputs alongside the
 
   final ecspr::results.'
-sample_type: null
-target_types:
-- fabfos::putative_inserts
-- fabfos::insert_metadata
-- type: sequences::assembly_stats
-  parents:
-  - 0
-- type: annotation::kofamscan_results
-  parents:
-  - 0
-- type: annotation::kofamscan_descriptions
-  parents:
-  - 0
-- type: annotation::clean_predictions
-  parents:
-  - 0
-- type: annotation::diamond_uniref50_results
-  parents:
-  - 0
-- type: annotation::diamond_uniref50_descriptions
-  parents:
-  - 0
-- type: annotation::proteinbert_embeddings
-  parents:
-  - 0
-- type: annotation::gpr_table
-  parents:
-  - 0
-- type: ecspr::results
-  parents:
-  - 0
 transform_libraries:
 - assembly
 - metagenomics
@@ -47,7 +16,40 @@ transform_libraries:
 resource_libraries:
 - env
 - lib
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: null
+  target_types:
+  - fabfos::putative_inserts
+  - fabfos::insert_metadata
+  - type: sequences::assembly_stats
+    parents:
+    - 0
+  - type: annotation::kofamscan_results
+    parents:
+    - 0
+  - type: annotation::kofamscan_descriptions
+    parents:
+    - 0
+  - type: annotation::clean_predictions
+    parents:
+    - 0
+  - type: annotation::diamond_uniref50_results
+    parents:
+    - 0
+  - type: annotation::diamond_uniref50_descriptions
+    parents:
+    - 0
+  - type: annotation::proteinbert_embeddings
+    parents:
+    - 0
+  - type: annotation::gpr_table
+    parents:
+    - 0
+  - type: ecspr::results
+    parents:
+    - 0
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:
@@ -80,7 +82,7 @@ input_library:
       instance_id: 1e2015748826b00bafe2188cc0435b44e22639b4bd91ba4b1a94b4eeb6d9e6012a3f
       origin: leaf
     /msm_deferred/bb75787fad1f4ea89d4f86a9fc0e6398:
-      type: sequences::short_reads_pe
+      type: sequences::short_reads
       parents:
         B3953eg5RMmC@read_metadata.json: sequences::read_metadata
       instance_id: 1e20f91732ede26fd9732240dfdd81a7ea668979bfbcb7788c2a42b677ed09b3ecb5

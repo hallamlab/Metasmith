@@ -1,0 +1,28 @@
+ts,kind,path,inodes,bytes,note
+2026-11-24T17:19:41-07:00,total,/scratch/phyberos/msm_e2e/run-4-fir,3,841453568,
+2026-11-24T17:19:41-07:00,dir,container_images,3,841453568,
+2026-11-24T17:19:41-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-4-fir,0,0,0
+2026-11-24T17:19:41-07:00,sif,/scratch/phyberos/msm_e2e/run-4-fir/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:19:41-07:00,apptainer,/home/phyberos/.apptainer,92,2679413640,
+2026-11-24T17:19:41-07:00,apptainer,/scratch/phyberos/cache/apptainer,1299,255968654512,
+2026-11-24T17:19:41-07:00,quota,-,0,0,/home (user phyberos)        13GiB/  48GiB         143K/ 500K
+2026-11-24T17:19:41-07:00,quota,-,0,0,/scratch (user phyberos)       740GiB/  19TiB          65K/1000K
+2026-11-24T17:25:04-07:00,total,/scratch/phyberos/msm_e2e/run-4-fir,3,841453568,
+2026-11-24T17:25:04-07:00,dir,container_images,3,841453568,
+2026-11-24T17:25:04-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-4-fir,0,0,0
+2026-11-24T17:25:04-07:00,sif,/scratch/phyberos/msm_e2e/run-4-fir/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:25:04-07:00,apptainer,/home/phyberos/.apptainer,92,2679413640,
+2026-11-24T17:25:04-07:00,apptainer,/scratch/phyberos/cache/apptainer,1299,255968654512,
+2026-11-24T17:25:04-07:00,quota,-,0,0,/home (user phyberos)        13GiB/  48GiB         143K/ 500K
+2026-11-24T17:25:04-07:00,quota,-,0,0,/scratch (user phyberos)       740GiB/  19TiB          65K/1000K
+2026-11-24T17:30:28-07:00,total,/scratch/phyberos/msm_e2e/run-4-fir,9,843316433,
+2026-11-24T17:30:28-07:00,dir,lib,3,14416,
+2026-11-24T17:30:28-07:00,dir,msm,1,1105,
+2026-11-24T17:30:28-07:00,dir,relay,2,1847344,
+2026-11-24T17:30:28-07:00,dir,container_images,3,841453568,
+2026-11-24T17:30:28-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-4-fir,0,0,0
+2026-11-24T17:30:28-07:00,sif,/scratch/phyberos/msm_e2e/run-4-fir/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:30:28-07:00,apptainer,/home/phyberos/.apptainer,92,2679413640,
+2026-11-24T17:30:28-07:00,apptainer,/scratch/phyberos/cache/apptainer,1312,258080822968,
+2026-11-24T17:30:28-07:00,quota,-,0,0,/home (user phyberos)        13GiB/  48GiB         143K/ 500K
+2026-11-24T17:30:28-07:00,quota,-,0,0,/scratch (user phyberos)       742GiB/  19TiB          65K/1000K

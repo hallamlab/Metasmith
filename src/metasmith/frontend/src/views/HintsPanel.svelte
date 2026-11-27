@@ -38,7 +38,7 @@
        cannot check a failure against: nearly every one of these is a type that
        is not what it was thought to be. Shown on failure only -- a plan that
        solved has a drawing that says the same thing better. -->
-  {#if result.given || result.targets}
+  {#if result.given || result.cases}
     <div class="card col" style="gap:8px">
       <div class="spread">
         <h3>what it was given</h3>
@@ -61,16 +61,18 @@
       {:else}
         <p class="small muted">Nothing was registered — every row is still a draft.</p>
       {/if}
-      <div class="row wrap small">
-        <span class="muted">wanted:</span>
-        {#each result.targets ?? [] as t}
-          <span class="tag mono">{t.type || '(no type)'}</span>
-        {/each}
-        {#if result.sample_type}
-          <span class="muted">· one run per sample of</span>
-          <span class="tag mono">{result.sample_type}</span>
-        {/if}
-      </div>
+      {#each result.cases ?? [] as c}
+        <div class="row wrap small">
+          <span class="muted">{(result.cases.length > 1 ? `${c.name} ` : '') + 'wanted:'}</span>
+          {#each c.targets ?? [] as t}
+            <span class="tag mono">{t.type || '(no type)'}</span>
+          {/each}
+          {#if c.sample_type}
+            <span class="muted">· one run per sample of</span>
+            <span class="tag mono">{c.sample_type}</span>
+          {/if}
+        </div>
+      {/each}
     </div>
   {/if}
 

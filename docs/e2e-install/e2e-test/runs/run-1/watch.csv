@@ -1,0 +1,139 @@
+ts,kind,path,inodes,bytes,note
+2026-11-19T11:12:24-07:00,total,/scratch/phyberos/msm_e2e/run-1,0,0,absent
+2026-11-19T11:12:24-07:00,apptainer,/home/phyberos/.apptainer,1,0,
+2026-11-19T11:12:24-07:00,quota,-,0,0,/home (user phyberos)       174MiB/  50GiB          16K/ 500K
+2026-11-19T11:12:24-07:00,quota,-,0,0,/scratch (user phyberos)       174GiB/1024GiB          57K/1000K
+2026-11-19T11:17:28-07:00,total,/scratch/phyberos/msm_e2e/run-1,0,0,absent
+2026-11-19T11:17:28-07:00,apptainer,/home/phyberos/.apptainer,1,0,
+2026-11-19T11:17:28-07:00,quota,-,0,0,/home (user phyberos)       174MiB/  50GiB          16K/ 500K
+2026-11-19T11:17:28-07:00,quota,-,0,0,/scratch (user phyberos)       174GiB/1024GiB          57K/1000K
+2026-11-19T11:22:35-07:00,total,/scratch/phyberos/msm_e2e/run-1,1152,1108114773,
+2026-11-19T11:22:35-07:00,dir,tmp,1151,1108110677,
+2026-11-19T11:22:35-07:00,dir,container_images,1,4096,
+2026-11-19T11:22:35-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T11:22:35-07:00,apptainer,/home/phyberos/.apptainer,30,1039175549,
+2026-11-19T11:22:35-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:22:35-07:00,quota,-,0,0,/scratch (user phyberos)       175GiB/1024GiB          60K/1000K
+2026-11-19T11:32:07-07:00,total,/scratch/phyberos/msm_e2e/run-1,5173,1200493870,
+2026-11-19T11:32:07-07:00,dir,tmp/build-temp-3337403004/rootfs,5146,161289693,
+2026-11-19T11:32:07-07:00,dir,tmp/build-temp-3337403004,5147,161293789,
+2026-11-19T11:32:07-07:00,dir,tmp,5172,1200489774,
+2026-11-19T11:32:07-07:00,dir,container_images,1,4096,
+2026-11-19T11:32:07-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T11:32:07-07:00,apptainer,/home/phyberos/.apptainer,30,1039175549,
+2026-11-19T11:32:07-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:32:07-07:00,quota,-,0,0,/scratch (user phyberos)       175GiB/1024GiB          62K/1000K
+2026-11-19T11:37:34-07:00,total,/scratch/phyberos/msm_e2e/run-1,6870,1395100462,
+2026-11-19T11:37:34-07:00,dir,tmp/build-temp-3337403004/rootfs,6843,355896285,
+2026-11-19T11:37:34-07:00,dir,tmp/build-temp-3337403004,6844,355900381,
+2026-11-19T11:37:34-07:00,dir,tmp,6869,1395096366,
+2026-11-19T11:37:34-07:00,dir,container_images,1,4096,
+2026-11-19T11:37:34-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T11:37:34-07:00,apptainer,/home/phyberos/.apptainer,30,1039175549,
+2026-11-19T11:37:34-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:37:34-07:00,quota,-,0,0,/scratch (user phyberos)       175GiB/1024GiB          64K/1000K
+2026-11-19T11:43:33-07:00,total,/scratch/phyberos/msm_e2e/run-1,9579,1425519165,
+2026-11-19T11:43:33-07:00,dir,tmp/build-temp-3337403004/rootfs/opt,5851,301177801,
+2026-11-19T11:43:33-07:00,dir,tmp/build-temp-3337403004/rootfs,9552,386314988,
+2026-11-19T11:43:33-07:00,dir,tmp/build-temp-3337403004,9553,386319084,
+2026-11-19T11:43:33-07:00,dir,tmp,9578,1425515069,
+2026-11-19T11:43:33-07:00,dir,container_images,1,4096,
+2026-11-19T11:43:33-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T11:43:33-07:00,apptainer,/home/phyberos/.apptainer,30,1039175549,
+2026-11-19T11:43:33-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:43:33-07:00,quota,-,0,0,/scratch (user phyberos)       175GiB/1024GiB          66K/1000K
+2026-11-19T11:48:55-07:00,total,/scratch/phyberos/msm_e2e/run-1,4569,2197643023,
+2026-11-19T11:48:55-07:00,dir,container_images,224,376348,
+2026-11-19T11:48:55-07:00,dir,tmp,4345,2197266675,
+2026-11-19T11:48:55-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,1
+2026-11-19T11:48:55-07:00,apptainer,/home/phyberos/.apptainer,30,1039175822,
+2026-11-19T11:48:55-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:48:55-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          61K/1000K
+2026-11-19T11:54:09-07:00,total,/scratch/phyberos/msm_e2e/run-1,4873,2258972011,
+2026-11-19T11:54:09-07:00,dir,container_images,4721,159366547,
+2026-11-19T11:54:09-07:00,dir,tmp,152,2099605464,
+2026-11-19T11:54:09-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T11:54:09-07:00,apptainer,/home/phyberos/.apptainer,30,1039175822,
+2026-11-19T11:54:09-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:54:09-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          62K/1000K
+2026-11-19T11:59:20-07:00,total,/scratch/phyberos/msm_e2e/run-1,5014,2249001940,
+2026-11-19T11:59:20-07:00,dir,container_images,4862,149396476,
+2026-11-19T11:59:20-07:00,dir,tmp,152,2099605464,
+2026-11-19T11:59:20-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T11:59:20-07:00,apptainer,/home/phyberos/.apptainer,30,1039175822,
+2026-11-19T11:59:20-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T11:59:20-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          61K/1000K
+2026-11-19T12:04:37-07:00,total,/scratch/phyberos/msm_e2e/run-1,1297,1108734534,
+2026-11-19T12:04:37-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:04:37-07:00,dir,container_images,1274,69542662,
+2026-11-19T12:04:37-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:04:37-07:00,apptainer,/home/phyberos/.apptainer,30,1039175822,
+2026-11-19T12:04:37-07:00,quota,-,0,0,/home (user phyberos)      1165MiB/  50GiB          16K/ 500K
+2026-11-19T12:04:37-07:00,quota,-,0,0,/scratch (user phyberos)       175GiB/1024GiB          58K/1000K
+2026-11-19T12:09:42-07:00,total,/scratch/phyberos/msm_e2e/run-1,4118,1181533444,
+2026-11-19T12:09:42-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:09:42-07:00,dir,container_images,4095,142341572,
+2026-11-19T12:09:42-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:09:42-07:00,apptainer,/home/phyberos/.apptainer,38,1582279859,
+2026-11-19T12:09:42-07:00,quota,-,0,0,/home (user phyberos)      1683MiB/  50GiB          16K/ 500K
+2026-11-19T12:09:42-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          61K/1000K
+2026-11-19T12:14:53-07:00,total,/scratch/phyberos/msm_e2e/run-1,6806,1394534115,
+2026-11-19T12:14:53-07:00,dir,container_images/build-temp-3283445086/rootfs,6781,355334051,
+2026-11-19T12:14:53-07:00,dir,container_images/build-temp-3283445086,6782,355338147,
+2026-11-19T12:14:53-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:14:53-07:00,dir,container_images,6783,355342243,
+2026-11-19T12:14:53-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:14:53-07:00,apptainer,/home/phyberos/.apptainer,50,2209563593,
+2026-11-19T12:14:53-07:00,quota,-,0,0,/home (user phyberos)      2083MiB/  50GiB          16K/ 500K
+2026-11-19T12:14:53-07:00,quota,-,0,0,/scratch (user phyberos)       176GiB/1024GiB          64K/1000K
+2026-11-19T12:20:09-07:00,total,/scratch/phyberos/msm_e2e/run-1,9565,1425509892,
+2026-11-19T12:20:09-07:00,dir,container_images/build-temp-3283445086/rootfs/opt,5839,301172641,
+2026-11-19T12:20:09-07:00,dir,container_images/build-temp-3283445086/rootfs,9540,386309828,
+2026-11-19T12:20:09-07:00,dir,container_images/build-temp-3283445086,9541,386313924,
+2026-11-19T12:20:09-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:20:09-07:00,dir,container_images,9542,386318020,
+2026-11-19T12:20:09-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:20:09-07:00,apptainer,/home/phyberos/.apptainer,52,3399117735,
+2026-11-19T12:20:09-07:00,quota,-,0,0,/home (user phyberos)      3416MiB/  50GiB          16K/ 500K
+2026-11-19T12:20:09-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          66K/1000K
+2026-11-19T12:25:33-07:00,total,/scratch/phyberos/msm_e2e/run-1,12599,1513567036,
+2026-11-19T12:25:33-07:00,dir,container_images/build-temp-3283445086/rootfs/opt,8873,389229785,
+2026-11-19T12:25:33-07:00,dir,container_images/build-temp-3283445086/rootfs,12574,474366972,
+2026-11-19T12:25:33-07:00,dir,container_images/build-temp-3283445086,12575,474371068,
+2026-11-19T12:25:33-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:25:33-07:00,dir,container_images,12576,474375164,
+2026-11-19T12:25:33-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:25:33-07:00,apptainer,/home/phyberos/.apptainer,52,3399117735,
+2026-11-19T12:25:33-07:00,quota,-,0,0,/home (user phyberos)      3416MiB/  50GiB          16K/ 500K
+2026-11-19T12:25:33-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          69K/1000K
+2026-11-19T12:30:58-07:00,total,/scratch/phyberos/msm_e2e/run-1,15938,1520233247,
+2026-11-19T12:30:58-07:00,dir,container_images/build-temp-3283445086/rootfs/opt,12192,392125206,
+2026-11-19T12:30:58-07:00,dir,container_images/build-temp-3283445086/rootfs,15913,481033183,
+2026-11-19T12:30:58-07:00,dir,container_images/build-temp-3283445086,15914,481037279,
+2026-11-19T12:30:58-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:30:58-07:00,dir,container_images,15915,481041375,
+2026-11-19T12:30:58-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:30:58-07:00,apptainer,/home/phyberos/.apptainer,52,3399117735,
+2026-11-19T12:30:58-07:00,quota,-,0,0,/home (user phyberos)      3416MiB/  50GiB          16K/ 500K
+2026-11-19T12:30:58-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          73K/1000K
+2026-11-19T12:36:28-07:00,total,/scratch/phyberos/msm_e2e/run-1,18165,1591825026,
+2026-11-19T12:36:28-07:00,dir,container_images/build-temp-3283445086/rootfs/opt,12212,392450060,
+2026-11-19T12:36:28-07:00,dir,container_images/build-temp-3283445086/rootfs,18140,552624962,
+2026-11-19T12:36:28-07:00,dir,container_images/build-temp-3283445086,18141,552629058,
+2026-11-19T12:36:28-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:36:28-07:00,dir,container_images,18142,552633154,
+2026-11-19T12:36:28-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:36:28-07:00,apptainer,/home/phyberos/.apptainer,52,3399117735,
+2026-11-19T12:36:28-07:00,quota,-,0,0,/home (user phyberos)      3416MiB/  50GiB          16K/ 500K
+2026-11-19T12:36:28-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          75K/1000K
+2026-11-19T12:42:06-07:00,total,/scratch/phyberos/msm_e2e/run-1,20551,1715272214,
+2026-11-19T12:42:06-07:00,dir,container_images/build-temp-3283445086/rootfs/opt,14018,507983564,
+2026-11-19T12:42:06-07:00,dir,container_images/build-temp-3283445086/rootfs,20526,676072150,
+2026-11-19T12:42:06-07:00,dir,container_images/build-temp-3283445086,20527,676076246,
+2026-11-19T12:42:06-07:00,dir,container_images/build-temp-3283445086/rootfs/usr,5330,162593070,
+2026-11-19T12:42:06-07:00,dir,tmp,23,1039191872,
+2026-11-19T12:42:06-07:00,dir,container_images,20528,676080342,
+2026-11-19T12:42:06-07:00,walk_exit,/scratch/phyberos/msm_e2e/run-1,0,0,0
+2026-11-19T12:42:06-07:00,apptainer,/home/phyberos/.apptainer,52,3399117735,
+2026-11-19T12:42:06-07:00,quota,-,0,0,/home (user phyberos)      3416MiB/  50GiB          16K/ 500K
+2026-11-19T12:42:06-07:00,quota,-,0,0,/scratch (user phyberos)       177GiB/1024GiB          78K/1000K

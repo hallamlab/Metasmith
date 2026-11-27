@@ -273,14 +273,15 @@ class _RunControl:
 
             fresh = (since_mtime is None) or (last_mtime > since_mtime)
             if log_exists and (count > 0 or fail_count > 0) and fresh:
-                tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
+                tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run).get("lines", [])
                 return {
                     "task_key": task_key,
                     "status": "failed" if fail_count > 0 else "completed",
+                    "reason": next((ln for ln in reversed(tail) if AgentPaths.RUN_FAILED_SENTINEL in ln), None),
                     "run_dir": str(run_dir),
                     "elapsed_s": elapsed,
                     "last_log_mtime": last_mtime,
-                    "tail": tail.get("lines", []),
+                    "tail": tail,
                 }
             # A queued driver job writes its log only once it starts, so no log
             # is a wait while the job is queued, and an error once it is gone.

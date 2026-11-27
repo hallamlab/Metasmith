@@ -37,7 +37,8 @@ Agents can also be deployed to remote machines through SSH by changing their hom
 
     `SSH setup <../setup/ssh.html>`_
 
-Additional setup commands, to be run before the excution of each workflow, can be specifed:
+Additional setup commands, to be run before the excution of each workflow, can be specifed.
+On a cluster, load the container runtime here:
 
 .. code-block:: python
     :linenos:
@@ -45,23 +46,26 @@ Additional setup commands, to be run before the excution of each workflow, can b
     smith = Agent(
         # ...
         setup_commands=[
-            'export TMPDIR="/home/$USER/tmp"',
-            'mkdir -p $TMPDIR',
-            'export APPTAINER_CACHEDIR="$TMPDIR"',
-            'export APPTAINER_TMPDIR="$TMPDIR"',
+            'module load apptainer',
         ]
     )
 
 .. note::
 
-    For the Apptainer runtime, ``APPTAINER_CACHEDIR`` also selects where
-    Metasmith stores its built container images (the ``.sif`` files and any
-    unpacked ``.sandbox`` directories) — this is the store ``apptainer exec``
-    reads from at run time. When it is unset, Metasmith falls back to
-    ``<agent_home>/container_images``. If you export it (as above), point it at
-    **persistent** storage with room for the images; a location that is wiped
-    between sessions (e.g. a node-local ``/tmp``) forces a re-pull on every run.
-    The example above uses ``/home/$USER/tmp``, which persists, so it is safe.
+    For the Apptainer runtime, Metasmith stores the built container images and
+    Apptainer's own download cache in ``<agent_home>/container_images``. Put the
+    agent home on storage with room for the images, such as a cluster's scratch.
+    To store the images elsewhere, export ``APPTAINER_CACHEDIR`` in
+    ``setup_commands`` and point it at **persistent** storage. A location wiped
+    between sessions forces a new download on every run.
+
+.. warning::
+
+    Do not point ``TMPDIR`` or ``APPTAINER_TMPDIR`` at a network filesystem,
+    such as ``/home`` or ``/scratch`` on most clusters. Apptainer unpacks each
+    image layer in that directory. On a network filesystem the unpack takes over
+    an hour, against a few minutes in the login node's local ``/tmp``. Leave
+    both unset.
 
 .. note::
 
@@ -92,26 +96,24 @@ nothing is downloaded that no step turned out to need. Where the compute nodes
 have **no route out**, it is the wrong place for the fetch to happen, and the
 run fails inside its first task rather than at submit time.
 
-Fill the store ahead of the run, from a host that *can* fetch — a login node:
+Run setup first, from the login node, where the driver runs:
 
 .. code-block:: bash
     :caption: Terminal (login node)
 
-    metasmith workflow stage <agent> <task>
-    metasmith workflow materialise <agent> <task>
+    metasmith workflow setup <agent> <task>
     metasmith workflow run <agent> <task>
 
-``materialise`` fetches every image the staged workflow needs into the agent's
-image store, on the agent's own host, and exits non-zero if any of them could
-not be fetched — so a failure is visible before you submit rather than hours
-into a run. It is idempotent: running it again does nothing, because each image
-is skipped on the same check every task performs. Pass ``--force`` to re-fetch
-regardless, which is what to reach for when a store is suspect rather than
-incomplete.
+The setup run pulls every tool image the workflow needs, as steps on the
+driver's host, three at a time. Each step that runs a tool waits for its image,
+so a compute node never starts before its image is in the store. A pull that
+fails stops the setup run. The same run fetches the reference databases, and its
+first line says how much it will download, for example
+``setup: ~439 GB of references, 14 images``.
 
-``workflow run`` reports on the store without touching it: any image the agent
-does not already hold is named before anything is transferred. That warning is
-the cue to run ``materialise`` first.
+``workflow run`` reports on the store without touching it. It names any image
+the agent does not already hold before anything is transferred. That warning is
+the cue to run setup first.
 
 .. note::
 
@@ -137,15 +139,20 @@ reference already in place.
     metasmith workflow wait <agent> <setup task>
     metasmith workflow run <agent> <task> --preset slurm --params '{"slurmAccount": "<account>"}'
 
-``workflow setup`` prepares every tool image or conda env the task needs. Then
-it launches a run of only the steps that read no sample: the downloads, and the
-database builds that use only them. It prints the setup run's own task key as
-``setup_task_key``, which is the one to ``wait`` on. In the web GUI the same action is the
-workflow's **set up** button. **environments only** skips the downloads.
+``workflow setup`` launches a run of the steps that read no sample: the
+downloads, and the database builds that use only them. On a container agent the
+run first pulls every tool image the task needs, as steps of its own. Before it
+starts, it prints how much it will download and how many images it pulls. It
+prints the setup run's own task key as ``setup_task_key``, which is the one to
+``wait`` on. In the web GUI the same action is the workflow's **set up**
+button. The plan shows the same size, and the button asks again when the size
+is large. The run publishes the references under ``results/references/`` and a
+record of each image under ``results/envs/``.
 
 When the setup run completes, the real run serves those steps from the agent's
-cache instead of running them again. Running setup a second time does nothing
-that is already done.
+cache instead of running them again. Running setup a second time downloads
+nothing that is already done. It checks each image in the store again, which
+costs one test per image.
 
 .. important::
 
@@ -245,8 +252,8 @@ Running tools without a container
 
 An agent with :python:`runtime=Runtime.MAMBA` runs each tool in a conda
 environment on its host instead of in a container. ``workflow setup`` and
-``workflow setup-env`` build the environments a workflow needs, as they fetch
-images for a container agent.
+``workflow setup-env`` build the environments a workflow needs. The GUI's
+**environments only** button does the same.
 
 Some tools run only in a container:
 

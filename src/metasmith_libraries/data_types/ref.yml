@@ -13,6 +13,57 @@ types:
     properties:
       _: DIAMOND-formatted UniRef50 database
       ext: dmnd
+  swissprot_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted UniProtKB/Swiss-Prot
+      ext: dmnd
+  uniref90_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted UniRef90
+      ext: dmnd
+  # LICENSED. MetaCyc's protein sequences ship with Pathway Tools under SRI's licence; never
+  # publish or commit one. Obtain from a licensed Pathway Tools install: MetaPathways 4's
+  # `build_db --func metacyc` exports them (protseq.fsa) beside metacyc_monomer_reactions.
+  metacyc_protein_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted MetaCyc protein sequences (licensed, from Pathway Tools)
+      ext: dmnd
+  metacyc_monomer_reactions:
+    extends:
+    - reference_data
+    properties:
+      _: MetaCyc monomer to reaction pairs (TSV columns MC, RXN), as MetaPathways 4's build_db writes MetaCyc-monomer-rxn-pairs.tsv (licensed, from Pathway Tools)
+      ext: tsv
+  uniprot_ec_maps:
+    extends:
+    - reference_data
+    properties:
+      _: Directory of EC_map.<db>.tsv (columns AccID, EC) for swissprot, uniref50 and uniref90, as MetaPathways 4's build_db writes them from the same UniProt release as the searched databases
+  # UniProt 2025_04, the release MetaPathways 4's references were built from, pinned so the
+  # Swiss-Prot and UniRef90 searches and their EC maps agree with each other and with MP4.
+  uniprot_sprot_2025_04:
+    extends:
+    - reference_data
+    properties:
+      _: UniProt release 2025_04 uniprot_sprot-only2025_04.tar.gz, as downloaded
+      ext: tar.gz
+  uniref_2025_04:
+    extends:
+    - reference_data
+    properties:
+      _: UniProt release 2025_04 uniref2025_04.tar.gz (UniRef XML), as downloaded
+      ext: tar.gz
+  expasy_enzyme:
+    extends:
+    - reference_data
+    properties:
+      _: Directory holding ExPASy ENZYME's enzyme.dat and Expasy_reldate.txt, which MetaPathways 4 maps accessions to ECs with
   uniref50_fasta:
     extends:
     - reference_data
@@ -40,6 +91,27 @@ types:
     - reference_data
     properties:
       _: KOfam release as fetched -- profiles.tar.gz and ko_list.gz from one archives/<date>/, unpacked by buildKofamDB
+  # The fetch halves of mnxr_lookup and label_transfer_landmarks, each as released.
+  metanetx_reactions:
+    extends:
+    - reference_data
+    properties:
+      _: MNXref 4.5 reac_prop.tsv and reac_xref.tsv, md5-verified against MetaNetX's sidecars
+  rhea_uniprot:
+    extends:
+    - reference_data
+    properties:
+      _: Rhea's rhea2uniprot.tsv (Swiss-Prot) and rhea2uniprot_trembl.tsv.gz (TrEMBL) from one release, with rhea-release.properties naming it
+  kegg_ko_reaction:
+    extends:
+    - reference_data
+    properties:
+      _: KEGG REST link/reaction/ko saved verbatim as ko2reaction.tsv, with kegg-info.txt naming the release
+  swissprot_sequences:
+    extends:
+    - reference_data
+    properties:
+      _: UniProtKB/Swiss-Prot uniprot_sprot.fasta.gz with reldate.txt and RELEASE.metalink naming its release
   interproscan_data:
     extends:
     - reference_data
@@ -59,13 +131,13 @@ types:
     - reference_data
     properties:
       _: metabuli reference database
-  # The fetch half of metabuli_ref.
+  # The fetch half of metabuli_ref. Linked rather than copied: it holds the 192 GB GTDB archive.
   metabuli_sources:
+    stage: link
     extends:
     - reference_data
     properties:
-      _: metabuli reference package tarball as fetched, unpacked by buildMetabuliDB
-      ext: tar.gz
+      _: GTDB r232 representative genome archive with its metadata, gtdb-taxdump, the R214.1 selection, human T2T, NCBI taxdump and RefSeq viral, as fetched, built by buildMetabuliDB
   gtdb:
     extends:
     - reference_data
@@ -77,6 +149,27 @@ types:
     - reference_data
     properties:
       _: GTDB-Tk split data package as fetched, its md5-checked parts and a MANIFEST, joined and unpacked by buildGtdbDB
+  gtdb_metadata:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB r232 bac120 and ar53 genome metadata tables, gzipped TSV
+  gtdb_rrna:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB r232 SSU rRNA of every genome (ssu.fna, lineage in each header) with its BLAST nucleotide database (prefix ssu)
+  ncbi_taxdump:
+    extends:
+    - reference_data
+    properties:
+      _: NCBI taxonomy dump (nodes.dmp, names.dmp, merged.dmp), monthly archive snapshot
+  ncbi_to_gtdb_map:
+    extends:
+    - reference_data
+    properties:
+      _: GTDB r232 lineage per NCBI taxid, voted from the GTDB genomes under each NCBI node (taxid, lineage, support, via)
+      ext: tsv.gz
   kraken2_db:
     extends:
     - reference_data
@@ -408,3 +501,72 @@ types:
     - reference_data
     properties:
       _: iPHoP release as fetched -- its split tar chunks and their md5 list, joined and unpacked by buildIphopDB
+  # The three DRAM search databases annotation_table takes as lanes, each a fetch and a
+  # build. DRAM-setup.py would fetch the same files; the build is what it does to them.
+  pathofact_sources:
+    extends:
+    - reference_data
+    properties:
+      _: PathoFact 2.0 DATABASES.tar.gz (Zenodo 14192463) and its source tree at a pinned commit, as fetched
+  pathofact_db:
+    extends:
+    - reference_data
+    properties:
+      _: PathoFact 2.0 unpacked -- HMM/TOX_CDD.hmm, HMM/virulence_factors_CDD.hmm, Models/VF, Models/TOX, cddid_all.tbl, and src/ holding its prediction scripts
+  deeparg_sources:
+    extends:
+    - reference_data
+    properties:
+      _: DeepARG data deeparg.zip (Zenodo 8280582), as fetched
+  deeparg_db:
+    extends:
+    - reference_data
+    properties:
+      _: DeepARG data unpacked for deeparg predict -d (database/v2, model/v2)
+  dbcan_sources:
+    extends:
+    - reference_data
+    properties:
+      _: dbCAN HMMs and the family-substrate map as fetched, pressed by buildDbcanDB
+  dbcan_hmm:
+    extends:
+    - reference_data
+    properties:
+      _: dbCAN HMMdb pressed for hmmsearch (dbCAN.hmm) beside descriptions.tsv, HMM family to CAZy activity
+  merops_sources:
+    extends:
+    - reference_data
+    properties:
+      _: MEROPS pepunit.lib (peptidase units) as fetched, the protein library DRAM searches for peptidases
+  merops_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted MEROPS peptidase units
+      ext: dmnd
+  vogdb_sources:
+    extends:
+    - reference_data
+    properties:
+      _: VOGDB release as fetched -- vog.hmm.tar.gz and vog.annotations.tsv.gz, merged and pressed by buildVogDB
+  vogdb_hmm:
+    extends:
+    - reference_data
+    properties:
+      _: Every VOG HMM merged and pressed for hmmsearch (vog.hmm) beside descriptions.tsv, DRAM's VOG description strings
+  dram_sheets:
+    extends:
+    - reference_data
+    properties:
+      _: The DRAM forms (genome_summary_form, module_step_form, etc_module_database, function_heatmap_form, amg_database) from one DRAM release
+  refseq_viral_sources:
+    extends:
+    - reference_data
+    properties:
+      _: RefSeq viral proteins (viral.1.protein.faa.gz) as fetched, the protein library DRAM-v searches as `viral`
+  refseq_viral_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted RefSeq viral proteins
+      ext: dmnd

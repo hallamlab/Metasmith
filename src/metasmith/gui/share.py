@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from ..agents.spec import case_records
 from ..models.paths import DEFERRED, is_deferred
 from ..ops import agent as op_agent
 from ..ops import data as op_data
@@ -141,15 +142,13 @@ def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
         "name": name,
         "bound": bool(bound),
         "spec": {
-            "sample_type": req.get("sample_type"),
-            "target_types": list(req.get("target_types") or []),
+            "cases": case_records(req),
             "transform_libraries": [
                 _lib_name(x, root) for x in req.get("transform_libraries") or []
             ],
             "resource_libraries": [
                 _lib_name(x, root) for x in req.get("resource_libraries") or []
             ],
-            "shared_input_paths": list(req.get("shared_input_paths") or []),
         },
         "inputs": [],
         "drafts": rows,
@@ -326,8 +325,10 @@ def preview_workflow(p: Project, body: dict) -> dict:
         "kind": "workflow", "name": name, "blocked": False,
         "creates": {
             "name": name,
-            "sample_type": spec.get("sample_type"),
-            "target_types": list(spec.get("target_types") or []),
+            "cases": [
+                {"name": c.get("name") or "case", "target_types": list(c.get("target_types") or [])}
+                for c in case_records(spec)
+            ],
             "transform_libraries": list(spec.get("transform_libraries") or []),
             "input_count": len(rows),
             "draft_count": len(rows),
@@ -346,16 +347,23 @@ def import_workflow(p: Project, body: dict) -> dict:
     res_libs, _ = _resolve_libs(spec.get("resource_libraries"), root)
     rows, ids = _rows_from(body)
 
+    def refs(paths) -> list[str]:
+        return [
+            str(x) if str(x).startswith("#") else f"#{ids[str(x)]}"
+            for x in paths or []
+            if str(x).startswith("#") or str(x) in ids
+        ]
+
+    cases = []
+    for c in case_records(spec):
+        c = dict(c, shared_input_paths=refs(c.get("shared_input_paths")))
+        if c.get("input_paths") is not None:
+            c["input_paths"] = refs(c["input_paths"])
+        cases.append(c)
     wf = p.create_workflow(name=name, request={
-        "sample_type": spec.get("sample_type"),
-        "target_types": list(spec.get("target_types") or []),
+        "cases": cases,
         "transform_libraries": tr_libs,
         "resource_libraries": res_libs,
-        "shared_input_paths": [
-            str(x) if str(x).startswith("#") else f"#{ids[str(x)]}"
-            for x in (spec.get("shared_input_paths") or [])
-            if str(x).startswith("#") or str(x) in ids
-        ],
         "input_drafts": rows,
     })
     lib_path = str(wf.path / INPUT_LIBRARY_DIRNAME)

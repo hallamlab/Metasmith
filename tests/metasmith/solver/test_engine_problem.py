@@ -69,7 +69,7 @@ def test_a_demand_with_several_producers_lists_them_in_rank_order(engine):
 
 def test_the_engine_reads_the_shipped_templates(engine):
     from metasmith.testing.solver_bench import _libraries_root
-    from metasmith.testing.solver_verification import problem_of_plan
+    from metasmith.testing.solver_verification import problems_of_plan
 
     root = _libraries_root()
     if root is None:
@@ -79,26 +79,25 @@ def test_the_engine_reads_the_shipped_templates(engine):
     seen = shipped = 0
     for template in Template.Discover(root):
         shipped += 1
-        task = template.spec.Solve()
-        problem = problem_of_plan(task.plan, name=template.name)
-        if problem is None: continue
-        encoded = encode_problem(
-            problem.given, problem.transforms, problem.target,
-            seed=42, max_iter=256, max_refine=256, wire_version=SOLVER_WIRE_VERSION,
-        )
-        assert encoded.payload["n_properties"] > 64, \
-            f"{template.name} has too few properties to be testing the striding"
-        described = _describe_engine(engine, encoded)
-        # A template that solves has a path to its target, and the striding bug
-        # this guards -- a property id past the first word of a dense bit set --
-        # shows up as an empty derivation rather than as an error.
-        assert not described["no_path_possible"], f"{template.name}: no path possible"
-        assert described["demand2producer"], f"{template.name}: nothing produces anything"
-        n_tr = len(encoded.transforms)
-        for k, producers in described["demand2producer"]:
-            for i in producers:
-                assert 0 <= i <= n_tr, f"{template.name}: producer {i} of {n_tr}"
-        seen += 1
+        solves = problems_of_plan(template.Plan().plan, name=template.name)
+        for problem, _ in solves:
+            encoded = encode_problem(
+                problem.given, problem.transforms, problem.target,
+                seed=42, max_iter=256, max_refine=256, wire_version=SOLVER_WIRE_VERSION,
+            )
+            assert encoded.payload["n_properties"] > 64, \
+                f"{problem.name} has too few properties to be testing the striding"
+            described = _describe_engine(engine, encoded)
+            # A template that solves has a path to its target, and the striding bug
+            # this guards -- a property id past the first word of a dense bit set --
+            # shows up as an empty derivation rather than as an error.
+            assert not described["no_path_possible"], f"{problem.name}: no path possible"
+            assert described["demand2producer"], f"{problem.name}: nothing produces anything"
+            n_tr = len(encoded.transforms)
+            for k, producers in described["demand2producer"]:
+                for i in producers:
+                    assert 0 <= i <= n_tr, f"{problem.name}: producer {i} of {n_tr}"
+        seen += bool(solves)
     # Every shipped template, not a count. The count was 4 when this was written and
     # is 10 since the scopes converged, and a template landing is not a reason for
     # this to fail. What it guards is a vacuous pass: an uncompiled library

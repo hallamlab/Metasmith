@@ -1,0 +1,47 @@
+from metasmith.python_api import *
+
+lib     = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model   = Transform()
+image   = model.AddRequirement(lib.GetType("env::hmmer.env"))
+sources = model.AddProduct(lib.GetType("ref::vogdb_sources"))
+
+# The release downloadDramDB pins; DRAM's own default is `latest`.
+BASE_URL = "https://fileshare.lisc.univie.ac.at/vog"
+RELEASE = "vog237"
+FILES = ("vog.hmm.tar.gz", "vog.annotations.tsv.gz")
+URLS = {name: f"{BASE_URL}/{RELEASE}/{name}" for name in FILES}
+
+
+def protocol(context: ExecutionContext):
+    isrc = context.Output(sources)
+    staged = context.StagingDir()
+    mirror = context.params.get("vogdb_base_url")
+
+    if context.LocalShell("\n".join([
+        "set -euo pipefail",
+        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/name, label=f"VOGDB {name}")
+          for name in FILES),
+        f"mkdir -p {isrc.local}",
+        *(f"mv {staged.local/name} {isrc.local}/" for name in FILES),
+        f"echo {RELEASE} > {isrc.local}/release",
+    ])) != 0:
+        return ExecutionResult(manifest=[], success=False)
+
+    return ExecutionResult(
+        manifest=[{sources: isrc.local}],
+        success=all((isrc.local/name).stat().st_size > 0 for name in FILES),
+    )
+
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=image,
+    labels=["local"],
+    download_size=Size.GB(2),  # VOGDB vog237 HMMs, template estimate
+    resources=Resources(
+        cpus=1,
+        memory=Size.GB(2),
+        duration=Duration(hours=2),
+    ),
+)

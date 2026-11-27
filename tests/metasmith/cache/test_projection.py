@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 from pathlib import Path
 
 import pytest
@@ -108,10 +109,8 @@ class TestProjection:
         target = Transform()
         target.AddRequirement(properties={"out"})
         plan = WorkflowPlan.Generate(
-            given=given,
+            cases=Case.ByShape(given, target=target, target_names=["out_target"]),
             transforms=[tr_lib],
-            target_names=["out_target"],
-            target_model=target,
         )
         assert isinstance(plan, WorkflowPlan), f"did not converge: {plan!r}"
 
@@ -123,7 +122,7 @@ class TestProjection:
         # The first run stops at `mid`, so the store holds a real intermediate
         # and nothing downstream of it -- which is the case worth planning
         # from, and the one a store-as-input exists to serve.
-        from metasmith.agents.spec import Spec
+        from metasmith.agents.spec import Plan, Spec
 
         types_path, _samples, tr_lib = _run_a_pipeline(
             tmp_path / "a", virtual_runtime, target="mid",
@@ -131,12 +130,10 @@ class TestProjection:
         proj = _project(virtual_runtime, types_path)
         assert sorted({n for _p, n, _e in proj.library.Iterate()}) == ["cf::mid"]
 
-        task = Spec(
-            input_library=proj.library,
-            target_types=["cf::out"],
+        task = Plan(
+            [Spec(input_library=proj.library, target_types=["cf::out"], sample_type="cf::mid")],
             transform_libraries=[tr_lib],
-            sample_type="cf::mid",
-        ).Solve()
+        )
         assert task.ok, task.plan.dropped_targets
         assert [s.transform.name for s in task.plan.steps] == ["trB"]
 

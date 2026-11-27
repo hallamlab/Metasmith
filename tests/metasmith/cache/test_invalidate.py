@@ -3,14 +3,18 @@
 A leaf's identity is the absolute path plus the mtime of the top node, which is
 what keeps a large reference from costing a tree walk on every run. The price
 is that a change below the top node is invisible, so there has to be a way to
-say "this changed" out loud.
+say "this changed" out loud -- and, for an edit the index can see, for that
+to happen on the next load without anyone saying it.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
+
+import yaml
 
 from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.libraries.identity import stat_leaf_id
@@ -43,6 +47,106 @@ def test_invalidate_moves_the_id_to_the_one_the_agent_will_derive(tmp_path):
     # The same formula the agent re-derives with at staging time; a different
     # one here means client and agent disagree about what the file is.
     assert after == stat_leaf_id(lib.location / item, lib.fork_id)
+
+
+def _reloaded_ids(lib) -> dict:
+    again = DataInstanceLibrary.Load(lib.location)
+    return {p: again.Get(p).instance_id for p in again.manifest}
+
+
+def test_an_edited_leaf_moves_on_the_next_load_and_its_sibling_does_not(tmp_path):
+    lib = _library(tmp_path)
+    edited, untouched = list(lib.manifest)
+    before = _reloaded_ids(lib)
+
+    (lib.location / edited).write_text("docker://tool:0.5\n")
+
+    after = _reloaded_ids(lib)
+    assert after[edited] != before[edited]
+    assert after[untouched] == before[untouched]
+
+
+def test_a_small_leaf_whose_bytes_did_not_change_keeps_its_id(tmp_path):
+    # A checkout or a copy moves the mtime and nothing else; a cache built on
+    # the old id is still right.
+    lib = _library(tmp_path)
+    before = _reloaded_ids(lib)
+    for p in lib.manifest:
+        os.utime(lib.location / p, ns=(10**18, 10**18))
+    assert _reloaded_ids(lib) == before
+    assert DataInstanceLibrary.Load(lib.location).GetKey() == lib.GetKey()
+
+
+def test_an_edit_that_restores_the_mtime_still_moves(tmp_path):
+    lib = _library(tmp_path)
+    item = next(iter(lib.manifest))
+    before = _reloaded_ids(lib)[item]
+    f = lib.location / item
+    st = f.stat()
+    f.write_text("DIFFERENT\n")
+    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert _reloaded_ids(lib)[item] != before
+
+
+def test_an_index_written_before_stamps_keeps_its_ids_and_is_stamped_on_save(tmp_path):
+    lib = _library(tmp_path)
+    index = lib.location / "_metadata" / "index.yml"
+    raw = yaml.safe_load(index.read_text())
+    for entry in raw["manifest"].values():
+        entry.pop("stamp")
+    index.write_text(yaml.safe_dump(raw))
+    item = next(iter(lib.manifest))
+    before = _reloaded_ids(lib)
+
+    old = DataInstanceLibrary.Load(lib.location)
+    assert {p: old.Get(p).instance_id for p in old.manifest} == before
+    old.Save()
+    (lib.location / item).write_text("edited after the upgrade\n")
+    assert _reloaded_ids(lib)[item] != before[item]
+
+
+def _value_library(tmp_path: Path) -> DataInstanceLibrary:
+    lib = _library(tmp_path)
+    lib.AddValue("accession", "GCF_000005845.2", "cf::seed")
+    lib.Save()
+    return lib
+
+
+def test_a_value_edited_and_undone_gets_its_first_identity_back(tmp_path):
+    lib = _value_library(tmp_path)
+    f = lib.location / "accession"
+    first = _reloaded_ids(lib)[Path("accession")]
+    f.write_text("GCF_000005845.3")
+    assert _reloaded_ids(lib)[Path("accession")] != first
+    f.write_text("GCF_000005845.2")
+    assert _reloaded_ids(lib)[Path("accession")] == first
+
+
+def test_a_value_whose_mtime_moves_keeps_its_identity(tmp_path):
+    lib = _value_library(tmp_path)
+    before = _reloaded_ids(lib)
+    os.utime(lib.location / "accession", ns=(10**18, 10**18))
+    assert _reloaded_ids(lib) == before
+
+
+def test_invalidate_skips_a_value_and_says_to_edit_it(tmp_path):
+    lib = _value_library(tmp_path)
+    report = lib.Invalidate([Path("accession")])
+    assert "edit the text" in report["skipped"]["accession"]
+
+
+def test_a_value_is_derived_the_same_from_a_copy_on_another_host(tmp_path):
+    # The agent re-derives from its own copy at another absolute path.
+    import shutil
+
+    from metasmith.models.libraries.identity import value_leaf_id
+
+    lib = _value_library(tmp_path)
+    copy = tmp_path / "agent" / "lib"
+    shutil.copytree(lib.location, copy)
+    here = _reloaded_ids(lib)[Path("accession")]
+    assert value_leaf_id(copy / "accession", Path("accession"), lib.fork_id) == here
+    assert DataInstanceLibrary.Load(copy).Get(Path("accession")).instance_id == here
 
 
 def test_invalidate_all_moves_every_leaf(tmp_path):

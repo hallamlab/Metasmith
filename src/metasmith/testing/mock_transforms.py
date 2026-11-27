@@ -229,49 +229,6 @@ TransformInstance(
     }
 
 
-def multi_slot_producer(slots: int = 2) -> dict[str, str]:
-    assert slots >= 1, "multi_slot_producer needs at least one slot"
-    slot_lines: list[str] = []
-    write_lines: list[str] = []
-    manifest_entries: list[str] = []
-    for i in range(slots):
-        if i > 0:
-            slot_lines.append(f"model.NewProductGroup()")
-        slot_lines.append(
-            f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
-        )
-        write_lines.append(
-            f'p_{i} = Path("slot_{i}.txt"); p_{i}.write_text("slot {i} content")'
-        )
-        manifest_entries.append(f"{{out_{i}: p_{i}}}")
-    slots_src = "\n".join(slot_lines)
-    writes_src = "\n    ".join(write_lines)
-    manifest_src = ", ".join(manifest_entries)
-    return {
-        "multi_slot_producer": f'''
-from pathlib import Path
-from metasmith.models.libraries import (
-    TransformInstanceLibrary,
-    TransformInstance,
-    ExecutionContext,
-    ExecutionResult,
-)
-from metasmith.models.solver import Transform
-
-lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
-dep = model.AddRequirement(lib.GetType("mock::assembly"))
-{slots_src}
-
-def protocol(context: ExecutionContext):
-    {writes_src}
-    return ExecutionResult(manifest=[{manifest_src}], success=True)
-
-TransformInstance(protocol=protocol, model=model, group_by=dep)
-'''
-    }
-
-
 def multi_product_one_group(products: int = 2) -> dict[str, str]:
     assert products >= 1, "multi_product_one_group needs at least one product"
     decls = "\n".join(
@@ -364,14 +321,10 @@ TransformInstance(protocol=protocol, model=model, group_by=dep, batch_size=1)
 def failing_at_slot_k(k: int = 1, slots: int = 2) -> dict[str, str]:
     assert slots >= 1, "failing_at_slot_k needs at least one slot"
     assert 0 <= k < slots, f"k={k} out of range for slots={slots}"
-    slot_lines: list[str] = []
-    for i in range(slots):
-        if i > 0:
-            slot_lines.append("model.NewProductGroup()")
-        slot_lines.append(
-            f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
-        )
-    slots_src = "\n".join(slot_lines)
+    slots_src = "\n".join(
+        f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
+        for i in range(slots)
+    )
     return {
         "failing_at_slot_k": f'''
 from pathlib import Path
@@ -591,5 +544,90 @@ TransformInstance(
     model=model,
     group_by=asm,
 )
+'''
+    }
+
+
+# One step of any shape. `requires` maps a variable name to its type and the names of the
+# requirements it descends from, in declaration order.
+def _requirements(requires: dict[str, tuple[str, list[str]]]) -> str:
+    return "\n".join(
+        f'{var} = model.AddRequirement(lib.GetType("{dtype}")'
+        + (f", parents={{{', '.join(parents)}}})" if parents else ")")
+        for var, (dtype, parents) in requires.items()
+    )
+
+
+def fork_transform(
+    name: str, requires: dict[str, tuple[str, list[str]]],
+    groups: list[dict[str, str]], group_by: str,
+) -> dict[str, str]:
+    # Each group is one possible outcome, as {var: dtype}. A var named in
+    # several groups is one shared product.
+    decls: list[str] = []
+    made: dict[str, str] = {}
+    for i, g in enumerate(groups):
+        if i:
+            decls.append("model.NewProductGroup()")
+        for var, dtype in g.items():
+            if var in made:
+                assert made[var] == dtype, f"{var} is {made[var]} in an earlier group"
+                decls.append(f"model.AddProduct({var})")
+            else:
+                made[var] = dtype
+                decls.append(f'{var} = model.AddProduct(lib.GetType("{dtype}"))')
+    writes = "\n    ".join(f'p_{v} = Path("{name}_{v}.out"); p_{v}.write_text("{name} {v}")' for v in made)
+    manifest = ", ".join("{" + ", ".join(f"{v}: p_{v}" for v in g) + "}" for g in groups)
+    return {
+        name: f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+{_requirements(requires)}
+{chr(10).join(decls)}
+
+def protocol(context: ExecutionContext):
+    {writes}
+    return ExecutionResult(manifest=[{manifest}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by={group_by})
+'''
+    }
+
+
+def step_transform(
+    name: str, requires: dict[str, tuple[str, list[str]]], product: str, group_by: str,
+) -> dict[str, str]:
+    reqs = _requirements(requires)
+    return {
+        name: f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+{reqs}
+out = model.AddProduct(lib.GetType("{product}"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("{name}.out")
+    out_path.write_text("{name}")
+    return ExecutionResult(manifest=[{{out: out_path}}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by={group_by})
 '''
     }

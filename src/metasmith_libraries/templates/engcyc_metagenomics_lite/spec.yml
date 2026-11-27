@@ -1,0 +1,757 @@
+name: engcyc_metagenomics_lite
+description: 'engcyc_metagenomics with the lite lanes: the same three cases (short
+  reads, hybrid,
+
+  long reads) and the references case, about 220 GB of reference downloads in place
+  of
+
+  full''s 1,070 GB. Funnel each sample into the case for its reads, or give an SRA
+  run
+
+  accession. Every lane is its own target; deselect a target to drop its lane, and
+  drop
+
+  its database from the references case too. engcyc_metagenomics'' description gives
+
+  each lane''s size.
+
+
+  Assembly: as full. Binning: MetaBAT2, SemiBin2, MetaDecoder -> DAS Tool -> CheckM2
+
+  -> quality MAGs.
+
+  Taxonomy: GTDB-Tk r232 on the quality MAGs; rRNA scan against GTDB r232 SSU.
+
+  Read taxonomy: MetaPhlAn, sylph and Kraken2 with Bracken, each in its long-read
+  mode
+
+  on long reads; inStrain on short and hybrid.
+
+  Gene function: DIAMOND UniRef50 and KOfam; CLEAN, ProteinBERT and BiGG lanes; the
+
+  4-lane GPR table.
+
+  Genome features: Bakta non-coding, ARAGORN tRNA, mobileOG.
+
+  Resistome: RGI/CARD, BacMet, VFDB. RefSeq viral lane.
+
+  GEM per quality MAG: CarveMe from the BiGG lane, then MEMOTE. CarveMe needs a growth
+
+  medium: give modelling::media and modelling::medium_name.
+
+  Viral: geNomad, VirSorter2, VIBRANT -> CheckV -> vOTUs.'
+transform_libraries:
+- logistics
+- assembly
+- metagenomics
+- functionalAnnotation
+- viromics
+- metabolicModelling
+resource_libraries:
+- env
+- lib
+- ref
+cases:
+- name: short
+  sample_type: null
+  target_types:
+  - sequences::assembly
+  - sequences::read_qc_stats
+  - &id003
+    type: sequences::assembly_stats
+    parents: &id001
+    - 0
+  - &id004
+    type: sequences::assembly_orfs
+    parents: *id001
+  - &id005
+    type: sequences::gff
+    parents: *id001
+  - &id006
+    type: sequences::das_tool_bin_fasta
+    parents: *id001
+  - &id007
+    type: binning::das_tool_summary
+    parents: *id001
+  - &id008
+    type: taxonomy::checkm_stats
+    parents:
+    - 5
+  - &id009
+    type: binning_local::quality_bin_fasta
+    parents: *id001
+  - &id010
+    type: taxonomy::gtdbtk_quality
+    parents: *id001
+  - &id011
+    type: taxonomy::rrna_gtdb
+    parents: *id001
+  - &id012
+    type: annotation::uniref50_lane_table
+    parents: &id002
+    - 3
+  - &id013
+    type: annotation::kofam_lane_table
+    parents: *id002
+  - &id014
+    type: annotation::refseq_viral_lane_table
+    parents: *id002
+  - &id015
+    type: annotation::pbert_lane_table
+    parents: *id002
+  - &id016
+    type: annotation::clean_lane_table
+    parents: *id002
+  - &id017
+    type: annotation::bigg_lane_table
+    parents: *id002
+  - &id018
+    type: annotation::gpr_table
+    parents: *id002
+  - &id019
+    type: annotation::bakta_nc_lane_table
+    parents: *id001
+  - &id020
+    type: annotation::trna_gff
+    parents: *id001
+  - &id021
+    type: annotation::mobileog_lane_table
+    parents: *id002
+  - &id022
+    type: annotation::rgi_lane_table
+    parents: *id002
+  - &id023
+    type: annotation::bacmet_lane_table
+    parents: *id002
+  - &id024
+    type: annotation::vfdb_lane_table
+    parents: *id002
+  - type: annotation::instrain_genome_info
+    parents: *id001
+  - taxonomy::metaphlan_profile
+  - taxonomy::sylph_profile
+  - taxonomy::kraken2_report
+  - &id025
+    type: modelling::carveme_model
+    parents: *id001
+  - &id026
+    type: modelling::memote_score
+    parents: *id001
+  - &id027
+    type: viromics::checkv_quality_summary
+    parents: *id001
+  - &id028
+    type: viromics::votu_cluster_table
+    parents: *id001
+  - type: binning::metadecoder_contig_to_bin_table
+    parents:
+    - 0
+  shared_input_paths:
+  - contig_study.json
+  - eggnog_source.json
+  - complete_medium.tsv
+  - complete_medium_name.txt
+  - metabat2_semibin2_metadecoder.json
+  input_paths:
+  - /msm_deferred/479384254b3f45dfb647e92c1bf15d2d
+  - /msm_deferred/6422a7a316aa412e88c86b0db8eea356
+  - short_1_name.txt
+  - short_1_read_pair.txt
+  - short_1_reads_metadata.json
+- name: hybrid
+  sample_type: null
+  target_types:
+  - sequences::assembly
+  - type: sequences::opera_ms_assembly
+    parents:
+    - 0
+  - sequences::read_qc_stats
+  - type: sequences::assembly_stats
+    parents:
+    - 0
+  - type: sequences::assembly_orfs
+    parents:
+    - 0
+  - type: sequences::gff
+    parents:
+    - 0
+  - type: sequences::das_tool_bin_fasta
+    parents:
+    - 0
+  - type: binning::das_tool_summary
+    parents:
+    - 0
+  - type: taxonomy::checkm_stats
+    parents:
+    - 6
+  - type: binning_local::quality_bin_fasta
+    parents:
+    - 0
+  - type: taxonomy::gtdbtk_quality
+    parents:
+    - 0
+  - type: taxonomy::rrna_gtdb
+    parents:
+    - 0
+  - type: annotation::uniref50_lane_table
+    parents:
+    - 4
+  - type: annotation::kofam_lane_table
+    parents:
+    - 4
+  - type: annotation::refseq_viral_lane_table
+    parents:
+    - 4
+  - type: annotation::pbert_lane_table
+    parents:
+    - 4
+  - type: annotation::clean_lane_table
+    parents:
+    - 4
+  - type: annotation::bigg_lane_table
+    parents:
+    - 4
+  - type: annotation::gpr_table
+    parents:
+    - 4
+  - type: annotation::bakta_nc_lane_table
+    parents:
+    - 0
+  - type: annotation::trna_gff
+    parents:
+    - 0
+  - type: annotation::mobileog_lane_table
+    parents:
+    - 4
+  - type: annotation::rgi_lane_table
+    parents:
+    - 4
+  - type: annotation::bacmet_lane_table
+    parents:
+    - 4
+  - type: annotation::vfdb_lane_table
+    parents:
+    - 4
+  - type: annotation::instrain_genome_info
+    parents:
+    - 0
+  - taxonomy::metaphlan_profile
+  - taxonomy::sylph_profile
+  - taxonomy::kraken2_report
+  - type: modelling::carveme_model
+    parents:
+    - 0
+  - type: modelling::memote_score
+    parents:
+    - 0
+  - type: viromics::checkv_quality_summary
+    parents:
+    - 0
+  - type: viromics::votu_cluster_table
+    parents:
+    - 0
+  - type: binning::metadecoder_contig_to_bin_table
+    parents:
+    - 0
+  shared_input_paths:
+  - contig_study.json
+  - eggnog_source.json
+  - complete_medium.tsv
+  - complete_medium_name.txt
+  - metabat2_semibin2_metadecoder.json
+  input_paths:
+  - /msm_deferred/0960df646b334379b2117327ef8e5e93
+  - /msm_deferred/4e9af06a0d9b48d99e2ea6f6b05b51c6
+  - /msm_deferred/fa83d659c9b04c60b0c6dd3ccb7b7196
+  - hybrid_1_name.txt
+  - hybrid_1_read_pair.txt
+  - hybrid_1_reads_metadata.json
+- name: long
+  sample_type: null
+  target_types:
+  - sequences::assembly
+  - sequences::read_qc_stats
+  - *id003
+  - *id004
+  - *id005
+  - *id006
+  - *id007
+  - *id008
+  - *id009
+  - *id010
+  - *id011
+  - *id012
+  - *id013
+  - *id014
+  - *id015
+  - *id016
+  - *id017
+  - *id018
+  - *id019
+  - *id020
+  - *id021
+  - *id022
+  - *id023
+  - *id024
+  - taxonomy::metaphlan_profile
+  - taxonomy::sylph_profile
+  - taxonomy::kraken2_report
+  - *id025
+  - *id026
+  - *id027
+  - *id028
+  - type: binning::metadecoder_contig_to_bin_table
+    parents:
+    - 0
+  shared_input_paths:
+  - contig_study.json
+  - eggnog_source.json
+  - complete_medium.tsv
+  - complete_medium_name.txt
+  - metabat2_semibin2_metadecoder.json
+  input_paths:
+  - /msm_deferred/4fc00b44c97d4129b94863ccbfe55f3c
+  - long_1_name.txt
+  - long_1_reads_metadata.json
+- name: references
+  sample_type: null
+  target_types:
+  - annotation::bacmet_diamond_db
+  - annotation::bakta_db
+  - annotation::card_db
+  - annotation::mobileog_diamond_db
+  - annotation::vfdb_diamond_db
+  - annotation::virsorter2_db
+  - ref::checkv_db
+  - ref::genomad
+  - ref::gtdb
+  - ref::gtdb_rrna
+  - ref::kofamscan_ko_list
+  - ref::kofamscan_profiles
+  - ref::kraken2_db
+  - ref::label_transfer_landmarks
+  - ref::metaphlan_db
+  - ref::mnxr_lookup
+  - ref::refseq_viral_diamond_db
+  - ref::sylph_db
+  - ref::uniref50_diamond_db
+  - ref::vibrant_db
+  shared_input_paths:
+  - contig_study.json
+  - eggnog_source.json
+  - complete_medium.tsv
+  - complete_medium_name.txt
+  - metabat2_semibin2_metadecoder.json
+  input_paths:
+  - contig_study.json
+  - eggnog_source.json
+  - complete_medium.tsv
+  - complete_medium_name.txt
+  - metabat2_semibin2_metadecoder.json
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/0960df646b334379b2117327ef8e5e93:
+      type: sequences::long_reads
+      parents:
+        IkuWHv2PBGcI@hybrid_1_reads_metadata.json: sequences::read_metadata
+      instance_id: 1e2016b63e3ff65db57815a8b5ff4842b904b971a727ec4176f60f161a16276cbf95
+      origin: leaf
+    /msm_deferred/479384254b3f45dfb647e92c1bf15d2d:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e209e6841f01cea837a0ab0cfa7aac97ceb8413a5d3d8c76cdfde8dc16be8986e4b
+      origin: leaf
+    /msm_deferred/4e9af06a0d9b48d99e2ea6f6b05b51c6:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e207cd83facd8af8df246d4b150bea4e5cb150cf90d89ec8d8030ac9101dde70afb
+      origin: leaf
+    /msm_deferred/4fc00b44c97d4129b94863ccbfe55f3c:
+      type: sequences::long_reads
+      parents:
+        IkuWHv2PBGcI@long_1_reads_metadata.json: sequences::read_metadata
+      instance_id: 1e206c87aae4ec17eba9f6b2b36f30eb2cbd84b30d1069f9baa89ab9145255586cda
+      origin: leaf
+    /msm_deferred/6422a7a316aa412e88c86b0db8eea356:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        IkuWHv2PBGcI@short_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e2000e12360e545577062f5f72a0b5bf632fa5ba741811e82e2663ef7d70b4e8097
+      origin: leaf
+    /msm_deferred/fa83d659c9b04c60b0c6dd3ccb7b7196:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        IkuWHv2PBGcI@hybrid_1_read_pair.txt: sequences::read_pair
+      instance_id: 1e20e101e20aeb04b3f723c0bd6f208f0b9777b7a7cd2dfe45d003ad9640cab1f25c
+      origin: leaf
+    complete_medium.tsv:
+      type: modelling::media
+      instance_id: 1e20511cd935d02eb80a0d18d484d64fa76b214c0d36c2d71f8151f4183189867e38
+      origin: leaf
+      value: true
+    complete_medium_name.txt:
+      type: modelling::medium_name
+      instance_id: 1e2077997faacee2ba016cecadb97c7ae28ea4c44d40ec2cfe0520c1be7f933635db
+      origin: leaf
+      value: true
+    contig_study.json:
+      type: viromics::contig_study
+      instance_id: 1e202f446c0d1cff58a23a8fc62a73d5c053c56ccdd627e5a9cdbb0c165d0f011715
+      origin: leaf
+      value: true
+    eggnog_source.json:
+      type: annotation::eggnog_source
+      instance_id: 1e207c86f58ecb9d9c7e3d781ff76efab9d175638eeef5b1d9f0378e6845a3b76bd8
+      origin: leaf
+      value: true
+    hybrid_1_name.txt:
+      type: sequences::sample_name
+      parents:
+        IkuWHv2PBGcI@contig_study.json: viromics::contig_study
+      instance_id: 1e2004b47a34d9463a08e2da9ef9f960ef859d70a7b5a0b6e8364bb56710f737f90f
+      origin: leaf
+      value: true
+    hybrid_1_read_pair.txt:
+      type: sequences::read_pair
+      parents:
+        IkuWHv2PBGcI@hybrid_1_reads_metadata.json: sequences::read_metadata
+      instance_id: 1e204883788ab43b48bf99cf0e1df0ac80e73d28347a464a495007f81e1e5ad5fcdf
+      origin: leaf
+      value: true
+    hybrid_1_reads_metadata.json:
+      type: sequences::read_metadata
+      parents:
+        IkuWHv2PBGcI@hybrid_1_name.txt: sequences::sample_name
+      instance_id: 1e2095c1d760140b2a7ffe2005d0d365ea758c74e4acda51dba86e8780703ae2ded2
+      origin: leaf
+      value: true
+    long_1_name.txt:
+      type: sequences::sample_name
+      parents:
+        IkuWHv2PBGcI@contig_study.json: viromics::contig_study
+      instance_id: 1e20fb84385337244a534abee96709175adb840662b1fed4e6d9d368f6a910abd4ae
+      origin: leaf
+      value: true
+    long_1_reads_metadata.json:
+      type: sequences::read_metadata
+      parents:
+        IkuWHv2PBGcI@long_1_name.txt: sequences::sample_name
+      instance_id: 1e20c23e014838d8756680deea198ed366df4db3954e8e2fdbabc6e13a84b322dae8
+      origin: leaf
+      value: true
+    metabat2_semibin2_metadecoder.json:
+      type: binning::metabat2_semibin2_metadecoder
+      instance_id: 1e20a2a0aec3771601f5eae7c68d9c8f394f412520f781eb161b4fd28b8cf458354d
+      origin: leaf
+      value: true
+    short_1_name.txt:
+      type: sequences::sample_name
+      parents:
+        IkuWHv2PBGcI@contig_study.json: viromics::contig_study
+      instance_id: 1e20d21f84c894c3633470eb0eba7c46d83d0d635d1d0a25fccc1826a2423e1ac5aa
+      origin: leaf
+      value: true
+    short_1_read_pair.txt:
+      type: sequences::read_pair
+      parents:
+        IkuWHv2PBGcI@short_1_reads_metadata.json: sequences::read_metadata
+      instance_id: 1e2016459a0b76b113352200b3486d75597d814b4ca3f9318b03c11323a8dbb07aad
+      origin: leaf
+      value: true
+    short_1_reads_metadata.json:
+      type: sequences::read_metadata
+      parents:
+        IkuWHv2PBGcI@short_1_name.txt: sequences::sample_name
+      instance_id: 1e2043550fdd85815d1aa0e6fff3fafabd63aaa3ca39a65c42c851e0ca0021b35e60
+      origin: leaf
+      value: true
+  values:
+    complete_medium.tsv: "exchange\tlower_bound\tupper_bound\tmedium\nEX_12dgr160_e\t\
+      -10\t1000\tcomplete\nEX_12dgr180_e\t-10\t1000\tcomplete\nEX_12ppd__R_e\t-10\t\
+      1000\tcomplete\nEX_12ppd__S_e\t-10\t1000\tcomplete\nEX_13dampp_e\t-10\t1000\t\
+      complete\nEX_13ppd_e\t-10\t1000\tcomplete\nEX_14glucan_e\t-10\t1000\tcomplete\n\
+      EX_15dap_e\t-10\t1000\tcomplete\nEX_1ag160_e\t-10\t1000\tcomplete\nEX_1ag180_e\t\
+      -10\t1000\tcomplete\nEX_1ag181d9_e\t-10\t1000\tcomplete\nEX_1ag182d9d12_e\t\
+      -10\t1000\tcomplete\nEX_23camp_e\t-10\t1000\tcomplete\nEX_23ccmp_e\t-10\t1000\t\
+      complete\nEX_23cgmp_e\t-10\t1000\tcomplete\nEX_23cump_e\t-10\t1000\tcomplete\n\
+      EX_23dappa_e\t-10\t1000\tcomplete\nEX_23dhbzs3_e\t-10\t1000\tcomplete\nEX_25dkglcn_e\t\
+      -10\t1000\tcomplete\nEX_26dap__M_e\t-10\t1000\tcomplete\nEX_2ameph_e\t-10\t\
+      1000\tcomplete\nEX_2ddglcn_e\t-10\t1000\tcomplete\nEX_2dhglcn_e\t-10\t1000\t\
+      complete\nEX_2h3mb_e\t-10\t1000\tcomplete\nEX_2h3mp_e\t-10\t1000\tcomplete\n\
+      EX_2hxmp_e\t-10\t1000\tcomplete\nEX_2m35mdntha_e\t-10\t1000\tcomplete\nEX_2mba_e\t\
+      -10\t1000\tcomplete\nEX_2mbald_e\t-10\t1000\tcomplete\nEX_2mpa_e\t-10\t1000\t\
+      complete\nEX_2obut_e\t-10\t1000\tcomplete\nEX_2pg_e\t-10\t1000\tcomplete\nEX_2pglyc_e\t\
+      -10\t1000\tcomplete\nEX_34dhbz_e\t-10\t1000\tcomplete\nEX_34dhcinm_e\t-10\t\
+      1000\tcomplete\nEX_34dhpac_e\t-10\t1000\tcomplete\nEX_34dhphe_e\t-10\t1000\t\
+      complete\nEX_35dnta_e\t-10\t1000\tcomplete\nEX_3amp_e\t-10\t1000\tcomplete\n\
+      EX_3cmp_e\t-10\t1000\tcomplete\nEX_3gmp_e\t-10\t1000\tcomplete\nEX_3h4atb_e\t\
+      -10\t1000\tcomplete\nEX_3hcinnm_e\t-10\t1000\tcomplete\nEX_3hoxpac_e\t-10\t\
+      1000\tcomplete\nEX_3hpppn_e\t-10\t1000\tcomplete\nEX_3mb_e\t-10\t1000\tcomplete\n\
+      EX_3mba_e\t-10\t1000\tcomplete\nEX_3oxoadp_e\t-10\t1000\tcomplete\nEX_3pg_e\t\
+      -10\t1000\tcomplete\nEX_3ump_e\t-10\t1000\tcomplete\nEX_4abut_e\t-10\t1000\t\
+      complete\nEX_4abutn_e\t-10\t1000\tcomplete\nEX_4abz_e\t-10\t1000\tcomplete\n\
+      EX_4abzglu_e\t-10\t1000\tcomplete\nEX_4ahmmp_e\t-10\t1000\tcomplete\nEX_4crsol_e\t\
+      -10\t1000\tcomplete\nEX_4hba_e\t-10\t1000\tcomplete\nEX_4hbald_e\t-10\t1000\t\
+      complete\nEX_4hbz_e\t-10\t1000\tcomplete\nEX_4hoxpac_e\t-10\t1000\tcomplete\n\
+      EX_4hoxpacd_e\t-10\t1000\tcomplete\nEX_4hphac_e\t-10\t1000\tcomplete\nEX_4hpro_DC_e\t\
+      -10\t1000\tcomplete\nEX_4hpro_LT_e\t-10\t1000\tcomplete\nEX_4hptn_e\t-10\t1000\t\
+      complete\nEX_4hthr_e\t-10\t1000\tcomplete\nEX_4oxptn_e\t-10\t1000\tcomplete\n\
+      EX_5aptn_e\t-10\t1000\tcomplete\nEX_5dglcn_e\t-10\t1000\tcomplete\nEX_5drib_e\t\
+      -10\t1000\tcomplete\nEX_5g2oxpt_e\t-10\t1000\tcomplete\nEX_5mcsn_e\t-10\t1000\t\
+      complete\nEX_5mdru1p_e\t-10\t1000\tcomplete\nEX_5mtr_e\t-10\t1000\tcomplete\n\
+      EX_5oxpro_e\t-10\t1000\tcomplete\nEX_6apa_e\t-10\t1000\tcomplete\nEX_6atha_e\t\
+      -10\t1000\tcomplete\nEX_6hnac_e\t-10\t1000\tcomplete\nEX_6pgc_e\t-10\t1000\t\
+      complete\nEX_LalaDglu_e\t-10\t1000\tcomplete\nEX_LalaDgluMdap_e\t-10\t1000\t\
+      complete\nEX_LalaDgluMdapDala_e\t-10\t1000\tcomplete\nEX_LalaLglu_e\t-10\t1000\t\
+      complete\nEX_Larab_e\t-10\t1000\tcomplete\nEX_Lcyst_e\t-10\t1000\tcomplete\n\
+      EX_Ncbmpts_e\t-10\t1000\tcomplete\nEX_R3hdec4e_e\t-10\t1000\tcomplete\nEX_R_3h4atba_e\t\
+      -10\t1000\tcomplete\nEX_R_3h6atha_e\t-10\t1000\tcomplete\nEX_R_3hcmrs7e_e\t\
+      -10\t1000\tcomplete\nEX_R_3hdcaa_e\t-10\t1000\tcomplete\nEX_R_3hdd5ea_e\t-10\t\
+      1000\tcomplete\nEX_R_3hdd6e_e\t-10\t1000\tcomplete\nEX_R_3hdda_e\t-10\t1000\t\
+      complete\nEX_R_3hhdca_e\t-10\t1000\tcomplete\nEX_R_3hhpa_e\t-10\t1000\tcomplete\n\
+      EX_R_3hhxa_e\t-10\t1000\tcomplete\nEX_R_3hnonaa_e\t-10\t1000\tcomplete\nEX_R_3hocta_e\t\
+      -10\t1000\tcomplete\nEX_R_3hpba_e\t-10\t1000\tcomplete\nEX_R_3hpdeca_e\t-10\t\
+      1000\tcomplete\nEX_R_3hphpa_e\t-10\t1000\tcomplete\nEX_R_3hphxa_e\t-10\t1000\t\
+      complete\nEX_R_3hpnona_e\t-10\t1000\tcomplete\nEX_R_3hpocta_e\t-10\t1000\tcomplete\n\
+      EX_R_3hppta_e\t-10\t1000\tcomplete\nEX_R_3hpt_e\t-10\t1000\tcomplete\nEX_R_3htd58e_e\t\
+      -10\t1000\tcomplete\nEX_R_3htd5e_e\t-10\t1000\tcomplete\nEX_R_3httdca_e\t-10\t\
+      1000\tcomplete\nEX_T4hcinnm_e\t-10\t1000\tcomplete\nEX_abg4_e\t-10\t1000\tcomplete\n\
+      EX_abt_e\t-10\t1000\tcomplete\nEX_abt__D_e\t-10\t1000\tcomplete\nEX_abt__L_e\t\
+      -10\t1000\tcomplete\nEX_ac_e\t-10\t1000\tcomplete\nEX_acac_e\t-10\t1000\tcomplete\n\
+      EX_acald_e\t-10\t1000\tcomplete\nEX_acetone_e\t-10\t1000\tcomplete\nEX_acgal_e\t\
+      -10\t1000\tcomplete\nEX_acgal1p_e\t-10\t1000\tcomplete\nEX_acgam_e\t-10\t1000\t\
+      complete\nEX_acgam1p_e\t-10\t1000\tcomplete\nEX_acglu_e\t-10\t1000\tcomplete\n\
+      EX_acmana_e\t-10\t1000\tcomplete\nEX_acmum_e\t-10\t1000\tcomplete\nEX_acnam_e\t\
+      -10\t1000\tcomplete\nEX_acon_C_e\t-10\t1000\tcomplete\nEX_acser_e\t-10\t1000\t\
+      complete\nEX_actn__R_e\t-10\t1000\tcomplete\nEX_acysbmn_e\t-10\t1000\tcomplete\n\
+      EX_ad_e\t-10\t1000\tcomplete\nEX_ade_e\t-10\t1000\tcomplete\nEX_adn_e\t-10\t\
+      1000\tcomplete\nEX_agm_e\t-10\t1000\tcomplete\nEX_airs_e\t-10\t1000\tcomplete\n\
+      EX_akg_e\t-10\t1000\tcomplete\nEX_ala_B_e\t-10\t1000\tcomplete\nEX_ala_L_asp__L_e\t\
+      -10\t1000\tcomplete\nEX_ala_L_glu__L_e\t-10\t1000\tcomplete\nEX_ala_L_thr__L_e\t\
+      -10\t1000\tcomplete\nEX_ala__D_e\t-10\t1000\tcomplete\nEX_ala__L_e\t-10\t1000\t\
+      complete\nEX_ala_gln_e\t-10\t1000\tcomplete\nEX_ala_his_e\t-10\t1000\tcomplete\n\
+      EX_ala_leu_e\t-10\t1000\tcomplete\nEX_alaala_e\t-10\t1000\tcomplete\nEX_alagly_e\t\
+      -10\t1000\tcomplete\nEX_alahis_e\t-10\t1000\tcomplete\nEX_alaleu_e\t-10\t1000\t\
+      complete\nEX_alathr_e\t-10\t1000\tcomplete\nEX_alatrp_e\t-10\t1000\tcomplete\n\
+      EX_algac_MG_14_e\t-10\t1000\tcomplete\nEX_algac_MG_23_e\t-10\t1000\tcomplete\n\
+      EX_algac_MG_32_e\t-10\t1000\tcomplete\nEX_algac_MG_41_e\t-10\t1000\tcomplete\n\
+      EX_algac__M_e\t-10\t1000\tcomplete\nEX_all__D_e\t-10\t1000\tcomplete\nEX_alltn_e\t\
+      -10\t1000\tcomplete\nEX_amp_e\t-10\t1000\tcomplete\nEX_anhgm_e\t-10\t1000\t\
+      complete\nEX_arab__D_e\t-10\t1000\tcomplete\nEX_arab__L_e\t-10\t1000\tcomplete\n\
+      EX_araban__L_e\t-10\t1000\tcomplete\nEX_arbt_e\t-10\t1000\tcomplete\nEX_arbt6p_e\t\
+      -10\t1000\tcomplete\nEX_arg__D_e\t-10\t1000\tcomplete\nEX_arg__L_e\t-10\t1000\t\
+      complete\nEX_argp_e\t-10\t1000\tcomplete\nEX_ascb__L_e\t-10\t1000\tcomplete\n\
+      EX_asn__D_e\t-10\t1000\tcomplete\nEX_asn__L_e\t-10\t1000\tcomplete\nEX_aso3_e\t\
+      -10\t1000\tcomplete\nEX_aso4_e\t-10\t1000\tcomplete\nEX_asp__D_e\t-10\t1000\t\
+      complete\nEX_asp__L_e\t-10\t1000\tcomplete\nEX_balaala_e\t-10\t1000\tcomplete\n\
+      EX_balabala_e\t-10\t1000\tcomplete\nEX_balagly_e\t-10\t1000\tcomplete\nEX_balaleu_e\t\
+      -10\t1000\tcomplete\nEX_balamd_e\t-10\t1000\tcomplete\nEX_bhb_e\t-10\t1000\t\
+      complete\nEX_biliverd_e\t-10\t1000\tcomplete\nEX_bmn_e\t-10\t1000\tcomplete\n\
+      EX_btd_RR_e\t-10\t1000\tcomplete\nEX_btn_e\t-10\t1000\tcomplete\nEX_btoh_e\t\
+      -10\t1000\tcomplete\nEX_but_e\t-10\t1000\tcomplete\nEX_buts_e\t-10\t1000\tcomplete\n\
+      EX_butso3_e\t-10\t1000\tcomplete\nEX_bz_e\t-10\t1000\tcomplete\nEX_bzal_e\t\
+      -10\t1000\tcomplete\nEX_bzalc_e\t-10\t1000\tcomplete\nEX_ca2_e\t-10\t1000\t\
+      complete\nEX_carn_e\t-10\t1000\tcomplete\nEX_catechol_e\t-10\t1000\tcomplete\n\
+      EX_cell4_e\t-10\t1000\tcomplete\nEX_cell6_e\t-10\t1000\tcomplete\nEX_cellb_e\t\
+      -10\t1000\tcomplete\nEX_cgly_e\t-10\t1000\tcomplete\nEX_ch4s_e\t-10\t1000\t\
+      complete\nEX_chol_e\t-10\t1000\tcomplete\nEX_chols_e\t-10\t1000\tcomplete\n\
+      EX_chor_e\t-10\t1000\tcomplete\nEX_chsterol_e\t-10\t1000\tcomplete\nEX_chtbs_e\t\
+      -10\t1000\tcomplete\nEX_cinnm_e\t-10\t1000\tcomplete\nEX_cit_e\t-10\t1000\t\
+      complete\nEX_citr__L_e\t-10\t1000\tcomplete\nEX_cl_e\t-10\t1000\tcomplete\n\
+      EX_cmcbtt_e\t-10\t1000\tcomplete\nEX_cmp_e\t-10\t1000\tcomplete\nEX_co_e\t-10\t\
+      1000\tcomplete\nEX_co2_e\t-10\t1000\tcomplete\nEX_coa_e\t-10\t1000\tcomplete\n\
+      EX_cobalt2_e\t-10\t1000\tcomplete\nEX_confrl_e\t-10\t1000\tcomplete\nEX_cpgn_e\t\
+      -10\t1000\tcomplete\nEX_cpgn_un_e\t-10\t1000\tcomplete\nEX_creat_e\t-10\t1000\t\
+      complete\nEX_cresol_e\t-10\t1000\tcomplete\nEX_crn_e\t-10\t1000\tcomplete\n\
+      EX_crtn_e\t-10\t1000\tcomplete\nEX_csn_e\t-10\t1000\tcomplete\nEX_ctbt_e\t-10\t\
+      1000\tcomplete\nEX_cu_e\t-10\t1000\tcomplete\nEX_cu2_e\t-10\t1000\tcomplete\n\
+      EX_cyan_e\t-10\t1000\tcomplete\nEX_cynt_e\t-10\t1000\tcomplete\nEX_cys__D_e\t\
+      -10\t1000\tcomplete\nEX_cys__L_e\t-10\t1000\tcomplete\nEX_cyst__L_e\t-10\t1000\t\
+      complete\nEX_cytd_e\t-10\t1000\tcomplete\nEX_d23hb_e\t-10\t1000\tcomplete\n\
+      EX_dachi_e\t-10\t1000\tcomplete\nEX_dad_2_e\t-10\t1000\tcomplete\nEX_dag181d9_e\t\
+      -10\t1000\tcomplete\nEX_dag182d9d12_e\t-10\t1000\tcomplete\nEX_damp_e\t-10\t\
+      1000\tcomplete\nEX_dca_e\t-10\t1000\tcomplete\nEX_dcmp_e\t-10\t1000\tcomplete\n\
+      EX_dcyt_e\t-10\t1000\tcomplete\nEX_ddca_e\t-10\t1000\tcomplete\nEX_dextrin_e\t\
+      -10\t1000\tcomplete\nEX_dgmp_e\t-10\t1000\tcomplete\nEX_dgsn_e\t-10\t1000\t\
+      complete\nEX_dgudbutn_e\t-10\t1000\tcomplete\nEX_dha_e\t-10\t1000\tcomplete\n\
+      EX_dhap_e\t-10\t1000\tcomplete\nEX_dhptd_e\t-10\t1000\tcomplete\nEX_diact_e\t\
+      -10\t1000\tcomplete\nEX_dimp_e\t-10\t1000\tcomplete\nEX_din_e\t-10\t1000\tcomplete\n\
+      EX_dmanur_e\t-10\t1000\tcomplete\nEX_dmgly_e\t-10\t1000\tcomplete\nEX_dms_e\t\
+      -10\t1000\tcomplete\nEX_dmso_e\t-10\t1000\tcomplete\nEX_dmso2_e\t-10\t1000\t\
+      complete\nEX_dopa_e\t-10\t1000\tcomplete\nEX_drib_e\t-10\t1000\tcomplete\nEX_dtbt_e\t\
+      -10\t1000\tcomplete\nEX_dtmp_e\t-10\t1000\tcomplete\nEX_dump_e\t-10\t1000\t\
+      complete\nEX_duri_e\t-10\t1000\tcomplete\nEX_dxyl_e\t-10\t1000\tcomplete\nEX_dxylnt_e\t\
+      -10\t1000\tcomplete\nEX_ecto__L_e\t-10\t1000\tcomplete\nEX_enter_e\t-10\t1000\t\
+      complete\nEX_etha_e\t-10\t1000\tcomplete\nEX_eths_e\t-10\t1000\tcomplete\nEX_ethso3_e\t\
+      -10\t1000\tcomplete\nEX_etoh_e\t-10\t1000\tcomplete\nEX_f6p_e\t-10\t1000\tcomplete\n\
+      EX_fad_e\t-10\t1000\tcomplete\nEX_fald_e\t-10\t1000\tcomplete\nEX_fcmcbtt_e\t\
+      -10\t1000\tcomplete\nEX_fe2_e\t-10\t1000\tcomplete\nEX_fe3_e\t-10\t1000\tcomplete\n\
+      EX_fe3dcit_e\t-10\t1000\tcomplete\nEX_fe3dhbzs_e\t-10\t1000\tcomplete\nEX_fe3dhbzs3_e\t\
+      -10\t1000\tcomplete\nEX_fe3hox_e\t-10\t1000\tcomplete\nEX_fe3hox_un_e\t-10\t\
+      1000\tcomplete\nEX_fe3mcbtt_e\t-10\t1000\tcomplete\nEX_fe3pyovd_kt_e\t-10\t\
+      1000\tcomplete\nEX_feenter_e\t-10\t1000\tcomplete\nEX_feoxam_e\t-10\t1000\t\
+      complete\nEX_feoxam_un_e\t-10\t1000\tcomplete\nEX_fer_e\t-10\t1000\tcomplete\n\
+      EX_fmn_e\t-10\t1000\tcomplete\nEX_fol_e\t-10\t1000\tcomplete\nEX_for_e\t-10\t\
+      1000\tcomplete\nEX_forglu_e\t-10\t1000\tcomplete\nEX_frmd_e\t-10\t1000\tcomplete\n\
+      EX_fru_e\t-10\t1000\tcomplete\nEX_frulys_e\t-10\t1000\tcomplete\nEX_fruur_e\t\
+      -10\t1000\tcomplete\nEX_fuc_e\t-10\t1000\tcomplete\nEX_fuc__L_e\t-10\t1000\t\
+      complete\nEX_fum_e\t-10\t1000\tcomplete\nEX_g1p_e\t-10\t1000\tcomplete\nEX_g3pc_e\t\
+      -10\t1000\tcomplete\nEX_g3pe_e\t-10\t1000\tcomplete\nEX_g3pg_e\t-10\t1000\t\
+      complete\nEX_g3pi_e\t-10\t1000\tcomplete\nEX_g3ps_e\t-10\t1000\tcomplete\nEX_g6p_e\t\
+      -10\t1000\tcomplete\nEX_g6p_B_e\t-10\t1000\tcomplete\nEX_ga_e\t-10\t1000\tcomplete\n\
+      EX_gal_e\t-10\t1000\tcomplete\nEX_gal1p_e\t-10\t1000\tcomplete\nEX_gal_bD_e\t\
+      -10\t1000\tcomplete\nEX_galam_e\t-10\t1000\tcomplete\nEX_galct__D_e\t-10\t1000\t\
+      complete\nEX_galctn__D_e\t-10\t1000\tcomplete\nEX_galctn__L_e\t-10\t1000\tcomplete\n\
+      EX_galctr__D_e\t-10\t1000\tcomplete\nEX_galman4_e\t-10\t1000\tcomplete\nEX_galman6_e\t\
+      -10\t1000\tcomplete\nEX_galt_e\t-10\t1000\tcomplete\nEX_galur_e\t-10\t1000\t\
+      complete\nEX_gam_e\t-10\t1000\tcomplete\nEX_gam6p_e\t-10\t1000\tcomplete\nEX_gcald_e\t\
+      -10\t1000\tcomplete\nEX_gdp_e\t-10\t1000\tcomplete\nEX_glc__D_e\t-10\t1000\t\
+      complete\nEX_glc__aD_e\t-10\t1000\tcomplete\nEX_glcman4_e\t-10\t1000\tcomplete\n\
+      EX_glcman6_e\t-10\t1000\tcomplete\nEX_glcn_e\t-10\t1000\tcomplete\nEX_glcn__D_e\t\
+      -10\t1000\tcomplete\nEX_glcr_e\t-10\t1000\tcomplete\nEX_glcur_e\t-10\t1000\t\
+      complete\nEX_glcur1p_e\t-10\t1000\tcomplete\nEX_gln__L_e\t-10\t1000\tcomplete\n\
+      EX_glu__D_e\t-10\t1000\tcomplete\nEX_glu__L_e\t-10\t1000\tcomplete\nEX_glucan4_e\t\
+      -10\t1000\tcomplete\nEX_glucan6_e\t-10\t1000\tcomplete\nEX_glutar_e\t-10\t1000\t\
+      complete\nEX_glx_e\t-10\t1000\tcomplete\nEX_gly_e\t-10\t1000\tcomplete\nEX_gly_asn__L_e\t\
+      -10\t1000\tcomplete\nEX_gly_asp__L_e\t-10\t1000\tcomplete\nEX_gly_cys_e\t-10\t\
+      1000\tcomplete\nEX_gly_gln_e\t-10\t1000\tcomplete\nEX_gly_glu__L_e\t-10\t1000\t\
+      complete\nEX_gly_leu_e\t-10\t1000\tcomplete\nEX_gly_met_e\t-10\t1000\tcomplete\n\
+      EX_gly_phe_e\t-10\t1000\tcomplete\nEX_gly_pro__L_e\t-10\t1000\tcomplete\nEX_gly_tyr_e\t\
+      -10\t1000\tcomplete\nEX_glyald_e\t-10\t1000\tcomplete\nEX_glyb_e\t-10\t1000\t\
+      complete\nEX_glyc_e\t-10\t1000\tcomplete\nEX_glyc2p_e\t-10\t1000\tcomplete\n\
+      EX_glyc3p_e\t-10\t1000\tcomplete\nEX_glyc__R_e\t-10\t1000\tcomplete\nEX_glyclt_e\t\
+      -10\t1000\tcomplete\nEX_glycol_e\t-10\t1000\tcomplete\nEX_glygln_e\t-10\t1000\t\
+      complete\nEX_glyglu_e\t-10\t1000\tcomplete\nEX_glygly_e\t-10\t1000\tcomplete\n\
+      EX_glyglygln_e\t-10\t1000\tcomplete\nEX_glymet_e\t-10\t1000\tcomplete\nEX_glyphe_e\t\
+      -10\t1000\tcomplete\nEX_glyser_e\t-10\t1000\tcomplete\nEX_gmp_e\t-10\t1000\t\
+      complete\nEX_gsn_e\t-10\t1000\tcomplete\nEX_gthox_e\t-10\t1000\tcomplete\nEX_gthrd_e\t\
+      -10\t1000\tcomplete\nEX_gtp_e\t-10\t1000\tcomplete\nEX_gua_e\t-10\t1000\tcomplete\n\
+      EX_gudac_e\t-10\t1000\tcomplete\nEX_gudptn_e\t-10\t1000\tcomplete\nEX_guln__L_e\t\
+      -10\t1000\tcomplete\nEX_h_e\t-10\t1000\tcomplete\nEX_h2_e\t-10\t1000\tcomplete\n\
+      EX_h2co3_e\t-10\t1000\tcomplete\nEX_h2o_e\t-10\t1000\tcomplete\nEX_h2o2_e\t\
+      -10\t1000\tcomplete\nEX_h2s_e\t-10\t1000\tcomplete\nEX_ham_e\t-10\t1000\tcomplete\n\
+      EX_hco3_e\t-10\t1000\tcomplete\nEX_hcys__L_e\t-10\t1000\tcomplete\nEX_hdca_e\t\
+      -10\t1000\tcomplete\nEX_hdcea_e\t-10\t1000\tcomplete\nEX_hexs_e\t-10\t1000\t\
+      complete\nEX_hgentis_e\t-10\t1000\tcomplete\nEX_hia_e\t-10\t1000\tcomplete\n\
+      EX_his__L_e\t-10\t1000\tcomplete\nEX_hisgly_e\t-10\t1000\tcomplete\nEX_hishis_e\t\
+      -10\t1000\tcomplete\nEX_hom__L_e\t-10\t1000\tcomplete\nEX_hpta_e\t-10\t1000\t\
+      complete\nEX_hqn_e\t-10\t1000\tcomplete\nEX_hxa_e\t-10\t1000\tcomplete\nEX_hxan_e\t\
+      -10\t1000\tcomplete\nEX_ibt_e\t-10\t1000\tcomplete\nEX_ibtol_e\t-10\t1000\t\
+      complete\nEX_icit_e\t-10\t1000\tcomplete\nEX_id3acald_e\t-10\t1000\tcomplete\n\
+      EX_idon__L_e\t-10\t1000\tcomplete\nEX_ile__L_e\t-10\t1000\tcomplete\nEX_imp_e\t\
+      -10\t1000\tcomplete\nEX_ind3ac_e\t-10\t1000\tcomplete\nEX_indole_e\t-10\t1000\t\
+      complete\nEX_inost_e\t-10\t1000\tcomplete\nEX_ins_e\t-10\t1000\tcomplete\nEX_isetac_e\t\
+      -10\t1000\tcomplete\nEX_isobuta_e\t-10\t1000\tcomplete\nEX_isocap_e\t-10\t1000\t\
+      complete\nEX_istfrnA_e\t-10\t1000\tcomplete\nEX_istfrnB_e\t-10\t1000\tcomplete\n\
+      EX_istnt_e\t-10\t1000\tcomplete\nEX_ival_e\t-10\t1000\tcomplete\nEX_k_e\t-10\t\
+      1000\tcomplete\nEX_lac__D_e\t-10\t1000\tcomplete\nEX_lac__L_e\t-10\t1000\tcomplete\n\
+      EX_lcts_e\t-10\t1000\tcomplete\nEX_leu__D_e\t-10\t1000\tcomplete\nEX_leu__L_e\t\
+      -10\t1000\tcomplete\nEX_leuleu_e\t-10\t1000\tcomplete\nEX_lipoate_e\t-10\t1000\t\
+      complete\nEX_lmn2_e\t-10\t1000\tcomplete\nEX_lnlc_e\t-10\t1000\tcomplete\nEX_lys__D_e\t\
+      -10\t1000\tcomplete\nEX_lys__L_e\t-10\t1000\tcomplete\nEX_lysglugly_e\t-10\t\
+      1000\tcomplete\nEX_lyx__L_e\t-10\t1000\tcomplete\nEX_m2but_e\t-10\t1000\tcomplete\n\
+      EX_m4po_e\t-10\t1000\tcomplete\nEX_m_xyl_e\t-10\t1000\tcomplete\nEX_madg_e\t\
+      -10\t1000\tcomplete\nEX_mal__D_e\t-10\t1000\tcomplete\nEX_mal__L_e\t-10\t1000\t\
+      complete\nEX_malt_e\t-10\t1000\tcomplete\nEX_malthp_e\t-10\t1000\tcomplete\n\
+      EX_malthx_e\t-10\t1000\tcomplete\nEX_maltpt_e\t-10\t1000\tcomplete\nEX_malttr_e\t\
+      -10\t1000\tcomplete\nEX_maltttr_e\t-10\t1000\tcomplete\nEX_man_e\t-10\t1000\t\
+      complete\nEX_man1p_e\t-10\t1000\tcomplete\nEX_man6p_e\t-10\t1000\tcomplete\n\
+      EX_man6pglyc_e\t-10\t1000\tcomplete\nEX_manb_e\t-10\t1000\tcomplete\nEX_manglyc_e\t\
+      -10\t1000\tcomplete\nEX_mantr_e\t-10\t1000\tcomplete\nEX_manttr_e\t-10\t1000\t\
+      complete\nEX_manur_e\t-10\t1000\tcomplete\nEX_mbdg_e\t-10\t1000\tcomplete\n\
+      EX_mcbtt_e\t-10\t1000\tcomplete\nEX_melib_e\t-10\t1000\tcomplete\nEX_meoh_e\t\
+      -10\t1000\tcomplete\nEX_met_L_ala__L_e\t-10\t1000\tcomplete\nEX_met__D_e\t-10\t\
+      1000\tcomplete\nEX_met__L_e\t-10\t1000\tcomplete\nEX_metglcur_e\t-10\t1000\t\
+      complete\nEX_metox_e\t-10\t1000\tcomplete\nEX_metox__R_e\t-10\t1000\tcomplete\n\
+      EX_metsox_R__L_e\t-10\t1000\tcomplete\nEX_metsox_S__L_e\t-10\t1000\tcomplete\n\
+      EX_mevR_e\t-10\t1000\tcomplete\nEX_mg2_e\t-10\t1000\tcomplete\nEX_minohp_e\t\
+      -10\t1000\tcomplete\nEX_mmet_e\t-10\t1000\tcomplete\nEX_mn2_e\t-10\t1000\tcomplete\n\
+      EX_mnl_e\t-10\t1000\tcomplete\nEX_mnl1p_e\t-10\t1000\tcomplete\nEX_mobd_e\t\
+      -10\t1000\tcomplete\nEX_mso3_e\t-10\t1000\tcomplete\nEX_mththf_e\t-10\t1000\t\
+      complete\nEX_n2_e\t-10\t1000\tcomplete\nEX_n2o_e\t-10\t1000\tcomplete\nEX_nac_e\t\
+      -10\t1000\tcomplete\nEX_ncam_e\t-10\t1000\tcomplete\nEX_nh4_e\t-10\t1000\tcomplete\n\
+      EX_nmn_e\t-10\t1000\tcomplete\nEX_no_e\t-10\t1000\tcomplete\nEX_no2_e\t-10\t\
+      1000\tcomplete\nEX_no3_e\t-10\t1000\tcomplete\nEX_nona_e\t-10\t1000\tcomplete\n\
+      EX_o2_e\t-10\t1000\tcomplete\nEX_o2s_e\t-10\t1000\tcomplete\nEX_oaa_e\t-10\t\
+      1000\tcomplete\nEX_ocdca_e\t-10\t1000\tcomplete\nEX_ocdcea_e\t-10\t1000\tcomplete\n\
+      EX_octa_e\t-10\t1000\tcomplete\nEX_octscoa_e\t-10\t1000\tcomplete\nEX_orn_e\t\
+      -10\t1000\tcomplete\nEX_orn__D_e\t-10\t1000\tcomplete\nEX_orn__L_e\t-10\t1000\t\
+      complete\nEX_orot_e\t-10\t1000\tcomplete\nEX_oxa_e\t-10\t1000\tcomplete\nEX_p_xyl_e\t\
+      -10\t1000\tcomplete\nEX_pac_e\t-10\t1000\tcomplete\nEX_pacald_e\t-10\t1000\t\
+      complete\nEX_pala_e\t-10\t1000\tcomplete\nEX_pea_e\t-10\t1000\tcomplete\nEX_peamn_e\t\
+      -10\t1000\tcomplete\nEX_peng_e\t-10\t1000\tcomplete\nEX_pentso3_e\t-10\t1000\t\
+      complete\nEX_pep_e\t-10\t1000\tcomplete\nEX_phe__D_e\t-10\t1000\tcomplete\n\
+      EX_phe__L_e\t-10\t1000\tcomplete\nEX_phedca_e\t-10\t1000\tcomplete\nEX_phehpa_e\t\
+      -10\t1000\tcomplete\nEX_phehxa_e\t-10\t1000\tcomplete\nEX_pheme_e\t-10\t1000\t\
+      complete\nEX_phenol_e\t-10\t1000\tcomplete\nEX_phenona_e\t-10\t1000\tcomplete\n\
+      EX_pheocta_e\t-10\t1000\tcomplete\nEX_phept_e\t-10\t1000\tcomplete\nEX_phpyr_e\t\
+      -10\t1000\tcomplete\nEX_pi_e\t-10\t1000\tcomplete\nEX_pime_e\t-10\t1000\tcomplete\n\
+      EX_pnto__R_e\t-10\t1000\tcomplete\nEX_ppa_e\t-10\t1000\tcomplete\nEX_ppal_e\t\
+      -10\t1000\tcomplete\nEX_ppap_e\t-10\t1000\tcomplete\nEX_ppat_e\t-10\t1000\t\
+      complete\nEX_ppi_e\t-10\t1000\tcomplete\nEX_ppoh_e\t-10\t1000\tcomplete\nEX_pppn_e\t\
+      -10\t1000\tcomplete\nEX_ppt_e\t-10\t1000\tcomplete\nEX_prealg_MG_14_e\t-10\t\
+      1000\tcomplete\nEX_prealg_MG_23_e\t-10\t1000\tcomplete\nEX_prealg_MG_32_e\t\
+      -10\t1000\tcomplete\nEX_prealg_MG_41_e\t-10\t1000\tcomplete\nEX_prealginate_G_e\t\
+      -10\t1000\tcomplete\nEX_pro__D_e\t-10\t1000\tcomplete\nEX_pro__L_e\t-10\t1000\t\
+      complete\nEX_progly_e\t-10\t1000\tcomplete\nEX_prohisglu_e\t-10\t1000\tcomplete\n\
+      EX_psclys_e\t-10\t1000\tcomplete\nEX_pser__D_e\t-10\t1000\tcomplete\nEX_pser__L_e\t\
+      -10\t1000\tcomplete\nEX_psuri_e\t-10\t1000\tcomplete\nEX_pta_e\t-10\t1000\t\
+      complete\nEX_ptrc_e\t-10\t1000\tcomplete\nEX_ptsla_e\t-10\t1000\tcomplete\n\
+      EX_pydam_e\t-10\t1000\tcomplete\nEX_pydx_e\t-10\t1000\tcomplete\nEX_pydxn_e\t\
+      -10\t1000\tcomplete\nEX_pyovd_kt_e\t-10\t1000\tcomplete\nEX_pyr_e\t-10\t1000\t\
+      complete\nEX_quin_e\t-10\t1000\tcomplete\nEX_r5p_e\t-10\t1000\tcomplete\nEX_raffin_e\t\
+      -10\t1000\tcomplete\nEX_rbt_e\t-10\t1000\tcomplete\nEX_rib__D_e\t-10\t1000\t\
+      complete\nEX_ribflv_e\t-10\t1000\tcomplete\nEX_rmn_e\t-10\t1000\tcomplete\n\
+      EX_rnam_e\t-10\t1000\tcomplete\nEX_s_e\t-10\t1000\tcomplete\nEX_salc_e\t-10\t\
+      1000\tcomplete\nEX_salchs2_e\t-10\t1000\tcomplete\nEX_salchs2fe_e\t-10\t1000\t\
+      complete\nEX_salchs4_e\t-10\t1000\tcomplete\nEX_salchs4fe_e\t-10\t1000\tcomplete\n\
+      EX_salchsx_e\t-10\t1000\tcomplete\nEX_salcn_e\t-10\t1000\tcomplete\nEX_sbt__D_e\t\
+      -10\t1000\tcomplete\nEX_sel_e\t-10\t1000\tcomplete\nEX_ser__D_e\t-10\t1000\t\
+      complete\nEX_ser__L_e\t-10\t1000\tcomplete\nEX_serglugly_e\t-10\t1000\tcomplete\n\
+      EX_sheme_e\t-10\t1000\tcomplete\nEX_skm_e\t-10\t1000\tcomplete\nEX_slnt_e\t\
+      -10\t1000\tcomplete\nEX_so3_e\t-10\t1000\tcomplete\nEX_so4_e\t-10\t1000\tcomplete\n\
+      EX_spmd_e\t-10\t1000\tcomplete\nEX_srb__L_e\t-10\t1000\tcomplete\nEX_starch_e\t\
+      -10\t1000\tcomplete\nEX_stfrnA_e\t-10\t1000\tcomplete\nEX_stfrnB_e\t-10\t1000\t\
+      complete\nEX_succ_e\t-10\t1000\tcomplete\nEX_sucr_e\t-10\t1000\tcomplete\nEX_sula_e\t\
+      -10\t1000\tcomplete\nEX_sulfac_e\t-10\t1000\tcomplete\nEX_tag160_e\t-10\t1000\t\
+      complete\nEX_tag180_e\t-10\t1000\tcomplete\nEX_tag181d9_e\t-10\t1000\tcomplete\n\
+      EX_tag182d9d12_e\t-10\t1000\tcomplete\nEX_tag__D_e\t-10\t1000\tcomplete\nEX_tagur_e\t\
+      -10\t1000\tcomplete\nEX_tartr__D_e\t-10\t1000\tcomplete\nEX_tartr__L_e\t-10\t\
+      1000\tcomplete\nEX_taur_e\t-10\t1000\tcomplete\nEX_tcb_e\t-10\t1000\tcomplete\n\
+      EX_tcynt_e\t-10\t1000\tcomplete\nEX_tet_e\t-10\t1000\tcomplete\nEX_tgt_e\t-10\t\
+      1000\tcomplete\nEX_thm_e\t-10\t1000\tcomplete\nEX_thr__L_e\t-10\t1000\tcomplete\n\
+      EX_thrp_e\t-10\t1000\tcomplete\nEX_thym_e\t-10\t1000\tcomplete\nEX_thymd_e\t\
+      -10\t1000\tcomplete\nEX_tma_e\t-10\t1000\tcomplete\nEX_tmam_e\t-10\t1000\tcomplete\n\
+      EX_tmanur_e\t-10\t1000\tcomplete\nEX_tmao_e\t-10\t1000\tcomplete\nEX_tnt_e\t\
+      -10\t1000\tcomplete\nEX_tol_e\t-10\t1000\tcomplete\nEX_tre_e\t-10\t1000\tcomplete\n\
+      EX_tre6p_e\t-10\t1000\tcomplete\nEX_trp__L_e\t-10\t1000\tcomplete\nEX_tsul_e\t\
+      -10\t1000\tcomplete\nEX_ttdca_e\t-10\t1000\tcomplete\nEX_ttdcea_e\t-10\t1000\t\
+      complete\nEX_tton_e\t-10\t1000\tcomplete\nEX_tym_e\t-10\t1000\tcomplete\nEX_tyr__D_e\t\
+      -10\t1000\tcomplete\nEX_tyr__L_e\t-10\t1000\tcomplete\nEX_tyrp_e\t-10\t1000\t\
+      complete\nEX_uaccg_e\t-10\t1000\tcomplete\nEX_uacgam_e\t-10\t1000\tcomplete\n\
+      EX_udcpdp_e\t-10\t1000\tcomplete\nEX_udcpp_e\t-10\t1000\tcomplete\nEX_udpacgal_e\t\
+      -10\t1000\tcomplete\nEX_udpg_e\t-10\t1000\tcomplete\nEX_udpgal_e\t-10\t1000\t\
+      complete\nEX_udpglcur_e\t-10\t1000\tcomplete\nEX_ump_e\t-10\t1000\tcomplete\n\
+      EX_ura_e\t-10\t1000\tcomplete\nEX_urate_e\t-10\t1000\tcomplete\nEX_urea_e\t\
+      -10\t1000\tcomplete\nEX_uri_e\t-10\t1000\tcomplete\nEX_vacc_e\t-10\t1000\tcomplete\n\
+      EX_val__D_e\t-10\t1000\tcomplete\nEX_val__L_e\t-10\t1000\tcomplete\nEX_vanln_e\t\
+      -10\t1000\tcomplete\nEX_vanlt_e\t-10\t1000\tcomplete\nEX_xan_e\t-10\t1000\t\
+      complete\nEX_xmp_e\t-10\t1000\tcomplete\nEX_xtsn_e\t-10\t1000\tcomplete\nEX_xyl3_e\t\
+      -10\t1000\tcomplete\nEX_xyl__D_e\t-10\t1000\tcomplete\nEX_xylan4_e\t-10\t1000\t\
+      complete\nEX_xylan8_e\t-10\t1000\tcomplete\nEX_xylb_e\t-10\t1000\tcomplete\n\
+      EX_xylu__L_e\t-10\t1000\tcomplete\nEX_zn2_e\t-10\t1000\tcomplete\n"
+    complete_medium_name.txt: complete
+    contig_study.json: '{"logistics": "contig study"}'
+    eggnog_source.json: '{"release": "emapperdb-5.0.2"}'
+    hybrid_1_name.txt: hybrid_1
+    hybrid_1_read_pair.txt: hybrid_1
+    hybrid_1_reads_metadata.json: '{"parity": "paired", "length_class": "short"}'
+    long_1_name.txt: long_1
+    long_1_reads_metadata.json: '{"parity": "single", "length_class": "long"}'
+    metabat2_semibin2_metadecoder.json: '{"binners": "metabat2 semibin2 metadecoder"}'
+    short_1_name.txt: short_1
+    short_1_read_pair.txt: short_1
+    short_1_reads_metadata.json: '{"parity": "paired", "length_class": "short"}'

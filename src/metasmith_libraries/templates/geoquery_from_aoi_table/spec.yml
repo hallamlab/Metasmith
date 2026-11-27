@@ -5,19 +5,21 @@ description: 'Geospatial features for a table of areas of interest (KML or GeoJS
   from 75 public open-data sources: one table per source, the integrated long and
 
   wide tables, an AOI by source coverage matrix, and every gap with its reason.'
-sample_type: geoquery::aoi_table
-target_types:
-- geoquery::aois
-- geoquery::source_table
-- geoquery::observations_long
-- geoquery::features_wide
-- geoquery::coverage
-- geoquery::gaps
 transform_libraries:
 - geoquery
 resource_libraries:
 - env
-shared_input_paths: []
+cases:
+- name: case
+  sample_type: geoquery::aoi_table
+  target_types:
+  - geoquery::aois
+  - geoquery::source_table
+  - geoquery::observations_long
+  - geoquery::features_wide
+  - geoquery::coverage
+  - geoquery::gaps
+  shared_input_paths: []
 input_library:
   schema: v1
   manifest:

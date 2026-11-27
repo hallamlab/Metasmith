@@ -13,6 +13,7 @@ from metasmith.models.solver_engine import SOLVER_WIRE_VERSION
 from metasmith.agents.targets import TargetBuilder
 from metasmith.models.libraries import DataInstanceLibraryView
 from metasmith.models.solver import Transform
+from metasmith.models.workflow import Case
 
 arm, out = sys.argv[1], Path(sys.argv[2])
 out.parent.mkdir(parents=True, exist_ok=True)
@@ -60,9 +61,10 @@ S.solve_by_mcts = capture
 import metasmith.models.workflow.plan as P
 P.solve_by_mcts = capture
 try:
-    WorkflowPlan.Generate(given=given, transforms=transforms,
-                          target_names=[t.dtype_name for t in tb.resolve()],
-                          target_model=target_model, max_iter=256, max_refine=256, seed=42)
+    WorkflowPlan.Generate(
+        cases=Case.ByShape(given, target=target_model, target_names=[t.dtype_name for t in tb.resolve()]),
+        transforms=transforms, max_iter=256, max_refine=256, seed=42,
+    )
 except SystemExit:
     pass
 assert enc is not None, "never reached the solver"

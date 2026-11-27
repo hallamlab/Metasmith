@@ -1,0 +1,6 @@
+outs:
+- md5: 4a415b6e490ce263b2d40a32bfd415ad.dir
+  size: 26284085
+  nfiles: 1
+  hash: md5
+  path: capella

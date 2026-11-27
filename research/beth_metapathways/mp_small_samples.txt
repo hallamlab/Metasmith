@@ -1,0 +1,14 @@
+hybridspades_cpe3_r2a
+hybridspades_cpe3_r2a_cu1_5
+hybridspades_cpe3_r2a_cu7_8
+hybridspades_cpe3_r2a_cu9_11
+operams_cpe3_r2a
+operams_cpe3_r2a_cu1_5
+operams_cpe3_r2a_cu6
+operams_cpe3_r2a_cu7_8
+operams_cpe3_r2a_cu9_11
+shortspades_cpe3_r2a
+shortspades_cpe3_r2a_cu1_5
+shortspades_cpe3_r2a_cu6
+shortspades_cpe3_r2a_cu7_8
+shortspades_cpe3_r2a_cu9_11

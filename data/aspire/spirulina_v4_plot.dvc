@@ -1,0 +1,6 @@
+outs:
+- md5: 4463b76b0dbd4ea9e4e3c87e094fc869.dir
+  size: 76844
+  nfiles: 3
+  hash: md5
+  path: spirulina_v4_plot

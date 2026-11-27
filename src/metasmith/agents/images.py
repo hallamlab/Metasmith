@@ -1,25 +1,16 @@
-# Filling the image store ahead of a run, and reporting on it before a launch.
+# Reporting on the image store before a launch.
 #
 # Tool images materialise lazily, inside the first task that needs each one. That
 # is right on a cluster whose nodes can reach a registry and wrong on one whose
-# compute nodes cannot: the fetch happens exactly where there is no route. The
-# answer is not to move every pull onto the launch path -- that would make every
-# run on a connected cluster pay for it -- but to split the two halves:
+# compute nodes cannot: the fetch happens exactly where there is no route. A setup
+# run pulls every image on the driver's host first (`pullContainer`), and
+# `_check_image_store` rides in `RunWorkflow`'s preflight to name an incomplete
+# store before anything is transferred. It only looks.
 #
-#   * `_materialise_images` fetches, and is reached only when asked (the
-#     `workflow materialise` verb, run from a login node);
-#   * `_check_image_store` only looks, and rides in `RunWorkflow`'s existing
-#     preflight so an incomplete store is named before anything is transferred.
-#
-# Both read the images out of the stage-time env manifest rather than a transform
-# library, because the host doing the launching may hold neither. Both build the
-# same `Environment` the execution path builds and issue `MakeMaterialiseCommand`
-# under the same lock, so a pre-flight and a task can never disagree about what a
-# materialised image is -- including its mount test and its stamp.
-#
-# Free functions taking a shell, in the shape of `gpu.py` and `portability.py`:
-# the agent method is the thing that opens a connection, and everything worth
-# testing sits on this side of that.
+# It reads the images out of the stage-time env manifest rather than a transform
+# library, because the host doing the launching may hold neither, and builds the
+# same `Environment` the execution path builds, so it judges an image by the same
+# artifact-and-stamp test a task does.
 
 from __future__ import annotations
 
@@ -27,12 +18,7 @@ from pathlib import Path
 
 from ..constants import AgentPaths
 from ..env import ContainerDef, Environment, Rootfs
-from ..logging import Log
 from ..models.libraries.execution import _materialised_test
-
-
-class ImageMaterialiseError(Exception):
-    pass
 
 
 _READY = "image-ready"
@@ -98,49 +84,6 @@ def _has_image_store(env: Environment) -> bool:
 def _is_materialised(shell, env: Environment) -> bool:
     res = shell.Exec(f'{_materialised_test(env)} && echo "{_READY}"', history=True, quiet=True)
     return _READY in res.out
-
-
-def _materialise_images(
-    shell, images: list[str], agent_env: Environment, agent_home: Path,
-    *, rootfs: "str|Rootfs|None" = None, force: bool = False,
-) -> list[dict]:
-    # Fetch every image a staged workspace needs, on the agent's own host.
-    #
-    # Idempotent by construction rather than by bookkeeping: each image is skipped
-    # when the artifact-and-stamp test already passes, which is the same gate every
-    # task consults. Running this twice does nothing the second time.
-    #
-    # One image failing does not stop the others. On the cluster this exists for,
-    # leaving the rest of the store empty because the first pull failed would mean
-    # another trip to the login node for each remaining image.
-    if not _has_image_store(agent_env):
-        return []
-    report: list[dict] = []
-    for image in images:
-        env = _tool_environment_for(image, agent_env, agent_home, rootfs=rootfs)
-        if not force and _is_materialised(shell, env):
-            report.append({"image": image, "ok": True, "skipped": True})
-            continue
-        sif, sandbox = env.GetLocalPath(), env.GetSandboxPath()
-        materialise = env.MakeMaterialiseCommand(force=force).replace("'", "'\\''")
-        # The same lock the execution path takes, on the same path, so a
-        # pre-flight racing a task that started early does not fetch twice.
-        res = shell.Exec(
-            f'mkdir -p "{sif.parent}"; '
-            f'flock "{sandbox}.lock" -c \'{materialise}\'; '
-            f'{_materialised_test(env)} && echo "{_READY}"',
-            history=True,
-        )
-        ok = _READY in res.out
-        report.append({"image": image, "ok": ok, "skipped": False})
-        Log.Info(f"{'materialised' if ok else 'FAILED to materialise'} [{image}]")
-    failed = [r["image"] for r in report if not r["ok"]]
-    if failed:
-        raise ImageMaterialiseError(
-            f"[{len(failed)}] of [{len(report)}] image(s) could not be materialised "
-            f"on this agent:\n  " + "\n  ".join(failed)
-        )
-    return report
 
 
 def _check_image_store(

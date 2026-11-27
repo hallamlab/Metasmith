@@ -5,7 +5,7 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::python_for_data_science.env"))
 out   = model.AddProduct(lib.GetType("ref::sylph_db"))
 
-SYLPH_DB_URL = "https://faust.compbio.cs.cmu.edu/sylph-stuff/gtdb-r220-c200-dbv1.syldb"
+URLS = {"sylph": "https://faust.compbio.cs.cmu.edu/sylph-stuff/gtdb-r220-c200-dbv1.syldb"}
 # From checksums.md5 beside it. A run that points sylph_url at another database
 # passes that database's md5 as sylph_md5.
 SYLPH_DB_MD5 = "23ba2901b6f96357c1e63b6458f7e6ad"
@@ -13,7 +13,7 @@ SYLPH_DB_MD5 = "23ba2901b6f96357c1e63b6458f7e6ad"
 
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
-    url  = context.params.get("sylph_url", SYLPH_DB_URL)
+    url  = context.params.get("sylph_url", URLS["sylph"])
     md5  = context.params.get("sylph_md5", SYLPH_DB_MD5)
 
     if context.LocalShell("\n".join([
@@ -33,6 +33,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(13.1),  # gtdb-r220-c200-dbv1.syldb Content-Length 14,061,572,967 B, 2026-11-24
     resources=Resources(
         cpus=2,
         memory=Size.GB(2),

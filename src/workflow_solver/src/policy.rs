@@ -18,6 +18,17 @@ use crate::rng::DecisionStream;
 
 pub const PUCT_ENV: &str = "MSM_SOLVER_PUCT";
 
+/// The guide's lift, in the normalised space the two score channels share
+/// (their weights sum to 1). At the shipped temperature it multiplies a
+/// guided transform's prior by e, enough to look there first and too little
+/// to drown the scores.
+const GUIDE_WEIGHT: f64 = 0.5;
+
+/// What an application fed by a dead anchor loses, in the same space. At the
+/// shipped temperature it divides the prior by e^2: the lane that can reach the
+/// target is built first, and the other is still built if the search wants it.
+const OFF_ANCHOR_WEIGHT: f64 = 1.0;
+
 #[derive(Clone, Copy, Debug)]
 pub struct PuctConfig {
     pub c_puct: f64,
@@ -298,6 +309,9 @@ pub struct Policy {
     /// apart from `n` because `n` counts every observation, and the ramp has to
     /// read how often *this* key wasted an iteration.
     fails: Map<u32, f64>,
+    /// 1.0 per transform the caller's guide names, indexed by transform. Empty
+    /// without a guide, so an unguided solve selects exactly as before.
+    guide: Vec<f64>,
 }
 
 impl Policy {
@@ -314,7 +328,7 @@ impl Policy {
         Ok(Self {
             c, phase, w: det::map(), n: det::map(), total: 0,
             scratch: Vec::new(), dups: det::map(), seen: det::map(),
-            structure: Vec::new(), fails: det::map(),
+            structure: Vec::new(), fails: det::map(), guide: Vec::new(),
         })
     }
 
@@ -329,6 +343,17 @@ impl Policy {
     pub fn set_structure(&mut self, table: &[f64]) {
         self.structure.clear();
         self.structure.extend_from_slice(table);
+    }
+
+    /// Raise the prior of every transform `guide` names. A guide only says where
+    /// to look first: the transforms still compete, and the search accepts
+    /// nothing because the guide named it.
+    pub fn set_guide(&mut self, guide: &[u32]) {
+        for &t in guide {
+            let t = t as usize;
+            if self.guide.len() <= t { self.guide.resize(t + 1, 0.0); }
+            self.guide[t] = 1.0;
+        }
     }
 
     /// Whether the caller should compute the progress pair `observe` needs.
@@ -364,22 +389,24 @@ impl Policy {
     /// `score * valid` over a score that is never positive, so an invalid state's
     /// 0.0 outranks every valid one. The retired rule ranked on that, bug and all;
     /// nothing here inherits it, which is part of why the plans moved.
-    pub fn select<P, K>(
+    pub fn select<P, K, D>(
         &mut self,
         rng: &mut DecisionStream,
         len: usize,
         prior_of: P,
         key_of: K,
+        off_anchor_of: D,
     ) -> usize
     where
         P: Fn(usize) -> [f64; 2],
         K: Fn(usize) -> u32,
+        D: Fn(usize) -> f64,
     {
         let c = self.c;
         if c.epsilon_milli > 0 && rng.bounded_int(1000) < c.epsilon_milli {
             return rng.bounded_int(len as u64) as usize;
         }
-        self.puct_index(len, &prior_of, &key_of, c);
+        self.puct_index(len, &prior_of, &key_of, &off_anchor_of, c);
         rng.pick_top_k(&self.scratch, c.top_k)
     }
 
@@ -389,10 +416,12 @@ impl Policy {
     /// comparable to the next: the channels are unnormalised scores whose range
     /// moves with the problem, and a softmax over raw values would be a different
     /// temperature on every instance.
-    fn puct_index<P, K>(&mut self, len: usize, prior_of: &P, key_of: &K, c: PuctConfig)
-    where
+    fn puct_index<P, K, D>(
+        &mut self, len: usize, prior_of: &P, key_of: &K, off_anchor_of: &D, c: PuctConfig,
+    ) where
         P: Fn(usize) -> [f64; 2],
         K: Fn(usize) -> u32,
+        D: Fn(usize) -> f64,
     {
         self.scratch.clear();
         self.scratch.resize(len, 0.0);
@@ -420,6 +449,18 @@ impl Policy {
                     self.scratch[i] -= c.w2 * s;
                 }
             }
+        }
+        if !self.guide.is_empty() {
+            for i in 0..len {
+                if let Some(&g) = self.guide.get(key_of(i) as usize) {
+                    self.scratch[i] += GUIDE_WEIGHT * g;
+                }
+            }
+        }
+        // Per slot, not per key: one transform has applications on both sides
+        // of an anchor, and the statistics below cannot tell them apart.
+        for i in 0..len {
+            self.scratch[i] -= OFF_ANCHOR_WEIGHT * off_anchor_of(i);
         }
         let tau = if c.temperature > 0.0 { c.temperature } else { 1e-9 };
         let mut peak = f64::NEG_INFINITY;

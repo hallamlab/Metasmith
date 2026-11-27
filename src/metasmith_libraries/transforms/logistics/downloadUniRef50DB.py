@@ -8,18 +8,18 @@ fasta   = model.AddProduct(lib.GetType("ref::uniref50_fasta"))
 # ftp.uniprot.org has gone down whole-host before (every path 404s, not just
 # this one) without warning -- pinning a single mirror just resets the same
 # fragility clock. Try each in order and fall through on failure instead.
-UNIREF50_URLS = [
+URLS = {"uniref50": [
     "https://ftp.ebi.ac.uk/pub/databases/uniprot/current_release/uniref/uniref50/uniref50.fasta.gz",
     "https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz",
     "https://ftp.expasy.org/databases/uniprot/current_release/uniref/uniref50/uniref50.fasta.gz",
-]
+]}
 
 def protocol(context: ExecutionContext):
     ifasta = context.Output(fasta)
     # In the staging dir, so a retry resumes the 12 h transfer rather than restarting it.
     staged = context.StagingDir()
     url = context.params.get("uniref50_url")
-    urls = UNIREF50_URLS if url is None else [url]
+    urls = URLS["uniref50"] if url is None else [url]
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
@@ -38,6 +38,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(8.55),  # uniref50.fasta.gz Content-Length 9,182,717,121 B, 2026-11-23
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

@@ -65,6 +65,8 @@ def ResolveEnvImage(content: str, runtime: Runtime, source: str|Path="<env>") ->
         return str(value).strip()
     return content.strip()
 
+_CONTAINER_BUILDERS = (Runtime.DOCKER, Runtime.APPTAINER)
+
 _RESERVED_EXPORTS = frozenset({"PATH", "HOME", "LD_LIBRARY_PATH", "TMPDIR", "PWD"})
 
 def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
@@ -81,6 +83,9 @@ def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
         )
         out[k] = str(v)
     return out
+
+
+_IMAGE_READY = "image-ready"
 
 
 def _materialised_test(env: Environment) -> str:
@@ -370,6 +375,79 @@ class ExecutionContext:
         env.extra_args = extra_args
         return env
 
+    def BuildImage(self, recipe: ContextPath, out: ContextPath, files: dict[str, ContextPath]) -> int:
+        # The image lands at `out` in the form this runtime runs a file from (a
+        # `docker save` archive, or a SIF), so a tool env whose instance is `out`
+        # runs in it. `recipe` holds a Dockerfile and an apptainer.def; each of
+        # `files` reaches the build under its key, as a file in the docker build
+        # context and as the apptainer build argument of that name.
+        env = self._environment
+        dst, rdir = Path(out.external), Path(recipe.external)
+        if env.native or env.runtime not in _CONTAINER_BUILDERS:
+            raise ExecutionFailed(
+                f"building an image needs a container runtime, and this agent runs "
+                f"[{'native' if env.native else env.runtime.value}]"
+            )
+        if env.runtime == Runtime.DOCKER:
+            _, k = KeyGenerator.FromStr(str(dst))
+            tag = f"msm-built/{re.sub(r'[^a-z0-9._-]+', '-', dst.name.lower())}:{k.lower()}"
+            ctx = Path(self.external_cwd)/"_image_build"
+            stage = " && ".join(
+                f'{{ ln "{p.external}" "{ctx}/{name}" 2>/dev/null || cp -r "{p.external}" "{ctx}/{name}"; }}'
+                for name, p in files.items()
+            )
+            cmd = (
+                f'rm -rf "{ctx}" && mkdir -p "{ctx}" && cp -r "{rdir}"/. "{ctx}"/'
+                + (f' && {stage}' if stage else '')
+                + f' && DOCKER_BUILDKIT=1 docker build --platform=linux/amd64 -t {tag} "{ctx}"'
+                f' && docker save -o "{dst}" {tag}'
+            )
+            cmd = f'( {cmd} ); __msm_rc=$?; rm -rf "{ctx}"; ( exit $__msm_rc )'
+        else:
+            args = " ".join(f'--build-arg {name}="{p.external}"' for name, p in files.items())
+            store = Path(self.external_agent_home)/AgentPaths.CONTAINER_CACHE
+            cmd = (
+                f'( export APPTAINER_CACHEDIR="${{APPTAINER_CACHEDIR:-{store}}}"; '
+                f'apptainer build --force --build-arg recipe="{rdir}" {args} "{dst}" "{rdir}/apptainer.def" )'
+            )
+        Log.Info(f"building image [{dst.name}] from [{rdir}] using [{env.runtime.name}]")
+        res = self.external_shell.Exec(cmd, timeout=None, history=True)
+        code = 1 if res.exit_code is None else res.exit_code
+        self._record_exit(code)
+        if code != 0 and env.runtime == Runtime.APPTAINER:
+            Log.Error(
+                "apptainer builds from a definition file as an unprivileged user only where"
+                " user namespaces or /etc/subuid fakeroot are enabled. Where they are not,"
+                " build the image on a host that allows it and give the SIF as the env input."
+            )
+        return code
+
+    def MaterialiseImage(self, env: Environment) -> bool:
+        """Whether `env`'s image is in the agent's store, fetching it first if not.
+
+        The one fetch a task and a setup run's pull share: the same command under the
+        same lock, judged by the same artifact-and-stamp test.
+        """
+        if env.runtime == Runtime.DOCKER and not env.native:
+            res = self.external_shell.Exec(env.MakeMaterialiseCommand(), timeout=None, history=True)
+            return res.exit_code == 0
+        sif = env.GetLocalPath()
+        if sif is None:
+            return False
+        ready = f'{_materialised_test(env)} && echo "{_IMAGE_READY}"'
+        if _IMAGE_READY in self.external_shell.Exec(ready, history=True).out:
+            return True
+        if env.runtime != Runtime.APPTAINER:
+            return False
+        materialise = env.MakeMaterialiseCommand().replace("'", "'\\''")
+        res = self.external_shell.Exec(
+            f'mkdir -p "{sif.parent}"; '
+            f'flock "{env.GetSandboxPath()}.lock" -c \'{materialise}\'; '
+            f'{ready}',
+            timeout=None, history=True,
+        )
+        return _IMAGE_READY in res.out
+
     def ExecWithEnv(
         self,
         env: Dependency,
@@ -394,30 +472,7 @@ class ExecutionContext:
     def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[Mount|tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
         env = self.GetContainerModel(image, binds, args)
         assert env.container.workdir is not None
-        use_cache = False
-        cached_path = env.GetLocalPath()
-        if cached_path is not None:
-            FLAG = "cached image exists"
-            res = self.external_shell.Exec(
-                f'{_materialised_test(env)} && echo "{FLAG}"',
-                history=True,
-            )
-            if FLAG in res.out:
-                use_cache = True
-
-        if (not use_cache and cached_path is not None
-                and env.runtime == Runtime.APPTAINER):
-            sandbox_path = env.GetSandboxPath()
-            FLAG = "transform-image-ready"
-            materialise = env.MakeMaterialiseCommand().replace("'", "'\\''")
-            res = self.external_shell.Exec(
-                f'mkdir -p "{cached_path.parent}"; '
-                f'flock "{sandbox_path}.lock" -c \'{materialise}\'; '
-                f'{_materialised_test(env)} && echo "{FLAG}"',
-                history=True,
-            )
-            if FLAG in res.out:
-                use_cache = True
+        use_cache = env.GetLocalPath() is not None and self.MaterialiseImage(env)
 
         cmd = RemoveLeadingIndent(cmd)
         Log.Info(f"executing container [{env.image}] using [{env.runtime.name}]")

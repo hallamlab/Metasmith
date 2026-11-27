@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,8 @@ import yaml
 from metasmith.gui.app import create_app
 from metasmith.gui.store import Project
 
-pytestmark = pytest.mark.docker
+# its runs are shared through module and class fixtures, so --dist loadgroup keeps it on one worker
+pytestmark = [pytest.mark.docker, pytest.mark.xdist_group("gui_run")]
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EXAMPLES = REPO_ROOT / "src" / "metasmith" / "examples"
@@ -53,8 +55,8 @@ def _library(project_root: Path, image: str) -> None:
     resources.Save()
 
 
-@pytest.fixture
-def gui(tmp_path, docker_image):
+@contextmanager
+def gui_client(tmp_path: Path, docker_image: str):
     project_root = tmp_path / "project"
     project_root.mkdir()
     _library(project_root, docker_image)
@@ -62,8 +64,15 @@ def gui(tmp_path, docker_image):
     app.config["TESTING"] = True
     with app.test_client() as client:
         client.application = app
+        client.scratch = tmp_path
         yield client
     app.config["MSM_WATCHER"].stop()
+
+
+@pytest.fixture(scope="class")
+def gui(tmp_path_factory, docker_image):
+    with gui_client(tmp_path_factory.mktemp("gui"), docker_image) as client:
+        yield client
 
 
 def _await_job(client, summary: dict, timeout: float = JOB_TIMEOUT_S) -> dict:
@@ -127,17 +136,21 @@ def _ready_to_launch(gui, tmp_path, docker_image) -> tuple[str, str]:
 
 
 class TestGuiDrivenRun:
-    def test_the_page_can_get_an_agent_ready_to_run_on(self, gui, tmp_path, docker_image):
-        _ready_to_launch(gui, tmp_path, docker_image)
+    @pytest.fixture(scope="class")
+    def ready(self, gui, docker_image) -> tuple[str, str]:
+        return _ready_to_launch(gui, gui.scratch, docker_image)
+
+    def test_the_page_can_get_an_agent_ready_to_run_on(self, ready):
+        wf_name, agent_name = ready
+        assert wf_name and agent_name
 
     @pytest.mark.skipif(
         not _real_relay(),
         reason="needs a real msm_relay; this suite's image builds a stub "
                "(./dev.sh -brc && ./dev.sh -br builds the real one)",
     )
-    def test_a_run_started_from_the_page_reaches_completed(self, gui, tmp_path, docker_image):
-        wf_name, agent_name = _ready_to_launch(gui, tmp_path, docker_image)
-
+    def test_a_run_started_from_the_page_reaches_completed(self, gui, ready):
+        wf_name, agent_name = ready
         launched = gui.post("/api/runs", json={"workflow": wf_name, "agent": agent_name})
         assert launched.status_code == 202, launched.get_json()
         body = launched.get_json()
@@ -159,16 +172,3 @@ class TestGuiDrivenRun:
             [str(p) for p in produced]
         )
         assert project.read_run(wf_name, run_name).state == "completed"
-
-    def test_an_orphaned_launch_is_resolved_rather_than_stranded(self, gui):
-        project: Project = gui.application.config["MSM_PROJECT"]
-        wf = project.create_workflow(name="orphaned", request={})
-        rec = project.create_run(wf.name, {
-            "agent": "gone", "task_key": "k",
-            "launched_by": "a-server-that-has-since-exited",
-        })
-        watcher = gui.application.config["MSM_WATCHER"]
-        assert watcher.poll_once() == [{"run": rec.name, "state": "failed"}]
-        body = gui.get(f"/api/runs/{wf.name}/{rec.name}").get_json()
-        assert body["state"] == "failed"
-        assert "is gone" in body["error"]

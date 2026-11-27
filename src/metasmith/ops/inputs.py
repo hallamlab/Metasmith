@@ -4,9 +4,11 @@ import hashlib
 import json
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import DEFERRED, is_deferred
+from ..models.remote import HttpSource, Logistics, Source
 from . import data as op_data
 from . import samples as op_samples
 from ._common import load_data_lib
@@ -48,6 +50,22 @@ def literal_parents(row: dict) -> list[str]:
 
 def mint_value_path() -> str:
     return uuid.uuid4().hex
+
+
+def url_of(path: str) -> str | None:
+    try:
+        return HttpSource.Parse(path.strip()).url
+    except ValueError:
+        return None
+
+
+def download_path(downloads: Path, url: str) -> Path | None:
+    # One folder per URL keeps two URLs that end in the same file name apart,
+    # and the name is kept because tools read the extension.
+    name = urlparse(url).path.rpartition("/")[2]
+    if not name:
+        return None
+    return Path(downloads) / hashlib.sha256(url.encode("utf-8")).hexdigest()[:12] / name
 
 
 def row_identity(row: dict) -> str:
@@ -132,7 +150,7 @@ def assert_acyclic(rows: list[dict]):
         visit(rid, ())
 
 
-def _desired(rows: list[dict]) -> dict[str, dict]:
+def _desired(rows: list[dict], downloads: Path | None) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for r in rows:
         if not registerable(r):
@@ -157,11 +175,39 @@ def _desired(rows: list[dict]) -> dict[str, dict]:
             }
         else:
             p = (r.get("path") or "").strip()
+            url = url_of(p)
+            if url is not None:
+                at = download_path(downloads, url) if downloads is not None else None
+                out[rid] = {
+                    "rid": rid, "dtype": dtype, "mode": "url",
+                    "path": at, "value": None, "url": url,
+                }
+                continue
             out[rid] = {
                 "rid": rid, "dtype": dtype, "mode": "file",
                 "path": Path(p) if p else None, "value": None,
             }
     return out
+
+
+def _fetch(want: dict[str, dict]) -> None:
+    todo = [
+        spec for spec in want.values()
+        if spec["mode"] == "url" and not spec["path"].exists()
+    ]
+    if not todo:
+        return
+    mover = Logistics()
+    for spec in todo:
+        mover.QueueTransfer(
+            src=HttpSource(url=spec["url"]).AsSource(), dest=Source(address=str(spec["path"])),
+        )
+    res = mover.ExecuteTransfers(label="inputs")
+    failed = [spec["url"] for spec in todo if not spec["path"].exists()]
+    assert not failed, (
+        f"could not download {', '.join(f'[{u}]' for u in failed)}"
+        + (f": {'; '.join(res.errors[-5:])}" if res.errors else "")
+    )
 
 
 def _resolve_pool_rows(want: dict[str, dict], resolve_pool) -> None:
@@ -280,6 +326,7 @@ def sync(
     table: dict | None = None,
     on_progress=None,
     resolve_pool=None,
+    downloads: Path | None = None,
 ) -> dict:
     """Bring the library in line with the rows.
 
@@ -304,7 +351,7 @@ def sync(
     else:
         array_rows, plain_rows = op_samples.array_rows_of(rows), []
 
-    want = _desired(plain_rows)
+    want = _desired(plain_rows, downloads)
     _resolve_pool_rows(want, resolve_pool)
     held = _claim(lib, want, prior_rows)
     prior_minted = {
@@ -329,6 +376,7 @@ def sync(
 
     problems = _problems(lib, want, held, plan, rows, table, array_rows, doomed)
     assert not problems, "; ".join(problems)
+    _fetch(want)
 
     changed = False
 
@@ -432,6 +480,8 @@ def sync(
         if not f.is_file() or f.read_text(encoding="utf-8") != spec["value"]:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(spec["value"], encoding="utf-8")
+            lib._mark_value(held[rid])
+            changed = True
     for entry in plan:
         if entry["mode"] != "value":
             continue
@@ -439,6 +489,8 @@ def sync(
         if not f.is_file() or f.read_text(encoding="utf-8") != entry["value"]:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(entry["value"], encoding="utf-8")
+            lib._mark_value(Path(entry["path"]))
+            changed = True
 
     by_id = {str(r["id"]): r for r in plain_rows}
     for rid, at in held.items():
@@ -507,6 +559,12 @@ def _problems(lib, want, held, plan, rows, table, array_rows, doomed) -> list[st
         return [str(exc)]
 
     for spec in want.values():
+        if spec["mode"] == "url" and spec["path"] is None:
+            problems.append(
+                f"[{spec['url']}] names no file to download"
+                if download_path(Path("/"), spec["url"]) is None else
+                f"[{spec['url']}] is a URL, and nothing here can download one"
+            )
         try:
             lib.GetType(spec["dtype"])
         except (AssertionError, ValueError, KeyError):

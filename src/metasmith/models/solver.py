@@ -1,11 +1,12 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, Sequence
 import json
 import re
 from pathlib import Path
 
 from ..hashing import KeyGenerator
+from .solver_backend import SEARCH_BUDGET
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 
 class Node:
@@ -192,6 +193,12 @@ class Transform:
 
     def AddProduct(self, example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):
         prod = self._get_product_group()
+        if isinstance(example, Dependency) and properties is None and parents is None \
+                and any(example in g for g in self.produces):
+            assert example not in prod, f"{example} already in this product group"
+            prod.append(example)
+            self._update_hash()
+            return example
         return self._add_dependency(destination=prod, example=example, properties=properties, parents=parents)
 
     def _add_dependency(self, destination: list[Dependency], example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):
@@ -217,6 +224,8 @@ class Application:
     used: dict[Dependency, Endpoint]
     produced: list[dict[Dependency, Endpoint]]
     score: list[float] = field(default_factory=list)
+    # The index into `transform.produces` of the one group a fork step carries.
+    group: int|None = None
     _iteration: int = -1
     _sig: str|None = None
     _hash: int|None = None
@@ -309,8 +318,11 @@ def solve_by_mcts(
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
-    max_iter: int=256,
+    max_iter: int=SEARCH_BUDGET,
     max_refine: int|None=None,
+    fork_groups: Sequence[tuple[Transform, int]]=(),
+    partial: Sequence[Transform]=(),
+    guide: Sequence[Transform]=(),
 ) -> Solution:
     # Resolved here and nowhere else. Every layer above forwards `None`, so the
     # shipped budget cannot be pinned to a stale value by a signature default --
@@ -322,5 +334,6 @@ def solve_by_mcts(
     return solve_with_engine(
         given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
+        fork_groups=fork_groups, partial=partial, guide=guide,
     )
 

@@ -5,7 +5,7 @@ model = Transform()
 image = model.AddRequirement(lib.GetType("env::diamond.env"))
 db    = model.AddProduct(lib.GetType("annotation::bacmet_diamond_db"))
 
-BACMET_URL = "http://bacmet.biomedicine.gu.se/download/BacMet2_predicted_database.fasta.gz"
+URLS = {"bacmet": "http://bacmet.biomedicine.gu.se/download/BacMet2_predicted_database.fasta.gz"}
 
 
 def protocol(context: ExecutionContext):
@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithEnv(
         env=image,
         cmd=f"""
-            wget -q --no-check-certificate {BACMET_URL} -O bacmet.fasta.gz
+            wget -q --no-check-certificate {URLS['bacmet']} -O bacmet.fasta.gz
             gunzip -f bacmet.fasta.gz
             diamond makedb --in bacmet.fasta -d bacmet
             mv bacmet.dmnd {idb.container}
@@ -32,6 +32,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.01),  # BacMet2 predicted proteins
     resources=Resources(
         cpus=2,
         memory=Size.GB(8),

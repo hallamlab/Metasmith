@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "viromics_survey_from_assembly"
 DESCRIPTION = """
@@ -20,17 +20,20 @@ TARGETS = [
 ]
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         for tl in ("sequences.yml", "annotation.yml", "taxonomy.yml", "ref.yml"):
             lib.AddTypeLibrary(A.TYPES / tl)
         asm = lib.AddItem(DEFERRED, "sequences::assembly")
         lib.AddItem(DEFERRED, "sequences::clean_short_reads", parents={asm})
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type="sequences::assembly",
-        target_types=TARGETS,
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type="sequences::assembly",
+            target_types=TARGETS,
+        )],
         transform_libraries=A.transforms(
             "logistics", "metagenomics", "functionalAnnotation"),
         resource_libraries=[A.envs()],

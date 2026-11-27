@@ -1,4 +1,5 @@
-"""The interval arithmetic in merge_candidate_calls, which nothing else checks.
+"""The interval arithmetic in merge_candidate_calls and the virus-host join in
+lib::virus_host_links, which nothing else checks.
 
 That transform cannot be exercised by `metasmith run`: it recovers which sample
 and which contig batch a call came from with `context.SourceOf`, which reads the
@@ -9,8 +10,10 @@ fix it. What is testable in isolation is the part most likely to be silently
 wrong, and this is it: merging overlapping calls, and the 1-based-inclusive to
 BED conversion that sits between a caller's coordinates and seqkit's cut.
 """
+import csv
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -129,3 +132,65 @@ def test_a_contig_id_containing_underscores_round_trips(tmp_path):
     recovered, _, span = header.split(":")[0].rpartition("_")
     assert recovered == name
     assert span == "50-150"
+
+
+SPACER_HEADER = ["spacer_id", "contig_id", "percent_identity", "alignment_length",
+                 "mismatches", "spacer_length", "spacer_start", "spacer_end",
+                 "contig_start", "contig_end", "evalue", "bitscore", "spacer_coverage"]
+
+
+def _tsv(path, header, rows):
+    path.write_text("\n".join("\t".join(map(str, r)) for r in [header, *rows]) + "\n")
+    return path
+
+
+def test_virus_host_links_join(tmp_path):
+    # One MAG, binA, on sample S1's assembly ASM: contig c1 (1000 bp) carries a
+    # CRISPR array at 100-300, contig c2 (500 bp) is wholly viral.
+    (tmp_path/"binA.fa").write_text(">c1 flag=1\n" + "A" * 1000 + "\n>c2\n" + "C" * 500 + "\n")
+    _tsv(tmp_path/"arrays.tab", ["Contig", "CRISPR", "Start", "End"], [["c1", "c1_1", 100, 300]])
+    _tsv(tmp_path/"mags.tsv", ["mag", "sample", "assembly", "fasta", "arrays"],
+         [["binA", "S1", "ASM", tmp_path/"binA.fa", tmp_path/"arrays.tab"]])
+    _tsv(tmp_path/"prov.tsv", ["frozen_id", "sample", "source_contig", "start", "end", "length", "callers"], [
+        ["v_pro", "S1", "ASM~c1", 400, 700, 301, "genomad"],
+        ["v_self", "S1", "ASM~c1", 50, 350, 301, "genomad"],
+        ["v_whole", "S1", "ASM~c2", 1, 500, 500, "vibrant"],
+        # the same contig name on the sample's other assembly (a hybrid's draft)
+        ["v_other", "S1", "DRAFT~c1", 400, 700, 301, "genomad"],
+        ["v_free", "S2", "ASM2~x9", 1, 800, 800, "genomad"],
+    ])
+    _tsv(tmp_path/"hits.tsv", SPACER_HEADER, [
+        # end-trimmed: no mismatch reported, but 1 of 32 bases unaligned
+        ["binA|c1_1|c1_1:1", "v_free", 100.0, 31, 0, 32, 1, 31, 210, 180, 1e-8, 60, 97],
+        ["binA|c1_1|c1_1:1", "v_free", 100.0, 12, 0, 32, 3, 14, 500, 511, 0.3, 20, 97],
+        ["binA|c1_1|c1_1:2", "v_self", 100.0, 30, 0, 30, 1, 30, 60, 89, 1e-9, 60, 100],
+        ["binZ|c9_1|c9_1:1", "v_free", 100.0, 30, 0, 30, 1, 30, 1, 30, 1e-9, 60, 100],
+    ])
+
+    lib_py = MLIB / "resources/lib/virus_host_links.py"
+    subprocess.run([sys.executable, lib_py, "--provenance", tmp_path/"prov.tsv",
+                    "--spacer-hits", tmp_path/"hits.tsv", "--mags", tmp_path/"mags.tsv",
+                    "--out", tmp_path/"out.tsv"], check=True, capture_output=True)
+    with open(tmp_path/"out.tsv") as f:
+        rows = {(r["virus_id"], r["mag"], r["evidence"]): r for r in csv.DictReader(f, delimiter="\t")}
+
+    assert set(rows) == {
+        ("v_free", "binA", "spacer"),
+        ("v_self", "binA", "spacer"),
+        ("v_pro", "binA", "provirus"),
+        ("v_self", "binA", "provirus"),
+        ("v_whole", "binA", "binned_viral_contig"),
+    }
+
+    spacer = rows[("v_free", "binA", "spacer")]
+    assert (spacer["mismatches"], spacer["effective_mismatches"], spacer["alignment_length"]) == ("0", "1", "31")
+    assert (spacer["virus_start"], spacer["virus_end"]) == ("180", "210")
+    assert (spacer["host_contig"], spacer["host_start"], spacer["host_end"]) == ("c1", "100", "300")
+    assert spacer["spacer_hits"] == "1" and spacer["self_hit"] == "false"
+
+    assert rows[("v_self", "binA", "spacer")]["self_hit"] == "true"
+
+    pro = rows[("v_pro", "binA", "provirus")]
+    assert (pro["host_contig"], pro["host_contig_length"], pro["host_start"], pro["host_end"]) == ("c1", "1000", "400", "700")
+    assert pro["mismatches"] == "NA"
+    assert rows[("v_whole", "binA", "binned_viral_contig")]["host_contig_length"] == "500"

@@ -1,24 +1,32 @@
-import subprocess
-import shutil
-import sys
 import os
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
+from filelock import FileLock
+
 from ..logging import Log
-from .._build_hash import write_build_hash
+from .._build_hash import compute_build_hash, write_build_hash
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+PACKAGE = REPO_ROOT / "src/metasmith"
+LIB = REPO_ROOT / "lib"
+RELAY_TARGETS = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+RELAY_LABEL = "msm.relay"
 
 
 def get_full_version() -> str:
-    semver = (REPO_ROOT / "src/metasmith/version.txt").read_text().strip()
-    bh_path = REPO_ROOT / "src/metasmith/build_hash.txt"
+    semver = (PACKAGE / "version.txt").read_text().strip()
+    bh_path = PACKAGE / "build_hash.txt"
     bh = bh_path.read_text().strip() if bh_path.exists() else ""
     return f"{semver}+{bh}" if bh else semver
-
-
-def get_git_version() -> str:
-    return get_full_version()
 
 
 def get_docker_tag(version: str|None = None) -> str:
@@ -27,140 +35,97 @@ def get_docker_tag(version: str|None = None) -> str:
     return f"quay.io/hallamlab/metasmith:{version.replace('+', '-')}"
 
 
-def image_exists(tag: str) -> bool:
+def _relay_path(root: Path, target: str) -> Path:
+    return root / "src/bash_relay/target" / target / "release/msm_relay"
+
+
+def relay_kind() -> str:
+    return "real" if all(_relay_path(REPO_ROOT, t).exists() for t in RELAY_TARGETS) else "stub"
+
+
+def image_exists(tag: str, relay: str) -> bool:
     result = subprocess.run(
-        ["docker", "image", "inspect", tag],
-        capture_output=True, timeout=10,
+        ["docker", "image", "inspect", "--format", f'{{{{index .Config.Labels "{RELAY_LABEL}"}}}}', tag],
+        capture_output=True, text=True, timeout=10,
     )
-    return result.returncode == 0
+    return result.returncode == 0 and result.stdout.strip() == relay
 
 
-def build_pip_package(version: str|None = None) -> Path:
-    version_file = REPO_ROOT / "src/metasmith/version.txt"
-    original_version = version_file.read_text()
-
-    dist_dir = REPO_ROOT / "dist"
-    build_dir = REPO_ROOT / "build"
-
-    try:
-        if version is not None:
-            semver = version.split("+", 1)[0]
-            version_file.write_text(semver)
-
-        if build_dir.exists():
-            shutil.rmtree(build_dir)
-        if dist_dir.exists():
-            shutil.rmtree(dist_dir)
-
-        write_build_hash(REPO_ROOT / "src/metasmith")
-
-        Log.Info(f"building pip package")
-        result = subprocess.run(
-            [sys.executable, "-m", "build"],
-            cwd=REPO_ROOT,
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"pip build failed:\n{result.stderr}")
-    finally:
-        version_file.write_text(original_version)
-
-    return dist_dir
-
-
-def ensure_lib_prerequisites() -> Path:
-    lib_dir = REPO_ROOT / "lib"
-    lib_dir.mkdir(exist_ok=True)
-
-    tini_path = lib_dir / "tini"
-    if not tini_path.exists():
-        tini_version = "v0.19.0"
-        Log.Info(f"downloading tini {tini_version}")
+def _ensure_lib() -> None:
+    tini = LIB / "tini"
+    if not tini.exists():
+        Log.Info("downloading tini v0.19.0")
         subprocess.run(
-            ["wget", "-q", f"https://github.com/krallin/tini/releases/download/{tini_version}/tini",
-             "-O", str(tini_path)],
+            ["wget", "-q", "https://github.com/krallin/tini/releases/download/v0.19.0/tini", "-O", str(tini)],
             check=True,
         )
-        os.chmod(tini_path, 0o755)
-
-    nxf_version = None
-    base_yml = REPO_ROOT / "envs/base.yml"
-    if base_yml.exists():
-        for line in base_yml.read_text().splitlines():
-            line = line.strip()
-            if "nextflow" in line and "=" in line:
-                nxf_version = line.split("=")[-1].strip()
-                break
-
-    nxf_path = lib_dir / "nextflow"
-    if not nxf_path.exists() and nxf_version:
-        Log.Info(f"downloading nextflow {nxf_version}")
-        subprocess.run(
-            ["wget", "-q",
-             f"https://github.com/nextflow-io/nextflow/releases/download/v{nxf_version}/nextflow",
-             "-O", str(nxf_path)],
-            check=True,
-        )
-        os.chmod(nxf_path, 0o755)
-
-    globus_dir = lib_dir / "globusconnectpersonal-latest"
-    if not globus_dir.exists():
-        globus_dir.mkdir()
-        (globus_dir / "README").write_text("stub for testing")
-
-    relay_base = REPO_ROOT / "src/bash_relay/target"
-    for platform in [
-        "x86_64-unknown-linux-musl",
-        "aarch64-unknown-linux-musl",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
-    ]:
-        relay_dir = relay_base / platform / "release"
-        relay_dir.mkdir(parents=True, exist_ok=True)
-        relay_bin = relay_dir / "msm_relay"
-        if not relay_bin.exists():
-            relay_bin.write_text("#!/bin/sh\necho 'stub relay'\n")
-            os.chmod(relay_bin, 0o755)
-
-    return lib_dir
+        os.chmod(tini, 0o755)
+    globus = LIB / "globusconnectpersonal-latest"
+    if not globus.exists():
+        globus.mkdir()
+        (globus / "README").write_text("stub for testing")
 
 
-def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
-    write_build_hash(REPO_ROOT / "src/metasmith")
-    if version is None:
+def stage_build_context(dest: Path) -> None:
+    shutil.copytree(PACKAGE, dest / "src/metasmith", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    for name in ["setup.py", "pyproject.toml", "README.md", "LICENSE", ".dockerignore"]:
+        shutil.copy2(REPO_ROOT / name, dest / name)
+    shutil.copytree(REPO_ROOT / "envs/metasmith", dest / "envs/metasmith")
+    shutil.copytree(LIB, dest / "lib", ignore=shutil.ignore_patterns(".*.lock"))
+    for target in RELAY_TARGETS:
+        staged = _relay_path(dest, target)
+        staged.parent.mkdir(parents=True)
+        real = _relay_path(REPO_ROOT, target)
+        if real.exists():
+            shutil.copy2(real, staged)
+        else:
+            staged.write_text("#!/bin/sh\necho 'stub relay'\n")
+            os.chmod(staged, 0o755)
+
+
+def build_docker_image() -> str:
+    LIB.mkdir(exist_ok=True)
+    with FileLock(LIB / ".docker_build.lock"):
+        build_hash = write_build_hash()
         version = get_full_version()
-    if tag is None:
         tag = get_docker_tag(version)
+        relay = relay_kind()
+        if image_exists(tag, relay):
+            return tag
 
-    if image_exists(tag):
-        Log.Info(f"image [{tag}] already exists, skipping build")
+        Log.Info(f"building Docker image [{tag}] with {relay} relays")
+        _ensure_lib()
+        with tempfile.TemporaryDirectory(prefix="msm_image_") as tmp:
+            stage = Path(tmp)
+            stage_build_context(stage)
+            staged_hash = compute_build_hash(stage / "src/metasmith")
+            if staged_hash != build_hash:
+                raise RuntimeError(f"staged package hashes to [{staged_hash}], checkout is [{version}]")
+
+            result = subprocess.run([sys.executable, "-m", "build", "--wheel"], cwd=stage, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"pip build failed:\n{result.stderr}")
+
+            result = subprocess.run(
+                [
+                    "docker", "build",
+                    "-f", str(REPO_ROOT / "docker/metasmith/Dockerfile"),
+                    "--build-arg", "CONDA_ENV=metasmith_env",
+                    "--build-arg", "PACKAGE=metasmith",
+                    "--build-arg", f"VERSION={version}",
+                    "--label", f"{RELAY_LABEL}={relay}",
+                    "--network=host",
+                    "-t", tag,
+                    ".",
+                ],
+                cwd=stage,
+                capture_output=True, text=True,
+                # A cold conda solve is the slow part; 10 minutes was not enough for it
+                # on a busy machine, and a killed build looks exactly like a broken one.
+                timeout=3600,
+            )
+        if result.returncode != 0:
+            raise RuntimeError(f"Docker build failed:\n{result.stderr}")
+
+        Log.Info(f"built [{tag}]")
         return tag
-
-    Log.Info(f"building Docker image [{tag}]")
-
-    ensure_lib_prerequisites()
-    build_pip_package(version)
-
-    result = subprocess.run(
-        [
-            "docker", "build",
-            # The build context is the repo root; the Dockerfile is not.
-            "-f", str(REPO_ROOT / "docker/metasmith/Dockerfile"),
-            "--build-arg", "CONDA_ENV=metasmith_env",
-            "--build-arg", "PACKAGE=metasmith",
-            "--build-arg", f"VERSION={version}",
-            "--network=host",
-            "-t", tag,
-            ".",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True, text=True,
-        # A cold conda solve is the slow part; 10 minutes was not enough for it
-        # on a busy machine, and a killed build looks exactly like a broken one.
-        timeout=3600,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Docker build failed:\n{result.stderr}")
-
-    Log.Info(f"built [{tag}]")
-    return tag

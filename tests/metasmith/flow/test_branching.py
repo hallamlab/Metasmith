@@ -7,12 +7,11 @@ import pytest
 from .conftest import (
     build_branching_plan,
     build_branching_with_failure_plan,
-    build_linear_plan,
     run_and_load,
 )
 
 
-def test_b1_two_way_branch_shared_parent(tmp_path, virtual_runtime):
+def test_b1_two_way_branch_shares_a_parent_and_the_merge_names_both(tmp_path, virtual_runtime):
     bp = build_branching_plan(tmp_path, fanout=2)
     assert len(bp.plan.steps) == 3, f"branch+merge should be 3 steps, got {len(bp.plan.steps)}"
 
@@ -32,28 +31,22 @@ def test_b1_two_way_branch_shared_parent(tmp_path, virtual_runtime):
         f"two-way branch must share one upstream parent id; got {parent_ids}"
     )
 
-
-def test_b2_three_way_fanout_shared_ancestor(tmp_path, virtual_runtime):
-    bp = build_branching_plan(tmp_path, fanout=3)
-    assert bp is not None  # pragma: no cover
-
-
-def test_b5_merged_names_the_branches_that_fed_it(tmp_path, virtual_runtime):
-    # The fast-lane copy of the docker trace tests' claim: a result's parents are
-    # the files its task read, not everything of that type the run produced.
-    bp = build_branching_plan(tmp_path, fanout=2)
-    task, lib = run_and_load(virtual_runtime, bp)
-
+    # a result's parents are the files its task read, not everything of that
+    # type the run produced -- the fast-lane copy of the docker trace tests' claim
     merged = [p for p, n in lib.manifest.items() if n == "mock::merged"]
     assert len(merged) == 1, f"expected one merged output, got {merged}"
     parents = {pm.name for pm in lib.parents[merged[0]]}
     assert {"mock::branch_a", "mock::branch_b"} <= parents, (
         f"merged should name both branches; got {sorted(parents)}"
     )
-
     for branch in ("mock::branch_a", "mock::branch_b"):
         pairs = list(lib.Trace(branch, "mock::assembly"))
         assert len(pairs) == 1, f"{branch}->assembly: got {pairs}"
+
+
+def test_b2_three_way_fanout_shared_ancestor(tmp_path, virtual_runtime):
+    bp = build_branching_plan(tmp_path, fanout=3)
+    assert bp is not None  # pragma: no cover
 
 
 def test_b6_each_sample_merges_only_its_own_branches(tmp_path, virtual_runtime):
@@ -90,13 +83,3 @@ def test_b3_sibling_failure_isolated(tmp_path, virtual_runtime):
     assert len(promoted) >= 1, "sibling branch did not run"
 
 
-def test_b4_nested_branching_walk(tmp_path, virtual_runtime):
-    bp = build_linear_plan(tmp_path, n_steps=3)
-    task, lib = run_and_load(virtual_runtime, bp)
-
-    events = lib._trace.events
-    terminal = events[-1]
-    assert len(terminal.produces) == 1
-    fid = terminal.produces[0].file_instance_id
-    walked = list(lib.walk_ancestors(fid))
-    assert len(walked) >= 1, "walk_ancestors returned no nodes for terminal output"

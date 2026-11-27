@@ -6,12 +6,12 @@ image = model.AddRequirement(lib.GetType("env::diamond.env"))
 db    = model.AddProduct(lib.GetType("annotation::tcdb_diamond_db"))
 
 # TCDB publishes no versioned release, so this moves; pass `tcdb_url` to hold a copy.
-TCDB_URL = "https://tcdb.org/public/tcdb"
+URLS = {"tcdb": "https://tcdb.org/public/tcdb"}
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
-    url = context.params.get("tcdb_url", TCDB_URL)
+    url = context.params.get("tcdb_url", URLS["tcdb"])
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",

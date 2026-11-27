@@ -9,21 +9,21 @@ sources = model.AddProduct(lib.GetType("ref::kofam_sources"))
 # archives/<date>/ keeps each pair, and the pair is what must agree.
 BASE_URL = "https://www.genome.jp/ftp/db/kofam/archives"
 RELEASE = "2026-08-02"
+URLS = {name: f"{BASE_URL}/{RELEASE}/{name}" for name in ("profiles.tar.gz", "ko_list.gz")}
 
 def protocol(context: ExecutionContext):
     isrc = context.Output(sources)
     staged = context.StagingDir()
-    base = context.params.get("kofam_base_url", BASE_URL).rstrip("/")
-    release = context.params.get("kofam_release", RELEASE)
-    Log.Info(f"KOfam release [{release}] from [{base}]")
+    mirror = context.params.get("kofam_base_url")
+    Log.Info(f"KOfam release [{RELEASE}] from [{mirror or BASE_URL}]")
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/{release}/profiles.tar.gz", staged.local/"profiles.tar.gz", label="KOfam profiles"),
-        FetchCommand(f"{base}/{release}/ko_list.gz", staged.local/"ko_list.gz", label="KOfam ko_list"),
+        FetchCommand(Rebase(URLS["profiles.tar.gz"], BASE_URL, mirror), staged.local/"profiles.tar.gz", label="KOfam profiles"),
+        FetchCommand(Rebase(URLS["ko_list.gz"], BASE_URL, mirror), staged.local/"ko_list.gz", label="KOfam ko_list"),
         f"mkdir -p {isrc.local}",
         f"mv {staged.local}/profiles.tar.gz {staged.local}/ko_list.gz {isrc.local}/",
-        f"echo {release} > {isrc.local}/release",
+        f"echo {RELEASE} > {isrc.local}/release",
     ])) != 0:
         return ExecutionResult(manifest=[], success=False)
 
@@ -37,6 +37,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(1.56),  # 2026-08-02 archives, software-suite README
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

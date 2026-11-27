@@ -201,7 +201,7 @@ class TestProvisionGolden:
         cmd = steps[0][0]
 
         assert cmd.startswith(
-            f'mkdir -p "{STORE}"; {{ [ -e {SIF} ] && [ -e {SIF}.verified ]; }}'
+            f'export APPTAINER_CACHEDIR="{STORE}"; mkdir -p "{STORE}"; {{ [ -e {SIF} ] && [ -e {SIF}.verified ]; }}'
         )
         assert f'apptainer build --force --sandbox {SANDBOX} {IMAGE}' in cmd, (
             "sandbox rung is not building from the registry"
@@ -213,7 +213,7 @@ class TestProvisionGolden:
     def test_assertive_forces_a_rebuild(self):
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
         assert steps[0][0].startswith(
-            f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF} {SANDBOX}.verified {SIF}.verified; '
+            f'export APPTAINER_CACHEDIR="{STORE}"; mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF} {SANDBOX}.verified {SIF}.verified; '
         )
 
     def test_docker_assertive_is_a_no_op(self):

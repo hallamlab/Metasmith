@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "annotation_trio_from_assembly"
 DESCRIPTION = """
@@ -30,24 +30,27 @@ existing assembly.
 """
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         lib.AddTypeLibrary(A.TYPES / "sequences.yml")
         lib.AddTypeLibrary(A.TYPES / "ref.yml")
         lib.AddTypeLibrary(A.TYPES / "annotation.yml")
         lib.AddItem(DEFERRED, "sequences::assembly")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type="sequences::assembly",
-        target_types=[
-            "annotation::kofamscan_results",
-            "annotation::kofamscan_descriptions",
-            "annotation::diamond_uniref50_results",
-            "annotation::diamond_uniref50_descriptions",
-            "annotation::interproscan_results",
-            "annotation::interproscan_descriptions",
-        ],
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type="sequences::assembly",
+            target_types=[
+                "annotation::kofamscan_results",
+                "annotation::kofamscan_descriptions",
+                "annotation::diamond_uniref50_results",
+                "annotation::diamond_uniref50_descriptions",
+                "annotation::interproscan_results",
+                "annotation::interproscan_descriptions",
+            ],
+        )],
         transform_libraries=A.transforms(
             "logistics", "metagenomics", "functionalAnnotation"),
         resource_libraries=[A.envs()],

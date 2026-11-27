@@ -87,3 +87,58 @@ preset's 1.0 and is unaffected. Fixing it is left for a housekeeping pass.
 
 `run_cyano.py dag` re-plans to the same key, `Jj2MGd10`, and draws the three views into
 `reports/`.
+
+## 2026-10-01 — every non-MAG analysis on sockeye, key Cc31JQoI
+
+The run targets the core tables and eleven analysis products. It ends with 76 tasks
+succeeded and none failed. `check_results.py` checks one property per analysis row and
+passes. Its results replace the 2026-09-28 pin.
+
+- Collector's curves saturate: one sample short of the full set, each culture is within
+  5% of its final ASV count.
+- Culture separates on Bray-Curtis: PERMANOVA pseudo-F 11.8, R² 0.42, p 0.002.
+- The mito reference is now RefSeq mitochondrion. It removes reads from ANA4, ANA6 and ANA8
+  only (69, 17 and 14), all one culture. The mito diversity row therefore judges each label
+  on the carrier samples, and skips `culture`.
+- `graph_network` needs two indicator overlays, as upstream's study has two labels. A lone
+  label is overlaid a second time as `<label>_twin`.
+
+### SpiecEasi keeps one edge at 18 samples
+
+The graph has 38 nodes and one edge (ASV39–ASV63). Every module but one is a singleton.
+The cause is upstream's default selection, not the port. `--pulsar-criterion bstars`
+turns on pulsar's gStARS bounds, and at 18 samples they bracket the path inverted (lower
+bound index 15, upper bound index 1). Plain StARS on the same path picks 60 edges at
+instability 0.084. Lowering `lambda.min.ratio` from 0.1 to 0.01 leaves the bounded pick
+at one edge. The probes are in `cache/aspire/spieceasi_probe/`. The port keeps upstream's
+default. A non-trivial module test needs a larger study, which ab48_r1 provides.
+
+### The off arms, key ChuAixxj
+
+`run_cyano.py --off-arms` switches every network row off and hands `spieceasi_external`
+the Cc31JQoI run's SpiecEasi graphs from `external_graphs/`. It plans three steps, one per
+off arm, and all three succeed. The node features come out byte-identical to the file
+supplied. The module table is header-only. The graph output is an empty directory. The
+results were checked and deleted, not pinned.
+
+## 2026-10-01 — upstream ASPIRE on the same reads, then a rerun on its vsearch, key ESfbY38n
+
+Upstream ASPIRE ran locally over the same 18 read pairs, with this campaign's params, the
+same SILVA, mitochondrion and contaminant files, and every module after the general stats
+off (`../upstream_cyano.py config`). It took 17 minutes for 85 tasks. MitoMaster stayed on,
+since this host has internet.
+
+The curated tables already agreed: 57 ASVs, every count equal. The filtered tables did not.
+Upstream kept 227 ASVs and the port 301, the shared 223 equal in every count. The cause is
+the vsearch build. Upstream's conda resolves 2.32.0, and the port pinned 2.28.1. On
+upstream's own concatenated reads 2.32.0 keeps upstream's 301 non-chimeric sequences
+exactly, and 2.28.1 keeps 406. The order samples are concatenated in changes nothing. The
+extra sequences were all too rare to survive curation. Probes are in
+`cache/aspire/t14_upstream/exp/`.
+
+`env::vsearch.env` now pins 2.32.0. The rerun ends with 76 tasks succeeded, every criterion
+met, and the diff empty at every table: 227 filtered ASVs, 227 identical taxonomies, 57
+curated ASVs. Its results replace the earlier pin.
+
+MitoMaster flagged nothing. Upstream's mito checker reads MitoMaster's header row,
+`SampleId`, as an ASV, which changes no count.

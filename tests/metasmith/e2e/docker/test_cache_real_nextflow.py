@@ -15,7 +15,6 @@ task would have.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -31,6 +30,8 @@ from metasmith.env import Runtime
 from metasmith.models.workflow import NextflowGenContext, WorkflowTask
 from metasmith.telemetry import TraceIndex
 
+from tests.metasmith.support import nxf_exec
+
 from .conftest import promote_stub_tasks
 
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
@@ -38,15 +39,11 @@ pytestmark = [pytest.mark.docker, pytest.mark.slow]
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
 
 
-def _bind_root(*paths: Path) -> Path:
-    return Path(os.path.commonpath([str(p.resolve()) for p in paths]))
-
-
 def run_cached_stub(
     task: WorkflowTask,
     work_dir: Path,
     agent_home: Path,
-    docker_image: str,
+    nxf_container: str,
     *,
     before_promote=None,
     timeout: int = 300,
@@ -71,19 +68,18 @@ def run_cached_stub(
         resources_file=AgentPaths.NXF_RES,
         cache_root=cache_root,
     )
+    # A stub task never promotes; these tests promote after Nextflow exits, so a run
+    # that deleted its intermediates would leave nothing to promote.
+    task.plan.keep_intermediates = True
     task.PrepareNextflow(context)
 
     lib_dir = work_dir / "lib"
     lib_dir.mkdir(exist_ok=True)
     shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
 
-    bind = _bind_root(work_dir, agent_home)
     result = subprocess.run(
         [
-            "docker", "run", "--rm",
-            "-v", f"{bind}:{bind}",
-            "-w", str(work_dir),
-            docker_image,
+            *nxf_exec(nxf_container, work_dir, timeout),
             "nextflow", "run", AgentPaths.NXF_WORKFLOW,
             "-stub",
             "-lib", "./lib",
@@ -97,11 +93,6 @@ def run_cached_stub(
     assert result.returncode == 0, (
         f"Nextflow run failed:\nSTDOUT:\n{result.stdout[-4000:]}\n"
         f"STDERR:\n{(result.stderr or '')[-4000:]}"
-    )
-    subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{bind}:{bind}",
-         docker_image, "chmod", "-R", "a+rw", str(bind)],
-        capture_output=True, timeout=120,
     )
 
     promote_stub_tasks(work_dir, cache_root)
@@ -162,32 +153,35 @@ def _make_one_product_a_directory(work_dir: Path, cache_root: Path) -> list[str]
     return converted
 
 
+def _task_rows(trace: Path) -> list[dict[str, str]]:
+    lines = trace.read_text().splitlines()
+    head = lines[0].split("\t")
+    return [dict(zip(head, l.split("\t"))) for l in lines[1:] if l.strip()]
+
+
 class TestCacheHitPublishesResults:
-    def test_second_run_is_all_hits(
-        self, simple_workflow_task, tmp_path, docker_image
+    def test_a_rerun_is_all_hits_served_by_cached_twins_and_publishes_the_same_results(
+        self, simple_workflow_task, tmp_path, nxf_container
     ):
         home = tmp_path / "agent_home"
-        run1 = tmp_path / "run1"
-        run2 = tmp_path / "run2"
+        run1, run2 = tmp_path / "run1", tmp_path / "run2"
 
-        run_cached_stub(simple_workflow_task, run1, home, docker_image)
+        first = run_cached_stub(simple_workflow_task, run1, home, nxf_container)
         assert "hit" not in _statuses(run1), "cold cache reported a hit"
 
-        run_cached_stub(simple_workflow_task, run2, home, docker_image)
+        trace = run2 / "nxf_trace.tsv"
+        second = run_cached_stub(simple_workflow_task, run2, home, nxf_container, trace=trace)
         assert _statuses(run2) == {"hit"}, (
             f"second run was not fully served from cache: {_statuses(run2)}"
         )
 
-    def test_cached_rerun_publishes_the_same_results(
-        self, simple_workflow_task, tmp_path, docker_image
-    ):
-        home = tmp_path / "agent_home"
-        first = run_cached_stub(
-            simple_workflow_task, tmp_path / "run1", home, docker_image
-        )
-        second = run_cached_stub(
-            simple_workflow_task, tmp_path / "run2", home, docker_image
-        )
+        rows = _task_rows(trace)
+        assert rows, "the second run submitted no task at all: a hit must run as a task"
+        names = sorted({r["name"].split(" ")[0] for r in rows})
+        not_twin = [n for n in names if not n.endswith("_cached")]
+        assert not not_twin, f"hits were not served by `*_cached` twins: {not_twin}"
+        assert all(r["status"] == "COMPLETED" for r in rows), rows
+
         assert _results_tree(second) == _results_tree(first), (
             "a fully cached re-run did not reproduce the first run's results"
         )
@@ -195,19 +189,19 @@ class TestCacheHitPublishesResults:
 
 class TestDirectoryProducts:
     def test_a_directory_product_is_served_and_published(
-        self, simple_workflow_task, tmp_path, docker_image
+        self, simple_workflow_task, tmp_path, nxf_container
     ):
         home = tmp_path / "agent_home"
         names: list[str] = []
         run_cached_stub(
-            simple_workflow_task, tmp_path / "run1", home, docker_image,
+            simple_workflow_task, tmp_path / "run1", home, nxf_container,
             before_promote=lambda w, c: names.extend(
                 _make_one_product_a_directory(w, c)
             ),
         )
         run2 = tmp_path / "run2"
         second = run_cached_stub(
-            simple_workflow_task, run2, home, docker_image
+            simple_workflow_task, run2, home, nxf_container
         )
         assert _statuses(run2) == {"hit"}, (
             f"a shard holding a directory did not serve: {_statuses(run2)}"
@@ -224,28 +218,3 @@ class TestDirectoryProducts:
         for d in published:
             assert (d / "a.txt").read_text() == "alpha\n"
             assert (d / "b.txt").read_text() == "beta\n"
-
-
-def _task_rows(trace: Path) -> list[dict[str, str]]:
-    lines = trace.read_text().splitlines()
-    head = lines[0].split("\t")
-    return [dict(zip(head, l.split("\t"))) for l in lines[1:] if l.strip()]
-
-
-class TestAHitIsALocalTask:
-    def test_every_hit_runs_as_a_cached_twin_and_publishes(
-        self, simple_workflow_task, tmp_path, docker_image
-    ):
-        home = tmp_path / "agent_home"
-        first = run_cached_stub(simple_workflow_task, tmp_path / "run1", home, docker_image)
-        trace = tmp_path / "run2" / "nxf_trace.tsv"
-        second = run_cached_stub(
-            simple_workflow_task, tmp_path / "run2", home, docker_image, trace=trace,
-        )
-        rows = _task_rows(trace)
-        assert rows, "the second run submitted no task at all: a hit must run as a task"
-        names = sorted({r["name"].split(" ")[0] for r in rows})
-        not_twin = [n for n in names if not n.endswith("_cached")]
-        assert not not_twin, f"hits were not served by `*_cached` twins: {not_twin}"
-        assert all(r["status"] == "COMPLETED" for r in rows), rows
-        assert _results_tree(second) == _results_tree(first)

@@ -17,4 +17,6 @@ dependencies:
     - twine
     - build
     - pytest>=7.0.0
+    - pytest-xdist
+    - pytest-timeout
   

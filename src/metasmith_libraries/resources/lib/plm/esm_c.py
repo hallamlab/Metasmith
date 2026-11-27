@@ -103,8 +103,10 @@ with torch.no_grad():
         # sequence axis as EZpred does before selecting its layers. EZpred embeds
         # one sequence at a time, so its mean never sees padding; a padded batch
         # must mask it out or a short sequence is averaged with its pad positions.
+        # Only EZpred's three layers are promoted to float32: all 37 at batch 32 and 2,048 tokens
+        # is ~11 GiB, twice over with the mask, and ran a 40 GB MIG slice out of memory.
         tok_mask = mask[None, :, :, None]
-        hs = out.hidden_states.float().masked_fill(~tok_mask, 0.0)
+        hs = out.hidden_states[[L - 1 for L in REPR_LAYERS]].float().masked_fill(~tok_mask, 0.0)
         hs_mean = (hs.sum(axis=2) / tok_mask.sum(axis=2)).cpu().numpy()
         for k, (si, _, w) in enumerate(batch_entries):
             valid = mask[k]
@@ -116,7 +118,7 @@ with torch.no_grad():
             vec = vec.float().cpu().numpy() * w
             if acc_vec[si] is None: acc_vec[si] = vec
             else:                   acc_vec[si] = acc_vec[si] + vec
-            lay = np.stack([hs_mean[L - 1, k] for L in REPR_LAYERS]) * w
+            lay = hs_mean[:, k] * w
             if acc_lay[si] is None: acc_lay[si] = lay
             else:                   acc_lay[si] = acc_lay[si] + lay
             acc_w[si] += w

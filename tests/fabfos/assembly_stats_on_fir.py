@@ -135,7 +135,7 @@ EXPECTED_TRANSFORMS = {"assembly_stats", "seqkit_reads"}
 SETUP_COMMANDS = ["module load apptainer"]
 AGENT_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.19.0-fabfos"
 
-READS_TYPE = "sequences::short_reads_pe"
+READS_TYPE = "sequences::short_reads"
 READS_SUFFIX = ".host_filtered.fq.gz"
 INSERTS_TYPE = "fabfos::putative_inserts"
 

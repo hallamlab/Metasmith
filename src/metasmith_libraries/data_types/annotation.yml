@@ -191,11 +191,205 @@ types:
       Format: CSV
       ext: csv
 
+  # Annotation table: every annotation lane's calls on one ORF set, long format, one row
+  # per (lane, ORF or contig feature, term). THE SCHEMA IS DECLARED IN CODE:
+  # resources/lib/fabfos_gpr/annotation_table.py holds ANNOTATION_COLS and one parser per
+  # lane. Lanes are kept as their tools wrote them, with no abstain, so the table is the
+  # aggregate a consumer subsets by `lane`; the GPR tables below are two such subsets.
+  # One annotation lane's calls in the standard long format, one type per lane, so a
+  # consumer requires only the lanes it reads. Schema: ANNOTATION_COLS in
+  # lib::fabfos_gpr/annotation_table.py, then the lane's own `<lane>_<field>` columns.
+  # A lane whose calls are motifs within the protein also writes `<lane>_hits`, every
+  # hit one row, in that file's HITS_COLS.
+  kofam_lane_table:
+    properties:
+      _: the kofam lane in the standard annotation-table format
+      lane: kofam
+      Format: Parquet
+      ext: parquet
+  clean_lane_table:
+    properties:
+      _: the clean lane in the standard annotation-table format
+      lane: clean
+      Format: Parquet
+      ext: parquet
+  uniref50_lane_table:
+    properties:
+      _: the uniref50 lane in the standard annotation-table format
+      lane: uniref50
+      Format: Parquet
+      ext: parquet
+  uniref90_lane_table:
+    properties:
+      _: the uniref90 lane in the standard annotation-table format
+      lane: uniref90
+      Format: Parquet
+      ext: parquet
+  swissprot_lane_table:
+    properties:
+      _: the swissprot lane in the standard annotation-table format
+      lane: swissprot
+      Format: Parquet
+      ext: parquet
+  metacyc_lane_table:
+    properties:
+      _: the metacyc lane in the standard annotation-table format
+      lane: metacyc
+      Format: Parquet
+      ext: parquet
+  pbert_lane_table:
+    properties:
+      _: the pbert lane in the standard annotation-table format
+      lane: pbert
+      Format: Parquet
+      ext: parquet
+  deepec_lane_table:
+    properties:
+      _: the deepec lane in the standard annotation-table format
+      lane: deepec
+      Format: Parquet
+      ext: parquet
+  eggnog_lane_table:
+    properties:
+      _: the eggnog lane in the standard annotation-table format
+      lane: eggnog
+      Format: Parquet
+      ext: parquet
+  interproscan_lane_table:
+    properties:
+      _: the interproscan lane in the standard annotation-table format
+      lane: interproscan
+      Format: Parquet
+      ext: parquet
+  interproscan_hits:
+    properties:
+      _: every interproscan motif or domain hit within a protein, one row each
+      lane: interproscan
+      content: positional hits
+      Format: Parquet
+      ext: parquet
+  mobileog_lane_table:
+    properties:
+      _: the mobileog lane in the standard annotation-table format
+      lane: mobileog
+      Format: Parquet
+      ext: parquet
+  megares_lane_table:
+    properties:
+      _: the megares lane in the standard annotation-table format
+      lane: megares
+      Format: Parquet
+      ext: parquet
+  bacmet_lane_table:
+    properties:
+      _: the bacmet lane in the standard annotation-table format
+      lane: bacmet
+      Format: Parquet
+      ext: parquet
+  vfdb_lane_table:
+    properties:
+      _: the vfdb lane in the standard annotation-table format
+      lane: vfdb
+      Format: Parquet
+      ext: parquet
+  bigg_lane_table:
+    properties:
+      _: the bigg lane in the standard annotation-table format
+      lane: bigg
+      Format: Parquet
+      ext: parquet
+  dbcan_lane_table:
+    properties:
+      _: the dbcan lane in the standard annotation-table format
+      lane: dbcan
+      Format: Parquet
+      ext: parquet
+  dbcan_hits:
+    properties:
+      _: every dbcan motif or domain hit within a protein, one row each
+      lane: dbcan
+      content: positional hits
+      Format: Parquet
+      ext: parquet
+  merops_lane_table:
+    properties:
+      _: the merops lane in the standard annotation-table format
+      lane: merops
+      Format: Parquet
+      ext: parquet
+  vogdb_lane_table:
+    properties:
+      _: the vogdb lane in the standard annotation-table format
+      lane: vogdb
+      Format: Parquet
+      ext: parquet
+  vogdb_hits:
+    properties:
+      _: every vogdb motif or domain hit within a protein, one row each
+      lane: vogdb
+      content: positional hits
+      Format: Parquet
+      ext: parquet
+  refseq_viral_lane_table:
+    properties:
+      _: the refseq_viral lane in the standard annotation-table format
+      lane: refseq_viral
+      Format: Parquet
+      ext: parquet
+  rgi_lane_table:
+    properties:
+      _: the rgi lane in the standard annotation-table format
+      lane: rgi
+      Format: Parquet
+      ext: parquet
+  amrfinderplus_lane_table:
+    properties:
+      _: the amrfinderplus lane in the standard annotation-table format
+      lane: amrfinderplus
+      Format: Parquet
+      ext: parquet
+  pathofact_hmm_lane_table:
+    properties:
+      _: the pathofact_hmm lane in the standard annotation-table format
+      lane: pathofact_hmm
+      Format: Parquet
+      ext: parquet
+  pathofact_ml_lane_table:
+    properties:
+      _: the pathofact_ml lane in the standard annotation-table format
+      lane: pathofact_ml
+      Format: Parquet
+      ext: parquet
+  deeparg_lane_table:
+    properties:
+      _: the deeparg lane in the standard annotation-table format
+      lane: deeparg
+      Format: Parquet
+      ext: parquet
+  bakta_nc_lane_table:
+    properties:
+      _: the bakta_nc lane in the standard annotation-table format
+      lane: bakta_nc
+      Format: Parquet
+      ext: parquet
+  antismash_lane_table:
+    properties:
+      _: the antismash lane in the standard annotation-table format
+      lane: antismash
+      Format: Parquet
+      ext: parquet
+
+  annotation_table:
+    properties:
+      _: Every lane table concatenated, one row per lane x ORF or contig feature x term. Schema in lib::fabfos_gpr/annotation_table.py::ANNOTATION_COLS, then every lane's extra columns, null on other lanes' rows
+      Format: Parquet
+      ext: parquet
+
   # GPR table (gene-attributed reaction evidence, long format).
   #
   # THE SCHEMA IS DECLARED IN CODE, not here: resources/lib/fabfos_evidence.py
   # holds SCHEMA_COLS, the channel vocabulary (LANE_SETS), the calibration that
-  # turns a lane's own score into `llr`, and the validator both mappers call
+  # turns a lane's own score into `llr`, and the validator every mapper calls
   # before writing. A column list transcribed into this comment is a second copy
   # that goes stale without anything raising, which is how two channel
   # vocabularies came to exist at once.
@@ -203,23 +397,30 @@ types:
   # Grain: one row per (source, orf, channel, intermediate_id, mnxr). No
   # cross-lane dedup -- the same ORF->MNXR claim from two lanes stays two rows.
   #
-  # `llr` IS ONE NUMBER IN NATS AND IT IS COMPARABLE ACROSS CHANNELS, which is
-  # what replaced a per-lane `raw_score` that was explicitly not. It is the
+  # `llr` IS ONE NUMBER IN NATS AND IT IS COMPARABLE ACROSS CHANNELS. It is the
   # log-odds a call of this strength is correct, less the pooling prior, so
   # pooling can add two lanes' evidence rather than picking between two scales.
-  # `llr_route` says which of the four routes produced it, so a measured weight
-  # is distinguishable from a placeholder one; a table whose lanes were never
-  # calibrated says `uncalibrated` rather than looking calibrated.
+  # `llr_route` says which route produced it, so a measured weight is
+  # distinguishable from a placeholder one: a lane with no fitted curve says
+  # `uncalibrated` rather than looking calibrated.
   #
-  # CANONICAL. The chosen-4 lane set (kofam, CLEAN, uniref50, ProteinBERT) IS the
-  # GPR table: `gpr_4lane` produces this type directly rather than a subtype, so
-  # the fosmid pipeline has exactly one producer of it and needs no tiebreak.
-  # `gpr_7lane` stays as a transform and keeps its own subtype below.
+  # TWO SUBSETS OF ONE MAPPING, built by resources/lib/fabfos_gpr/gpr_table.py from
+  # the annotation table. `gpr_table` is the chosen-4 lanes (kofam, CLEAN, uniref50,
+  # ProteinBERT), which every shipped consumer reads; `gpr_4lane` builds it from
+  # those four lanes alone, so the fosmid pipeline reaches it from bare ORFs.
+  # `gpr_table_all` is every reaction-mapping lane of `annotation_table`. Neither
+  # extends the other: a consumer of one must never be handed the other.
   gpr_table:
     properties:
       _: Gene-attributed GPR evidence table (long-format, one row per source x ORF x channel x intermediate x MNXR); the canonical chosen-4 lane set. Schema in lib::fabfos_evidence.py::SCHEMA_COLS
       Format: Parquet
       lane_set: chosen_4
+      ext: parquet
+  gpr_table_all:
+    properties:
+      _: GPR evidence table over every reaction-mapping lane of annotation::annotation_table (kofam, CLEAN, uniref50, ProteinBERT, DeepEC, eggNOG). Schema in lib::fabfos_evidence.py::SCHEMA_COLS
+      Format: Parquet
+      lane_set: all_reaction
       ext: parquet
   gpr_table_7lane:
     extends:
@@ -231,7 +432,50 @@ types:
   # DIAMOND UniRef50
   diamond_uniref50_results:
     properties:
-      _: DIAMOND alignment to UniRef50
+      _: DIAMOND alignment to UniRef50, up to ten hits per ORF
+      Format: BLAST6
+      ext: tsv
+  # DIAMOND against the BiGG gene index CarveMe ships
+  # DIAMOND against the three other protein databases MetaPathways 4 searches. Same shape as
+  # the UniRef50 lane: headered BLAST6 + bsr, subject titles in the sibling table.
+  diamond_swissprot_results:
+    properties:
+      _: DIAMOND alignment to UniProtKB/Swiss-Prot, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_swissprot_descriptions:
+    properties:
+      _: Swiss-Prot subject id to its title
+      Format: TSV
+      ext: tsv
+  diamond_uniref90_results:
+    properties:
+      _: DIAMOND alignment to UniRef90, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_uniref90_descriptions:
+    properties:
+      _: UniRef90 cluster id to its subject title
+      Format: TSV
+      ext: tsv
+  diamond_metacyc_results:
+    properties:
+      _: DIAMOND alignment to the MetaCyc protein sequences shipped with Pathway Tools, up to five hits per ORF
+      Format: BLAST6
+      ext: tsv
+  diamond_metacyc_descriptions:
+    properties:
+      _: MetaCyc protein id (gnl|META|<monomer>) to its title
+      Format: TSV
+      ext: tsv
+  bigg_diamond_hits:
+    properties:
+      _: DIAMOND blastp of ORFs against CarveMe 1.6.6's BiGG gene index, the search carve runs internally; what carve --diamond reads back
+      Format: BLAST6
+      ext: tsv
+  diamond_uniref50_top1_results:
+    properties:
+      _: Legacy DIAMOND alignment to UniRef50 with one hit per ORF, for imported one-hit searches. No transform consumes it
       Format: BLAST6
       ext: tsv
   diamond_uniref50_descriptions:
@@ -385,18 +629,14 @@ types:
   # Pathway Tools (PathoLogic / ptools)
   ptools_annotation_table:
     properties:
-      _: Long-format per-ORF functional annotations (EC / GO / KEGG / UniProt / FUNCTION) for ingestion by Pathway Tools
+      _: Long-format per-ORF PathoLogic input (FUNCTION / EC / METACYC rows), chosen by MetaPathways 4's rules
       Format: Parquet
       ext: parquet
   pgdb_archive:
     properties:
       _: Canonical PathoLogic "cyc" folder (data/, kb/, reports/) packaged as a tarball
       Format: tar.gz
-      ext: tgz
-  pgdb_csv_tables:
-    properties:
-      _: Parsed PGDB tables (proteins, reactions, enzymes, pathways, genes, compounds + linkages) as plain CSVs packaged in a tarball
-      Format: tar.gz
+      granularity: whole
       ext: tgz
 
   # DIAMOND TCDB
@@ -427,6 +667,18 @@ types:
       Format: CSV
       granularity: chunk
       ext: csv
+  diamond_uniref90_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND UniRef90 BLAST6, up to five hits per ORF (sibling of diamond_uniref90_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  diamond_uniref90_descriptions_chunk:
+    properties:
+      _: Per-chunk UniRef90 subject titles (sibling of diamond_uniref90_descriptions)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
   kofamscan_results_chunk:
     properties:
       _: Per-chunk KofamScan CSV (sibling of kofamscan_results)
@@ -459,7 +711,7 @@ types:
       ext: tsv
   diamond_uniref50_results_chunk:
     properties:
-      _: Per-chunk DIAMOND UniRef50 BLAST6 (sibling of diamond_uniref50_results)
+      _: Per-chunk DIAMOND UniRef50 BLAST6, up to ten hits per ORF (sibling of diamond_uniref50_results)
       Format: BLAST6
       granularity: chunk
       ext: tsv
@@ -554,6 +806,23 @@ types:
       granularity: chunk
       ext: tsv
 
+  # --- Mobile genetic elements: mobileOG-db (DIAMOND) ---
+  mobileog_diamond_db:
+    properties:
+      _: DIAMOND-formatted mobileOG-db Beatrix 1.6 (MGE hallmark proteins; header carries major/minor category)
+      ext: dmnd
+  mobileog_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to mobileOG-db (mobileOG-pl thresholds)
+      Format: BLAST6
+      ext: tsv
+  mobileog_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND mobileOG-db BLAST6 (sibling of mobileog_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
   # --- Virulence: VFDB (DIAMOND) ---
   vfdb_diamond_db:
     properties:
@@ -622,28 +891,113 @@ types:
       Format: CSV
       ext: csv
 
-  # --- Virulence/integrative: PathoFact 2.0 (BUILD-blocked container) ---
-  pathofact_db:
+  # --- PathoFact 2.0, imported rather than called ---
+  # The three lanes PathoFact has and the library lacked (its toxin and virulence-factor
+  # HMMs, its two classifiers, DeepARG) are annotation_table lanes. pathofact_report then
+  # applies PathoFact's own report rules over the table, RGI, AMRFinderPlus and geNomad.
+  pathofact_tox_hmm:
     properties:
-      _: PathoFact 2.0 bundled databases (HMMs + models)
-  pathofact_amr:
+      _: hmmsearch --tblout of ORFs against PathoFact 2.0's toxin CDD HMMs (TOX_CDD.hmm) at full-sequence bitscore 40
+      Format: tblout
+      ext: tbl
+  pathofact_tox_hmm_chunk:
     properties:
-      _: PathoFact ARG predictions (contig IDs preserved)
+      _: Per-chunk hmmsearch --tblout against PathoFact 2.0's toxin CDD HMMs (sibling of pathofact_tox_hmm)
+      Format: tblout
+      granularity: chunk
+      ext: tbl
+  pathofact_vf_hmm:
+    properties:
+      _: hmmsearch --tblout of ORFs against PathoFact 2.0's virulence-factor CDD HMMs (virulence_factors_CDD.hmm) at full-sequence bitscore 40
+      Format: tblout
+      ext: tbl
+  pathofact_vf_hmm_chunk:
+    properties:
+      _: Per-chunk hmmsearch --tblout against PathoFact 2.0's virulence-factor CDD HMMs (sibling of pathofact_vf_hmm)
+      Format: tblout
+      granularity: chunk
+      ext: tbl
+  pathofact_hmm_descriptions:
+    properties:
+      _: CDD accession to its short name and description (cddid_all.tbl), for the PathoFact toxin and virulence-factor HMMs hit
       Format: TSV
       ext: tsv
+  pathofact_tox_ml:
+    properties:
+      _: PathoFact 2.0 toxin random forest (5-mer counts) per ORF -- Sequence, Prediction, Probability, as its predict.py writes them
+      Format: TSV
+      ext: tsv
+  pathofact_tox_ml_chunk:
+    properties:
+      _: Per-chunk PathoFact 2.0 toxin random forest predictions (sibling of pathofact_tox_ml)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  pathofact_vf_ml:
+    properties:
+      _: PathoFact 2.0 virulence-factor XGBoost (AAC, DPC and CTD composition) per ORF -- Sequence, Prediction, Probability, as its vf_prediction2.py writes them
+      Format: TSV
+      ext: tsv
+  pathofact_vf_ml_chunk:
+    properties:
+      _: Per-chunk PathoFact 2.0 virulence-factor XGBoost predictions (sibling of pathofact_vf_ml)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  deeparg_results:
+    properties:
+      _: DeepARG 1.0 LS model on ORFs at --min-prob 0.7, its .mapping.ARG
+      Format: TSV
+      ext: tsv
+  deeparg_results_chunk:
+    properties:
+      _: Per-chunk DeepARG .mapping.ARG (sibling of deeparg_results)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  # PathoFact 2.0's reports for a contig sample with geNomad on. One group: the report
+  # step writes them together. Rows are dereplicated proteins (identical sequences), each
+  # naming its identical copies in Other_proteins_in_cluster.
   pathofact_vf:
     properties:
-      _: PathoFact virulence-factor predictions (contig IDs preserved)
+      _: PathoFact 2.0 VF_hits_rep_prot_with_MGE.tsv -- proteins at virulence-factor probability 0.9 or more, with their VF HMM hits and geNomad markers
+      Format: TSV
+      ext: tsv
+  pathofact_vf_ambiguous:
+    properties:
+      _: PathoFact 2.0 ambiguous_VF_hits_rep_prot_with_MGE.tsv -- proteins with a VF HMM hit or a positive VF prediction below probability 0.9
       Format: TSV
       ext: tsv
   pathofact_tox:
     properties:
-      _: PathoFact toxin predictions (contig IDs preserved)
+      _: PathoFact 2.0 TOX_hits_rep_prot_with_MGE.tsv -- proteins at toxin probability 0.8 or more, with their toxin HMM hits and geNomad markers
       Format: TSV
       ext: tsv
-  pathofact_mge:
+  pathofact_tox_ambiguous:
     properties:
-      _: PathoFact mobile-genetic-element predictions (contig IDs preserved)
+      _: PathoFact 2.0 ambiguous_TOX_hits_rep_prot_with_MGE.tsv -- proteins with a toxin HMM hit or a positive toxin prediction below probability 0.8
+      Format: TSV
+      ext: tsv
+  pathofact_amr:
+    properties:
+      _: PathoFact 2.0 amr_hits_rep_prot_with_MGE.tsv -- DeepARG, RGI and AMRFinderPlus calls per protein, ARGs named by argNorm, with geNomad markers
+      Format: TSV
+      ext: tsv
+  pathofact_report:
+    properties:
+      _: PathoFact 2.0 combined_report_with_MGE.tsv -- one row per protein that is a VF, a toxin, an ARG or a BGC gene, with geNomad markers and antiSMASH gene kind
+      Format: TSV
+      ext: tsv
+  pathofact_report_signalp:
+    properties:
+      _: pathofact_report with PathoFact 2.0's SignalP column, from SignalP 6 on its candidate proteins
+      Format: TSV
+      ext: tsv
+  # Defined here, not produced here: the signalp6 lane on feat/engine/licensed-build
+  # produces it. Identical definition, so the two merge as one type.
+  signalp6_results:
+    properties:
+      _: SignalP 6.0 per-protein signal peptide prediction (prediction_results.txt)
       Format: TSV
       ext: tsv
 
@@ -673,9 +1027,6 @@ types:
   # MetaPhlAn SGB marker DB (mpa_vJan25_CHOCOPhlAnSGB_202503) that produced the
   # metaphlan_sam upstream; sample2markers.py -d needs the matching .pkl to
   # reconstruct consensus markers. Bound read-only at /mpa_db by the transform.
-  metaphlan_db:
-    properties:
-      _: MetaPhlAn vJan25 CHOCOPhlAnSGB marker database (dir holding the .pkl)
   strainphlan_consensus_markers:
     properties:
       _: StrainPhlAn per-sample consensus markers from the MetaPhlAn SAM
@@ -751,3 +1102,154 @@ types:
     properties:
       _: per-genome feature counts and assembly statistics
       ext: txt
+
+  # MetaPathways 4, taken apart into its useful steps
+  rrna_gff:
+    properties:
+      _: rRNA genes from barrnap over the bacterial, archaeal and eukaryotic models, best call per overlap
+      Format: GFF3
+      ext: gff
+  trna_gff:
+    properties:
+      _: tRNA genes (ID, product tRNA-<aa>, anticodon) from one tRNA scanner
+      Format: GFF3
+      ext: gff
+  pathway_table:
+    properties:
+      _: "MetaPathways 4 pathway table of one PGDB, one row per pathway: SAMPLE, PWY_NAME, PWY_COMMON_NAME, PWY_SCORE, NUM_REACTIONS, NUM_COVERED_REACTIONS, ORF_COUNT, ORFS, then the pathways report's Pathway Frequency Score, Pathway Abundance, Reason to Keep"
+      Format: TSV
+      granularity: whole
+      ext: tsv
+  signalp6_results:
+    properties:
+      _: SignalP 6.0 per-protein signal peptide prediction (prediction_results.txt)
+      Format: TSV
+      ext: tsv
+  bin_pgdb_archive:
+    properties:
+      _: PathoLogic PGDB of one quality MAG, packaged as a tarball (sibling of pgdb_archive)
+      Format: tar.gz
+      granularity: bin
+      ext: tgz
+  bin_pathway_table:
+    properties:
+      _: MetaPathways 4 pathway table of one quality MAG's PGDB, columns as pathway_table (sibling of pathway_table)
+      Format: TSV
+      granularity: bin
+      ext: tsv
+
+  # --- The three DRAM search lanes the library had no equivalent of: dbCAN (CAZy),
+  # MEROPS (peptidases) and VOGDB. Each feeds annotation_table as a lane; the DRAM
+  # products below are rendered from that table rather than from DRAM's own annotate.
+  dbcan_hmmsearch_results:
+    properties:
+      _: hmmsearch --domtblout of ORFs against the dbCAN HMMs, as hmmsearch wrote it
+      Format: domtblout
+      ext: domtbl
+  dbcan_hmmsearch_results_chunk:
+    properties:
+      _: Per-chunk dbCAN hmmsearch domtblout (sibling of dbcan_hmmsearch_results)
+      Format: domtblout
+      granularity: chunk
+      ext: domtbl
+  dbcan_descriptions:
+    properties:
+      _: dbCAN HMM name (no .hmm) to its CAZy family activity, for the families hit
+      Format: TSV
+      ext: tsv
+  merops_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to the MEROPS peptidase units (pepunit.lib), outfmt 6 plus stitle
+      Format: BLAST6
+      ext: tsv
+  merops_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND MEROPS BLAST6 (sibling of merops_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  vogdb_hmmsearch_results:
+    properties:
+      _: hmmsearch --domtblout of ORFs against the VOGDB HMMs, as hmmsearch wrote it
+      Format: domtblout
+      ext: domtbl
+  vogdb_hmmsearch_results_chunk:
+    properties:
+      _: Per-chunk VOGDB hmmsearch domtblout (sibling of vogdb_hmmsearch_results)
+      Format: domtblout
+      granularity: chunk
+      ext: domtbl
+  vogdb_descriptions:
+    properties:
+      _: VOG to "ConsensusFunctionalDescription; FunctionalCategory", DRAM's own description string, for the VOGs hit
+      Format: TSV
+      ext: tsv
+  # DRAM-v's one search the library had no equivalent of.
+  refseq_viral_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to the RefSeq viral proteins, outfmt 6 plus stitle
+      Format: BLAST6
+      ext: tsv
+  refseq_viral_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND RefSeq viral BLAST6 (sibling of refseq_viral_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
+  # DRAM 1.5 distill of one quality MAG, run over annotation_table rendered into DRAM's
+  # annotations.tsv. One group: distill writes all of them at once.
+  dram_mag_annotations:
+    properties:
+      _: One quality MAG's annotation_table rows rendered as DRAM 1.5 annotations.tsv -- the file DRAM distill reads
+      Format: TSV
+      granularity: bin
+      ext: tsv
+  dram_product_html:
+    properties:
+      _: DRAM distill product heatmap of one quality MAG (module, ETC and function coverage)
+      Format: HTML
+      granularity: bin
+      ext: html
+  dram_product_tsv:
+    properties:
+      _: DRAM distill product table of one quality MAG, the data behind the heatmap
+      Format: TSV
+      granularity: bin
+      ext: tsv
+  dram_metabolism_summary:
+    properties:
+      _: DRAM distill genome metabolism summary of one quality MAG, one sheet per category
+      Format: XLSX
+      granularity: bin
+      ext: xlsx
+  dram_genome_stats:
+    properties:
+      _: DRAM distill genome statistics of one quality MAG
+      Format: TSV
+      granularity: bin
+      ext: tsv
+
+  # DRAM-v 1.5 distill of a study's vOTU representatives, run over annotation_table
+  # rendered into DRAM-v's annotations.tsv with VirSorter2's gene categories. One group:
+  # distill writes all of them at once.
+  dramv_votu_annotations:
+    properties:
+      _: The vOTU representatives' genes as DRAM-v 1.5 annotations.tsv, with DRAM-v's own auxiliary scores and AMG flags -- the file DRAM-v distill reads
+      Format: TSV
+      ext: tsv
+  dramv_amg_summary:
+    properties:
+      _: DRAM-v distill amg_summary.tsv -- one row per potential AMG of a vOTU representative and the form entry that made it one
+      Format: TSV
+      ext: tsv
+  dramv_product_html:
+    properties:
+      _: DRAM-v distill product heatmap of potential AMG functions per vOTU representative
+      Format: HTML
+      ext: html
+  dramv_vmag_stats:
+    properties:
+      _: DRAM-v distill vMAG_stats.tsv -- gene count, strand switches, AMG count, transposase and VOG category counts per vOTU representative
+      Format: TSV
+      ext: tsv

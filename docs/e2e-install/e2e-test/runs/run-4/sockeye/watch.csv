@@ -1,0 +1,138 @@
+ts,kind,path,inodes,bytes,note
+2026-11-24T17:19:55-07:00,total,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,3,841453568,
+2026-11-24T17:19:55-07:00,dir,container_images,3,841453568,
+2026-11-24T17:19:55-07:00,walk_exit,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,0,0,0
+2026-11-24T17:19:55-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:19:55-07:00,apptainer,/home/txyliu/.apptainer,1,46,
+2026-11-24T17:24:56-07:00,total,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,3,841453568,
+2026-11-24T17:24:56-07:00,dir,container_images,3,841453568,
+2026-11-24T17:24:56-07:00,walk_exit,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,0,0,0
+2026-11-24T17:24:56-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:24:56-07:00,apptainer,/home/txyliu/.apptainer,1,46,
+2026-11-24T17:29:56-07:00,total,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,9,843316609,
+2026-11-24T17:29:56-07:00,dir,lib,3,14530,
+2026-11-24T17:29:56-07:00,dir,msm,1,1167,
+2026-11-24T17:29:56-07:00,dir,relay,2,1847344,
+2026-11-24T17:29:56-07:00,dir,container_images,3,841453568,
+2026-11-24T17:29:56-07:00,walk_exit,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,0,0,0
+2026-11-24T17:29:56-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:29:56-07:00,apptainer,/home/txyliu/.apptainer,1,46,
+2026-11-24T17:34:57-07:00,total,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,466,10597109655,
+2026-11-24T17:34:57-07:00,dir,container_images,30,1774232143,
+2026-11-24T17:34:57-07:00,dir,task_cache,19,1944703051,
+2026-11-24T17:34:57-07:00,dir,relay,3,1847380,
+2026-11-24T17:34:57-07:00,dir,runs,409,6876307288,
+2026-11-24T17:34:57-07:00,dir,msm,1,1167,
+2026-11-24T17:34:57-07:00,dir,data,1,4096,
+2026-11-24T17:34:57-07:00,dir,lib,3,14530,
+2026-11-24T17:34:57-07:00,walk_exit,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,0,0,0
+2026-11-24T17:34:57-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_vibrant..1.2.1--hdfd78af_4.sif,1,231915520,
+2026-11-24T17:34:57-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:34:57-07:00,apptainer,/home/txyliu/.apptainer,1,46,
+2026-11-24T17:34:57-07:00,proc,login02:1931169,0,0,./relay/msm_relay start 
+2026-11-24T17:34:57-07:00,proc,login02:1933736,0,0,/bin/bash ../../msm api run_workflow -a key=GkQgLXCP host=login02 log_dir=./_metasmith/logs.2026-11-24_17-32-44 stub_del
+2026-11-24T17:34:57-07:00,proc,login02:1933803,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=GkQgLXC
+2026-11-24T17:34:57-07:00,proc,login02:1937430,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/gMHgH1cH.running 
+2026-11-24T17:34:57-07:00,proc,login02:1937450,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/2Ir6fBse.running 
+2026-11-24T17:34:57-07:00,proc,login02:1937451,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/oSGBf3nj.running 
+2026-11-24T17:34:57-07:00,proc,login02:1937461,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/70WrtFWA.running 
+2026-11-24T17:34:57-07:00,proc,login02:1937462,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/9Ej1uDcV.running 
+2026-11-24T17:34:57-07:00,proc,login02:1937511,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:34:57-07:00,proc,login02:1937512,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:34:57-07:00,proc,login02:1937515,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:34:57-07:00,proc,login02:1937521,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:34:57-07:00,proc,login02:1937544,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:34:57-07:00,proc,login02:1940805,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:34:57-07:00,proc,login02:1940836,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:34:57-07:00,proc,login02:1940839,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:34:57-07:00,proc,login02:1940865,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:34:57-07:00,proc,login02:1941033,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:34:57-07:00,proc,login02:1945789,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/5Ltom4Ok.running 
+2026-11-24T17:34:57-07:00,proc,login02:1945812,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:34:57-07:00,proc,login02:1946941,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:34:57-07:00,proc,login02:1949108,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/c8/4fa8a907fb1f05d2a448bd509481a1/_metasm
+2026-11-24T17:34:57-07:00,proc,login02:1949119,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/c8/4fa8a907fb1f05d2a448bd509481a1/_metasm
+2026-11-24T17:34:57-07:00,proc,login02:1949154,0,0,flock /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_diamond..2.1.8--
+2026-11-24T17:34:57-07:00,proc,login02:1949156,0,0,"/bin/bash -c export APPTAINER_CACHEDIR=""${APPTAINER_CACHEDIR:-/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/contain"
+2026-11-24T17:34:57-07:00,proc,login02:1949194,0,0,apptainer pull /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_diamond
+2026-11-24T17:34:57-07:00,proc,login02:1956948,0,0,/arc/software/spack-2024/opt/spack/linux-rocky9-skylake_avx512/gcc-9.4.0/squashfs-4.6.1-5irjruz52ecyos32bn2a54t46jpbrqfn
+2026-11-24T17:34:57-07:00,proc,login02:1958677,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/84/37ecd2b31875d4d0fa76653fdd8e41/_metasm
+2026-11-24T17:34:57-07:00,proc,login02:1958759,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/84/37ecd2b31875d4d0fa76653fdd8e41/_metasm
+2026-11-24T17:40:05-07:00,total,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,745,34619561793,
+2026-11-24T17:40:05-07:00,dir,container_images,40,3272191956,
+2026-11-24T17:40:05-07:00,dir,task_cache,66,10349548245,
+2026-11-24T17:40:05-07:00,dir,relay,3,1847380,
+2026-11-24T17:40:05-07:00,dir,runs,631,20995954419,
+2026-11-24T17:40:05-07:00,dir,msm,1,1167,
+2026-11-24T17:40:05-07:00,dir,data,1,4096,
+2026-11-24T17:40:05-07:00,dir,lib,3,14530,
+2026-11-24T17:40:05-07:00,walk_exit,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,0,0,0
+2026-11-24T17:40:05-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_vibrant..1.2.1--hdfd78af_4.sif,1,231915520,
+2026-11-24T17:40:05-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:40:05-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_checkv..1.0.3--pyhdfd78af_0.sif,1,350060544,
+2026-11-24T17:40:05-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,216117248,
+2026-11-24T17:40:05-07:00,apptainer,/home/txyliu/.apptainer,1,46,
+2026-11-24T17:40:05-07:00,proc,login02:1931169,0,0,./relay/msm_relay start 
+2026-11-24T17:40:05-07:00,proc,login02:1933736,0,0,/bin/bash ../../msm api run_workflow -a key=GkQgLXCP host=login02 log_dir=./_metasmith/logs.2026-11-24_17-32-44 stub_del
+2026-11-24T17:40:05-07:00,proc,login02:1933803,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=GkQgLXC
+2026-11-24T17:40:05-07:00,proc,login02:1937430,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/gMHgH1cH.running 
+2026-11-24T17:40:05-07:00,proc,login02:1937450,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/2Ir6fBse.running 
+2026-11-24T17:40:05-07:00,proc,login02:1937451,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/oSGBf3nj.running 
+2026-11-24T17:40:05-07:00,proc,login02:1937461,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/70WrtFWA.running 
+2026-11-24T17:40:05-07:00,proc,login02:1937462,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/9Ej1uDcV.running 
+2026-11-24T17:40:05-07:00,proc,login02:1937511,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:05-07:00,proc,login02:1937512,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:05-07:00,proc,login02:1937515,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:05-07:00,proc,login02:1937521,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:05-07:00,proc,login02:1937544,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:05-07:00,proc,login02:1940805,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:05-07:00,proc,login02:1940836,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:05-07:00,proc,login02:1940839,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:05-07:00,proc,login02:1940865,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:05-07:00,proc,login02:1941033,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:05-07:00,proc,login02:1958677,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/84/37ecd2b31875d4d0fa76653fdd8e41/_metasm
+2026-11-24T17:40:05-07:00,proc,login02:1958759,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/84/37ecd2b31875d4d0fa76653fdd8e41/_metasm
+2026-11-24T17:40:05-07:00,proc,login02:1985114,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/G7W0Eb7d.running 
+2026-11-24T17:40:05-07:00,proc,login02:1985119,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:05-07:00,proc,login02:1986129,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:05-07:00,proc,login02:1996397,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/49/7161b2254568b1eb92169df151c2dc/_metasm
+2026-11-24T17:40:05-07:00,proc,login02:1996404,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/49/7161b2254568b1eb92169df151c2dc/_metasm
+2026-11-24T17:40:25-07:00,total,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,745,35647226287,
+2026-11-24T17:40:25-07:00,dir,container_images,40,3272191956,
+2026-11-24T17:40:25-07:00,dir,task_cache,66,10833418181,
+2026-11-24T17:40:25-07:00,dir,relay,3,1847380,
+2026-11-24T17:40:25-07:00,dir,runs,631,21539748977,
+2026-11-24T17:40:25-07:00,dir,msm,1,1167,
+2026-11-24T17:40:25-07:00,dir,data,1,4096,
+2026-11-24T17:40:25-07:00,dir,lib,3,14530,
+2026-11-24T17:40:25-07:00,walk_exit,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye,0,0,0
+2026-11-24T17:40:25-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_vibrant..1.2.1--hdfd78af_4.sif,1,231915520,
+2026-11-24T17:40:25-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_hallamlab_metasmith..0.26.0-ea75c3f.sif,1,841449472,
+2026-11-24T17:40:25-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_checkv..1.0.3--pyhdfd78af_0.sif,1,350060544,
+2026-11-24T17:40:25-07:00,sif,/scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/container_images/docker..quay.io_biocontainers_diamond..2.1.8--h43eeafb_0.sif,1,216117248,
+2026-11-24T17:40:25-07:00,apptainer,/home/txyliu/.apptainer,1,46,
+2026-11-24T17:40:25-07:00,proc,login02:1931169,0,0,./relay/msm_relay start 
+2026-11-24T17:40:25-07:00,proc,login02:1933736,0,0,/bin/bash ../../msm api run_workflow -a key=GkQgLXCP host=login02 log_dir=./_metasmith/logs.2026-11-24_17-32-44 stub_del
+2026-11-24T17:40:25-07:00,proc,login02:1933803,0,0,/opt/conda/envs/metasmith_env/bin/python3.12 /opt/conda/envs/metasmith_env/bin/metasmith api run_workflow -a key=GkQgLXC
+2026-11-24T17:40:25-07:00,proc,login02:1937430,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/gMHgH1cH.running 
+2026-11-24T17:40:25-07:00,proc,login02:1937450,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/2Ir6fBse.running 
+2026-11-24T17:40:25-07:00,proc,login02:1937451,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/oSGBf3nj.running 
+2026-11-24T17:40:25-07:00,proc,login02:1937461,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/70WrtFWA.running 
+2026-11-24T17:40:25-07:00,proc,login02:1937462,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/9Ej1uDcV.running 
+2026-11-24T17:40:25-07:00,proc,login02:1937511,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:25-07:00,proc,login02:1937512,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:25-07:00,proc,login02:1937515,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:25-07:00,proc,login02:1937521,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:25-07:00,proc,login02:1937544,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:25-07:00,proc,login02:1940805,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:25-07:00,proc,login02:1940836,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:25-07:00,proc,login02:1940839,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:25-07:00,proc,login02:1940865,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:25-07:00,proc,login02:1941033,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:25-07:00,proc,login02:1958677,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/84/37ecd2b31875d4d0fa76653fdd8e41/_metasm
+2026-11-24T17:40:25-07:00,proc,login02:1958759,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/84/37ecd2b31875d4d0fa76653fdd8e41/_metasm
+2026-11-24T17:40:25-07:00,proc,login02:1985114,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/relay/login02/G7W0Eb7d.running 
+2026-11-24T17:40:25-07:00,proc,login02:1985119,0,0,/bin/bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/lib/msm_bootstrap /scratch/st-shallam-1/txyliu/msm_e2e/run-
+2026-11-24T17:40:25-07:00,proc,login02:1986129,0,0,_metasmith/relay/msm_relay start --local 
+2026-11-24T17:40:25-07:00,proc,login02:1996397,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/49/7161b2254568b1eb92169df151c2dc/_metasm
+2026-11-24T17:40:25-07:00,proc,login02:1996404,0,0,bash /scratch/st-shallam-1/txyliu/msm_e2e/run-4-sockeye/runs/GkQgLXCP/nxf_work/49/7161b2254568b1eb92169df151c2dc/_metasm

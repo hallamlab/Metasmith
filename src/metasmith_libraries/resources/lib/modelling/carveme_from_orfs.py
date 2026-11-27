@@ -28,7 +28,7 @@ adds the cheapest reactions by count alone, not the most homology-supported
 ones. That is a real deviation from metaGEM's exact behaviour, traded for a
 gapfill that completes at all on a free solver with no CPLEX licence.
 
-    carveme_from_orfs.py <orfs.faa> <media.tsv> <medium_name.txt> <out.xml>
+    carveme_from_orfs.py <input> <media.tsv> <medium_name.txt> <out.xml> [protein|diamond]
 
 `<medium_name.txt>` is a `modelling::medium_name` deferred input -- a bare
 file whose stripped content is the row of `<media.tsv>` to apply, the same
@@ -41,10 +41,9 @@ prefix ANY `carve`/`load_cbmodel`+`save_cbmodel` round trip produces, not an
 artifact of this repo's MNXM pipeline -- so there is no `strip_reframed_prefix`
 step here, unlike `carveme_gapfill.py`, whose universe is MNXM-namespaced.
 
-`carve_and_gapfill` below is shared with `carveme_from_orfs_cplex.py`, the
-CPLEX parity variant -- the only difference between the two callers is
-whether `reframed.solvers.set_default_solver("scip")` runs first. See that
-module's own docstring for why it leaves the default alone instead.
+`<input>` is a protein FASTA, or with a fifth argument `diamond`, CarveMe's own
+DIAMOND outfmt 6 against its BiGG index: the bigg annotation lane's hits, which
+`carve --diamond` reads in place of searching.
 """
 import sys
 
@@ -111,7 +110,8 @@ def ensure_diamond_index() -> None:
     carveme.config.set("generated", "diamond_db", os.path.relpath(index, project_dir))
 
 
-def carve_and_gapfill(orfs_path: str, media_path: str, medium_name: str, out_path: str) -> None:
+def carve_and_gapfill(input_path: str, media_path: str, medium_name: str, out_path: str,
+                      input_type: str = "protein") -> None:
     from carveme.cli.carve import maincall as carve_maincall
     from carveme.cli.gapfill import maincall as gapfill_maincall
 
@@ -139,8 +139,8 @@ def carve_and_gapfill(orfs_path: str, media_path: str, medium_name: str, out_pat
     # default solver (each caller of this function does its own), run the first-run index
     # check (ensure_diamond_index above), and pass these four scores. Nothing else.
     carve_maincall(
-        inputfile=orfs_path,
-        input_type="protein",
+        inputfile=input_path,
+        input_type=input_type,
         outputfile=draft_path,
         flavor="fbc2",
         default_score=-1.0,
@@ -167,13 +167,13 @@ def carve_and_gapfill(orfs_path: str, media_path: str, medium_name: str, out_pat
 
 
 def main(argv: list[str]) -> int:
-    orfs_path, media_path, medium_name_path, out_path = argv
+    input_path, media_path, medium_name_path, out_path, *input_type = argv
     medium_name = read_medium_name(medium_name_path)
 
     import reframed.solvers as _solvers
     _solvers.set_default_solver("scip")
 
-    carve_and_gapfill(orfs_path, media_path, medium_name, out_path)
+    carve_and_gapfill(input_path, media_path, medium_name, out_path, *input_type)
     return 0
 
 

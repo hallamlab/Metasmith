@@ -325,7 +325,10 @@ def test_giving_a_field_a_key_keeps_the_items(tmp_path):
 
     rows = _grouped_rows(pan={"values": _val(("of", "pangenome"))})
     op_inputs.sync(str(lib_path), rows, _grouped_table())
-    assert _ids(lib_path) == before
+    after = _ids(lib_path)
+    assert after.keys() == before.keys()
+    # The value file now reads differently, so a cache built on the old text is stale.
+    assert any(after[p] != before[p] for p in before)
     lib = DataInstanceLibrary.Load(lib_path)
     assert '{"of": "P1"}' in {(lib_path / p).read_text() for p in lib.manifest}
 

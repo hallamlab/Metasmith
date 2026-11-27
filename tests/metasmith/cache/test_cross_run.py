@@ -86,6 +86,50 @@ def test_resubmitted_library_hits_cache(tmp_path, virtual_runtime):
     )
 
 
+def test_an_input_copied_to_the_agent_keeps_its_cache_key(tmp_path, virtual_runtime):
+    # Staging copies a local input the agent host lacks and relocates it. The
+    # copy's path and mtime are the agent's, so the key must stay the one the
+    # client derived from the original, or every rerun through a copy misses.
+    root = tmp_path / "a"
+    types_path = build_types_library(root, TYPE_NAMES)
+    original = root / "reads" / "data.txt"
+    original.parent.mkdir(parents=True)
+    original.write_text("sample payload\n", encoding="utf-8")
+    lib = DataInstanceLibrary(root / "samples.xgdb")
+    lib.AddTypeLibrary(types_path, namespace="cf")
+    lib.AddItem(original, "cf::seed")
+    lib.Save()
+    tr_lib = build_transform_library(
+        root / "tr", types_path, {"trA": identity_transform_code("trA", "seed", "mid")},
+    )
+
+    def _plan():
+        return build_workflow_task(
+            DataInstanceLibrary.Load(lib.location), tr_lib,
+            sample_type="seed", target_specs=[("mid_target", {"mid"})],
+        )
+
+    task_a = _plan()
+    copy = tmp_path / "agent_home" / "inputs" / original.relative_to("/")
+    copy.parent.mkdir(parents=True)
+    copy.write_text(original.read_text())
+    hidden = original.rename(original.with_suffix(".away"))
+    snap_a = capture_run(virtual_runtime, task_a, relocated={original: copy})
+    assert snap_a.executed_steps, "the relocated run executed nothing (bad fixture)"
+    assert snap_a.result_fingerprints, "the relocated run read nothing from the copy"
+
+    hidden.rename(original)
+    task_b = _plan()
+    assert task_b.GetKey() == task_a.GetKey()
+    clear_trace(virtual_runtime)
+    snap_b = capture_run(virtual_runtime, task_b)
+    assert snap_b.executed_steps == (), (
+        f"reading the input at its own path re-executed {snap_b.executed_steps}; "
+        f"where the bytes sat in the first run changed the cache key"
+    )
+    assert snap_b.result_fingerprints == snap_a.result_fingerprints
+
+
 def test_identical_bytes_elsewhere_do_not_collapse(tmp_path, virtual_runtime):
     # Deliberate, not a defect. Identity is the path and the mtime, so a second
     # copy of the same bytes under a different root is a different input. The

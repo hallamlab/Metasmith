@@ -1,0 +1,6 @@
+outs:
+- md5: 33c1aa279b8cee2cf307c4b8db8d5681.dir
+  size: 33656
+  nfiles: 2
+  hash: md5
+  path: aspire

@@ -1,3 +1,4 @@
+import itertools
 import pytest
 from metasmith.models.solver import solve_by_mcts, Transform, Endpoint, Application
 from metasmith.testing.solver_verification import (
@@ -11,6 +12,14 @@ def _solve(given, target, transforms, **kwargs):
     verdict = check_plan(problem, sol)
     assert verdict.ok, f"solver returned an unrunnable plan: {verdict.violations}"
     return sol
+
+
+def _solve_every_outcome(given, target, transforms, **kwargs):
+    forks = list({id(t): t for t in transforms if len(t.produces) > 1}.values())
+    return [
+        _solve(given, target, transforms, fork_groups=list(zip(forks, choice)), **kwargs)
+        for choice in itertools.product(*[range(len(t.produces)) for t in forks])
+    ]
 
 
 class TestBasicSolver:
@@ -192,12 +201,12 @@ class TestBranching:
         given = {Endpoint(properties={"start"})}
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = _solve(
+        sols = _solve_every_outcome(
             given=[given],
             target=target,
             transforms=transforms,
         )
-        assert sol.complete
+        assert all(sol.complete for sol in sols)
 
     def test_branching_nested(self):
         transforms = []
@@ -259,12 +268,12 @@ class TestBranching:
         given = {Endpoint(properties={"start"})}
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = _solve(
+        sols = _solve_every_outcome(
             given=[given],
             target=target,
             transforms=transforms,
         )
-        assert sol.complete
+        assert all(sol.complete for sol in sols)
 
     def test_branching_with_lineage(self):
         transforms = []
@@ -323,12 +332,12 @@ class TestBranching:
         given = {Endpoint(properties={"start"})}
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = _solve(
+        sols = _solve_every_outcome(
             given=[given],
             target=target,
             transforms=transforms,
         )
-        assert sol.complete
+        assert all(sol.complete for sol in sols)
 
     def test_branching_multiple_given(self):
         transforms = []
@@ -352,7 +361,7 @@ class TestBranching:
 
         target = Transform()
         target.AddRequirement(properties={"b"})
-        sol = _solve(
+        sols = _solve_every_outcome(
             given=[
                 {Endpoint(properties={"a"})},
                 {Endpoint(properties={"b"})},
@@ -360,7 +369,7 @@ class TestBranching:
             target=target,
             transforms=transforms,
         )
-        assert sol.complete
+        assert all(sol.complete for sol in sols)
 
     def test_branching_overlapping_groups(self):
         transforms = []
@@ -387,14 +396,14 @@ class TestBranching:
 
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = _solve(
+        sols = _solve_every_outcome(
             given=[
                 {Endpoint(properties={"start"})},
             ],
             target=target,
             transforms=transforms,
         )
-        assert sol.complete
+        assert all(sol.complete for sol in sols)
 
     def test_branching_complex_workflow(self):
         transforms = []
@@ -470,14 +479,14 @@ class TestBranching:
 
         target = Transform()
         target.AddRequirement(properties={"assembly_stats"})
-        sol = _solve(
+        sols = _solve_every_outcome(
             given=[
                 {Endpoint(properties={"start"})},
             ],
             target=target,
             transforms=transforms,
         )
-        assert sol.complete
+        assert all(sol.complete for sol in sols)
 
 
 def _get_all_produced(sol) -> set[frozenset[str]]:

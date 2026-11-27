@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import shutil
+from metasmith.models.workflow import Case
 import yaml
 from pathlib import Path
 
 import pytest
 
-from metasmith.models.libraries import (
-    DataInstanceLibrary,
-    DataTypeLibrary,
-    TransformInstanceLibrary,
-)
-from metasmith.models.solver import Endpoint, Transform
-from metasmith.models.workflow import PlanHint, WorkflowPlan
+from metasmith.models.libraries import DataInstanceLibrary, TransformInstanceLibrary
+from metasmith.models.solver import Transform
+from metasmith.models.workflow import WorkflowPlan
 from metasmith.testing.pool_fixtures import pool_backed
+
+from tests.metasmith.support import create_transform_library
 
 
 @pytest.fixture
@@ -35,49 +33,14 @@ def _write_types_yml(path: Path, types: dict):
     path.write_text(yaml.dump(payload))
 
 
-def _make_transform_lib(
-    temp_dir: Path, mock_types_path: Path, transforms: dict[str, str]
-) -> TransformInstanceLibrary:
-    tr_path = temp_dir / "transforms.xgdb"
-    tr_path.mkdir(parents=True, exist_ok=True)
-    meta_dir = tr_path / "_metadata"
-    types_dir = meta_dir / "types"
-    types_dir.mkdir(parents=True)
-    shutil.copy(mock_types_path, types_dir / "mock.yml")
-    (types_dir / "transforms.yml").write_text(
-        """schema: v1
-ontology:
-  name: EDAM
-  version: '1.25'
-  doi: https://doi.org/10.1093/bioinformatics/btt113
-  strict: false
-types:
-  transform:
-    properties:
-    - metasmith
-    - transform
-"""
-    )
-    manifest = {}
-    for name, code in transforms.items():
-        (tr_path / f"{name}.py").write_text(code)
-        manifest[f"{name}.py"] = {"type": "transforms::transform"}
-    (meta_dir / "index.yml").write_text(
-        yaml.dump({"manifest": manifest, "schema": "v1"})
-    )
-    return TransformInstanceLibrary.Load(tr_path)
-
-
 def _generate(inputs: DataInstanceLibrary, transforms: TransformInstanceLibrary, sample_type: str, target_type: str) -> WorkflowPlan:
     samples = list(inputs.AsSamples(sample_type))
     target_model = Transform()
     target_ep = transforms.GetType(target_type)
     target_model.AddRequirement(target_ep)
     return WorkflowPlan.Generate(
-        given=[[sv] for sv in samples],
+        cases=Case.ByShape([[sv] for sv in samples], target=target_model, target_names=[target_type]),
         transforms=[transforms],
-        target_names=[target_type],
-        target_model=target_model,
     )
 
 
@@ -106,7 +69,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -151,7 +114,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -220,7 +183,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     types_path2 = temp_dir / "extra.yml"
     _write_types_yml(types_path2, {
@@ -265,7 +228,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('a')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=reads)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -321,7 +284,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     extra_path = temp_dir / "extra.yml"
     _write_types_yml(extra_path, {"unrelated": {"properties": {"_": "other"}}})
@@ -367,7 +330,7 @@ def protocol(ctx): return ExecutionResult(manifest=[{out: Path('t')}], success=T
 TransformInstance(protocol=protocol, model=model, group_by=near)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     inputs_types = temp_dir / "inputs.yml"
     _write_types_yml(inputs_types, {
@@ -416,7 +379,7 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 """,
     }
-    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+    tr_lib = create_transform_library(temp_dir, types_path, transforms)
 
     lib_path = temp_dir / "inputs.xgdb"
     inputs = DataInstanceLibrary(lib_path)
@@ -455,11 +418,13 @@ TransformInstance(protocol=protocol, model=model, group_by=r0)
 
 def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(temp_dir):
     types_path = temp_dir / "mock.yml"
-    _write_types_yml(types_path, {
+    types = {
         name: {"properties": {"_": name}}
         for name in ("reads", "assembly", "accession", "script", "truth", "stats")
-    })
-    tr_lib = _make_transform_lib(temp_dir, types_path, {
+    }
+    types["script"]["properties"]["obtain_from"] = "https://example.org/licence"
+    _write_types_yml(types_path, types)
+    tr_lib = create_transform_library(temp_dir, types_path, {
         "assemble": _transform(["reads"], "assembly"),
         "fetch_assembly": _transform(["accession"], "assembly"),
         "stats": _transform(["assembly"], "stats"),
@@ -476,17 +441,52 @@ def test_unproduced_requirement_is_named_and_reachable_targets_are_not_blamed(te
     for t in ("mock::stats", "mock::truth"):
         target_model.AddRequirement(tr_lib.GetType(t))
     plan = WorkflowPlan.Generate(
-        given=[[sv] for sv in inputs.AsSamples("mock::reads")],
+        cases=Case.ByShape([[sv] for sv in inputs.AsSamples("mock::reads")],
+                           target=target_model, target_names=["mock::stats", "mock::truth"]),
         transforms=[tr_lib],
-        target_names=["mock::stats", "mock::truth"],
-        target_model=target_model,
     )
 
     assert plan.steps == []
     first = plan.hints[0]
     assert first.kind == "unproduced_requirement", plan.hints
     assert "mock::script" in first.message and first.target == "mock::truth"
+    assert "Obtain it from https://example.org/licence" in first.message
     assert first.candidate_transforms == ["gold"]
     stats = [h for h in plan.hints if h.target == "mock::stats"]
     assert [h.kind for h in stats] == ["blocked_by_other_target"], stats
     assert not any("accession" in h.message for h in plan.hints), plan.hints
+
+
+def test_a_search_that_runs_out_names_no_dead_end(temp_dir):
+    types_path = temp_dir / "mock.yml"
+    _write_types_yml(types_path, {
+        name: {"properties": {"_": name}}
+        for name in ("reads", "assembly", "accession", "stats", "bins")
+    })
+    tr_lib = create_transform_library(temp_dir, types_path, {
+        "assemble": _transform(["reads"], "assembly"),
+        "fetch_assembly": _transform(["accession"], "assembly"),
+        "stats": _transform(["assembly"], "stats"),
+        "bin": _transform(["assembly", "reads"], "bins"),
+    })
+
+    inputs = DataInstanceLibrary(temp_dir / "inputs.xgdb")
+    inputs.AddTypeLibrary(types_path, namespace="mock")
+    inputs.AddValue("r.fq", "x", "mock::reads")
+    pool_backed(inputs)
+    inputs.Save()
+
+    targets = ["mock::stats", "mock::bins"]
+    target_model = Transform()
+    for t in targets:
+        target_model.AddRequirement(tr_lib.GetType(t))
+    plan = WorkflowPlan.Generate(
+        cases=Case.ByShape([[sv] for sv in inputs.AsSamples("mock::reads")],
+                           target=target_model, target_names=targets),
+        transforms=[tr_lib],
+        max_iter=1,
+    )
+
+    assert plan.steps == []
+    assert [h.kind for h in plan.hints] == ["search_exhausted"], plan.hints
+    assert "accession" not in plan.hints[0].message

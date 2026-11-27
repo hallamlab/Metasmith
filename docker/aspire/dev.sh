@@ -6,15 +6,21 @@
 set -euo pipefail
 
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-VERSION=0.1.0
+VERSION=0.2.0
 IMAGE=${ASPIRE_IMAGE:-quay.io/hallamlab/aspire:$VERSION}
 
 VERIFY="Rscript -e 'suppressPackageStartupMessages({library(optparse); library(dplyr); library(purrr); \
-library(readr); library(tibble); library(tidyr); library(indicspecies); library(permute)}); \
-cat(\"indicspecies\", as.character(packageVersion(\"indicspecies\")), \"\\n\")' && \
-python -c 'import pandas, numpy, scipy, Bio, tqdm, seaborn, matplotlib, plotly.graph_objects as go; \
+library(readr); library(tibble); library(tidyr); library(indicspecies); library(permute); library(vegan); \
+library(igraph); library(SpiecEasi); library(pulsar); library(huge); library(glmnet)}); \
+cat(\"R\", R.version.string, \"indicspecies\", as.character(packageVersion(\"indicspecies\")), \
+\"SpiecEasi\", as.character(packageVersion(\"SpiecEasi\")), \"\\n\")' && \
+blastn -version | head -1 && makeblastdb -version | head -1 && \
+python -c 'import pandas, numpy, scipy, Bio, tqdm, seaborn, matplotlib, sklearn, umap, hdbscan, skbio, \
+statsmodels, networkx, adjustText, upsetplot, matplotlib_venn, fastcluster; \
+from statannotations.Annotator import Annotator; import plotly.graph_objects as go; \
 fig = go.Figure(go.Sankey(node=dict(label=[\"a\", \"b\"]), link=dict(source=[0], target=[1], value=[1]))); \
-fig.write_image(\"/tmp/probe.svg\"); print(\"python OK: pandas\", pandas.__version__, \"seaborn\", seaborn.__version__)'"
+fig.write_image(\"/tmp/probe.svg\"); print(\"python OK: pandas\", pandas.__version__, \"seaborn\", seaborn.__version__, \
+\"umap\", umap.__version__, \"skbio\", skbio.__version__)'"
 
 case "${1:-}" in
     --build|-b)

@@ -7,7 +7,7 @@ assertion, and a transform whose products changed shape takes the templates that
 depend on it down with it, by name, at build time.
 
 A template author is a module here defining `NAME`, `DESCRIPTION` and
-`build_spec`; they are listed below rather than discovered, because the rest of
+`build_template`; they are listed below rather than discovered, because the rest of
 this directory is run drivers that talk to real clusters on import and must not
 be swept up by a build.
 
@@ -29,7 +29,10 @@ import _authoring as A
 
 AUTHORS = (
     "pangenome_heatmap_from_assembly",
-    "metagenomics_from_paired_reads",
+    "engcyc_metagenomics",
+    "engcyc_prep_references",
+    "engcyc_metagenomics_lite",
+    "engcyc_prep_references_lite",
     "isolate_assembly_from_long_reads",
     "annotation_palette_from_assembly",
     "annotation_trio_from_assembly",
@@ -38,6 +41,7 @@ AUTHORS = (
     "amplicon_asv_study_from_short_reads",
     "viromics_survey_from_assembly",
     "gpr_table_from_assembly",
+    "annotation_table_from_assembly",
     "ecspr_results_from_gpr_table",
     "ecspr_survey_from_pooled_reads",
     "geoquery_from_aoi_table",
@@ -69,7 +73,7 @@ def authors() -> list:
     found = []
     for name in AUTHORS:
         module = _load_author(name)
-        missing = [a for a in ("NAME", "DESCRIPTION", "build_spec") if not hasattr(module, a)]
+        missing = [a for a in ("NAME", "DESCRIPTION", "build_template") if not hasattr(module, a)]
         assert not missing, f"[{name}] is listed as a template author but defines no {missing}"
         found.append(module)
     return found

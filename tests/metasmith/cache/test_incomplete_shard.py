@@ -1,8 +1,9 @@
 """A shard that cannot serve every slot the member declares is never made or served.
 
 A member whose required branch produced nothing mints no shard. A shard one
-of whose listed files has gone is not a hit. A member with an empty optional
-branch is still whole.
+of whose listed files has gone is not a hit: it is a ghost, served only when
+the run's skip file names it. A member with an empty optional branch is still
+whole.
 """
 
 from __future__ import annotations
@@ -18,12 +19,12 @@ from metasmith.models.workflow.payload import build_entry
 KEY = "1e20" + "cd" * 32
 
 
-def _meta(branches: int) -> StepCacheMeta:
+def _meta(branches: int, extra: dict[int, list[str]] | None = None) -> StepCacheMeta:
     return StepCacheMeta(
         order=1, transform_key="trA", signature="sig", step_name="trA", cacheable=True,
         slot_files=[
-            {"dtype_key": f"out{b}", "ext": ".txt", "branch_idx": b, "slot_id": "a" * 64}
-            for b in range(branches)
+            {"dtype_key": k, "ext": ".txt", "branch_idx": b, "slot_id": "a" * 64}
+            for b in range(branches) for k in [f"out{b}", *(extra or {}).get(b, [])]
         ],
         slot_channels={"seed_dep": "seed"},
     )
@@ -35,14 +36,14 @@ def _entry() -> dict:
     return e
 
 
-def _promote(tmp_path: Path, names: list[str], branches: int):
+def _promote(tmp_path: Path, names: list[str], branches: int, extra: dict[int, list[str]] | None = None):
     cwd = tmp_path / "task"
     cwd.mkdir()
     for n in names:
         (cwd / n).write_text("payload")
     cache_root = tmp_path / "task_cache"
     records = promote_members(
-        cwd=cwd, entries=[_entry()], meta=_meta(branches), cache_root=cache_root, successes=[True],
+        cwd=cwd, entries=[_entry()], meta=_meta(branches, extra), cache_root=cache_root, successes=[True],
     )
     return records, cache_root
 
@@ -64,6 +65,12 @@ def test_an_empty_optional_branch_still_promotes(tmp_path):
     records, cache_root = _promote(tmp_path, ["1-1-1.abcdef-out0.txt"], branches=2)
     assert [r["status"] for r in records] == ["promoted"]
     assert probe(cache_root, bytes.fromhex(KEY)) is not None
+
+
+def test_a_half_written_branch_mints_no_shard(tmp_path):
+    records, cache_root = _promote(tmp_path, ["1-1-2.abcdef-out1.txt"], branches=2, extra={1: ["more1"]})
+    assert [r["status"] for r in records] == ["incomplete"]
+    assert probe(cache_root, bytes.fromhex(KEY)) is None
 
 
 def test_a_shard_missing_a_listed_file_is_not_a_hit(tmp_path):
@@ -106,3 +113,42 @@ def test_a_manifest_without_sizes_is_still_served(tmp_path):
     path.write_bytes(cbor2.dumps(manifest))
     path.chmod(os_mode)
     assert probe(cache_root, bytes.fromhex(KEY)) == shard
+
+
+def _helper_rows(cache_root: Path, entry: dict, **spec) -> list:
+    from metasmith.caching.invocation import probe_members
+    return probe_members({
+        "tk": "trA", "sig": "sig", "slk": ["seed"], "cache_root": str(cache_root),
+        "members": [entry], **spec,
+    })
+
+
+def test_a_shard_a_run_deleted_from_is_a_ghost_the_helper_skips_only_when_told(tmp_path):
+    import json
+    from metasmith.caching.invocation import consumed_of, member_key, shard_state
+
+    entry = _entry()
+    key = member_key("trA", "sig", consumed_of(entry, ["seed"])).hex()
+    cwd = tmp_path / "task"
+    cwd.mkdir()
+    (cwd / "1-1-1.abcdef-out0.txt").write_text("payload")
+    cache_root = tmp_path / "task_cache"
+    promote_members(
+        cwd=cwd, entries=[{**entry, LinPayload.KEY_KEY: key}], meta=_meta(1),
+        cache_root=cache_root, successes=[True],
+    )
+    (shard_dir(cache_root, key) / "out" / "1-1-1.abcdef-out0.txt").unlink()
+
+    assert shard_state(cache_root, bytes.fromhex(key))[0] == "ghost"
+    assert probe(cache_root, bytes.fromhex(key)) is None
+    shard = str(shard_dir(cache_root, key))
+    assert _helper_rows(cache_root, entry, mode="probe") == [(key, "ghost", shard, [("1-1-1.abcdef-out0.txt", False)])]
+    assert _helper_rows(cache_root, entry)[0][1] == "miss"
+
+    skip = tmp_path / "skip.json"
+    skip.write_text(json.dumps({"skip": [key], "absent_ids": []}))
+    assert _helper_rows(cache_root, entry, skip=str(skip))[0][1] == "skip"
+
+    # A member that must run but reads what a skipped member left absent.
+    skip.write_text(json.dumps({"skip": [], "absent_ids": ["1e20aaaa"]}))
+    assert _helper_rows(cache_root, entry, skip=str(skip))[0][1] == "stale"

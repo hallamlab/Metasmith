@@ -22,6 +22,7 @@ def protocol(context: ExecutionContext):
     iscore   = context.Output(score)
 
     _cmd = f"""\
+            export XDG_CACHE_HOME=$TMPDIR
             python {ihelp.container}/memote_score.py \
                 {idraft.container} {ireport.container} {iresults.container} {iscore.container}
         """

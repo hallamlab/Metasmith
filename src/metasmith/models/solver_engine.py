@@ -13,7 +13,7 @@ from ..caching.keys import content_multihash_key
 from ..logging import Log
 from .solver_rng import SOLVER_RNG_VERSION
 
-SOLVER_WIRE_VERSION = 2
+SOLVER_WIRE_VERSION = 3
 
 ENGINE_NAME = "msm_solver"
 ENGINE_DIR = Path(__file__).parent.parent/"engine"

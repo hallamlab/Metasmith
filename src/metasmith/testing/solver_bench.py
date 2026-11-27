@@ -31,7 +31,7 @@ from .solver_verification import (
     check_plan,
     generate_problem,
     plan_fingerprint,
-    problem_of_plan,
+    problems_of_plan,
 )
 
 __all__ = ["CORPUS", "SWEEP_PROFILES", "run_generated", "run_templates", "run_all", "diff"]
@@ -205,17 +205,18 @@ def run_templates(root: Path | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for template in Template.Discover(root):
         t0 = time.perf_counter()
-        task = template.spec.Solve()
+        task = template.Plan()
         elapsed = time.perf_counter() - t0
         result = getattr(task.plan, "_solver_result", None)
-        problem = problem_of_plan(task.plan, name=template.name)
-        if problem is None or result is None:
+        solves = problems_of_plan(task.plan, name=template.name)
+        if not solves or result is None:
             verdict_ok, violations = False, [
                 "plan carries no solver inputs, so the checker cannot see it"
             ]
         else:
-            verdict = check_plan(problem, result)
-            verdict_ok, violations = verdict.ok, verdict.violations
+            verdicts = [(p, check_plan(p, r)) for p, r in solves]
+            verdict_ok = all(v.ok for _, v in verdicts)
+            violations = [x if len(solves) == 1 else f"{p.name}: {x}" for p, v in verdicts for x in v.violations]
         out[f"template/{template.name}"] = {
             "seconds": round(elapsed, 4),
             "fingerprint": plan_fingerprint(result) if result is not None else None,

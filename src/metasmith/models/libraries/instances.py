@@ -81,7 +81,7 @@ class DataInstance:
 
     def ResolvePath(self):
         if self.path.is_absolute():
-            return self.path
+            return self.parent_lib.relocated.get(self.path, self.path)
         else:
             return self.parent_lib.location/self.path
 
@@ -116,11 +116,14 @@ class DataInstance:
             instance_id=raw.get("instance_id"),
         )
         if raw.get("instance_id"):
+            was_value = lib.instance_meta.get(inst.path, {}).get("value")
             lib.instance_meta[inst.path] = {
                 "instance_id": inst.instance_id,
                 "origin": inst.origin,
                 "lineage_payload": inst.lineage_payload,
             }
+            if was_value:
+                lib.instance_meta[inst.path]["value"] = True
         return inst
 
 class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _TelemetryQueries):
@@ -146,6 +149,11 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
         self.instance_meta: dict[Path, dict] = {}
+        self.cases: dict[Path, list[str]] = {}
+        # Where an absolute entry's bytes sit on this host when staging copied
+        # them there. The manifest keeps the original path, which is what the
+        # library key and the entry's identity are about.
+        self.relocated: dict[Path, Path] = {}
         self._type_sources: dict[str, Path] = {}
         # The `pinned:` block from index.yml, or None for the overwhelming
         # majority of libraries. See pinned.py.
@@ -156,6 +164,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             self.manifest = other.manifest
             self.types = other.types
             self.instance_meta = other.instance_meta
+            self.cases = other.cases
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
             self._pinned = other._pinned
@@ -242,11 +251,13 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
     def _build_endpoint_with_lineage(self, path: Path, _seen: set[Path] | None = None) -> Endpoint:
         if _seen is None:
             _seen = set()
+        # The cache is asked first: a finished ancestor is in both, and only one
+        # still being built -- a loop -- may come back without its lineage.
+        if path in self._endpoint_cache:
+            return self._endpoint_cache[path]
         if path in _seen:
             e_name = self.manifest[path]
             return self.GetType(e_name)
-        if path in self._endpoint_cache:
-            return self._endpoint_cache[path]
         _seen.add(path)
 
         e_name = self.manifest[path]
@@ -287,7 +298,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def AsSamples(self, index_types: str|Iterable[str], exact: bool=False):
+    def AsSamples(self, index_types: str|Iterable[str], exact: bool=False, among: Iterable[Path|str]|None=None):
         if isinstance(index_types, str):
             index_types=[index_types]
 
@@ -301,49 +312,51 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 model = self.GetType(name)
                 return any(model.IsA(e) for e in _wl)
 
-        def _get_all_ancestors(path: Path) -> set[Path]:
-            ancestors = set()
-            to_check = [path]
-            while to_check:
-                current = to_check.pop()
-                for p in self.parents.get(current, []):
-                    if p.path not in ancestors:
-                        ancestors.add(p.path)
-                        to_check.append(p.path)
-            return ancestors
-
         children_of: dict[Path, set[Path]] = {}
         for item_path, parent_list in self.parents.items():
             for pm in parent_list:
                 children_of.setdefault(pm.path, set()).add(item_path)
 
-        def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
-            descendants = set()
-            queue = list(ancestor_paths)
+        def _walk(start: Path, step) -> set[Path]:
+            seen: set[Path] = set()
+            queue = [start]
             while queue:
-                current = queue.pop()
-                for child in children_of.get(current, set()):
-                    if child not in descendants:
-                        descendants.add(child)
-                        queue.append(child)
-            return descendants
+                for nxt in step(queue.pop()):
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        queue.append(nxt)
+            return seen
 
-        _desc_cache: dict[frozenset[Path], set[Path]] = {}
-        _yielded_ancestors: set[frozenset[Path]] = set()
-        for path, name in self.manifest.items():
-            if not _accept(name): continue
-            ancestors = _get_all_ancestors(path)
-            cache_key = frozenset(ancestors)
-            if ancestors:
-                if cache_key not in _desc_cache:
-                    _desc_cache[cache_key] = _get_all_descendants(ancestors)
-                siblings = _desc_cache[cache_key]
-            else:
-                siblings = _get_all_descendants({path})
-            if path in siblings and cache_key in _yielded_ancestors:
-                continue
-            _yielded_ancestors.add(cache_key)
-            yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
+        def _parents(path: Path):
+            return (p.path for p in self.parents.get(path, []))
+
+        def _children(path: Path):
+            return children_of.get(path, ())
+
+        index = {path for path, name in self.manifest.items() if _accept(name)}
+        ancestors_of = {path: _walk(path, _parents) for path in index}
+        # An index item nested under another belongs to the outer sample.
+        roots = [path for path in self.manifest if path in index and not ancestors_of[path] & index]
+        wanted = set(roots)
+        if among is not None:
+            wanted = {Path(p) for p in among}
+            stray = sorted(str(p) for p in wanted - set(roots))
+            assert not stray, (
+                f"not samples of type [{', '.join(index_types)}] in [{self.location}]: {', '.join(stray)}"
+            )
+        subtree = {path: _walk(path, _children) for path in roots}
+        claimed = set(roots).union(*subtree.values())
+        # A sibling is shared context unless some sample's subtree claims it; a sibling this
+        # sample claims is already in its own subtree.
+        context: dict[frozenset[Path], set[Path]] = {}
+        for path in roots:
+            if path not in wanted: continue
+            ancestors = frozenset(ancestors_of[path])
+            if ancestors not in context:
+                context[ancestors] = set().union(*(_walk(a, _children) for a in ancestors)) - claimed
+            yield DataInstanceLibraryView(
+                original=self, mask={path} | ancestors | subtree[path] | context[ancestors],
+            )
 
     def Trace(self, from_type: str, to_type: str):
         children_of: dict[Path, list[Path]] = {}
@@ -380,9 +393,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         self._invalidate_endpoint_cache()
         return path
 
-    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None, cases: Iterable[str]|None=None):
         self._refuse_if_pinned("AddItem")
-        return self._register(path, dtype, parents, self._mint_leaf_id)
+        path = self._register(path, dtype, parents, self._mint_leaf_id)
+        if cases:
+            self.cases[path] = list(cases)
+        return path
 
     # The caller supplies the identity, so nothing here invents one and the
     # given path does not refuse what this produces. That is the route a pool
@@ -427,16 +443,15 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
-        # The file is written before it is registered: a leaf id is derived from
-        # the file's stat, and registering first would find nothing there and
-        # fall back to a random id.
+        # The file is written before it is registered: a value's id is derived
+        # from its text.
         self._refuse_if_pinned("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
         with open(self.location/path, "w") as f:
             f.write(value)
-        return self.AddItem(path=path, dtype=dtype, parents=parents)
+        return self._register(path, dtype, parents, lambda p: self._mint_leaf_id(p, value=True))
 
     def _invalidate_endpoint_cache(self):
         self._endpoint_cache.clear()
@@ -474,6 +489,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
                 skipped[str(path)] = (
                     "produced by a run; its identity is its lineage"
                 )
+                continue
+            if entry.get("value"):
+                skipped[str(path)] = "a value; its identity is its text, so edit the text"
                 continue
             abs_path = self._abs(path)
             if is_deferred(abs_path):
@@ -523,16 +541,19 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
         if path in self.parents:
             del self.parents[path]
         self.instance_meta.pop(path, None)
+        self.cases.pop(path, None)
         self._invalidate_endpoint_cache()
 
     def _migrate_instance_meta(self, old: Path, new: Path):
+        if old in self.cases:
+            self.cases[new] = self.cases.pop(old)
         meta = self.instance_meta.pop(old, None)
         if meta is None:
             return
         if meta.get("origin", "leaf") != "leaf":
             self.instance_meta[new] = meta
         else:
-            self._mint_leaf_id(new)
+            self._mint_leaf_id(new, value=bool(meta.get("value")))
 
     def Rename(self, path: Path, new: Path, _save=True):
         self._refuse_if_pinned("Rename")
@@ -666,6 +687,12 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _PinnedLibrary, _Teleme
     def _calculate_key(self, _raw_override=None):
         src = _raw_override if _raw_override is not None else self.Pack()
         me_d = {k: v for k, v in src.items() if k not in self._KEY_EXCLUDED_TOP_LEVEL}
+        # A leaf's stamp is a witness for its id, not part of it: two checkouts
+        # holding the same ids key the same whatever their mtimes.
+        if "manifest" in me_d:
+            me_d["manifest"] = {
+                k: {f: x for f, x in v.items() if f != "stamp"} for k, v in me_d["manifest"].items()
+            }
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key

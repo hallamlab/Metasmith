@@ -14,17 +14,18 @@ BASE_URL = "http://eggnog5.embl.de/download/emapperdb-5.0.2"
 
 
 FILES = ("eggnog.db.gz", "eggnog_proteins.dmnd.gz", "eggnog.taxa.tar.gz")
+URLS = {name: f"{BASE_URL}/{name}" for name in FILES}
 
 
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     staged = context.StagingDir()
-    base = context.params.get("eggnog_base_url", BASE_URL).rstrip("/")
+    mirror = context.params.get("eggnog_base_url")
 
     # Fetch only. buildEggnogDB unpacks on a compute node.
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(f"{base}/{name}", staged.local/name) for name in FILES),
+        *(FetchCommand(Rebase(URLS[name], BASE_URL, mirror), staged.local/name) for name in FILES),
         f"mkdir -p {iout.local}",
         *(f"mv {staged.local/name} {iout.local}/" for name in FILES),
     ])) != 0:
@@ -41,6 +42,7 @@ TransformInstance(
     model=model,
     group_by=src,
     labels=["local"],
+    download_size=Size.GB(12),  # emapperdb-5.0.2 packed, see above
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

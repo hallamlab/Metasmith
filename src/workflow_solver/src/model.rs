@@ -165,7 +165,11 @@ impl Endpoints {
     }
 
 
-    /// Is `ancestor` reachable from `e` through parents, comparing by equality?
+    /// Is `ancestor` `e` itself or reachable from it through parents, comparing
+    /// by equality? Reflexive, as the specification and the refiner's
+    /// `has_ancestor` are: without it, a target anchored to another target
+    /// could never take the same endpoint, and a hybrid sample's assembly
+    /// target could not be its OPERA-MS target.
     ///
     /// The two endpoint shapes differ: inputs carry a nested lineage tree, one
     /// direct level per endpoint, while produced endpoints carry a one-hop
@@ -173,11 +177,10 @@ impl Endpoints {
     /// works only on the flattened shape, and drops a multi-level input lineage
     /// silently.
     pub fn is_ancestor(&self, ancestor: EpSig, e: EpId, seen: &mut det::Set<EpSig>) -> bool {
-        if self.parents(e).iter().any(|&p| self.sig(p) == ancestor) { return true; }
+        if self.sig(e) == ancestor { return true; }
         for i in 0..self.parents[e as usize].len() {
             let p = self.parents[e as usize][i];
-            if !seen.insert(self.sig(p)) { continue; }
-            if self.is_ancestor(ancestor, p, seen) { return true; }
+            if seen.insert(self.sig(p)) && self.is_ancestor(ancestor, p, seen) { return true; }
         }
         false
     }

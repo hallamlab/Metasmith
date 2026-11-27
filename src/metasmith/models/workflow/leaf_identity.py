@@ -37,7 +37,7 @@ from __future__ import annotations
 import os
 
 from ...logging import Log
-from ..libraries.identity import stat_leaf_id
+from ..libraries.identity import stat_leaf_id, value_leaf_id
 from ..paths import is_deferred
 
 
@@ -65,7 +65,10 @@ def _client_owned(inst) -> bool:
     # True when the client both had this file and staged it here, so the id it
     # arrived with is the authoritative one. A relative path is one the library
     # resolves, and a library with no `remote_src` is one the client built rather
-    # than pulled as a bare index.
+    # than pulled as a bare index. A relocated path is a copy the client made of
+    # the file it stat'd, so the copy's path and mtime are not the identity.
+    if inst.path in inst.parent_lib.relocated:
+        return True
     return not inst.path.is_absolute() and inst.parent_lib.remote_src is None
 
 
@@ -100,7 +103,11 @@ def restat_leaf_ids(task) -> dict:
                 absent.append(str(inst.ResolvePath()))
             continue
         abs_path = inst.ResolvePath()
-        new = stat_leaf_id(abs_path, lib.fork_id)
+        meta = lib.instance_meta.get(inst.path)
+        if meta is not None and meta.get("value"):
+            new = value_leaf_id(abs_path, inst.path, lib.fork_id)
+        else:
+            new = stat_leaf_id(abs_path, lib.fork_id)
         if new is None:
             unreachable.append(str(abs_path))
             continue
@@ -111,7 +118,6 @@ def restat_leaf_ids(task) -> dict:
         # The library's own record moves with the plan's, but only the plan is
         # written back to disk by the caller -- the staged index keeps the ids it
         # was staged with, and that is what names its directory.
-        meta = lib.instance_meta.get(inst.path)
         if meta is not None and meta.get("origin", "leaf") == "leaf":
             meta["instance_id"] = new
         restated += 1

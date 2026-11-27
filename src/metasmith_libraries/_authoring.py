@@ -11,7 +11,7 @@ from typing import Callable
 if os.environ.get("MSM_SRC"):
     sys.path.insert(0, os.environ["MSM_SRC"])
 
-from metasmith.python_api import record_library, DataInstanceLibrary, Spec, Template
+from metasmith.python_api import record_library, DataInstanceLibrary, Template
 
 MLIB = Path(__file__).resolve().parent
 TYPES = MLIB / "data_types"
@@ -33,7 +33,7 @@ def deferred_inputs(
 ) -> DataInstanceLibrary | dict:
     spec_path = Template.PathIn(MLIB, name)
     if spec_path.exists() and not rebuild:
-        return Template.Load(spec_path, root=MLIB).spec.input_library
+        return Template.Load(spec_path, root=MLIB).input_library
     library = DataInstanceLibrary(Path(tempfile.mkdtemp(prefix=f"msm-template-{name}-")))
     build(library)
     # A template's placeholders are not data in anybody's pool and never will
@@ -43,25 +43,25 @@ def deferred_inputs(
     return record_library(library)
 
 
-def author(module, *, rebuild: bool = False, dag: bool = False) -> Spec:
-    name, description = module.NAME, module.DESCRIPTION.strip()
-    spec = module.build_spec(rebuild=rebuild)
+def author(module, *, rebuild: bool = False, dag: bool = False) -> Template:
+    template = module.build_template(rebuild=rebuild)
+    name = template.name
 
-    task = spec.Solve()
+    task = template.Plan()
     if not task.ok:
         raise AssertionError(
-            f"template [{name}] no longer solves: "
+            f"template [{name}] no longer plans: "
             f"{len(task.plan.steps)} steps, dropped {sorted(task.plan.dropped_targets)}"
         )
 
-    Template(name=name, description=description, spec=spec).Save(MLIB)
+    template.Save(MLIB)
     print(f"  {name}: {len(task.plan.steps)} steps")
 
     if dag:
         out = MLIB / "results" / "template_dags" / name
         out.parent.mkdir(parents=True, exist_ok=True)
         print(f"  dag: {task.plan.RenderDAG(str(out), format='svg')}")
-    return spec
+    return template
 
 
 def cli(module) -> None:

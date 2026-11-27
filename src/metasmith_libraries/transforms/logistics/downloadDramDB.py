@@ -38,17 +38,29 @@ SOURCES = {
 }
 
 
+URLS = {key: url for key, (_, url) in SOURCES.items()}
+
+
+def fetch(src, name, key):
+    """A source given as an absolute path is copied, gzipped when DRAM expects a .gz."""
+    if not src.startswith("/"):
+        return FetchCommand(src, name, label=f"DRAM {key}")
+    if name.endswith(".gz") and not src.endswith((".gz", ".tgz")):
+        return f"gzip -c {src} > {name}"
+    return f"cp {src} {name}"
+
+
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     # Run params, so a moved upstream file is fixed at launch rather than by a release.
-    sources = {key: (name, context.params.get(f"dram_{key}_url", url))
-               for key, (name, url) in SOURCES.items()}
+    sources = {key: (name, context.params.get(f"dram_{key}_url", URLS[key]))
+               for key, (name, _) in SOURCES.items()}
 
     staged = context.StagingDir()
     # Fetch only: what each file is gets checked by buildDramDB on a compute node.
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        *(FetchCommand(url, staged.local/name, label=f"DRAM {key}") for key, (name, url) in sources.items()),
+        *(fetch(url, str(staged.local/name), key) for key, (name, url) in sources.items()),
         f"mkdir -p {iout.local}",
         *(f"mv {staged.local/name} {iout.local}/" for name, _ in sources.values()),
     ])) != 0:

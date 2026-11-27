@@ -2,7 +2,7 @@
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "ecspr_results_from_gpr_table"
 DESCRIPTION = """
@@ -12,7 +12,7 @@ into ecspr::results.
 """
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         for tl in ("fabfos.yml", "annotation.yml", "ecspr.yml"):
             lib.AddTypeLibrary(A.TYPES / tl)
@@ -23,10 +23,13 @@ def build_spec(rebuild: bool = False) -> Spec:
         lib.AddItem(DEFERRED, "ecspr::atom_pairs")
         lib.AddItem(DEFERRED, "ecspr::direction_ratios")
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type=None,
-        target_types=["ecspr::results"],
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type=None,
+            target_types=["ecspr::results"],
+        )],
         transform_libraries=A.transforms("fabfos"),
         resource_libraries=[A.envs()],
     )

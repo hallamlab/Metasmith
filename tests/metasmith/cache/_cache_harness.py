@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from metasmith.models.workflow import Case
 import hashlib
 import shutil
 import textwrap
@@ -246,10 +247,8 @@ def build_workflow_task(
         target_model.AddRequirement(properties=props)
 
     plan = WorkflowPlan.Generate(
-        given=given,
+        cases=Case.ByShape(given, target=target_model, target_names=[name for name, _ in target_specs]),
         transforms=[tr_lib],
-        target_names=[name for name, _ in target_specs],
-        target_model=target_model,
     )
     assert isinstance(plan, WorkflowPlan), f"planner did not converge: {plan!r}"
 
@@ -261,11 +260,16 @@ def build_workflow_task(
     )
 
 
-def _stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
+def _stage_task(
+    task: WorkflowTask, relocated: dict[Path, Path] | None = None,
+) -> tuple[str, Path, WorkflowTask]:
     key = task.GetKey()
     task_path = AgentPaths.to_task(key)
     task_path.parent.mkdir(parents=True, exist_ok=True)
     task.SaveAs(Source.FromLocal(task_path))
+    (task_path / WorkflowTask.RELOCATED_FILE).write_text(
+        yaml.dump({str(k): str(v) for k, v in (relocated or {}).items()})
+    )
 
     staged = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
     workspace = task_path.parent.parent
@@ -368,8 +372,10 @@ def _collect_target_manifests(workspace: Path) -> tuple[tuple[str, int], ...]:
     return tuple(sorted(counts.items()))
 
 
-def capture_run(virtual_runtime, task: WorkflowTask) -> RunSnapshot:
-    key, workspace, _staged = _stage_task(task)
+def capture_run(
+    virtual_runtime, task: WorkflowTask, relocated: dict[Path, Path] | None = None,
+) -> RunSnapshot:
+    key, workspace, _staged = _stage_task(task, relocated)
     RunWorkflow(
         key=key,
         log_dir=Path("_metasmith/logs.virtual"),

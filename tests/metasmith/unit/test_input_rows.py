@@ -9,6 +9,8 @@ from metasmith.models.solver import Endpoint
 from metasmith.ops import inputs as op_inputs
 from metasmith.ops import samples as op_samples
 
+from tests.metasmith.support import serve_directory
+
 
 @pytest.fixture
 def lib_path(tmp_path) -> Path:
@@ -121,10 +123,11 @@ def test_a_value_rows_path_is_minted_and_never_moves(lib_path):
     out = op_inputs.sync(str(lib_path), rows)
     assert out["rows"]["v"] == path, "the mint is a mint, not a re-roll"
     assert (lib_path / path).read_text() == "GCF_000005845.3"
-    assert ids(lib_path) == before
+    assert ids(lib_path).keys() == before.keys()
 
 
-def test_a_value_row_whose_contents_change_keeps_its_identity(lib_path):
+def test_a_value_row_whose_contents_change_moves_its_identity(lib_path):
+    # Same file, new bytes: a cache built on "one" must not serve "two".
     rows = [row("v", mode="value", value="one")]
     out = op_inputs.sync(str(lib_path), rows)
     path = out["rows"]["v"]
@@ -132,7 +135,50 @@ def test_a_value_row_whose_contents_change_keeps_its_identity(lib_path):
     rows[0]["value"] = "two"
     op_inputs.sync(str(lib_path), rows)
     assert (lib_path / path).read_text() == "two"
+    assert ids(lib_path)[path] != before[path]
+
+
+def test_a_value_edited_and_undone_gets_its_first_identity_back(lib_path):
+    # A value's id is its text and path, so undoing an edit serves the old cache.
+    rows = [row("v", mode="value", value="one")]
+    path = op_inputs.sync(str(lib_path), rows)["rows"]["v"]
+    first = ids(lib_path)[path]
+    rows[0]["value"] = "two"
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] != first
+    rows[0]["value"] = "one"
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] == first
+
+
+def test_a_value_whose_mtime_moves_keeps_its_identity(lib_path):
+    import os
+
+    path = op_inputs.sync(str(lib_path), [row("v", mode="value", value="one")])["rows"]["v"]
+    before = ids(lib_path)
+    os.utime(lib_path / path, ns=(10**18, 10**18))
     assert ids(lib_path) == before
+
+
+def test_a_value_minted_before_values_were_hashed_moves_only_when_edited(lib_path):
+    import yaml
+
+    rows = [row("v", mode="value", value="one")]
+    path = op_inputs.sync(str(lib_path), rows)["rows"]["v"]
+    index = lib_path / "_metadata" / "index.yml"
+    raw = yaml.safe_load(index.read_text())
+    raw["manifest"][path].pop("value")
+    raw["manifest"][path]["instance_id"] = "1e20" + "ab" * 32
+    index.write_text(yaml.safe_dump(raw))
+
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] == "1e20" + "ab" * 32
+    rows[0]["value"] = "two"
+    op_inputs.sync(str(lib_path), rows)
+    rows[0]["value"] = "one"
+    op_inputs.sync(str(lib_path), rows)
+    assert ids(lib_path)[path] != "1e20" + "ab" * 32
+    assert loaded(lib_path).instance_meta[Path(path)]["value"]
 
 
 def test_two_value_rows_with_the_same_contents_are_two_items(lib_path):
@@ -191,6 +237,48 @@ def test_a_file_row_cannot_be_library_owned(lib_path, tmp_path):
     assert [str(p) for p in loaded(lib_path).manifest] == [str(f)]
 
 
+@pytest.fixture
+def served(tmp_path):
+    root = tmp_path / "served"
+    root.mkdir()
+    with serve_directory(root) as (base, hits):
+        yield root, base, hits
+
+
+def test_a_url_row_is_downloaded_once_and_registered(lib_path, tmp_path, served):
+    root, base, hits = served
+    (root / "reads_1.fastq.gz").write_bytes(b"reads")
+    url = f"{base}/reads_1.fastq.gz"
+    downloads = tmp_path / "downloads"
+
+    out = op_inputs.sync(str(lib_path), [row("u", url)], downloads=downloads)
+    at = Path(out["rows"]["u"])
+    assert at.is_absolute() and at.is_relative_to(downloads) and at.name == "reads_1.fastq.gz"
+    assert at.read_bytes() == b"reads"
+    before = ids(lib_path)
+
+    op_inputs.sync(str(lib_path), [row("u", url)], downloads=downloads)
+    assert hits == ["/reads_1.fastq.gz"], "a URL already downloaded was fetched again"
+    assert ids(lib_path) == before
+
+
+def test_a_url_keeps_its_double_slash_when_refused(lib_path):
+    url = "https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR965/008/SRR9658108/SRR9658108_1.fastq.gz"
+    with pytest.raises(AssertionError) as e:
+        op_inputs.sync(str(lib_path), [row("u", url)])
+    assert url in str(e.value) and "download" in str(e.value)
+    assert list(loaded(lib_path).manifest) == []
+
+
+def test_a_failed_download_registers_nothing(lib_path, tmp_path, served):
+    _root, base, _hits = served
+    downloads = tmp_path / "downloads"
+    with pytest.raises(AssertionError, match="could not download"):
+        op_inputs.sync(str(lib_path), [row("u", f"{base}/missing.fq")], downloads=downloads)
+    assert list(loaded(lib_path).manifest) == []
+    assert not [f for f in downloads.rglob("*") if f.is_file() and not f.name.endswith(".part")]
+
+
 def test_a_lineage_loop_is_refused(lib_path, tmp_path):
     parent = _file(tmp_path / "reads.fa")
     child = _file(tmp_path / "reads.bam", "bam")
@@ -216,6 +304,21 @@ def test_a_grandparent_link_still_works(lib_path, tmp_path):
     ]
     op_inputs.sync(str(lib_path), rows)
     assert {str(m.path) for m in loaded(lib_path).parents[c]} == {str(a), str(b)}
+
+
+def test_a_deep_ancestor_keeps_its_own_lineage(lib_path, tmp_path):
+    # Nearest-first is the order a saved library lists ancestors in, and the one
+    # in which the walk meets `b` a second time, below `d`. The deepest row is
+    # read first because any earlier read warms the cache that hides the loss.
+    files = {n: _file(tmp_path / f"{n}.fa") for n in "abcde"}
+    op_inputs.sync(str(lib_path), [
+        row(n, files[n], parents=[f"#{m}" for m in reversed("abcde"[:i])])
+        for i, n in enumerate("abcde")
+    ])
+    lib = loaded(lib_path)
+    seen = lib.Get(files["e"]).dtype.parents
+    for n in "abcd":
+        assert lib.Get(files[n]).dtype in seen, f"[e] no longer descends from the given [{n}]"
 
 
 def test_a_parent_link_can_be_taken_back(lib_path, tmp_path):

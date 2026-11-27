@@ -1,0 +1,12 @@
+name: metadecoder
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy>=1.11
+  - scikit-learn
+  - threadpoolctl
+  - pip
+  - pip:
+    - https://github.com/liu-congcong/MetaDecoder/releases/download/v1.2.2/metadecoder-1.2.2-py3-none-any.whl#sha256=131421c57ced53d4947b7648ba1fd36c288b9b54107fe2b6179552094f4c61a7

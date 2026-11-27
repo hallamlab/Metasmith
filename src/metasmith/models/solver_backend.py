@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 if TYPE_CHECKING:
     from .solver import Endpoint, Solution, Transform
 
 __all__ = [
     "REFINER_BUDGET",
+    "SEARCH_BUDGET",
     "Backend",
     "solve_with_engine",
 ]
@@ -27,14 +28,20 @@ __all__ = [
 #: Every layer above now forwards `None` and `solve_by_mcts` resolves it here.
 REFINER_BUDGET = 8
 
+#: Search iterations, the shipped default. A hybrid engcyc case needs about 313.
+SEARCH_BUDGET = 512
+
 
 def solve_with_engine(
     given: list[set[Endpoint]],
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
-    max_iter: int=256,
+    max_iter: int=SEARCH_BUDGET,
     max_refine: int=REFINER_BUDGET,
+    fork_groups: Sequence[tuple[Transform, int]]=(),
+    partial: Sequence[Transform]=(),
+    guide: Sequence[Transform]=(),
 ) -> Solution:
     from .solver_engine import EngineError, EngineFor
     from .solver_wire import solve_via_engine
@@ -44,6 +51,7 @@ def solve_with_engine(
     return solve_via_engine(
         info, given, transforms, target,
         seed=seed, max_iter=max_iter, max_refine=max_refine,
+        fork_groups=fork_groups, partial=partial, guide=guide,
     )
 
 

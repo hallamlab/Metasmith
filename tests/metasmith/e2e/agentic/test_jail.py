@@ -80,11 +80,12 @@ def test_default_binds_shares_claude_auth_on_top(tmp_path: Path, monkeypatch) ->
     sb = tmp_path / "sb"
     home = sb / "home"
     binds = J.default_binds(sb, home, share_claude_auth=True)
-    claude_binds = [b for b in binds if b.dst == str(home / ".claude")]
+    claude_binds = [b for b in binds if ".claude" in b.src]
     assert len(claude_binds) == 1
     cb = claude_binds[0]
     assert cb.mode == "rw"
-    assert cb.src == str(fake_home / ".claude")
+    assert cb.src == str(fake_home / ".claude" / ".credentials.json")
+    assert cb.dst == str(home / ".claude" / ".credentials.json")
     assert binds.index(cb) > [b.src for b in binds].index(str(sb))
 
 

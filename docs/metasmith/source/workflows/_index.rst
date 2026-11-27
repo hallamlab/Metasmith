@@ -5,3 +5,5 @@ The standard library
    :maxdepth: 3
 
    assembly_annotation
+   engcyc_metagenomics
+   geoquery

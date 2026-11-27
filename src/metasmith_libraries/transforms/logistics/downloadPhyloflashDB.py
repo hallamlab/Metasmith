@@ -14,13 +14,14 @@ out   = model.AddProduct(lib.GetType("ref::phyloflash_sources"))
 SILVA_URL  = ("https://www.arb-silva.de/fileadmin/silva_databases/release_138_2/Exports/"
               "SILVA_138.2_SSURef_NR99_tax_silva_trunc.fasta.gz")
 UNIVEC_URL = "https://ftp.ncbi.nlm.nih.gov/pub/UniVec/UniVec"
+URLS = {"silva": SILVA_URL, "univec": UNIVEC_URL}
 
 
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     # Run params, so a moved upstream file is fixed at launch rather than by a release.
-    silva_url  = context.params.get("phyloflash_silva_url", SILVA_URL)
-    univec_url = context.params.get("phyloflash_univec_url", UNIVEC_URL)
+    silva_url  = context.params.get("phyloflash_silva_url", URLS["silva"])
+    univec_url = context.params.get("phyloflash_univec_url", URLS["univec"])
 
     # makedb reads the release from the file name, so refuse a name it cannot read
     # before fetching rather than after.
@@ -52,6 +53,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.19),  # SILVA 138.2 NR99 trunc 199,304,081 B + UniVec, 2026-11-24
     resources=Resources(
         cpus=1,
         memory=Size.GB(2),

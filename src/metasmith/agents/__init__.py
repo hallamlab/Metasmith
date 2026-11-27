@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .shell import AgentShell
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
-from .spec import Spec
+from .spec import CaseViews, Plan, Spec, plan_views
 from .templates import Template
 from .ceiling import ResourceCeilingError
 from .headroom import HomeHeadroomError
@@ -14,10 +14,7 @@ from .portability import (
     EnvPortabilityError, _check_env_portability, _read_env_manifest,
     _read_env_manifest_doc,
 )
-from .images import (
-    ImageMaterialiseError, _check_image_store, _manifest_images,
-    _materialise_images, _tool_environment_for,
-)
+from .images import _check_image_store, _manifest_images, _tool_environment_for
 from .workflow_ops import GetNxfConfigPresets
 from .agent import Agent
 

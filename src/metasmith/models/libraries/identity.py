@@ -5,9 +5,15 @@ import time
 import uuid
 from pathlib import Path
 
-from ...caching.keys import multihash_key, stat_multihash_key
+from ...caching.keys import _file_digest, multihash_key, stat_multihash_key
 from ...hashing import KeyGenerator
+from ...logging import Log
 from ..paths import is_deferred
+from .pinned import _stamp
+
+# A file this small is witnessed by its bytes rather than its mtime, so a copy or
+# checkout that only moves the mtime keeps its identity.
+_DIGEST_MAX_BYTES = 1 << 20
 
 
 def stat_leaf_id(abs_path: Path, fork_id: str | None = None) -> str | None:
@@ -29,14 +35,49 @@ def stat_leaf_id(abs_path: Path, fork_id: str | None = None) -> str | None:
     return key.hex()
 
 
+def value_leaf_id(abs_path: Path, path: Path, fork_id: str | None = None) -> str | None:
+    # A value has no location worth naming, so its identity is its text and the
+    # library path that plays the part of its row name: relative, so the agent
+    # and the client derive the same id from their own copies.
+    try:
+        data = abs_path.read_bytes()
+    except OSError:
+        return None
+    key = multihash_key(b"value\x00" + str(path).encode("utf-8") + b"\x00" + data)
+    if fork_id:
+        key = multihash_key(key + b"\x00fork:" + fork_id.encode("utf-8"))
+    return key.hex()
+
+
+def leaf_stamp(abs_path: Path) -> dict | None:
+    # What a leaf looked like when its id was minted, kept beside the id so a
+    # later load can tell the file changed. Not part of the id.
+    try:
+        stamp = _stamp(abs_path)
+        if stamp["kind"] == "file" and stamp["size"] <= _DIGEST_MAX_BYTES:
+            stamp["digest"] = _file_digest(abs_path, 1 << 20).hex()
+    except OSError:
+        return None
+    return stamp
+
+
+def _leaf_changed(recorded: dict, observed: dict) -> bool:
+    if "digest" in recorded:
+        return observed.get("digest") != recorded["digest"]
+    return observed != recorded
+
+
 class _LeafIdentity:
-    def _mint_leaf_id(self, path: Path) -> str:
-        key = None
-        if is_deferred(path):
+    def _mint_leaf_id(self, path: Path, value: bool = False) -> str:
+        key = stamp = None
+        if value:
+            key = value_leaf_id(self._abs(path), path, self.fork_id)
+        elif is_deferred(path):
             key = multihash_key(b"deferred\x00" + str(path).encode("utf-8")).hex()
         elif not os.environ.get("METASMITH_LEAF_RANDOM"):
             abs_path = path if path.is_absolute() else self.location / path
             key = stat_leaf_id(abs_path, self.fork_id)
+            stamp = leaf_stamp(abs_path) if key is not None else None
         if key is None:
             raw = uuid.uuid4().bytes + time.time_ns().to_bytes(16, "big", signed=False)
             key = multihash_key(raw).hex()
@@ -51,15 +92,62 @@ class _LeafIdentity:
             # about. See `plan._refuse_unminted_givens`.
             "minted": True,
         }
+        if stamp is not None:
+            self.instance_meta[path]["stamp"] = stamp
+        if value:
+            self.instance_meta[path]["value"] = True
         return self.instance_meta[path]["instance_id"]
+
+    def _mark_value(self, path: Path) -> None:
+        # A value item minted before values were hashed keeps its old id until
+        # its text changes, and this is the change.
+        entry = self.instance_meta.get(path)
+        if entry is not None and not entry.get("value"):
+            entry["value"] = True
+            entry.pop("stamp", None)
+
+    def _remint_if_changed(self, path: Path, entry: dict) -> dict:
+        # A leaf edited after its id was recorded gets a new one, or every step
+        # that reads it is served the cache built from the old bytes. A recorded
+        # id comes back unchanged while the file does, so existing caches hold.
+        if entry.get("value"):
+            entry["instance_id"] = value_leaf_id(self._abs(path), path, self.fork_id) \
+                or entry["instance_id"]
+            return entry
+        if entry.get("origin", "leaf") != "leaf" or is_deferred(path) \
+                or os.environ.get("METASMITH_LEAF_RANDOM"):
+            return entry
+        abs_path = self._abs(path)
+        observed = leaf_stamp(abs_path)
+        if observed is None:
+            return entry
+        recorded = entry.get("stamp")
+        if recorded is None:
+            # An index written before stamps were. Its id is known to describe
+            # these bytes only while it still re-derives from them.
+            if stat_leaf_id(abs_path, self.fork_id) == entry["instance_id"]:
+                entry["stamp"] = observed
+            return entry
+        if not _leaf_changed(recorded, observed):
+            return entry
+        old = entry["instance_id"]
+        self._mint_leaf_id(path)
+        fresh = self.instance_meta[path]
+        fresh.pop("minted", None)
+        if fresh["instance_id"] == old:
+            # New bytes under the same path and mtime, as `cp -p` leaves them.
+            seed = f"{old}\x00changed:{sorted(observed.items())}".encode("utf-8")
+            fresh["instance_id"] = multihash_key(seed).hex()
+        Log.Info(f"[{abs_path}] changed since it was recorded, so its identity moved")
+        return fresh
 
     def _refork_leaf_id(self, path: Path, entry: dict) -> dict:
         # A fork moves an identity the library already held, deliberately, to
         # get a new task key. Like an invalidate it acts on a record rather
         # than inventing one, so it clears the mint mark the given path reads.
         abs_path = path if path.is_absolute() else self.location / path
-        if not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.exists():
-            self._mint_leaf_id(path)
+        if entry.get("value") or (not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.exists()):
+            self._mint_leaf_id(path, value=bool(entry.get("value")))
             self.instance_meta[path].pop("minted", None)
         else:
             seed = f"{entry['instance_id']}\x00fork:{self.fork_id}".encode("utf-8")
@@ -85,7 +173,7 @@ class _LeafIdentity:
         if path in self.instance_meta:
             entry = self.instance_meta[path]
             if entry.get("fork_id") == self.fork_id:
-                return entry
+                return self._remint_if_changed(path, entry)
             if entry.get("origin", "leaf") != "leaf":
                 entry["fork_id"] = self.fork_id
                 return entry

@@ -20,7 +20,9 @@ PATHS=(
     research/metasmith_benchmark/drivers
     research/metasmith_benchmark/library
     research/cami/samples.tsv
+    research/cami/score_reference_amber.py
     research/metasmith_benchmark/results/e5_hybrid/sample_genomes.tsv
+    research/metasmith_benchmark/results/e5/assemblies.tsv
     research/pratama2026/runs.tsv
     research/metagem/manifest.tsv
     research/metasmith_libraries/carveme_m8_medium.tsv

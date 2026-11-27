@@ -37,11 +37,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
-from ..models.solver_backend import Backend
+from ..models.solver_backend import SEARCH_BUDGET, Backend
 from ..models.solver_engine import SOLVER_WIRE_VERSION, CallEngine, EngineFor
 from ..models.solver_wire import decode_plan, encode_problem
 from .solver_spec import CLAUSES, check_spec
-from .solver_verification import SolverProblem, plan_fingerprint, problem_of_plan
+from .solver_verification import SolverProblem, plan_fingerprint, problems_of_plan
 from .witness_check import DECOYS, apply_decoy, require_rust, witness_check
 
 __all__ = [
@@ -116,7 +116,7 @@ def sweep_problem(
     expect_fingerprint: str | None = None,
     decoys: bool = True,
     seed: int = 42,
-    max_iter: int = 256,
+    max_iter: int = SEARCH_BUDGET,
     max_refine: int = 256,
 ) -> CaseResult:
     """Solve one real problem on the engine, adjudicate it, then break it ten ways."""
@@ -177,12 +177,8 @@ def templates_corpus(root: Path) -> Iterator[tuple[str, SolverProblem, str]]:
     from ..agents import Template
 
     for template in Template.Discover(root):
-        task = template.spec.Solve()
-        result = getattr(task.plan, "_solver_result", None)
-        problem = problem_of_plan(task.plan, name=template.name)
-        if problem is None or result is None:
-            continue
-        yield template.name, problem, plan_fingerprint(result)
+        for problem, result in problems_of_plan(template.Plan().plan, name=template.name):
+            yield problem.name, problem, plan_fingerprint(result)
 
 
 def decoy_matrix(results: list[CaseResult]) -> dict[str, dict[str, int]]:

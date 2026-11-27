@@ -17,6 +17,11 @@ from ..libraries import (
     DataInstance, DataInstanceLibrary, TransformInstance, TransformInstanceLibrary,
 )
 from ..solver import Dependency
+
+# The standard library's image fetch. A setup run gets one step of it per tool image.
+PULL_TRANSFORM = "pullContainer"
+
+
 @dataclass
 class WorkflowStep:
     order: int
@@ -27,6 +32,14 @@ class WorkflowStep:
     produces: list[list[DataInstance]] = field(default_factory=list)
     _raw_dependency_map: dict|None = None
     _raw_instances: dict[str, DataInstance]|None = None
+    # The names of the cases this step serves. A plan of one case does not pack
+    # them, so its steps key as before.
+    cases: list[str] = field(default_factory=list)
+    # The product group of each instance of a product, in dependency_map
+    # order, keyed by the product's key. A fork step has one instance per
+    # group it reached, so a product two groups share has two. A step without
+    # it has each product instance in every group that declares the product.
+    groups: dict[str, list[int]] = field(default_factory=dict)
 
     def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
         self._dependency_map: dict[Dependency, list[DataInstance]] = {}
@@ -51,26 +64,34 @@ class WorkflowStep:
             for inst in self.dependency_map.get(dep, [])
         ]
         self.produces = [
-            [
-                inst
-                for dep in dep_group
-                for inst in self.dependency_map.get(dep, [])
-            ]
-            for dep_group in self.transform.model.produces
+            [inst for dep in dep_group for inst in self.ProductsOf(g, dep)]
+            for g, dep_group in enumerate(self.transform.model.produces)
         ]
+
+    def ProductsOf(self, g: int, dep: Dependency) -> list[DataInstance]:
+        insts = self.dependency_map.get(dep, [])
+        gs = self.groups.get(dep.key)
+        if gs is None:
+            return list(insts)
+        return [x for x, k in zip(insts, gs) if k == g]
 
     def Pack(self):
         all_instances: dict[str, DataInstance] = {}
         for lst in self.dependency_map.values():
             for inst in lst:
                 all_instances[inst.instance_id] = inst
-        return dict(
+        packed = dict(
             order=self.order,
             schema="v2",
             instances={k:v.Pack() for k, v in all_instances.items()},
             dependency_map={k.key:[v.instance_id for v in lst] for k, lst in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform._path}",
         )
+        if self.cases:
+            packed["cases"] = list(self.cases)
+        if self.groups:
+            packed["groups"] = {k: list(v) for k, v in self.groups.items()}
+        return packed
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
@@ -96,8 +117,10 @@ class WorkflowStep:
             _raw_instances=raw_instances,
             transform=tr,
             transform_library=lib,
+            cases=list(raw.get("cases", [])),
+            groups={k: list(v) for k, v in raw.get("groups", {}).items()},
         )
-    
+
     def _resolve_dependency_map(self):
         assert self._raw_dependency_map is not None
         if self._raw_instances is not None:
@@ -133,13 +156,17 @@ class WorkflowTarget:
     name: str
     instance: DataInstance
     producing_step: WorkflowStep
+    case: str|None = None
 
     def Pack(self):
-        return dict(
+        packed = dict(
             name=self.name,
             instance=self.instance.Pack(),
             producing_step=dict(order=self.producing_step.order, name=self.producing_step.transform.name),
         )
+        if self.case is not None:
+            packed["case"] = self.case
+        return packed
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary], given: dict[str, DataInstance], steps: dict[int, WorkflowStep]):
@@ -149,4 +176,5 @@ class WorkflowTarget:
             name=raw["name"],
             instance=inst,
             producing_step=producing_step,
+            case=raw.get("case"),
         )

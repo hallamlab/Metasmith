@@ -2,21 +2,10 @@
 #
 # Tool images materialise lazily -- inside the first task that needs each one.
 # On a cluster whose compute nodes have no route to a registry that is exactly
-# where it fails, and Antonio pre-pulled all eight of W1's containers by hand on
-# the login node. The store directory in the agent home was already wired up at
-# both deploy and execution time; what was missing was any way to *fill* it ahead
-# of a run, and any warning at submit time that it was incomplete.
-#
-# Two halves, deliberately split:
-#
-#   * the pre-flight fetches, and is asked for explicitly (a verb);
-#   * the launch path only reports, because on a connected cluster lazy
-#     materialisation is right and moving pulls onto every launch's critical path
-#     would be a regression.
-#
-# Both read the stage-time env manifest rather than a transform library, since the
-# launching host may hold neither the library nor the images. Nothing here opens a
-# connection: the free functions take a shell, and these drive them with a stub.
+# where it fails. A setup run's pull steps fetch on the driver's host through
+# `ExecutionContext.MaterialiseImage`, the call a task makes; the launch path only
+# reports, from the stage-time env manifest. Nothing here opens a connection: the
+# shell is a stub.
 #
 # The same two halves for an agent that runs no containers at all: a mamba agent
 # needs the conda envs its steps name, and the library ships one recipe per tool
@@ -38,13 +27,12 @@ from metasmith.agents.conda import (
     _manifest_envs,
 )
 from metasmith.agents.images import (
-    ImageMaterialiseError,
     _check_image_store,
     _manifest_images,
-    _materialise_images,
     _tool_environment_for,
 )
 from metasmith.env import Environment, Rootfs, Runtime
+from metasmith.models.libraries import ExecutionContext
 
 
 HOME = Path("/msm_home")
@@ -161,48 +149,37 @@ class TestArtifactChoice:
         assert str(env.GetLocalPath()).startswith("${APPTAINER_CACHEDIR:-/msm_home/container_images}")
 
 
-class TestMaterialise:
-    def test_each_image_is_fetched_once_and_reported(self):
-        sh = _StubShell()
-        report = _materialise_images(sh, [KRAKEN, SYLPH], _apptainer(), HOME, rootfs=None)
-        assert [r["image"] for r in report] == [KRAKEN, SYLPH]
-        assert all(r["ok"] for r in report)
-        assert len(sh.materialise_commands()) == 2
+def _materialise(sh, image, agent_env) -> bool:
+    ctx = ExecutionContext(
+        _inputs=[{}], _get_output_paths=lambda *a: None, external_shell=sh,
+        external_cwd=HOME, external_agent_home=HOME, _environment=agent_env,
+    )
+    return ctx.MaterialiseImage(_tool_environment_for(image, agent_env, HOME, rootfs=None))
 
-    def test_it_emits_the_same_command_the_execution_path_emits(self):
-        # Not a second implementation of the fallback chain.
-        #
-        # The whole value of reusing it is that a pre-flight and a task cannot
-        # disagree about what a materialised image is -- including the T1 mount
-        # test and its stamp.
+
+class TestMaterialise:
+    def test_a_missing_image_is_fetched_with_the_execution_paths_command(self):
+        # A setup pull and a task cannot disagree about what a materialised image
+        # is -- including the mount test and its stamp -- and the pull takes the
+        # task's lock, so one racing a task that started early does not fetch twice.
         sh = _StubShell()
-        _materialise_images(sh, [KRAKEN], _apptainer(), HOME, rootfs=None)
+        assert _materialise(sh, KRAKEN, _apptainer())
         env = _tool_environment_for(KRAKEN, _apptainer(), HOME, rootfs=None)
-        issued = sh.materialise_commands()[0]
+        issued, = sh.materialise_commands()
         assert env.MakeMaterialiseCommand() in issued.replace("'\\''", "'")
-        # Under the same lock the execution path uses, so a pre-flight racing a
-        # task that started early does not fetch the same image twice.
         assert "flock" in issued
 
-    def test_a_full_store_does_no_work(self):
-        sh = _StubShell(present=[KRAKEN, SYLPH])
-        report = _materialise_images(sh, [KRAKEN, SYLPH], _apptainer(), HOME, rootfs=None)
-        assert all(r["ok"] and r["skipped"] for r in report)
+    def test_a_present_image_does_no_work(self):
+        sh = _StubShell(present=[KRAKEN])
+        assert _materialise(sh, KRAKEN, _apptainer())
         assert sh.materialise_commands() == []
 
-    def test_an_image_that_cannot_be_materialised_fails_the_run(self):
-        sh = _StubShell(fails=[SYLPH])
-        with pytest.raises(ImageMaterialiseError) as e:
-            _materialise_images(sh, [KRAKEN, SYLPH], _apptainer(), HOME, rootfs=None)
-        assert SYLPH in str(e.value)
-        # The other image still got its chance -- one bad image is not a reason
-        # to leave the rest of the store empty on a node that cannot fetch.
-        assert KRAKEN not in str(e.value)
+    def test_an_image_that_cannot_be_materialised_says_so(self):
+        assert not _materialise(_StubShell(fails=[SYLPH]), SYLPH, _apptainer())
 
-    def test_it_is_a_no_op_where_there_are_no_images_to_fetch(self):
-        # mamba runs tools on the host filesystem; there is no image store.
+    def test_a_runtime_with_no_image_store_has_nothing_to_fetch(self):
         sh = _StubShell()
-        assert _materialise_images(sh, [KRAKEN], _mamba(), HOME, rootfs=None) == []
+        assert not _materialise(sh, KRAKEN, _mamba())
         assert sh.commands == []
 
 

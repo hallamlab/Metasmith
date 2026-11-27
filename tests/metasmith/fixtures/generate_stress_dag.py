@@ -37,6 +37,7 @@ def main() -> int:
                    "sequences::zipped_forward_short_reads", parents={pair})
     inputs.AddItem((READS / "small_reads_R2.fq.gz").resolve(),
                    "sequences::zipped_reverse_short_reads", parents={pair})
+    inputs.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin", parents={meta})
     inputs.Save()
 
     smith = Agent(home=Source.FromLocal(OUT_DIR.resolve() / "msm_home"),

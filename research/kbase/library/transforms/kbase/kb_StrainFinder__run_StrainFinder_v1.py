@@ -21,11 +21,12 @@ sample                 = model.AddRequirement(lib.GetType("kbase::sample"), pare
 in_genome_ref          = model.AddRequirement(lib.GetType("kbase::KBaseGenomes_Genome"), parents={sample})
 in_readslib_refs       = model.AddRequirement(lib.GetType("kbase::accepts_11"), parents={sample})
 env                    = model.AddRequirement(lib.GetType("env::kb_StrainFinder.env"))
-# out_genomeSet_obj_name is one of 2 types; each is its own product branch
+# out_genomeSet_obj_name is one of 2 types; each is its own product group, sharing the other products
 out_genomeset_obj_name = model.AddProduct(lib.GetType("kbase::KBaseSearch_GenomeSet"))
+report_                = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 out_genomeset_obj_name_2 = model.AddProduct(lib.GetType("kbase::KBaseSets_AssemblySet"))
-report_                = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {out_genomeset_obj_name: context.Output(out_genomeset_obj_name)}

@@ -11,19 +11,17 @@ ref = model.AddProduct(lib.GetType("ref::genomad"))
 # here so a new release does not move the product under an unchanged image.
 DB_VERSION = "1.9"
 BASE_URL = "https://portal.nersc.gov/genomad/__data__"
+URLS = {"genomad_db": f"{BASE_URL}/genomad_db_v{DB_VERSION}.tar.gz"}
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(ref)
-    version = context.params.get("genomad_db_version", DB_VERSION)
-    assert not isinstance(version, float), f"genomad_db_version [{version}] was read as a number; quote it, e.g. \"{version}\""
-    version = str(version)
-    base = context.params.get("genomad_base_url", BASE_URL).rstrip("/")
+    version = DB_VERSION
     archive = f"genomad_db_v{version}.tar.gz"
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{base}/{archive}", archive, label=f"geNomad database v{version}"),
+        FetchCommand(Rebase(URLS["genomad_db"], BASE_URL, context.params.get("genomad_base_url")), archive, label=f"geNomad database v{version}"),
         "tar -xzf " + archive,
         f"mv genomad_db {idb.local}",
         f"rm -f {archive}",
@@ -49,6 +47,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.78),  # genomad_db_v1.9.tar.gz Content-Length 842,023,773 B, 2026-11-23
     resources=Resources(
         cpus=1,
         memory=Size.GB(4),

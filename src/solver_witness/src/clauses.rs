@@ -377,17 +377,21 @@ fn no_repeat(a: &[NodeId]) -> bool {
     ok
 }
 
-fn groups_match(p: &Problem, q: &Plan, si: usize, nn: usize) -> bool {
+/// A fork's step carries one of its transform's groups, so the step's single
+/// produced group is compared against each declared group in turn.
+fn matches_declared(p: &Problem, q: &Plan, si: usize, nn: usize) -> bool {
     let t = q.steps[si].transform;
-    let mut ok = true;
-    let mut i = 0;
-    while ok && i < q.steps[si].produced.len() {
-        if !same_slots(&produced_slots(q, si, i), &declared_slots(p, t, i), nn) {
-            ok = false;
+    let got = produced_slots(q, si, 0);
+    let ng = access::tr_ngroups(p, t);
+    let mut hit = false;
+    let mut g = 0;
+    while !hit && g < ng {
+        if same_slots(&got, &declared_slots(p, t, g), nn) {
+            hit = true;
         }
-        i += 1;
+        g += 1;
     }
-    ok
+    hit
 }
 
 pub fn shape_at(p: &Problem, q: &Plan, si: usize) -> bool {
@@ -398,8 +402,8 @@ pub fn shape_at(p: &Problem, q: &Plan, si: usize) -> bool {
         let slots = used_slots(q, si);
         ok = no_repeat(&slots)
             && same_slots(&slots, &required_slots(p, t), nn)
-            && q.steps[si].produced.len() == access::tr_ngroups(p, t)
-            && groups_match(p, q, si, nn);
+            && q.steps[si].produced.len() == 1
+            && matches_declared(p, q, si, nn);
     }
     ok
 }

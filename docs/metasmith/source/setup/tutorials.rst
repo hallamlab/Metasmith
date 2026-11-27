@@ -53,13 +53,8 @@ directory like so:
 
     $ msm get tutorials/my_first_agent.ipynb
 
-A git repo provides a standard library of Bioinformatics tools that have been integrated into Metasmith,
-including those used by the tutorials.
-
-.. code-block:: bash
-    :caption: Terminal
-
-    $ git clone https://github.com/hallamlab/MetasmithLibraries.git
+Metasmith ships a standard library of bioinformatics tools, including those the tutorials use.
+:python:`msm lab` copies it into ``MetasmithLibraries`` in the current directory and compiles it there.
 
 Jupyter notebooks
 ============================================================
@@ -97,7 +92,7 @@ Otherwise, we can just specify the current working directory.
     WORKSPACE = Path("./")
     WORKSPACE
 
-We also specify the path to the cloned standard library.
+We also specify the path to the standard library copy.
 
 .. code-block:: python
     :caption: Jupyter

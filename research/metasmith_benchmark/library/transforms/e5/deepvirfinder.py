@@ -12,6 +12,10 @@ out_calls = model.AddProduct(lib.GetType("e3::deepvirfinder_candidate_virus"))
 
 # dvf.py's own -l floor; a batch with nothing this long writes no dvfpred table at all.
 MIN_LENGTH   = 1000
+# CAUTION dvf.py's Theano predict segfaults on a contig between 2.0 and 2.2 Mbp long. The segfault
+# kills a pool worker, and the pool then waits forever for that worker's batch, so the task hangs to
+# its wall time on every attempt. Long-read assemblies carry contigs past it (Flye to 4.3 Mbp).
+MAX_LENGTH   = 2_000_000
 SCORE_CUT    = 0.9
 PVALUE_CUT   = 0.05
 CALLS_HEADER = "contig_id\tstart\tend\tcaller\tscore\n"
@@ -91,14 +95,15 @@ def protocol(context: ExecutionContext):
             function flush() {{
                 if (h != "") {{
                     L = length(s)
-                    if (L >= 1000) {{ t = s; nN = gsub(/[Nn]/, "", t); if (nN / L <= 0.3) print h"\\n"s }}
+                    if (L >= 1000 && L <= {MAX_LENGTH}) {{ t = s; nN = gsub(/[Nn]/, "", t); if (nN / L <= 0.3) print h"\\n"s }}
                 }}
             }}
             /^>/ {{ flush(); h = $0; s = ""; next }}
             {{ s = s $0 }}
             END {{ flush() }}
         ' > contigs.fa
-        echo "contigs accepted by dvf.py's own filter: $(grep -c '^>' contigs.fa)"
+        echo "contigs accepted by dvf.py's own filter: $(grep -c '^>' contigs.fa || true)"
+        if [ ! -s contigs.fa ]; then mkdir -p dvf; printf 'name\\tlen\\tscore\\tpvalue\\n' > {DVFPRED}; exit 0; fi
         head -n 2 contigs.fa > warm.fa
         python /DeepVirFinder/dvf.py -i warm.fa -o dvf_warm -l 1 -c 1 || true
         python /DeepVirFinder/dvf.py -i contigs.fa -o dvf -l 1000 -c {cpus}

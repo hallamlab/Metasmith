@@ -1,0 +1,6 @@
+outs:
+- md5: fd11fda31f9c3226bd29b0f36a51a72c.dir
+  size: 1691089
+  nfiles: 1
+  hash: md5
+  path: contaminants_literature

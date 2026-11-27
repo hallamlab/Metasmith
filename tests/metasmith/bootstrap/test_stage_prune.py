@@ -183,7 +183,7 @@ def test_an_unmasked_library_still_ships_its_whole_directory(tmp_path, stdlib):
 
 
 def _plan_task(tmp_path, stdlib):
-    from metasmith.agents.spec import Spec
+    from metasmith.agents.spec import CaseViews, plan_views
     from metasmith.agents.targets import TargetBuilder
 
     lib, _ = stdlib
@@ -199,8 +199,7 @@ def _plan_task(tmp_path, stdlib):
 
     targets = TargetBuilder()
     targets.Add("ann::hits")
-    return Spec.SolveViews(
-        samples=[samples], resources=[], transforms=[lib], targets=targets)
+    return plan_views([CaseViews("case", [samples], [], targets)], resources=[], transforms=[lib])
 
 
 def test_a_pruned_bundle_reloads_to_the_same_plan(tmp_path, stdlib):

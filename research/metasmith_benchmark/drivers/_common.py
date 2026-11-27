@@ -40,8 +40,10 @@ CHECKM2_DB = Path(os.environ.get(
     "CHECKM2_DB", "/scratch/phyberos/wave2_b3_nfcore/checkm2_db/CheckM2_database/uniref100.KO.1.dmnd"))
 # Nodes whose Lustre client failed our tasks with Errno 108, EIO or 0-second starts in R1.
 # A driver job's own --exclude does not reach the grid tasks nextflow submits.
-FIR_BAD_NODES = ("fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30568,fc30570,fc30604,"
-                 "fc30608,fc30609,fc30622,fc30623,fc30628,fc30640")
+# Another cluster has none of these names and sbatch refuses an unknown one, so MSM_EXCLUDE_NODES="" drops the flag.
+FIR_BAD_NODES = os.environ.get("MSM_EXCLUDE_NODES", "fc30372,fc30557,fc30559,fc30560,fc30564,fc30567,fc30568,"
+                               "fc30570,fc30604,fc30608,fc30609,fc30622,fc30623,fc30628,fc30640")
+EXCLUDE = f" --exclude={FIR_BAD_NODES}" if FIR_BAD_NODES else ""
 
 # E2's two arms and E5's CAMI pilot share the CAMI home, E3 and E5's Pratama pilot share
 # Pratama's. Each home pays its own reference staging and needs its own dev overlay push.
@@ -353,7 +355,7 @@ LARGE_MEMORY_STEPS = {
 
 
 def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_time="3d", comebin_gpu=None,
-                      comebin_gpu_hours=12):
+                      comebin_hours=None, comebin_memory_gb=None):
     """fir's Slurm preset plus process selectors.
 
     `scaled` maps a transform name to (cpus, GB, hours) for its first attempt, and each retry
@@ -361,8 +363,10 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     replace that doubling, so a task that needs more than its first grant would fail identically on
     every retry.
 
-    COMEBin gets a quarter node at 4 GB per core. Its training is Amdahl-limited, and ten
-    marine samples at 96 cores took 6.5 to 11.7 h, so 3 d covers the slow tail at 48.
+    COMEBin gets a quarter node at 4 GB per core unless `comebin_memory_gb` says otherwise, and memory
+    doubles on each retry up to MAX_TASK_MEMORY_GB. `comebin_hours` is a first-attempt time that doubles
+    on each retry; without it the time is the flat `comebin_time`. Ten marine samples at 96 cores took
+    6.5 to 11.7 h before the transform's CPU patch, so 3 d covered the slow tail at 48.
     The `_cached` twins declare the local executor, which refuses a job array, and the
     preset's label-keyed exemption does not reach them. Without `array = 0` nextflow aborts
     before submitting anything, and metasmith still reports the run complete. On node-local
@@ -376,7 +380,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
     container gets an empty value and torch trains on the CPU with nothing but a warning.
     """
     base = Path(smith.GetNxfConfigPresets()["slurm"]).read_text()
-    mem_gb = comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
+    mem_gb = comebin_memory_gb or comebin_cpus * FIR_MEM_MB_PER_CPU // 1000
     # comebin_time is clamped against LONG_RUNNING_STEPS the same way the `scaled` loop below clamps
     # itself, and for the same reason: a `withName` time is a LITERAL, outside the params clamp that
     # `Resources.AsNextflowFormat` wraps every declared duration in, so an unclamped literal here is a
@@ -391,22 +395,25 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
         # rendered without any element's inputs, so such a closure always took its fallback.
         comebin_account, comebin_gres = SLURM_GPU_ACCOUNT, f" --gres=gpu:{comebin_gpu}:1"
         comebin_before = [f"        beforeScript = '{_GPU_BEFORE_SCRIPT}'"]
-        comebin_time_line = (f"        time = {{ [{comebin_gpu_hours}.h * (2 ** (task.attempt - 1)), "
-                             f"('{comebin_cap}' as Duration)].min() }}")
+        comebin_hours = comebin_hours or 12
     else:
         comebin_account, comebin_gres, comebin_before = SLURM_ACCOUNT, "", []
+    if comebin_hours:
+        comebin_time_line = (f"        time = {{ [{comebin_hours}.h * (2 ** (task.attempt - 1)), "
+                             f"('{comebin_cap}' as Duration)].min() }}")
+    else:
         comebin_time_line = f"        time = {{ [('{comebin_time}' as Duration), ('{comebin_cap}' as Duration)].min() }}"
     # A literal, not params.process.clusterOptionsExtra: config reads params before the -params-file merge.
     text = base + "\n" + "\n".join([
         "", "process {",
-        f'    clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT} --exclude={FIR_BAD_NODES}"',
+        f'    clusterOptions = "--nodes=1 --ntasks=1 --account={SLURM_ACCOUNT}{EXCLUDE}"',
         "}", "",
         "process {", "    withName: '.*__comebin' {",
         f"        cpus = {comebin_cpus}",
-        f"        memory = '{mem_gb} GB'",
+        f"        memory = {{ [{mem_gb}.GB * (2 ** (task.attempt - 1)), {MAX_TASK_MEMORY_GB}.GB].min() }}",
         comebin_time_line,
         *comebin_before,
-        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account} --exclude={FIR_BAD_NODES}{comebin_gres}"',
+        f'        clusterOptions = "--nodes=1 --ntasks=1 --account={comebin_account}{EXCLUDE}{comebin_gres}"',
         "    }", "}", "",
         "process {", "    withName: '.*_cached' {", "        array = 0", "        scratch = false", "    }", "}", ""])
     for name in IN_PLACE_STEPS:
@@ -440,7 +447,7 @@ def make_slurm_config(smith, cache_dir, scaled=None, comebin_cpus=48, comebin_ti
 
 
 def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=None, comebin_cpus=48, comebin_gpu=None,
-                  comebin_gpu_hours=12,
+                  comebin_hours=None, comebin_memory_gb=None,
                   materialise=False, gpus=None, on_exist="update", extra_config=None):
     """Stage the plan, then run it, or with `materialise` fetch every image it needs and stop.
 
@@ -487,7 +494,7 @@ def stage_and_run(smith, task, cache_dir, tag, *, stage_only, params, scaled=Non
     params = dict(params)
     params["process"] = dict(params.get("process") or {}, max_duration=MAX_TASK_DURATION)
     config = make_slurm_config(smith, cache_dir, scaled, comebin_cpus=comebin_cpus, comebin_gpu=comebin_gpu,
-                               comebin_gpu_hours=comebin_gpu_hours)
+                               comebin_hours=comebin_hours, comebin_memory_gb=comebin_memory_gb)
     if extra_config is not None:
         # Appended last, so its literals win. `array` and `submitRateLimit` read params outside a
         # closure in slurm.nf, and only a literal in the file reaches them.

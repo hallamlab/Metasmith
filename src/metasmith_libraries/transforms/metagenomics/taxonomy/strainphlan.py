@@ -7,7 +7,7 @@ model = Transform()
 
 image = model.AddRequirement(lib.GetType("env::metaphlan.env"))
 reads = model.AddRequirement(lib.GetType("sequences::clean_short_reads"))
-db = model.AddRequirement(lib.GetType("annotation::metaphlan_db"))
+db = model.AddRequirement(lib.GetType("ref::metaphlan_db"))
 out_markers = model.AddProduct(lib.GetType("annotation::strainphlan_consensus_markers"))
 
 MPA_INDEX = "mpa_vJan25_CHOCOPhlAnSGB_202503"

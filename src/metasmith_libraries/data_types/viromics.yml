@@ -207,3 +207,8 @@ types:
       _: BLASTn hits of the survey's own spacers against the frozen contigs -- the within-survey half of host prediction, joined to iPHoP afterwards
       Format: TSV
       ext: tsv
+  virus_host_links:
+    properties:
+      _: reference-free host links -- one row per frozen virus, quality MAG and evidence (spacer, provirus, binned_viral_contig), with coordinates, contig lengths and the spacer alignment's mismatch counts left unfiltered
+      Format: TSV
+      ext: tsv

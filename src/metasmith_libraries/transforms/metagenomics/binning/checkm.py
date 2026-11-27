@@ -1,4 +1,4 @@
-# The aggregator joins on a "Bin Id" column; CheckM2's quality_report.tsv calls
+# The quality filter (quality_mags.py) joins on a "Bin Id" column; CheckM2's quality_report.tsv calls
 # that column "Name", so it is renamed on emit.
 #
 # CheckM2 v1.1.0 has a pyrodigal-gv heap bug (GitHub issue #149) that aborts the

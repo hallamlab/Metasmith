@@ -13,6 +13,9 @@ a = ap.parse_args()
 run = os.path.realpath(a.run); W = os.path.join(run, "nxf_work"); rid = os.path.basename(run)
 pat = re.compile(re.escape(rid) + r"/nxf_work/([0-9a-f]{2}/[0-9a-f]{30})")
 jn = re.compile(r"^#SBATCH -J nf-p\d+__([A-Za-z0-9_]+?)_\(", re.M)
+# A cache hit runs on the local executor, so its .command.run carries no job name. Its .command.sh names the step number.
+cached = re.compile(r'^echo "step (\d+) \(cached\)', re.M)
+step_names = dict(re.findall(r"step: (\d+), step_name: '([A-Za-z0-9_]+)'", open(os.path.join(run, "workflow.nf")).read()))
 tasks = {}
 for d2 in os.listdir(W):
     if len(d2) != 2: continue
@@ -24,6 +27,12 @@ for d2 in os.listdir(W):
             continue
         if "#SBATCH -o /dev/null" in run_txt: continue
         m = jn.search(run_txt); step = m.group(1) if m else "?"
+        if not m:
+            try:
+                c = cached.search(open(os.path.join(p, ".command.sh")).read())
+            except OSError:
+                c = None
+            step = step_names.get(c.group(1), "?") if c else "?"
         ec = os.path.join(p, ".exitcode")
         state = ("ok" if open(ec).read().strip() == "0" else "fail") if os.path.exists(ec) else "open"
         tasks[d] = (step, state, p)

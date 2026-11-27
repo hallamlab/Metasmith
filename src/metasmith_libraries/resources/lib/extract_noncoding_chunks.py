@@ -13,8 +13,11 @@ Also writes a manifest.json mapping chunk files to their regions.
 import argparse
 import json
 import os
+import re
 import sys
 from collections import defaultdict
+
+ACGT_RUN = re.compile(r"[ACGT]{40,}")
 
 
 def parse_fasta(path):
@@ -101,11 +104,11 @@ def main():
     for contig_id, seq in contigs.items():
         intervals = noncoding_intervals(len(seq), cds_map.get(contig_id, []))
         for start, end in intervals:
-            region_seq = seq[start:end]
-            if len(region_seq) < 40:
-                continue
-            all_regions.append((contig_id, start, end, region_seq))
-            total_nc_bp += len(region_seq)
+            # PromoTech one-hot encodes ACGT only, and a 40-mer holding an N or an IUPAC code
+            # crashes its encoder. OPERA-MS contigs carry them, so each region is cut at them.
+            for run in ACGT_RUN.finditer(seq[start:end].upper()):
+                all_regions.append((contig_id, start + run.start(), start + run.end(), run.group()))
+                total_nc_bp += run.end() - run.start()
 
     print("Non-coding: {} regions, {:.1f} Mbp ({:.0f}% of assembly)".format(
         len(all_regions), total_nc_bp / 1e6,

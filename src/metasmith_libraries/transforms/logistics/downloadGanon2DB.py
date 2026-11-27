@@ -6,6 +6,12 @@ image = model.AddRequirement(lib.GetType("env::ganon.env"))
 out   = model.AddProduct(lib.GetType("ref::ganon2_sources"))
 
 NCBI = "https://ftp.ncbi.nlm.nih.gov"
+# genome_updater fetches the assemblies from the same host, by the listing it reads there.
+URLS = {
+    "taxdump.md5": f"{NCBI}/pub/taxonomy/taxdump.tar.gz.md5",
+    "taxdump": f"{NCBI}/pub/taxonomy/taxdump.tar.gz",
+    "genome_size": f"{NCBI}/genomes/ASSEMBLY_REPORTS/species_genome_size.txt.gz",
+}
 # genome_updater misses an assembly NCBI lists but no longer serves now and then, and
 # one such gap should not fail a forty-thousand-genome download.
 MIN_FETCHED = 0.99
@@ -15,6 +21,7 @@ def protocol(context: ExecutionContext):
     iout = context.Output(out)
     staged = context.StagingDir()
     ncbi = context.params.get("ganon2_ncbi_url", NCBI).rstrip("/")
+    url = {k: Rebase(v, NCBI, ncbi) for k, v in URLS.items()}
     threads = context.params.get("cpus") or 4
     # A run param, so a smaller study or a test can fetch one group, e.g. archaea.
     groups = context.params.get("ganon2_organism_groups", "archaea,bacteria")
@@ -36,14 +43,14 @@ def protocol(context: ExecutionContext):
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{ncbi}/pub/taxonomy/taxdump.tar.gz.md5", staged.local/"taxdump.tar.gz.md5"),
+        FetchCommand(url["taxdump.md5"], staged.local/"taxdump.tar.gz.md5"),
     ])) != 0:
         return failed
     taxdump_md5 = open(staged.local/"taxdump.tar.gz.md5").read().split()[0]
     if context.LocalShell("\n".join([
         "set -euo pipefail",
-        FetchCommand(f"{ncbi}/pub/taxonomy/taxdump.tar.gz", staged.local/"taxdump.tar.gz", md5=taxdump_md5),
-        FetchCommand(f"{ncbi}/genomes/ASSEMBLY_REPORTS/species_genome_size.txt.gz",
+        FetchCommand(url["taxdump"], staged.local/"taxdump.tar.gz", md5=taxdump_md5),
+        FetchCommand(url["genome_size"],
                      staged.local/"species_genome_size.txt.gz"),
     ])) != 0:
         return failed
@@ -73,6 +80,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(50),  # RefSeq archaea and bacteria, one assembly per species, estimate
     resources=Resources(
         cpus=4,
         memory=Size.GB(4),

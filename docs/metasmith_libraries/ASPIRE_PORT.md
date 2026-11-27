@@ -5,10 +5,11 @@
 toggles. `transforms/aspire/` is that pipeline expressed as a typed graph so the
 planner selects stages by what you ask for rather than by what you toggled.
 
-Twelve of the 31 rows run: the reads-to-counts lane (`fastp_qc` through `curate` and
-`read_accounting`), plus `sankey`, `plot_metadata` and `indicspecies`. They ran green on
-sockeye over 18 public 16S samples (`research/aspire/campaigns/cyano_r1/`). The other 19
-rows are stubs that touch their outputs and return.
+Every one of the 35 rows has a real body. A process row runs upstream's script, and an
+off-arm or layout row writes what its consumers read. Two drivers under
+`research/aspire/campaigns/` run them on sockeye. `cyano_r1` covers 18 public 16S samples.
+`ab48_r1` covers the Hallam lab's AB48 photobioreactor time series with its MAGs, and the
+purify bioreactor's measured samples. Each driver's README says what its checks assert.
 
 ## What goes in this file
 
@@ -19,9 +20,10 @@ done rather than getting a note saying so.
 ## The table is the source
 
 `transforms/aspire/_generate.py` holds one row per ported process and writes
-`data_types/aspire.yml` and every stub. It rewrites only files that begin with its banner. A
-file without the banner is a real body and is never touched. Each row carries the `.nf`
-process and line it came from, so the port stays auditable against the source.
+`data_types/aspire.yml` and a stub for any row without a body. It rewrites only files that
+begin with its banner. A file without the banner is a real body and is never touched. Each
+row carries the `.nf` process and line it came from, so the port stays auditable against
+the source.
 
 **CAUTION** A row edit must be mirrored by hand in a real body. `_generate.py --lint` fails
 until the body's requirements, products and grouping match its row.
@@ -62,6 +64,13 @@ and sit outside the reads-to-ASV pipeline. Also not ported: the four analyses th
 upstream only for its lung study (`VOC_CORRELATION`, `GROUP_POWER_ANALYSIS`,
 `TAXONOMY_GROUP_ASSOCIATION` and `PAIRED_GROUP_CONTRAST`).
 
+**The analyses read the curated counts, through a type fence.** The rows lifted onto
+`amplicon::survey` require `amplicon::abundance_table`, an analysis-ready matrix.
+`aspire::analysis_counts` carries its properties, and so does `kraken_abundance`'s output,
+so a count table from outside ASPIRE reaches them too. `amplicon::abundance_table` is
+deliberately not a subtype of `amplicon::asv_table`, because `filter_table` would then
+accept its own descendant and the planner could loop the curated table back into curation.
+
 **Thresholds are a typed input.** Every module-1 row requires `aspire::params`, a
 YAML file the driver registers under the study. `research/aspire/presets/` offers the
 tool defaults and ASPIRE's shipped values under the same keys. **CAUTION:** a 0
@@ -87,18 +96,82 @@ work directory. SINA reports a missing home as a corrupt ARB database.
 
 Every step up to the filtered ASV table uses upstream's commands, flags and shipped values:
 fastp, pair merging, the expected-error and length filter, dereplication, UNOISE, uchime3,
-the count table, table filtering, SINA and the classifier. Curation differs in three places,
-and each can change the curated table.
+the count table, table filtering, SINA and the classifier. On cyano_r1's 18 samples the
+port and upstream agree exactly: the same 227 filtered ASVs, the same taxonomy and the same
+57 curated ASVs, every count equal. `research/aspire/campaigns/upstream_cyano.py` reruns that
+comparison.
+
+**CAUTION** Upstream leaves vsearch unpinned, so it runs whatever conda resolves.
+`env::vsearch.env` pins the build upstream resolved, 2.32.0. Under 2.28.1 uchime3 called
+fewer chimeras: 406 ASVs survived where upstream kept 301. Re-run the comparison before
+moving the pin.
+
+Curation differs in four places, and each can change the curated table.
 
 1. **MitoMaster is gone.** Upstream posts every ASV to mitomap.org, and compute nodes have
    no internet. `mitomaster` writes an empty MitoMaster table, so only the BLAST screen
-   marks mitochondria. That equals upstream with `run_mitomaster: false`.
+   marks mitochondria. That equals upstream with `run_mitomaster: false`. On cyano_r1,
+   MitoMaster flagged nothing.
 2. **Curation drops no sample for its group.** Upstream deletes samples whose `Type_Group`
    has fewer than 3 members before the abundance filter. The port keeps every sample, so
    its table can hold more samples and more ASVs. See *Groups*.
 3. **`plot_metadata` skips the mito tables when no ASV is mitochondrial.** Upstream passes
    `--make-mito` unconditionally, and the script raises on an empty table. Host-associated
    samples never reach that case, and a culture does.
+4. **The default contaminant lists differ.** Upstream screens against the Bio! facility's
+   database alone. The port screens against the literature list as well, and counts an entry
+   only above a blank-prevalence cut. See *The contaminant screen*.
+
+## The contaminant screen
+
+`mitomaster` screens against `aspire::contaminant_reference_set`, a directory of FASTAs with
+one list per file. It builds one BLAST database from every list and tags each header with its
+file's stem. `curate` counts an entry only when it appears in at least
+`curate.contaminant_min_prevalence` of its sources' blanks, read from the header's `blanks`
+field. An entry without that field always counts. The removal itself is upstream's hard cut at
+97% identity and 51% query coverage. With no set given, `contaminant_set` bundles the
+literature list and the Bio! list.
+
+`logistics/buildAspireLiteratureContaminants` builds the literature list from published
+negative controls. Its product is pinned with DVC at `data/aspire/contaminants_literature/`:
+6,980 entries, MD5 `be6980c34bd077be64d250850a4a5e7f`. The sources are:
+
+- Weyrich et al. 2019, doi:10.1111/1755-0998.13011. 137 controls from figshare
+  doi:10.25909/5bdaa4431a941, CC BY 4.0. V4.
+- Minich et al. 2018 (KatharoSeq), doi:10.1128/mSystems.00218-17. 161 blanks from ENA
+  ERP105802. V4, 150 nt.
+- Dyrhovden et al. 2021, doi:10.1128/mBio.00598-21. 25 extraction controls from ENA
+  PRJEB44556. V3-V4, cut to V4.
+
+Every entry starts right after 515F and spans at most V4. Each header carries `studies`,
+`blanks` and `sources`. The list keeps every entry, so the prevalence cut stays a parameter.
+
+**The prevalence cut defaults to 10%.** A control also catches what leaks from its own study's
+samples, and those ASVs sit in one or two controls. Measured on `lab_r2`'s V4 reads against the
+lab's own 10 blanks:
+
+- At 0%, the list removes 47.5% of the samples' reads and 30.6% of the blanks'. Entries from
+  two or more studies still remove 28% of the V4-V5 reads, so the study count does not
+  separate leakage from kitome.
+- Between 4% and 9% three abundant lab ASVs leave the removed set: *Halomonas* (23.5% of the
+  reads, best match at 7.5%), a Rhodobacteraceae (6.2%) and *Mesorhizobium* (8.0%).
+- At 10%, the list removes 0.77% of the samples' reads and 20.1% of the blanks', 26 times
+  more. 760 entries count.
+- The kitome entries of the no-template controls sit at 24.5% to 28.5%. A cut at 25% already
+  loses some of them.
+
+**`contaminant_hits.tsv` makes the cut tunable without a rerun.** It tags every ASV with a
+qualifying hit in the uncut screen by the highest prevalence among its hits. The ASV is removed
+at a cut t exactly when its tag is at least t. Filter the table to try another cut. `curate`
+cuts the screen's hit rows before the non-target call, because the call keeps one hit per ASV.
+
+**CAUTION** A KatharoSeq-only entry is 150 nt. It covers 59% of a V4 query but only 40% of a
+V4-V5 query, under the 51% coverage cut. On a V4-V5 study those entries match nothing.
+
+**A campaign's set directory is named by a digest of its lists.** A given's leaf id is its
+path, so new lists at an old path would reuse the old screen's cached results.
+`contaminant_set()` in `research/aspire/campaigns/_campaign.py` derives the path, and
+`stage-contaminants` copies the local pins there.
 
 ## The sample chain
 
@@ -125,13 +198,39 @@ table and one summary per label, and skips a label with fewer than two levels.
 
 `analysis.min_level_size` replaces upstream's sample drop. `plot_metadata` blanks a label
 value that fewer samples hold, so each analysis skips that level and keeps the sample.
+`diversity_analysis` and `diversity_mito` cannot colour a blank, so each of their per-label
+runs leaves out the samples that label leaves empty.
+
+**`indicspecies` tests a many-level label one group at a time.** Upstream's `duleg=FALSE`
+test tries all 2^k - 1 combinations of a label's k levels. Past 8 levels the port runs only
+the single-group test of Dufrêne & Legendre (1997), linear in k, and writes it under both
+output names. Such a label finds no indicator of two groups together. AB48's 15-level
+`Condition` label outran a 12-hour task under the combination test.
+
+**CAUTION** Give `aspire::sample_measurements` only the samples that were measured.
+`measurement_association.py` fills a missing measurement with the column median, so an
+unmeasured sample enters the ordination with readings it never had.
+
+## The MAG lane
+
+`asv_mag_link` reads `aspire::mag_collection`, the directory layout upstream's linker takes
+as `--genome-qc-dir`. Upstream got it from a separate genome QC pipeline. Here
+`metagenomics/binning/barrnap` predicts each quality bin's rRNA genes, and `collect_mags`
+lays out one dedup run's 95% centroid bins with their GFFs.
+
+**CAUTION** The collection's QC table keys its rows as `genome_id`. Given a `Bin Id` column,
+the linker looks each FASTA up through a path column instead, finds none inside the
+container, and drops every genome.
+
+The link pairs an ASV with a MAG only through a barrnap 16S gene. An ASV that matches a MAG's
+contig elsewhere is an off-target amplicon of genomic DNA and stays unpaired.
 
 ## Where the parities join
 
 Paired and single-end reads join at `sequences::short_reads`, the type the rest of
 the library already shares. A paired sample reaches it through
 `logistics/interleave_zipped_short_reads`. A single-end sample is given as
-`short_reads_se`, which already is one. `fastp_qc` and `merge_and_filter_reads` read the
+`short_reads` itself. `fastp_qc` and `merge_and_filter_reads` read the
 parity off `read_metadata` at run time.
 
 **A study has one parity.** In one sample view the solver reaches `short_reads`
@@ -159,13 +258,25 @@ checks as assertions: both parities, and one case per switch arm.
 
 ## Known-rough, for the next pass
 
-- No run has compared the port's ASV table with upstream's on the same reads. That diff
-  is the test of the claims under *Where the counts can differ from upstream*.
-- The mito and contaminant references are the mock dataset's FASTAs. Upstream's shipped
-  config names NCBI mitochondria and a contaminant BLAST database. `mitomaster` also takes
-  only FASTA, where upstream can read a prebuilt BLAST database.
+- The campaigns' mitochondrial reference is NCBI RefSeq mitochondrion, as upstream's
+  shipped config names. `mitomaster` takes only FASTA, where upstream can read a prebuilt
+  BLAST database.
+- `downloadBiofactorialContaminants` has an empty `SOURCE`. The Bio! list
+  (`ssu_pipeline_contaminants`) exists only as a path on Ryan's machine. Until it has a URL,
+  the default set fails at run time, and a campaign stages the literature list alone.
+- `lab_r1`, `lab_v4_r1`, `lab_r2`, cyano_r1 and ab48_r1 were curated against the mock's
+  3-sequence contaminant FASTA. Re-curate each against its staged set. Their pinned numbers
+  change.
+- `upstream_cyano.py` still gives upstream the mock's contaminant FASTA. Give upstream the
+  campaign's lists, concatenated, before rerunning the comparison.
+- An entry's only support is its blank prevalence. A Logan lookup on the ASVs a study
+  removes would test whether each one also appears in unrelated genome runs.
+- The MAGs carry no taxonomy, because GTDB-Tk takes `sequences::putative_genome` and a
+  quality bin is not one. `asv_mag_network` therefore names each MAG by its bin id.
+- Upstream's mito checker reads MitoMaster's header row, `SampleId`, as an ASV. It flags a
+  sequence that does not exist, so no count changes.
 - Nothing removes chloroplast ASVs, upstream included. A plant or algal study keeps them
-  unless the contaminant FASTA covers them.
+  unless a contaminant list covers them.
 - The ASPIRE preset excludes *Homo sapiens* and Mammalia, a human-host setting. Its 20/20
   tail trims carry no stated source.
 - SINA reads SILVA 138.2 and the classifier reads SILVA 138. The `amplicon::silva_db`
@@ -175,10 +286,6 @@ checks as assertions: both parities, and one case per switch arm.
 - The four token pairs and their four off-arm producers are machinery ASPIRE does
   not visibly have. Several stages are optional only because the `.nf` needed a
   flag, and once the planner selects by target some tokens can go.
-- `aspire::analysis_counts` does not carry `amplicon::asv_table`'s properties, so
-  the rows lifted onto `amplicon::survey` bind `denoise`'s raw table. `indicspecies`
-  therefore tests every raw ASV, not the curated ones. The fix is a type-graph decision,
-  recorded in `research/aspire/contracts.md`.
 - `curate` models no negative controls. A negative-control evidence input is the next
   addition there.
 - `transforms/amplicon/blast_map_asvs.py` stays as the optional ASV-to-assembly

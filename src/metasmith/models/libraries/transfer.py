@@ -36,11 +36,16 @@ class _StoreTransfer:
                 payload = meta.get("lineage_payload")
                 if payload is not None:
                     d["lineage_payload"] = payload.hex()
+                if meta.get("stamp") is not None:
+                    d["stamp"] = meta["stamp"]
+                if meta.get("value"):
+                    d["value"] = True
+            if path in self.cases:
+                d["cases"] = list(self.cases[path])
             return d
         if not self.is_pinned:
             for _path, _dtype in self.manifest.items():
-                _meta = self.instance_meta.get(_path)
-                if _meta is not None and _meta.get("fork_id") != self.fork_id:
+                if _path in self.instance_meta:
                     self._resolve_instance_meta(_path, _dtype)
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
@@ -63,12 +68,15 @@ class _StoreTransfer:
             )
         manifest = {}
         instance_meta: dict[Path, dict] = {}
+        cases: dict[Path, list[str]] = {}
         for k, v in raw["manifest"].items():
             type_name = v["type"]
             if check_integrity:
                 assert (location/k).exists(), f"[{k}], does not exist"
             cls._get_type(type_name, dtypes)
             manifest[Path(k)] = type_name
+            if v.get("cases"):
+                cases[Path(k)] = list(v["cases"])
             if "instance_id" in v:
                 payload = v.get("lineage_payload")
                 if isinstance(payload, str):
@@ -85,12 +93,17 @@ class _StoreTransfer:
                     # forked ids and stamping the fork back on is idempotent.
                     "fork_id": raw.get("fork_id"),
                 }
+                if v.get("stamp") is not None:
+                    instance_meta[Path(k)]["stamp"] = v["stamp"]
+                if v.get("value"):
+                    instance_meta[Path(k)]["value"] = True
         lib = cls(
             location=location,
         )
         lib.schema = raw["schema"]
         lib.manifest = manifest
         lib.instance_meta = instance_meta
+        lib.cases = cases
         lib.fork_id = raw.get("fork_id")
         # `frozen` is what this block was called before the rename. Read, never
         # written: an index staged to a host that cannot re-pin it would

@@ -6,12 +6,15 @@ import re
 import shutil
 import time
 import threading
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
 import yaml
 
+from ..caching import leases
+from ..caching.layout import default_cache_root
 from ..constants import AgentPaths, MODULE_PATH, VERSION
 from ..coms.terminals import LiveShell
 from ..env import Environment, Rootfs
@@ -181,7 +184,7 @@ def RenderLauncher(
 
 def RenderNextflowScript(
     *, workspace, log_dir, host: str, results_folder: str,
-    nxf_report, nxf_dag, stub_param: str,
+    nxf_report, nxf_dag, stub_param: str, run_id: str = "",
 ) -> str:
     # Nextflow, plus the supervisor that stops it. PID.lock holds nextflow's own
     # pgid (see `set -m` below), so removing the lock file stops the whole run
@@ -241,6 +244,7 @@ def RenderNextflowScript(
                 -with-timeline {log_dir}/nxf_timeline.html \
                 -with-trace {log_dir}/{AgentPaths.NXF_TRACE_FILE} \
                 {stub_param} \
+                --msm_run "{run_id}" \
                 -lib ./lib \
                 -ansi-log false \
                 -resume \
@@ -264,12 +268,59 @@ def RenderNextflowScript(
                         sleep 1
                     done
                     kill -KILL -$PID 2>/dev/null
-                    wait $PID 2>/dev/null
                     break
                 fi
                 sleep 1
             done
+            wait $PID 2>/dev/null
             """
+
+
+def RenderProbeScript(*, workspace, log_dir, host: str, run_id: str) -> str:
+    # The footprint's probe pass (caching/footprint.py): the same workflow, no
+    # process, nothing published. It is over in the time nextflow takes to start
+    # and walk the channels, so it needs no supervisor.
+    return f"""
+            cd {workspace}
+            export NXF_HOME=./.nextflow
+            # Its own session record, or the real pass would resume this one.
+            export NXF_CACHE_DIR=./nxf_probe/.nextflow
+            export NXF_OFFLINE=TRUE
+            export NXF_OPTS="-Xms256m -Xmx2g -XX:ActiveProcessorCount=1"
+            nextflow \
+                -config ./{AgentPaths.NXF_RES} \
+                -config ./{AgentPaths.NXF_CONFIG} \
+                -log {log_dir}/nxf_probe.log \
+                run ./{AgentPaths.NXF_WORKFLOW} \
+                -params-file ./{AgentPaths.NXF_PARAMS} \
+                --hostName "{host}" \
+                --output nxf_probe/results \
+                --msm_probe true \
+                --msm_run "{run_id}" \
+                -lib ./lib \
+                -ansi-log false \
+                -work-dir {workspace}/nxf_probe
+            """
+
+
+def _probe_footprint(shell, task, workspace: Path, log_dir: Path, host: str, cache_root: Path, run_id: str):
+    from ..caching import footprint
+    from ..models.workflow.cache_decisions import cache_enabled
+
+    footprint.reset(workspace)
+    if task.plan.keep_intermediates or not cache_enabled() or not footprint.has_ghosts(cache_root):
+        return
+    Log.Info("probing the cache for deleted products this run can do without")
+    probe = shell.Exec(RenderProbeScript(workspace=workspace, log_dir=log_dir, host=host, run_id=run_id), timeout=None)
+    if probe.exit_code != 0:
+        Log.Warn(f"cache probe failed (see [{log_dir}/nxf_probe.log]), so every deleted product a step reads is made again")
+        footprint.reset(workspace)
+        return
+    plan = footprint.plan_skips(workspace, cache_root)
+    Log.Info(
+        f"cache: [{len(plan['skip'])}] deleted member(s) skipped because every reader hits,"
+        f" [{len(plan['rerun'])}] made again"
+    )
 
 
 def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = None):
@@ -647,6 +698,16 @@ def _post_run_step(name: str, failures: list[str], fn):
         return None
 
 
+def _nextflow_failure(code: int|None, nxf_log: Path) -> str:
+    try:
+        lines = nxf_log.read_text(errors="replace").splitlines()
+    except OSError:
+        lines = []
+    errors = [ln.split(" - ", 1)[1].strip() for ln in lines if " ERROR " in ln and " - " in ln]
+    errors = [e for e in errors if e and e != "@unknown"]
+    return f"nextflow exited [{code}]: " + (errors[0] if errors else f"see [{nxf_log}]")
+
+
 _FAILED_STATES = {"FAILED", "ABORTED"}
 
 
@@ -725,22 +786,32 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     output_path.mkdir(parents=True, exist_ok=True)
     # Not a new session: nextflow belongs to the run this driver is, so it stays
     # in the run's session rather than escaping where a reap cannot see it.
-    with LiveShell(new_session=False) as shell:
+    # Every shard this run decides is leased to it until record_run is done, so
+    # another run on this home deletes none of them meanwhile (caching/leases.py).
+    cache_root = default_cache_root(Path(str(extern_home)))
+    run_id = os.environ.get(AgentPaths.RUN_TOKEN_ENV) or f"{key}.{start_time}"
+    lease = ExitStack()
+    lease.enter_context(leases.held(cache_root, run_id))
+    lease_on_error = ExitStack()
+    lease_on_error.callback(lease.close)
+    with lease_on_error, LiveShell(new_session=False) as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
+        _probe_footprint(shell, task, workspace, log_dir, host, cache_root, run_id)
         with _Heartbeat(shell, workspace, task), _LineageReport(
             workspace, task, extern_home=Path(str(extern_home)), out_dir=workspace/log_dir,
         ):
-            shell.Exec(
+            nxf = shell.Exec(
                 RenderNextflowScript(
                     workspace=workspace, log_dir=log_dir, host=host,
                     results_folder=results_folder, nxf_report=nxf_report,
-                    nxf_dag=nxf_dag, stub_param=stub_param,
+                    nxf_dag=nxf_dag, stub_param=stub_param, run_id=run_id,
                 ),
                 timeout=None,
             )
+        lease_on_error.pop_all()
 
     post_run_failures: list[str] = []
 
@@ -767,14 +838,10 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         )
 
     try:
-        from ..caching.layout import default_cache_root
         from ..caching.promote import record_run
 
         cache_log: list = []
-        summary = record_run(
-            workspace=workspace, cache_root=default_cache_root(Path(str(extern_home))),
-            log=cache_log,
-        )
+        summary = record_run(workspace=workspace, cache_root=cache_root, log=cache_log)
         for level, msg in cache_log:
             (Log.Warn if level == "warn" else Log.Info)(f"cache: {msg}")
         Log.Info(
@@ -783,6 +850,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         )
     except Exception as e:
         Log.Warn(f"cache record failed: {e}")
+    _post_run_step("cache lease release", post_run_failures, lease.close)
 
     # `_metasmith/trace.jsonl` sits at the workspace root and gets truncated
     # on the next stage. Copy it alongside nxf_tasks.csv, into the one per-run
@@ -819,12 +887,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             lambda: _link_logs(output_path/f"{output._path_to_meta}", log_dir),
         )
 
-    if failed_steps or post_run_failures:
+    nxf_failure = None if nxf.exit_code == 0 else _nextflow_failure(nxf.exit_code, workspace/log_dir/"nxf.log")
+    if nxf_failure or failed_steps or post_run_failures:
         # Ignoring a dead step is the right strategy -- one dead annotator must
         # not destroy an eleven-sample run -- but the run is not a success, and
         # saying it completed is how a user is told their results are there when
         # the step that makes them never ran.
-        because = []
+        because = [nxf_failure] if nxf_failure else []
         if failed_steps:
             because.append(f"with [{len(failed_steps)}] ignored step(s): {', '.join(failed_steps)}")
         if post_run_failures:

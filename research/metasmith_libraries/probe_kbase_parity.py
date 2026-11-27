@@ -174,6 +174,7 @@ def a4_mags_from_metagenome():
         lib.AddItem(DEFERRED, "sequences::zipped_forward_short_reads", parents={pair})
         lib.AddItem(DEFERRED, "sequences::zipped_reverse_short_reads", parents={pair})
         lib.AddValue("min_contig_length.txt", "2500", "sequences::min_contig_length")
+        lib.AddValue("metabat2_semibin2_comebin.json", {}, "binning::metabat2_semibin2_comebin", parents={meta})
         lib.AddItem(DEFERRED, "ref::gtdb")
     return Spec(
         input_library=_lib(inputs),

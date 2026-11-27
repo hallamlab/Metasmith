@@ -17,11 +17,13 @@ from .agent import load_agent
 def stage(
     agent_path: str, task_ref: str, on_exist: str = "skip",
     workspace: str | None = None, idle_timeout: float | None = None,
-    rootfs: str | None = None,
+    rootfs: str | None = None, keep_intermediates: bool | None = None,
 ) -> dict:
     agent = load_agent(agent_path)
     task = _ws.load_task(workspace, task_ref)
     task.RefuseIfDeferred()
+    if keep_intermediates is not None:
+        task.plan.keep_intermediates = keep_intermediates
     agent.StageWorkflow(
         task, on_exist,
         idle_timeout=IDLE_TIMEOUT if idle_timeout is None else idle_timeout,
@@ -30,23 +32,10 @@ def stage(
     return {"status": "staged", "task_key": task.GetKey(), "agent": Path(agent_path).stem}
 
 
-def materialise(agent_path: str, task_key: str, force: bool = False) -> dict:
-    # Fetch every tool image a staged task needs, onto the agent's host.
-    #
-    # For a cluster whose compute nodes cannot reach a registry: run this from a
-    # host that can (the login node), and the images are in the store before any
-    # task looks for them. Idempotent -- a second run does nothing -- and it
-    # raises if any image could not be fetched, so a caller does not proceed to
-    # submit believing the store is complete.
-    agent = load_agent(agent_path)
-    return agent.MaterialiseImages(task_key, force=force)
-
-
 def setup_environment(
     agent_path: str, task_key: str, force: bool = False, library: str | None = None,
 ) -> dict:
-    # Prepare the agent's host for a staged task: tool images for a container
-    # agent, tool conda envs for a mamba or native one.
+    # Build the tool conda envs a staged task names, on a mamba or native agent.
     #
     # `library` is where a conda env's recipe is read from -- the library the
     # workflow was planned against -- and falls back to the installed package.

@@ -85,7 +85,7 @@ tool, cited on its own terms:
 No deviation — seqkit is not the protocol's tool, so there is nothing to deviate from.
 
 ### Assembly — metaSPAdes under the DOE JGI Metagenome Workflow
-**Transform:** `transforms/assembly/spades.py`. **Versions:** SPAdes container
+**Transform:** `transforms/fabfos/spades.py`. **Versions:** SPAdes container
 `quay.io/biocontainers/spades:3.15.5--h95f258a_1` (`conda: spades`); BBTools container
 `staphb/bbtools:39.49` (`conda: bbtools`, the same image `bbduk.py` uses).
 

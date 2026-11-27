@@ -112,6 +112,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(10),  # VirSorter2 db, template estimate
     resources=Resources(
         cpus=4,
         memory=Size.GB(8),

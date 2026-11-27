@@ -197,12 +197,10 @@ def _check_steps(res, nodes, eps, trs, steps, givens) -> None:
             res.violations.append(f"shape/slot-twice[{i}]")
         if sorted(used) != sorted(set(t["requires"])):
             res.violations.append(f"shape/requires[{i}]")
-        if len(s["produced"]) != len(t["produces"]):
+        if len(s["produced"]) != 1:
             res.violations.append(f"shape/group-count[{i}]")
-        else:
-            for g, declared in zip(s["produced"], t["produces"]):
-                if sorted({d for d, _ in g}) != sorted(set(declared)):
-                    res.violations.append(f"shape/product-slots[{i}]")
+        elif {d for d, _ in s["produced"][0]} not in [set(g) for g in t["produces"]]:
+            res.violations.append(f"shape/product-slots[{i}]")
 
         for d, e in s["used"]:
             if (why := _satisfies(nodes, eps, used, e, d)) is not None:

@@ -1,0 +1,11 @@
+name	mode	procs	threads	toks	n	pin	stack	flags	env
+e_base_6x8_t1024_rep	bf16	6	8	1024	2400	1	stock	-	-
+e_slim_6x8_t1024	bf16	6	8	1024	2400	1	stock	slim	-
+e_ipex_6x8_t1024	bf16	6	8	1024	2400	1	ipex	save	-
+e_ipex_12x4_t512	bf16	12	4	512	2400	1	ipex	-	-
+e_32x6_t512	bf16	32	6	512	4800	1	stock	slim	-
+e_64x3_t512	bf16	64	3	512	4800	1	stock	slim	-
+e_96x2_t512	bf16	96	2	512	4800	1	stock	slim	-
+e_16x12_t1024	bf16	16	12	1024	4800	1	stock	slim	-
+e_8x24_t1024	bf16	8	24	1024	4800	1	stock	slim	-
+e_1x48_t1024	bf16	1	48	1024	2400	1	stock	slim	-

@@ -16,10 +16,11 @@ from ..models.libraries import (
     DataInstanceLibrary, DataInstanceLibraryView, Gpu, LOCAL_LABEL, Resources,
     TransformInstanceLibrary, TransformInstanceLibraryView,
 )
-from ..models.remote import GlobusSource, Logistics, Source
+from ..models.remote import GlobusSource, Logistics, LogisticsResult, Source, SourceType
 from ..models.solver import Dependency, Transform
+from ..models.solver_backend import SEARCH_BUDGET
 from ..models.workflow import WorkflowPlan, WorkflowTask
-from ..models.workflow.setup import setup_subplan
+from ..models.workflow.setup import SetupFootprint, setup_subplan
 from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
 from .conda import (
     NO_RECIPE, _conda_frontend, _create_conda_envs, _find_recipes, _manifest_envs, _recipe_roots,
@@ -27,10 +28,10 @@ from .conda import (
 from .ceiling import ResourceCeilingError, check_launch
 from .headroom import check_headroom, render_probe
 from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
-from .images import _check_image_store, _manifest_images, _materialise_images
+from .images import _check_image_store, _manifest_images
 from .portability import _check_env_portability, _read_env_manifest, _read_env_manifest_doc
 from .shell import AgentShell
-from .spec import Spec
+from .spec import CaseViews, plan_views
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
 from .agent_lock import exclusive
 
@@ -64,19 +65,27 @@ def _library_dispatch_floor(task) -> "tuple[int, int, int]|None":
     return None
 
 
+def _probe(sh_remote, cmd: str, what: str) -> list[str]:
+    # A cold agent's first call can sit silent past the idle timeout while it
+    # pulls or starts its image; a check that cannot read its answer is skipped.
+    try:
+        return sh_remote.Exec(
+            cmd, history=True, quiet=True, idle_timeout=PROBE_TIMEOUT, what=what,
+        ).out
+    except TimeoutError as e:
+        Log.Warn(f"{e}; staging continues without that check")
+        return []
+
+
 def _assert_engine_runs_library(sh_remote, task) -> None:
     floor = _library_dispatch_floor(task)
     if floor is None: return
-    res = sh_remote.Exec(
-        "./msm --version 2>&1", history=True, quiet=True,
-        idle_timeout=PROBE_TIMEOUT, what="reading the agent's engine version",
-    )
-    found = [_ENGINE_VERSION.search(ln) for ln in res.out]
-    found = [m for m in found if m]
+    out = _probe(sh_remote, "./msm --version 2>&1", "reading the agent's engine version")
+    found = [m for m in map(_ENGINE_VERSION.search, out) if m]
     if not found:
         Log.Warn(
             "could not read the agent's engine version, so the library's dispatch API "
-            f"was not checked against it: {res.out[-5:]}"
+            f"was not checked against it: {out[-5:]}"
         )
         return
     engine = tuple(int(x) for x in found[-1].groups())
@@ -89,6 +98,73 @@ def _assert_engine_runs_library(sh_remote, task) -> None:
         f"fail with a TypeError on the agent. Redeploy the agent with an image of {need} or "
         f"later, or stage the library release that matches {have}"
     )
+
+
+def _missing_on_agent(sh_remote, paths: list[Path]) -> list[Path]:
+    check = "\n".join(f'[ -e "{p}" ] || echo "MISSING::{p}"' for p in paths)
+    return [Path(ln.split("MISSING::", 1)[1].strip())
+            for ln in _probe(sh_remote, check, "checking the inputs on the agent host") if "MISSING::" in ln]
+
+
+def _remote_stats(sh_remote, paths: list[Path]) -> dict[Path, str]:
+    check = "\n".join(f'echo "STAT::{p}::$(stat -c "%s %Y" "{p}" 2>/dev/null)"' for p in paths)
+    out: dict[Path, str] = {}
+    for ln in _probe(sh_remote, check, "checking the copied inputs"):
+        if ln.startswith("STAT::"):
+            p, _, st = ln[len("STAT::"):].rpartition("::")
+            out[Path(p)] = st.strip()
+    return out
+
+
+def _send_local_inputs(sh_remote, task, home: Source|None, inputs_root: Path) -> dict[Path, Path]:
+    # Copies each absolute input the agent host lacks into `inputs_root`, mirroring
+    # its local path, and returns original -> copy. `home` is None when the agent
+    # cannot be copied to, which leaves a missing input an error.
+    given = sorted({inst.ResolvePath() for inst in task.plan.given if inst.path.is_absolute()})
+    missing = _missing_on_agent(sh_remote, given) if given else []
+    if not missing: return {}
+    copyable = [p for p in missing if home is not None and p.exists()]
+    gone = [p for p in missing if p not in copyable]
+    if gone:
+        lines = "\n".join(f"  - {p}" for p in gone)
+        if any(p.exists() for p in gone):
+            todo = (
+                "This agent's home cannot be copied to from here, so put each input on the "
+                "agent host yourself and point its row at the path there."
+            )
+        else:
+            todo = "They are not on this machine either, so there is nothing to copy. Point each row at a file that exists."
+        raise FileNotFoundError(
+            f"cannot stage workflow [{task._key}]: {len(gone)} input(s) do not exist on "
+            f"the agent host:\n{lines}\n{todo}"
+        )
+    relocated = {p: inputs_root/p.relative_to("/") for p in copyable}
+    Log.Info(f"copying [{len(relocated)}] input(s) to the agent at [{inputs_root}]")
+    mover = Logistics()
+    for p, q in relocated.items():
+        mover.QueueTransfer(src=Source(address=str(p), type=SourceType.DIRECT), dest=home.ReplacePathWith(q))
+    try:
+        res = mover.ExecuteTransfers(label="inputs", resolve_symlinks=True)
+    except Exception as e:
+        res = LogisticsResult(completed=[], errors=[f"{type(e).__name__}: {e}"])
+    done = {d.address for _, d in res.completed}
+    stats = _remote_stats(sh_remote, [q for p, q in relocated.items() if p.is_file()])
+    failed = []
+    for p, q in relocated.items():
+        if home.ReplacePathWith(q).address not in done:
+            failed.append(p)
+        elif p.is_file() and stats.get(q) != f"{p.stat().st_size} {int(p.stat().st_mtime)}":
+            failed.append(p)
+    if failed:
+        lines = "\n".join(f"  - {p} -> {relocated[p]}" for p in failed)
+        errors = "\n".join(res.errors[-10:])
+        raise RuntimeError(
+            f"cannot stage workflow [{task._key}]: copying {len(failed)} input(s) to the agent "
+            f"failed, or the copy differs from the file here:\n{lines}\n"
+            f"Check the agent host has space and the path is writable, delete any copy listed "
+            f"above, and stage again." + (f"\n{errors}" if errors else "")
+        )
+    return relocated
 
 
 # Keys the engine itself reads from a run's params, beside those the preset and
@@ -332,15 +408,16 @@ class _WorkflowOps:
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         targets: TargetBuilder | list[str],
-        max_iter: int=256, max_refine: int|None=None, seed: int=42,
+        max_iter: int=SEARCH_BUDGET, max_refine: int|None=None, seed: int=42,
     ):
-        return Spec.SolveViews(
-            samples=samples, resources=resources, transforms=transforms,
-            targets=targets, max_iter=max_iter, max_refine=max_refine, seed=seed,
+        return plan_views(
+            [CaseViews("case", list(samples), [], targets)],
+            resources=resources, transforms=transforms,
+            max_iter=max_iter, max_refine=max_refine, seed=seed,
         )
 
-    def _get_mock_container(self, task: WorkflowTask):
-        binds = task.GetCommonInputFolders(method="external")
+    def _get_mock_container(self, task: WorkflowTask, relocated: dict[Path, Path]|None=None):
+        binds = task.GetCommonInputFolders(method="external", relocated=relocated)
         mock = Environment(
             image=self.container,
             runtime=self.runtime,
@@ -400,51 +477,26 @@ class _WorkflowOps:
                         task_stage_partial = "transforms_only"
 
             _assert_engine_runs_library(sh_remote, task)
+            relocated = _send_local_inputs(
+                sh_remote, task,
+                home=self.home if self._is_ssh() else None,
+                inputs_root=Path(str(self.real_path or self.home.GetPath()))/AgentPaths.INPUTS,
+            )
             Log.Info(f"sending context for workflow [{task._key}]")
             task.SaveAs(
                 self.home.ReplacePathWith(remote_path),
                 partial=task_stage_partial, prune=prune_libraries,
             )
+            sh_remote.Exec(
+                f"cat > {remote_path/WorkflowTask.RELOCATED_FILE} <<'MSM_RELOCATED'\n"
+                f"{yaml.dump({str(p): str(q) for p, q in relocated.items()})}MSM_RELOCATED",
+                history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="recording the copied inputs",
+            )
             Log.Info(f"staging")
-            mock = self._get_mock_container(task)
+            mock = self._get_mock_container(task, relocated)
             if len(mock.container.binds) > 0:
-                _srcs = [str(src) for src, _dst in mock.container.binds]
-                _check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in _srcs)
-                _res = sh_remote.Exec(
-                    _check, history=True, quiet=True,
-                    idle_timeout=PROBE_TIMEOUT, what="checking external binds",
-                )
-                _out = _res.out if isinstance(_res.out, str) else "\n".join(_res.out)
-                _missing = [ln.split("MISSING::", 1)[1].strip()
-                            for ln in _out.splitlines() if "MISSING::" in ln]
-                if _missing:
-                    _culprits: dict[str, list[str]] = {}
-                    for _inst in task.plan.given:
-                        try:
-                            _p = _inst.ResolvePath()
-                        except Exception:
-                            continue
-                        if not _p.is_absolute():
-                            continue
-                        for _m in _missing:
-                            _mp = Path(_m)
-                            if _p == _mp or _p.is_relative_to(_mp):
-                                _culprits.setdefault(_m, []).append(str(_p))
-                    _lines = "\n".join(
-                        f"  - {_m}" + (f"  (from input: {', '.join(_culprits[_m])})"
-                                       if _culprits.get(_m) else "")
-                        for _m in _missing
-                    )
-                    raise FileNotFoundError(
-                        f"cannot stage workflow [{task._key}]: {len(_missing)} external "
-                        f"input folder(s) must be bound into the remote container but do "
-                        f"not exist on the remote host:\n{_lines}\n"
-                        f"External (absolute-path) inputs are bound verbatim into the "
-                        f"remote container -- metasmith does NOT transfer them. Make these "
-                        f"inputs resident on the remote agent host (or reference paths "
-                        f"that exist there) before staging. [#240]"
-                    )
-                Log.Info(f"external binds {_srcs}")
+                Log.Info(f"external binds {[str(src) for src, _dst in mock.container.binds]}")
             binds = mock.MakeBindsParam()
             _rootfs_arg = f" rootfs={rootfs.value}" if rootfs is not None else ""
             sres = sh_remote.Exec(f"""\
@@ -483,59 +535,18 @@ class _WorkflowOps:
         assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
         return workspace
 
-    @exclusive("pulling images")
-    def MaterialiseImages(self, task: WorkflowTask|str, force: bool=False) -> dict:
-        # Fetch every tool image a staged task needs, onto this agent's host.
-        #
-        # The answer for a cluster whose compute nodes have no route to a
-        # registry: run this from the login node, which does, and every task then
-        # finds its image already in the store. It is idempotent -- a second run
-        # does nothing -- because each image is skipped on the same
-        # artifact-and-stamp test every task consults.
-        #
-        # `force` re-fetches regardless, which is what to reach for when a store
-        # is suspect rather than incomplete.
-        task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
-        with AgentShell(self) as sh_remote:
-            workspace = self._assert_staged(sh_remote, task_key)
-            doc = _read_env_manifest_doc(sh_remote, workspace)
-            images, unknown = _manifest_images(doc)
-            if unknown:
-                Log.Warn(
-                    f"could not tell which images [{len(unknown)}] step(s) need"
-                    f" (re-stage to record them): {', '.join(unknown)}"
-                )
-            agent_env = Environment(
-                image=self.container, runtime=self.runtime, native=self.native,
-                rootfs=self.rootfs,
-            )
-            report = _materialise_images(
-                sh_remote, images, agent_env, self.home.GetPath(),
-                rootfs=doc.get("rootfs"), force=force,
-            )
-        return {
-            "task_key": task_key,
-            "runtime": self.runtime.name,
-            "images": report,
-            "fetched": sum(1 for r in report if not r["skipped"]),
-            "already_present": sum(1 for r in report if r["skipped"]),
-            "unknown": unknown,
-        }
-
     @exclusive("setting up environments")
     def SetupEnvironment(
         self, task: WorkflowTask|str, force: bool=False, library: Path|str|None=None,
     ) -> dict:
-        # Prepare this agent's host to run a staged task, whatever it runs tools with.
-        #
-        # One verb over two mechanisms, because the user's question is the same in
-        # both cases and the answer is a property of the agent, not of them: a
-        # container agent needs its image store filled, a mamba or native agent
-        # needs its tool envs built. Both read the stage-time env manifest, and
-        # both are idempotent, so this is safe to press twice.
+        # Build the tool conda envs a staged task names, on a mamba or native agent.
+        # A container agent's images are pulled by the setup run's first steps.
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
-        if not (self.native or self.runtime == Runtime.MAMBA):
-            return self.MaterialiseImages(task_key, force=force) | {"mode": "container"}
+        if self._pulls_images():
+            raise ValueError(
+                f"a [{self.runtime.name}] agent's tool images are pulled by the setup run,"
+                f" so there are no environments to build outside it"
+            )
 
         with AgentShell(self) as sh_remote:
             workspace = self._assert_staged(sh_remote, task_key)
@@ -587,12 +598,17 @@ class _WorkflowOps:
         self, task: WorkflowTask, config_file: Path|None=None, params: dict|Path|str|None=None,
         is_local_preset: bool|None=None, force: bool=False, library: Path|str|None=None,
     ) -> dict:
-        # Every environment the full plan names, then a run of only its sample-free
-        # steps. Their products land in this agent's cache under the keys the full
-        # run will ask for, so the real run serves them as hits.
-        sub = setup_subplan(task)
-        self.StageWorkflow(task, "update")
-        environment = self.SetupEnvironment(task.GetKey(), force=force, library=library)
+        # A run of the full plan's sample-free steps. Their products land in this
+        # agent's cache under the keys the full run will ask for, so the real run
+        # serves them as hits. A container agent's run pulls every tool image of the
+        # full plan first, as steps of its own; a conda agent builds its envs here.
+        Log.Info(SetupFootprint.Of(task).line)
+        pulls = self._pulls_images()
+        sub = setup_subplan(task, pull_images=pulls)
+        environment = None
+        if not pulls:
+            self.StageWorkflow(task, "update")
+            environment = self.SetupEnvironment(task.GetKey(), force=force, library=library)
         self.StageWorkflow(sub, "update")
         self.RunWorkflow(sub.GetKey(), config_file=config_file, params=params, is_local_preset=is_local_preset)
         return {
@@ -601,6 +617,9 @@ class _WorkflowOps:
             "steps": [step.transform.name for step in sub.plan.steps],
             "environment": environment,
         }
+
+    def _pulls_images(self) -> bool:
+        return not (self.native or self.runtime == Runtime.MAMBA)
 
     @exclusive("launching a run")
     def RunWorkflow(
@@ -672,8 +691,8 @@ class _WorkflowOps:
             # fetching on purpose: lazy materialisation is right on a cluster
             # whose nodes can reach a registry, and moving pulls onto every
             # launch would be a regression for everyone. On a cluster whose
-            # compute nodes cannot, this is what says to run the pre-flight
-            # first -- and a workspace recording no images (an older stage) is
+            # compute nodes cannot, this is what says to run setup first --
+            # and a workspace recording no images (an older stage) is
             # simply nothing to check, exactly as above.
             _images, _unknown = _manifest_images(env_doc)
             _missing = _check_image_store(
@@ -685,7 +704,7 @@ class _WorkflowOps:
                     f"[{len(_missing)}] of [{len(_images)}] tool image(s) are not in this"
                     f" agent's store and will be fetched by the first task that needs each"
                     f" -- which fails on a compute node with no route to a registry."
-                    f" Run `metasmith workflow materialise` on a host that can fetch:\n  "
+                    f" A setup run (`msm workflow setup`) pulls them on this host first:\n  "
                     + "\n  ".join(_missing)
                 )
             if _unknown:

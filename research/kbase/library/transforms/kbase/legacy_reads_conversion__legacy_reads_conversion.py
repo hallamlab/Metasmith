@@ -21,11 +21,12 @@ study             = model.AddRequirement(lib.GetType("kbase::study"))
 sample            = model.AddRequirement(lib.GetType("kbase::sample"), parents={study})
 read_library_name = model.AddRequirement(lib.GetType("kbase::accepts_04"), parents={sample})
 env               = model.AddRequirement(lib.GetType("env::legacy_reads_conversion.env"))
-# output is one of 2 types; each is its own product branch
+# output is one of 2 types; each is its own product group, sharing the other products
 output            = model.AddProduct(lib.GetType("kbase::KBaseFile_PairedEndLibrary"))
+report_           = model.AddProduct(lib.GetType("kbase::report"))
 model.NewProductGroup()
 output_2          = model.AddProduct(lib.GetType("kbase::KBaseFile_SingleEndLibrary"))
-report_           = model.AddProduct(lib.GetType("kbase::report"))
+model.AddProduct(report_)
 
 def protocol(context: ExecutionContext):
     made = {output: context.Output(output)}

@@ -22,7 +22,7 @@
 use serde::Deserialize;
 
 use crate::det::{self, Map, Set};
-use crate::model::{DepId, Deps, EpId, EpSig, Endpoints, Transform, TransformId, Types};
+use crate::model::{DepId, Deps, EpId, EpSig, Endpoints, Transform, TransformId, TypeId, Types};
 
 #[derive(Debug, Deserialize)]
 pub struct EncodedNode {
@@ -53,6 +53,18 @@ pub struct EncodedProblem {
     /// Endpoint ids per given group, positionally matched to
     /// `transforms[given_index].produces`.
     pub given: Vec<Vec<u32>>,
+    /// `(transform, group)`: the outcome this solve is for, per fork. A fork not
+    /// named here takes its first group.
+    #[serde(default)]
+    pub fork_groups: Vec<(TransformId, u32)>,
+    /// Transform indices of a partial solution: the steps a sibling case took up
+    /// to the fork this case is for. Replayed in order and kept.
+    #[serde(default)]
+    pub partial: Vec<TransformId>,
+    /// Transform indices of steps already solved for other cases that no other
+    /// outcome conditions. A suggestion: it raises their prior and commits nothing.
+    #[serde(default)]
+    pub guide: Vec<TransformId>,
 }
 
 /// Everything derived from the payload, and immutable from then on.
@@ -72,6 +84,12 @@ pub struct Problem {
     pub seed: u64,
     pub max_iter: u32,
     pub max_refine: u32,
+    pub partial: Vec<TransformId>,
+    pub guide: Vec<TransformId>,
+    /// The group each fork's applications produce. Every table derived below
+    /// still reads all of a fork's groups, so a problem whose fork the search
+    /// never applies searches exactly as it would without the choice.
+    pub fork_group: Map<TransformId, u32>,
 
     /// Given, then the caller's sequence, then target.
     pub iter_order: Vec<TransformId>,
@@ -99,6 +117,9 @@ pub struct Problem {
     /// Per transform: 1.0 when applying it can re-enable itself with nothing
     /// gained. See `derive`.
     pub self_feed: Vec<f64>,
+    /// Product types the target can never bind to one of its lineage anchors.
+    /// See `derive_dead_anchors`.
+    pub dead_anchor: Set<TypeId>,
 }
 
 impl Problem {
@@ -155,6 +176,25 @@ impl Problem {
                 produces: t.produces.clone(),
                 sig,
             });
+        }
+        // A fork's groups are alternative outcomes, and one solve plans for one
+        // of them. The given transform's groups are samples, not outcomes.
+        let mut fork_group: Map<TransformId, u32> = det::map();
+        for (t, tr) in transforms.iter().enumerate() {
+            let t = t as TransformId;
+            if t != enc.given_index && tr.produces.len() > 1 { fork_group.insert(t, 0); }
+        }
+        for &(t, g) in &enc.fork_groups {
+            let n = transforms.get(t as usize).map(|x| x.produces.len()).unwrap_or(0);
+            if !fork_group.contains_key(&t) || g as usize >= n {
+                return Err(format!("fork group {g} of transform {t} does not exist"));
+            }
+            fork_group.insert(t, g);
+        }
+        for (field, ts) in [("partial", &enc.partial), ("guide", &enc.guide)] {
+            if let Some(t) = ts.iter().find(|&&t| t as usize >= transforms.len()) {
+                return Err(format!("{field} names transform {t}, which does not exist"));
+            }
         }
 
         let mut iter_order = Vec::with_capacity(enc.caller_transforms.len() + 2);
@@ -218,6 +258,9 @@ impl Problem {
             seed: enc.seed,
             max_iter: enc.max_iter,
             max_refine: enc.max_refine,
+            partial: enc.partial.clone(),
+            guide: enc.guide.clone(),
+            fork_group,
             iter_order,
             dep_rank,
             dep_parents_ranked,
@@ -233,12 +276,22 @@ impl Problem {
             free_transforms: Vec::new(),
             no_path_possible: false,
             self_feed: Vec::new(),
+            dead_anchor: det::set(),
         };
         p.derive();
         Ok((p, endpoints))
     }
 
     #[inline]
+    /// The groups one application of `t` produces: a fork's chosen group, or all.
+    pub fn outcome(&self, t: TransformId) -> &[Vec<DepId>] {
+        let groups = &self.transforms[t as usize].produces;
+        match self.fork_group.get(&t) {
+            Some(&g) => std::slice::from_ref(&groups[g as usize]),
+            None => groups,
+        }
+    }
+
     pub fn dep_is_a(&self, x: DepId, y: DepId) -> bool {
         self.types.is_a(self.deps.ty(x), self.deps.ty(y))
     }
@@ -377,6 +430,7 @@ impl Problem {
             return;
         }
         self.max_distance = self.distance.values().copied().max().unwrap_or(0);
+        self.derive_dead_anchors();
 
         let mut rts: Set<TransformId> = self.relevant_transforms.iter().copied().collect();
         rts.insert(self.given_index);
@@ -395,5 +449,61 @@ impl Problem {
             .copied()
             .filter(|&t| self.transforms[t as usize].is_free())
             .collect();
+    }
+
+    /// Which product types can never fill a target requirement that other
+    /// target requirements name as a lineage parent.
+    ///
+    /// The endpoint bound to such an anchor has to be an ancestor of, or the
+    /// same endpoint as, whatever fills each requirement anchored on it. So a
+    /// type that conforms to the anchor is dead when, for some dependent, it
+    /// neither conforms to the dependent nor can be turned into something that
+    /// does by any chain of transforms. A hybrid sample's target anchors an
+    /// OPERA-MS assembly on "the assembly", and the MEGAHIT and Flye assemblies
+    /// conform to the anchor without ever feeding OPERA-MS; before this the
+    /// search built the whole pipeline on each of them first.
+    ///
+    /// Reachability is over types and ignores lineage, so it over-approximates
+    /// and "dead" is certain. What is done with it is still only a demotion
+    /// (`Policy`): a step fed by a dead anchor can be needed elsewhere.
+    ///
+    /// A given's descendants are declared rather than produced, which this walk
+    /// cannot see, so a type the givens supply is never dead.
+    fn derive_dead_anchors(&mut self) {
+        let reqs = &self.transforms[self.target_index as usize].requires;
+        let ty = |d: DepId| self.deps.ty(d);
+        let given: Set<TypeId> = self.transforms[self.given_index as usize]
+            .produces.iter().flatten().map(|&d| ty(d)).collect();
+        let mut dead: Set<TypeId> = det::set();
+        for &anchor in reqs {
+            let dependents: Vec<TypeId> = reqs
+                .iter()
+                .filter(|&&j| self.deps.parents(j).contains(&anchor))
+                .map(|&j| ty(j))
+                .collect();
+            if dependents.is_empty() { continue; }
+            for t in &self.transforms {
+                for &d in t.produces.iter().flatten() {
+                    let x = ty(d);
+                    if !self.types.is_a(x, ty(anchor)) || given.contains(&x) { continue; }
+                    let mut reach: Set<TypeId> = det::set();
+                    let mut todo = vec![x];
+                    while let Some(y) = todo.pop() {
+                        for (ci, c) in self.transforms.iter().enumerate() {
+                            if ci as TransformId == self.target_index { continue; }
+                            if !c.requires.iter().any(|&r| self.types.is_a(y, ty(r))) { continue; }
+                            for &z in c.produces.iter().flatten() {
+                                if reach.insert(ty(z)) { todo.push(ty(z)); }
+                            }
+                        }
+                    }
+                    let live = dependents.iter().all(|&j| {
+                        self.types.is_a(x, j) || reach.iter().any(|&y| self.types.is_a(y, j))
+                    });
+                    if !live { dead.insert(x); }
+                }
+            }
+        }
+        self.dead_anchor = dead;
     }
 }

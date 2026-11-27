@@ -34,20 +34,10 @@ def register(subs):
         a.agent, a.task_ref, a.on_exist, a.workspace, a.idle_timeout,
     ))
 
-    _mat = sp.add_parser(
-        "materialise", aliases=["materialize"],
-        help="fetch a staged task's tool images onto the agent, before running",
-    )
-    _mat.add_argument("agent")
-    _mat.add_argument("task_key")
-    _mat.add_argument("--force", action="store_true",
-                      help="re-fetch every image even if the store already holds it")
-    _mat.set_defaults(func=lambda a: _rt.materialise(a.agent, a.task_key, a.force))
-
     _env = sp.add_parser(
         "setup-env",
-        help="prepare the agent's host for a staged task: tool images for a "
-             "container agent, tool conda envs for a mamba one",
+        help="build the tool conda envs a staged task names, on a mamba or native agent "
+             "(a container agent's images are pulled by `setup`)",
     )
     _env.add_argument("agent")
     _env.add_argument("task_key")
@@ -62,8 +52,8 @@ def register(subs):
 
     _setup = sp.add_parser(
         "setup",
-        help="prepare an agent for a planned task: every environment it needs, then a run "
-             "of only the steps that read no sample (the downloads), into the agent's cache",
+        help="prepare an agent for a planned task: a run of its tool image pulls and the "
+             "steps that read no sample (the downloads), into the agent's cache",
     )
     _setup.add_argument("agent")
     _setup.add_argument("task_ref", metavar="TASK",
@@ -71,7 +61,7 @@ def register(subs):
     _setup.add_argument("--preset")
     _setup.add_argument("--params", help="JSON dict")
     _setup.add_argument("--force", action="store_true",
-                        help="re-fetch or rebuild environments even when already there")
+                        help="rebuild conda environments even when already there")
     _setup.add_argument("--library", default=None,
                         help="library to read conda recipes from "
                              "(default: the installed metasmith_libraries)")

@@ -7,7 +7,7 @@ survey  = model.AddRequirement(lib.GetType("amplicon::survey"))
 name    = model.AddRequirement(lib.GetType("sequences::sample_name"), parents={survey})
 report  = model.AddRequirement(lib.GetType("taxonomy::kraken2_report"), parents={survey})
 script  = model.AddRequirement(lib.GetType("lib::kraken_abundance.py"))
-counts  = model.AddProduct(lib.GetType("amplicon::asv_table"))
+counts  = model.AddProduct(lib.GetType("amplicon::abundance_table"))
 
 RANK = "S"
 
@@ -16,9 +16,9 @@ def protocol(context: ExecutionContext):
     iscript=context.Input(script)
     iout=context.Output(counts)
 
-    # A kraken2 report and an ASV table are the same shape -- samples by taxa,
-    # counts -- so this produces `amplicon::asv_table` rather than a new type, and
-    # the six ecology transforms lifted out of the aspire gate read it unchanged.
+    # Samples by taxa, counts, with nothing left to curate -- so this produces the
+    # analysis-ready `amplicon::abundance_table` that the ecology transforms lifted out
+    # of the aspire gate read.
     #
     # The row label is the sample's own name, recovered through lineage. The two
     # grouped slots must NOT be paired by position: `InputGroup(report)[i]` and

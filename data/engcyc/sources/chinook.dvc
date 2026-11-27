@@ -1,0 +1,6 @@
+outs:
+- md5: dbfb329331d14b0f88be5c28ebd718f3.dir
+  size: 11217800
+  nfiles: 95
+  hash: md5
+  path: chinook

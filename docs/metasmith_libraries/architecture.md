@@ -87,9 +87,9 @@ conda package cache 27,000, and together they helped fill a one-million-inode qu
 
 ## Templates
 
-A template is a starting point a user picks in the GUI: a `Spec` whose input paths are
-`DEFERRED`, with its input library packed inline. **There is no template format** — it is the
-same object a stored workflow is, so a template validates the way a workflow does, by solving.
+A template is a starting point a user picks in the GUI: a list of cases over one input library
+whose paths are `DEFERRED`, packed inline. It is the same shape a stored workflow is, so a
+template validates the way a workflow does, by planning.
 Shipping them beside the transforms is what makes versioning free: a template arrives in the same
 commit as the transforms it names and cannot be older than the library it was found in.
 
@@ -105,6 +105,18 @@ and the stubs, each row carrying the source process and line so the port stays a
 Collapsing two nodes is a table edit and a regenerate — which stops being safe once the bodies
 become real protocols. `ASPIRE_PORT.md` beside this file is the live correspondence map to
 `research/aspire/upstream/`, and is what anyone extending those transforms needs.
+
+## Contig taxonomy runs LCA* over the GTDB tree
+
+`lib::lcastar` takes votes from several sources and returns the deepest lineage a weighted majority supports. Contig taxonomy feeds it UniRef50 ORF LCAs, Metabuli matches and SSU rRNA.
+
+**Each vote is mapped to GTDB before LCA* runs, never after.** A UniRef50 hit carries an NCBI taxid, and `ref::ncbi_to_gtdb_map` turns it into a GTDB lineage first. LCA* therefore walks the GTDB tree. Running LCA* on the NCBI tree and mapping its answer afterwards would drop the votes that disagree between the two trees.
+
+**Weight sources before they meet.** Metabuli reports dozens of k-mer matches per contig, against one or two ORF LCAs per contig. Its matches are rescaled to one vote per contig. Raw counts would outvote every other source.
+
+**Do not trust the Cyanoverse port as a reference.** `protein-clusters/lib/local/lcastar.py` and upstream `hallamlab/LCAStar` sort branches the wrong way and descend into the minority branch. They also compute the p-value with log10. `lib::lcastar` follows the published algorithm and uses the natural log, so its p-values do not match old Cyanoverse tables.
+
+`diamond_uniref50` keeps five hits per ORF, so an ORF LCA has more than one taxon to work with. `annotation::diamond_uniref50_top1_results` is the legacy one-hit type, for importing older searches. No active transform consumes it. An imported one-hit search reaches a GPR or LCA* transform only through a fresh five-hit search.
 
 ## A rule that fails quietly, and belongs to this library rather than the engine
 

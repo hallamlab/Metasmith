@@ -9,6 +9,8 @@ from metasmith.python_api import (
     Size,
 )
 
+from metasmith.testing.pool_fixtures import pool_backed
+
 from conftest import (
     wait_for_workflow,
     verify_fasta_output,
@@ -24,22 +26,23 @@ def logistics_transforms(mlib):
     ]
 
 
-@pytest.fixture
-def sra_input(tmp_inputs):
+@pytest.fixture(params=["short", "long"])
+def sra_input(tmp_inputs, request):
     inputs = tmp_inputs(["ncbi.yml", "sequences.yml"])
 
     meta = inputs.AddValue(
         "reads_metadata.json",
-        {"parity": "single", "length_class": "short"},
+        {"parity": "single", "length_class": request.param},
         "sequences::read_metadata",
     )
     inputs.AddValue(
         "SRR5585544.acc",
         "SRR5585544",
-        "ncbi::sra_accession",
+        f"ncbi::sra_{request.param}_read_accession",
         parents={meta},
     )
 
+    pool_backed(inputs)
     inputs.Save()
     return inputs
 
@@ -63,8 +66,23 @@ def assembly_accession_input(tmp_inputs):
         parents={name},
     )
 
+    pool_backed(inputs)
     inputs.Save()
     return inputs
+
+
+def test_an_sra_accession_plans_one_fetch_for_its_read_class(base_resources, logistics_transforms, sra_input):
+    from metasmith.agents.spec import CaseViews, plan_views
+    targets = TargetBuilder()
+    targets.Add("sequences::reads")
+    task = plan_views(
+        [CaseViews("case", list(sra_input.AsSamples("sequences::read_metadata")), [], targets)],
+        resources=base_resources + [sra_input],
+        transforms=logistics_transforms,
+    )
+    assert task.ok, f"Workflow generation failed: {task}"
+    (fetch,) = [s for s in task.plan.steps if s.transform.name.startswith("getSra")]
+    assert [len(g) for g in fetch.produces] == [1]
 
 
 class TestLogisticsWorkflowGeneration:

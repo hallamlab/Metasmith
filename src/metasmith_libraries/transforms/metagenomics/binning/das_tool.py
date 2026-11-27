@@ -8,7 +8,7 @@
 #
 # It also takes `-p` externally-predicted proteins in prodigal's own fasta
 # format (>contigID_geneNo), which is exactly what transforms/metagenomics/
-# prodigal.py's sequences::orfs already is -- checked by running pprodigal on
+# prodigal.py's sequences::assembly_orfs already is -- checked by running pprodigal on
 # a synthetic assembly and comparing the header shape against DAS_Tool's own
 # `--help` and its DAS_Tool.R (`contig_id := gsub('_[0-9]+$','', protein_id)`).
 # So gene prediction is not duplicated at runtime: this transform skips
@@ -24,8 +24,9 @@ model = Transform()
 # ~83 MB) at its --dbDirectory default, so no separate reference input exists
 # to require. See resources/env/das_tool.env for what was checked.
 image    = model.AddRequirement(lib.GetType("env::das_tool.env"))
+model.AddRequirement(lib.GetType("binning::metabat2_semibin2_comebin"))
 asm      = model.AddRequirement(lib.GetType("sequences::assembly"))
-orfs     = model.AddRequirement(lib.GetType("sequences::orfs"), parents={asm})
+orfs     = model.AddRequirement(lib.GetType("sequences::assembly_orfs"), parents={asm})
 mb_table = model.AddRequirement(lib.GetType("binning::metabat2_contig_to_bin_table"), parents={asm})
 sb_table = model.AddRequirement(lib.GetType("binning::semibin2_contig_to_bin_table"), parents={asm})
 cb_table = model.AddRequirement(lib.GetType("binning::comebin_contig_to_bin_table"), parents={asm})

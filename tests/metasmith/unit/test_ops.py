@@ -24,7 +24,7 @@ from metasmith.ops import (
     workspace as op_workspace,
 )
 
-from tests.metasmith.e2e.docker.conftest import create_transform_library
+from tests.metasmith.support import create_transform_library
 
 
 @pytest.fixture

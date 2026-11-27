@@ -7,7 +7,7 @@ import csv
 import sys
 
 import _authoring as A
-from metasmith.python_api import DEFERRED, Spec
+from metasmith.python_api import DEFERRED, Spec, Template
 
 NAME = "geoquery_from_aoi_table"
 DESCRIPTION = """
@@ -33,17 +33,20 @@ def sources() -> list[str]:
         return [r["source"] for r in csv.DictReader(fh, delimiter="\t")]
 
 
-def build_spec(rebuild: bool = False) -> Spec:
+def build_template(rebuild: bool = False) -> Template:
     def inputs(lib):
         lib.AddTypeLibrary(A.TYPES / "geoquery.yml")
         table = lib.AddItem(DEFERRED, "geoquery::aoi_table")
         for s in sources():
             lib.AddValue(f"source_{s}.json", {"adapter": s}, "geoquery::source", parents={table})
 
-    return Spec(
-        input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
-        sample_type="geoquery::aoi_table",
-        target_types=TARGETS,
+    return Template(
+        name=NAME, description=DESCRIPTION.strip(),
+        cases=[Spec(
+            input_library=A.deferred_inputs(NAME, inputs, rebuild=rebuild),
+            sample_type="geoquery::aoi_table",
+            target_types=TARGETS,
+        )],
         transform_libraries=A.transforms("geoquery"),
         resource_libraries=[A.envs()],
     )

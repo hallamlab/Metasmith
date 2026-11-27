@@ -46,6 +46,20 @@ def _forward_closure(givens: set[Endpoint], transform2inst: dict[Transform, Tran
         pending = [m for m in pending if m not in fired]
 
 
+# A type nothing can produce -- a licensed download, say -- names where a user
+# gets it, so the hint for its absence can say so.
+def _obtain_from(properties: set[str]) -> list[str]:
+    found = []
+    for p in properties:
+        try:
+            obj = json.loads(p)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(obj, dict) and "obtain_from" in obj:
+            found.append(str(obj["obtain_from"]))
+    return sorted(found)
+
+
 def _diagnose_plan_failure(
     target_model: Transform,
     target_names: list[str],
@@ -314,6 +328,7 @@ def _diagnose_plan_failure(
     for leaf, targets in sorted(leaf_targets.items(), key=lambda kv: (-len(kv[1]), _name(leaf_of[kv[0]]))):
         leaf_name = _name(leaf_of[leaf])
         users = sorted(required_by.get(leaf, ()))
+        sources = _obtain_from(leaf_of[leaf].properties)
         hints.append(PlanHint(
             kind='unproduced_requirement',
             target=targets[0] if len(targets) == 1 else f"{len(targets)} targets",
@@ -321,6 +336,7 @@ def _diagnose_plan_failure(
                 f"no transform in the loaded libraries produces {leaf_name} and no given "
                 f"input matches it, and every route to {', '.join(targets)} needs it"
                 + (f" (required by {', '.join(users)})" if users else "")
+                + (f". Obtain it from {', '.join(sources)} and give it as an input" if sources else "")
             ),
             chain=[f"{u} needs {leaf_name}" for u in users],
             candidate_transforms=users,
@@ -527,4 +543,21 @@ def _diagnose_plan_failure(
                     chain=[f"{_model_name(model)} needs {req_name} with parent {req_parent_name}"],
                     near_misses=near_misses,
                 ))
+    # Every target has a route from the givens and nothing on the way is too general or
+    # off-lineage, so the search ran out before it joined the routes into one plan. The
+    # per-producer hints would only list each target's unused dead ends.
+    explained = {'lineage_mismatch', 'too_general'}
+    if all(_matches_any_given(r) or _reachable(r) for r in target_model.requires) \
+            and not any(h.kind in explained for h in hints):
+        iterations = getattr(solver_result, "_iterations", None)
+        return [PlanHint(
+            kind='search_exhausted',
+            target=",".join(target_names),
+            message=(
+                "every target can be produced from the given inputs, but the planner found no "
+                "single plan for all of them together"
+                + (f" within {iterations} iterations" if iterations else "")
+                + ". Solve fewer targets at a time, or remove targets you do not need."
+            ),
+        )]
     return hints

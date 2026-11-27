@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import time
 from pathlib import Path
 
 
@@ -76,9 +77,6 @@ class _PoolAccess:
         parts.append(f"cd {home} && ./msm --json {verb} " + " ".join(flags))
         return " ; ".join(parts)
 
-    def _pool_read_command(self, flags: list[str]) -> str:
-        return self._pool_command("cache list", flags)
-
     def ReadPool(
         self,
         *,
@@ -101,14 +99,7 @@ class _PoolAccess:
         for k, v in where.items():
             if v is not None:
                 flags.append(f"--{k} {shlex.quote(str(v))}")
-        res = self._remote_oneshot(self._pool_read_command(flags), timeout=timeout)
-        try:
-            return first_json(res.out)
-        except ValueError as e:
-            raise ValueError(
-                f"could not read the pool at [{self._pool_root()}] on "
-                f"[{self.home.address}]: {e}"
-            ) from None
+        return self._pool_answer("cache list", flags, timeout, "read")
 
     def CheckPool(self, *, timeout: int = 600) -> dict:
         from ..ops import cache as op_cache
@@ -116,14 +107,7 @@ class _PoolAccess:
         if not self._is_ssh():
             return op_cache.check_imports(agent_home=str(self.home.GetPath()))
         flags = [f"--cache-root {shlex.quote(str(self._pool_root()))}"]
-        res = self._remote_oneshot(self._pool_command("cache check", flags), timeout=timeout)
-        try:
-            return first_json(res.out)
-        except ValueError as e:
-            raise ValueError(
-                f"could not check the pool at [{self._pool_root()}] on "
-                f"[{self.home.address}]: {e}"
-            ) from None
+        return self._pool_answer("cache check", flags, timeout, "check")
 
     def ImportToPool(
         self,
@@ -167,8 +151,10 @@ class _PoolAccess:
             flags.append(f"--parent {shlex.quote(str(p))}")
         for t in tags:
             flags.append(f"--tag {shlex.quote(t)}")
+        # Not retried: an import that landed before its answer was lost would
+        # land again as a second entry under the same name.
         return self._pool_answer(
-            "data import", flags, timeout, f"import [{path}]",
+            "data import", flags, timeout, f"import [{path}] into", retry=False,
         )
 
     def WriteImportable(self, relpath, content: str, *, timeout: int = 120) -> Path:
@@ -230,7 +216,7 @@ class _PoolAccess:
         if remove:
             flags.append("--remove")
         flags += [shlex.quote(t) for t in tags]
-        return self._pool_answer("cache tag", flags, timeout, f"tag [{key_hex}]")
+        return self._pool_answer("cache tag", flags, timeout, f"tag [{key_hex}] in")
 
     def ForgetPoolEntry(self, instance_id: str, *, delete: bool = False,
                         timeout: int = 120) -> dict:
@@ -248,18 +234,27 @@ class _PoolAccess:
         if delete:
             flags.append("--delete")
         return self._pool_answer(
-            "data forget", flags, timeout, f"forget [{instance_id}]",
+            "data forget", flags, timeout, f"forget [{instance_id}] in",
         )
 
-    def _pool_answer(self, verb: str, flags: list, timeout: int, what: str) -> dict:
-        res = self._remote_oneshot(self._pool_command(verb, flags), timeout=timeout)
-        try:
-            return first_json(res.out)
-        except ValueError as e:
-            raise ValueError(
-                f"could not {what} in the pool at [{self._pool_root()}] on "
-                f"[{self.home.address}]: {e}"
-            ) from None
+    # Backoff between attempts at a call whose answer was lost, most often to a
+    # dropped ssh connection.
+    _POOL_RETRY_S = (5.0, 20.0)
+
+    def _pool_answer(self, verb: str, flags: list, timeout: int, what: str,
+                     retry: bool = True) -> dict:
+        cmd = self._pool_command(verb, flags)
+        for wait_s in (*(self._POOL_RETRY_S if retry else ()), None):
+            res = self._remote_oneshot(cmd, timeout=timeout)
+            try:
+                return first_json(res.out)
+            except ValueError as e:
+                if wait_s is None:
+                    raise ValueError(
+                        f"could not {what} the pool at [{self._pool_root()}] on "
+                        f"[{self.home.address}]: {e}"
+                    ) from None
+                time.sleep(wait_s)
 
     def EnsurePoolEntries(self, items, *, timeout: int = 300) -> dict:
         """Make sure the pool holds an entry under each name, and say which.
@@ -274,24 +269,17 @@ class _PoolAccess:
         against what the pool holds, so an item may name one imported earlier
         in the same list by its name.
         """
-        held: dict[str, str] = {}
-        for row in self.ReadPool(origin="imported")["entries"]:
-            held.setdefault(row["name"], row["instance_id"])
+        import base64
 
-        out: dict[str, str] = {}
-        for item in items:
-            name = str(item.get("name") or item["path"])
-            if name in held:
-                out[name] = held[name]
-                continue
-            parents = [out.get(str(p), p) for p in item.get("parents") or []]
-            record = self.ImportToPool(
-                item["path"], item["dtype"],
-                name=name, parents=parents, tags=item.get("tags"),
-                timeout=timeout,
-            )
-            held[name] = out[name] = record["instance_id"]
-        return out
+        from ..ops import data as op_data
+
+        if not self._is_ssh():
+            return op_data.ensure_items(items, agent_home=str(self.home.GetPath()))["instance_ids"]
+        blob = base64.b64encode(json.dumps(list(items), default=str).encode()).decode("ascii")
+        flags = [shlex.quote(blob), f"--cache-root {shlex.quote(str(self._pool_root()))}"]
+        return self._pool_answer(
+            "data ensure", flags, timeout, f"import [{len(items)}] item(s) into",
+        )["instance_ids"]
 
     def ResolvePoolRefs(self, refs, *, entries: list | None = None) -> list[dict]:
         """Pool entries for the references given, in the order given.

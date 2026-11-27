@@ -190,6 +190,19 @@ class TestSlurmPreset:
         assert '?: "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"' in line
         assert "params.process.clusterOptionsExtra" in line
 
+    def test_a_local_step_beside_slurm_steps_runs_here_unarrayed_and_a_pull_cannot_be_ignored(self):
+        # The local executor refuses a job array at compile time and aborts the whole
+        # run, and a login node has no SLURM_TMPDIR. A setup run's pulls carry the
+        # `local` label too; their withName block outranks this withLabel block, and
+        # it overrides only the retry and the resume, never the executor or the array.
+        from metasmith.models.workflow.nextflow_codegen import PULL_RESOURCES
+        block = self._slurm().split("withLabel: 'xlocalx' {")[1].split("}")[0]
+        for line in ("executor = 'local'", "array = 0", "scratch = false"):
+            assert line in block
+        assert "'ignore'" in block
+        assert any("'finish'" in x for x in PULL_RESOURCES)
+        assert not any(x.split("=")[0].strip() in ("executor", "array", "scratch") for x in PULL_RESOURCES)
+
 
 class TestEnvironmentGpuArgs:
     def test_docker(self):

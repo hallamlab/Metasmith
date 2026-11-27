@@ -87,7 +87,7 @@ def _plan_reads_to_ecspr(work: Path):
         )
         reads = work / f"pool_{i}.fq.gz"
         reads.touch()
-        inputs.AddItem(reads, "sequences::short_reads_pe", parents={meta})
+        inputs.AddItem(reads, "sequences::short_reads", parents={meta})
 
     host = work / "host.fna"
     host.touch()

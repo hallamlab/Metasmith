@@ -169,11 +169,33 @@ Here, we request that targets of the type :python:`pangenome::heatmap` be produc
 
     More on `Transforms, and TransformInstances, and TransformInstanceLibraries <../usage/transforms.html>`_
 
+To plan different targets for different inputs in one workflow, give each group of inputs its
+own case. :python:`Plan` hands every case to the solver at once and merges the steps the cases
+share. Here the short-read samples get the short-read targets and the long-read samples get
+their own.
+
+.. code-block:: python
+    :linenos:
+
+    from metasmith.python_api import Plan, Spec
+
+    task = Plan(
+        [
+            Spec(input_library=inputs, name="short_reads", sample_type="sequences::read_metadata",
+                 input_paths=["short_1_metadata.json"], target_types=short_targets),
+            Spec(input_library=inputs, name="long_reads", sample_type="sequences::read_metadata",
+                 input_paths=["long_1_metadata.json"], target_types=long_targets),
+        ],
+        transform_libraries=transforms,
+        resource_libraries=resources,
+    )
+
 Each :python:`task` has a code name or :python:`key` composed of case sensitive letters and numbers that is calculated from the inputs
 and workflow steps. A :python:`task` contains all the context required to execute a workflow.
 
 .. code-block:: python
     :linenos:
+
     print(f'this workflow is called [{len(task.GetKey())}]')
 
 The steps of the workflow can be rendered as a directed acyclic graph (DAG) or more commonly known as a flowchart.

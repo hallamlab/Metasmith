@@ -1,3 +1,4 @@
+from metasmith.models.workflow import Case
 import time
 import shutil
 import tempfile
@@ -61,14 +62,12 @@ class TestSolverScalingCyanoverse:
         ]
 
         t0 = time.time()
-        samples = list(inputs.AsSamples("sequences::putative_genome"))
+        samples = list(inputs.AsSamples("pangenome::pangenome"))
         as_time = time.time() - t0
         print(f"\nAsSamples({n}): {as_time:.1f}s, {len(samples)} views")
 
-        assert len(samples) == 1, (
-            f"Expected 1 deduplicated view, got {len(samples)}. "
-            f"AsSamples should deduplicate views with identical masks."
-        )
+        assert len(samples) == 1
+        assert len(samples[0]._mask) == n + 1
 
         target_model = Transform()
         ani_ep = transforms[0].GetType("taxonomy::ani_table")
@@ -77,10 +76,8 @@ class TestSolverScalingCyanoverse:
 
         start = time.time()
         plan = WorkflowPlan.Generate(
-            given=[[sv] + res_views for sv in samples],
+            cases=Case.ByShape([[sv] + res_views for sv in samples], target=target_model, target_names=target_names),
             transforms=transforms,
-            target_names=target_names,
-            target_model=target_model,
         )
         elapsed = time.time() - start
 

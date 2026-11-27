@@ -21,23 +21,22 @@ FILES = [
     "AMRProt-susceptible.fa", "AMRProt-susceptible.tsv", "AMR_CDS.fa",
     "database_format_version.txt", "fam.tsv", "taxgroup.tsv", "version.txt", "changes.txt",
 ]
+RELEASE_URL = f"{BASE_URL}/{MINOR}/{DB_VERSION}"
+# The AMR_DNA pair per taxgroup is named by taxgroup.tsv at run time, so only the fixed files are here.
+URLS = {f: f"{RELEASE_URL}/{f}" for f in FILES}
 
 
 def protocol(context: ExecutionContext):
     idb = context.Output(db)
-    base = context.params.get("amrfinder_db_url", BASE_URL).rstrip("/")
-    minor = context.params.get("amrfinder_db_minor", MINOR)
-    assert not isinstance(minor, float), f"amrfinder_db_minor [{minor}] was read as a number; quote it, e.g. \"{minor}\""
-    minor = str(minor)
-    version = str(context.params.get("amrfinder_db_version", DB_VERSION))
-    url = f"{base}/{minor}/{version}"
+    mirror = context.params.get("amrfinder_db_url")
+    url = Rebase(RELEASE_URL, BASE_URL, mirror)
     stage = Path("amrfinderdb")
     failed = ExecutionResult(manifest=[], success=False)
 
     if context.LocalShell("\n".join([
         "set -euo pipefail",
         f"mkdir -p {stage}",
-        *(FetchCommand(f"{url}/{f}", stage/f) for f in FILES),
+        *(FetchCommand(Rebase(URLS[f], BASE_URL, mirror), stage/f) for f in FILES),
     ])) != 0:
         return failed
 
@@ -69,7 +68,7 @@ def protocol(context: ExecutionContext):
 
     found = (idb.local/"version.txt").read_text().strip()
     Log.Info(f"AMRFinderPlus database [{found}] with {len(taxgroups)} point-mutation taxgroups")
-    whole = found == version and all(
+    whole = found == DB_VERSION and all(
         (idb.local/f).is_file() and (idb.local/f).stat().st_size > 0
         for f in ("AMRProt.fa.phr", "AMR_CDS.fa.nhr", "AMR.LIB.h3m")
     )
@@ -84,6 +83,7 @@ TransformInstance(
     model=model,
     group_by=image,
     labels=["local"],
+    download_size=Size.GB(0.3),  # AMRFinderPlus DB, template estimate
     resources=Resources(
         cpus=2,
         memory=Size.GB(8),

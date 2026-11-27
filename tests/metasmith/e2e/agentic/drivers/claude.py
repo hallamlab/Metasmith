@@ -10,8 +10,6 @@ from ._stream import parse_claude_stream, run_streaming
 from ..harness import jail as _jail
 
 
-_CLAUDE_CRED_REL = Path(".claude") / ".credentials.json"
-
 # Per-model USD/MTok output rate — the most expensive per-token axis, used to
 # turn a per-iteration TOKEN budget into a per-invocation DOLLAR cap for the
 # `claude` CLI's `--max-budget-usd`. The CLI offers no `--max-turns` or token
@@ -39,10 +37,10 @@ def _derive_usd_cap(max_tokens_per_iter: int, model: str) -> float | None:
 
 
 def _bridge_claude_auth(sandbox_home: Path) -> None:
-    real = Path.home() / _CLAUDE_CRED_REL
+    real = Path.home() / _jail.CLAUDE_CREDENTIALS_REL
     if not real.exists():
         return
-    dest = sandbox_home / _CLAUDE_CRED_REL
+    dest = sandbox_home / _jail.CLAUDE_CREDENTIALS_REL
     if dest.exists() or dest.is_symlink():
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -71,8 +69,8 @@ class ClaudeDriver:
             raise RuntimeError(
                 f"`{self.bin}` not found on PATH; install Claude Code first"
             )
-        # When jailing, the host ~/.claude is bind-mounted live into the sandbox
-        # HOME (shared, rotating auth) — no copy/symlink. The copy-symlink bridge
+        # When jailing, the host credentials file is bind-mounted live into the
+        # sandbox HOME (shared, rotating auth) — no copy/symlink. The copy-symlink bridge
         # is the redirection-only fallback (docker dev / no-bwrap hosts), where
         # each sandbox gets its own view of the credentials file.
         if (env is not None and "HOME" in env and not self._should_jail(env)):

@@ -10,3 +10,7 @@ types:
     properties:
       _: skani-derived clustering table; rows are bins, marks medoid centroid per cluster
       ext: tsv
+  quality_bin_rrna_gff:
+    properties:
+      _: barrnap rRNA predictions for one quality bin, one GFF3 feature per rRNA gene
+      ext: gff

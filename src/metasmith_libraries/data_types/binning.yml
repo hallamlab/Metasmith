@@ -41,6 +41,12 @@ types:
     properties:
       method: comebin
 
+  metadecoder_contig_to_bin_table:
+    extends:
+    - raw_contig_to_bin_table
+    properties:
+      method: metadecoder
+
   # MetaWRAP is one step, not three: its bin_refinement consolidates MetaBAT2,
   # MaxBin2 and CONCOCT into a single set, and that consolidated set is what is
   # used. The three raw bin sets are not products here -- so unlike DAS Tool,
@@ -80,6 +86,19 @@ types:
     properties:
       _: DAS Tool per-bin quality table (DASTool_summary.tsv) -- bin_set, SCG completeness/redundancy and selection score per consolidated bin
       ext: tsv
+
+  # das_tool.py and das_tool_metadecoder.py produce the same three types, and the
+  # planner picks between two producers of a type by target set, not by cost: naming
+  # a binner's raw table neither forces nor forbids either. So each variant requires
+  # the marker named for its binner set, and a plan without it can never reach it.
+  # A run gives exactly one marker.
+  metabat2_semibin2_comebin:
+    properties:
+      _: Marker that opts a run into DAS Tool over MetaBAT2, SemiBin2 and COMEBin
+
+  metabat2_semibin2_metadecoder:
+    properties:
+      _: Marker that opts a run into DAS Tool over MetaBAT2, SemiBin2 and MetaDecoder
 
   # bin_refinement's own CheckM1 table, which comes free with the refinement and
   # is NOT taxonomy::checkm_stats. Two producers of one type cannot be told apart

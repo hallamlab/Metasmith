@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="347" height="1599" viewBox="0 0 347 1599">
+<rect width="347" height="1599" fill="#FFFFFF"/>
+<g fill="none" stroke="#666666" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="butt">
+<path d="M 126.2,39.7 L 126.2,90.3 L 126.2,92.9" stroke="#8A8A8A"/>
+<path d="M 126.2,102.1 L 126.2,104.7 L 126.2,135.8 L 126.2,167.1 L 126.2,198.2 L 126.2,229.4 L 126.2,260.6 L 126.2,291.9 L 126.2,416.6 L 126.2,479.1 L 126.2,697.5 L 126.2,853.5 L 126.2,1122.5" stroke="#636EFA"/>
+<path d="M 126.2,1131.7 L 126.2,1134.2 L 126.2,1165.5 L 126.2,1196.7 L 126.2,1259.0 L 126.2,1321.5 L 126.2,1383.8 L 126.2,1415.0 L 126.2,1477.5 L 126.2,1556.8" stroke="#EF553B"/>
+<path d="M 126.2,1559.3 L 126.2,1556.8 A 8.5,8.5 0 0 0 117.8,1548.3 L 100.9,1548.3 A 8.5,8.5 0 0 1 92.4,1539.8 L 92.4,1537.3" stroke="#636EFA"/>
+<path d="M 92.4,70.9 L 92.4,73.5 L 92.4,215.2" stroke="#8A8A8A"/>
+<path d="M 92.4,217.7 L 92.4,215.2 A 8.5,8.5 0 0 1 100.9,206.7 L 117.8,206.7 A 8.5,8.5 0 0 0 126.2,198.2" stroke="#636EFA"/>
+<path d="M 92.4,226.9 L 92.4,229.4 L 92.4,260.6 L 92.4,308.8 L 92.4,311.3" stroke="#8A8A8A"/>
+<path d="M 92.4,320.5 L 92.4,323.1 L 92.4,416.6 A 8.5,8.5 0 0 1 84.0,425.1" stroke="#8A8A8A"/>
+<path d="M 92.4,716.9 L 92.4,714.4 A 8.5,8.5 0 0 1 100.9,705.9 L 117.8,705.9 A 8.5,8.5 0 0 0 126.2,697.5" stroke="#636EFA"/>
+<path d="M 92.4,726.1 L 92.4,728.6 L 92.4,759.9 L 92.4,791.0 L 92.4,822.2 L 92.4,853.5 A 8.5,8.5 0 0 1 84.0,861.9" stroke="#EF553B"/>
+<path d="M 92.4,966.5 L 92.4,964.0 A 8.5,8.5 0 0 0 84.0,955.5 A 8.5,8.5 0 0 1 75.5,947.0" stroke="#00CC96"/>
+<path d="M 92.4,997.7 L 92.4,995.1 A 8.5,8.5 0 0 0 84.0,986.7 A 8.5,8.5 0 0 1 75.5,978.2" stroke="#00CC96"/>
+<path d="M 92.4,1028.9 L 92.4,1026.3 A 8.5,8.5 0 0 0 84.0,1017.9 A 8.5,8.5 0 0 1 75.5,1009.5" stroke="#00CC96"/>
+<path d="M 92.4,1060.1 L 92.4,1057.5 A 8.5,8.5 0 0 0 84.0,1049.1 A 8.5,8.5 0 0 1 75.5,1040.7" stroke="#00CC96"/>
+<path d="M 92.4,1216.1 L 92.4,1213.5 A 8.5,8.5 0 0 1 100.9,1205.1 L 117.8,1205.1 A 8.5,8.5 0 0 0 126.2,1196.7" stroke="#EF553B"/>
+<path d="M 92.4,1225.3 L 92.4,1227.8 L 92.4,1290.2 L 92.4,1352.7 L 92.4,1446.2 L 92.4,1528.1" stroke="#636EFA"/>
+<path d="M 109.3,124.1 L 109.3,121.5 A 8.4,8.4 0 0 1 117.8,113.1 A 8.4,8.4 0 0 0 126.2,104.7" stroke="#636EFA"/>
+<path d="M 109.3,155.3 L 109.3,152.8 A 8.4,8.4 0 0 1 117.8,144.3 A 8.4,8.4 0 0 0 126.2,135.8" stroke="#636EFA"/>
+<path d="M 109.3,186.5 L 109.3,183.9 A 8.4,8.4 0 0 1 117.8,175.5 A 8.4,8.4 0 0 0 126.2,167.1" stroke="#636EFA"/>
+<path d="M 109.3,342.5 L 109.3,339.9 A 8.5,8.5 0 0 0 100.9,331.5 A 8.5,8.5 0 0 1 92.4,323.1" stroke="#8A8A8A"/>
+<path d="M 109.3,351.7 L 109.3,416.6 A 8.5,8.5 0 0 1 100.9,425.1 L 84.0,425.1 L 67.1,425.1 L 50.2,425.1 A 8.4,8.4 0 0 0 41.7,433.6" stroke="#8A8A8A"/>
+<path d="M 109.3,810.5 L 109.3,808.0 A 8.5,8.5 0 0 0 100.9,799.5 A 8.5,8.5 0 0 1 92.4,791.0" stroke="#EF553B"/>
+<path d="M 109.3,819.7 L 109.3,853.5 A 8.5,8.5 0 0 1 100.9,861.9 L 84.0,861.9 A 8.5,8.5 0 0 0 75.5,870.4" stroke="#EF553B"/>
+<path d="M 109.3,1153.7 L 109.3,1151.2 A 8.4,8.4 0 0 1 117.8,1142.7 A 8.4,8.4 0 0 0 126.2,1134.2" stroke="#EF553B"/>
+<path d="M 109.3,1372.1 L 109.3,1369.5 A 8.5,8.5 0 0 0 100.9,1361.1 A 8.5,8.5 0 0 1 92.4,1352.7" stroke="#636EFA"/>
+<path d="M 109.3,1381.3 L 109.3,1400.8 L 109.3,1403.3" stroke="#636EFA"/>
+<path d="M 109.3,1412.5 L 109.3,1415.0 A 8.5,8.5 0 0 1 100.9,1423.5" stroke="#EF553B"/>
+<path d="M 109.3,1465.7 L 109.3,1463.2 A 8.5,8.5 0 0 0 100.9,1454.7 A 8.5,8.5 0 0 1 92.4,1446.2" stroke="#636EFA"/>
+<path d="M 109.3,1474.9 L 109.3,1494.3 L 109.3,1496.9" stroke="#636EFA"/>
+<path d="M 84.0,237.9 L 117.8,237.9 A 8.5,8.5 0 0 0 126.2,229.4" stroke="#636EFA"/>
+<path d="M 41.7,248.9 L 41.7,246.3 A 8.5,8.5 0 0 1 50.2,237.9 L 84.0,237.9 A 8.5,8.5 0 0 0 92.4,229.4" stroke="#8A8A8A"/>
+<path d="M 41.7,258.1 L 41.7,354.2 L 41.7,433.6 L 41.7,436.1" stroke="#8A8A8A"/>
+<path d="M 41.7,445.3 L 41.7,447.9 L 41.7,479.1 L 41.7,510.2 L 41.7,541.5 L 41.7,572.6 L 41.7,685.7" stroke="#EF553B"/>
+<path d="M 41.7,694.9 L 41.7,901.5" stroke="#EF553B"/>
+<path d="M 41.7,904.1 L 41.7,901.5 A 8.5,8.5 0 0 1 50.2,893.1 L 67.1,893.1 A 8.5,8.5 0 0 0 75.5,884.6" stroke="#00CC96"/>
+<path d="M 41.7,1184.9 L 41.7,1182.3 A 8.5,8.5 0 0 1 50.2,1173.9 L 117.8,1173.9 A 8.5,8.5 0 0 0 126.2,1165.5" stroke="#EF553B"/>
+<path d="M 41.7,1194.1 L 41.7,1415.0 A 8.5,8.5 0 0 0 50.2,1423.5 L 67.1,1423.5 A 8.4,8.4 0 0 1 75.5,1432.0" stroke="#EF553B"/>
+<path d="M 84.0,269.1 L 117.8,269.1 A 8.5,8.5 0 0 0 126.2,260.6" stroke="#636EFA"/>
+<path d="M 75.5,280.1 L 75.5,277.6 A 8.5,8.5 0 0 1 84.0,269.1 A 8.5,8.5 0 0 0 92.4,260.6" stroke="#8A8A8A"/>
+<path d="M 75.5,289.3 L 75.5,385.4 L 75.5,416.6 A 8.5,8.5 0 0 1 67.1,425.1" stroke="#8A8A8A"/>
+<path d="M 75.5,779.3 L 75.5,776.8 A 8.5,8.5 0 0 1 84.0,768.3 A 8.5,8.5 0 0 0 92.4,759.9" stroke="#EF553B"/>
+<path d="M 75.5,841.7 L 75.5,839.1 A 8.5,8.5 0 0 1 84.0,830.7 A 8.5,8.5 0 0 0 92.4,822.2" stroke="#EF553B"/>
+<path d="M 75.5,850.9 L 75.5,870.4 L 75.5,872.9" stroke="#EF553B"/>
+<path d="M 75.5,882.1 L 75.5,884.6 L 75.5,915.9 L 75.5,947.0 L 75.5,978.2 L 75.5,1009.5 L 75.5,1040.7 L 75.5,1091.3" stroke="#00CC96"/>
+<path d="M 75.5,1309.7 L 75.5,1307.2 A 8.5,8.5 0 0 1 84.0,1298.7 A 8.5,8.5 0 0 0 92.4,1290.2" stroke="#636EFA"/>
+<path d="M 75.5,1318.9 L 75.5,1338.3 L 75.5,1340.9" stroke="#636EFA"/>
+<path d="M 75.5,1350.1 L 75.5,1432.0 L 75.5,1434.5" stroke="#EF553B"/>
+<path d="M 100.9,425.1 L 117.8,425.1 A 8.5,8.5 0 0 0 126.2,416.6" stroke="#636EFA"/>
+<path d="M 58.6,404.9 L 58.6,402.4 A 8.4,8.4 0 0 1 67.1,393.9 A 8.4,8.4 0 0 0 75.5,385.4" stroke="#8A8A8A"/>
+<path d="M 58.6,414.1 L 58.6,416.6 A 8.4,8.4 0 0 1 50.2,425.1" stroke="#8A8A8A"/>
+<path d="M 58.6,467.3 L 58.6,464.8 A 8.4,8.4 0 0 0 50.2,456.3 A 8.4,8.4 0 0 1 41.7,447.9" stroke="#EF553B"/>
+<path d="M 58.6,498.5 L 58.6,495.9 A 8.4,8.4 0 0 0 50.2,487.5 A 8.4,8.4 0 0 1 41.7,479.1" stroke="#EF553B"/>
+<path d="M 58.6,507.7 L 58.6,541.5 A 8.5,8.5 0 0 1 50.2,549.9 L 33.3,549.9 A 8.5,8.5 0 0 0 24.8,558.4" stroke="#8A8A8A"/>
+<path d="M 58.6,592.1 L 58.6,589.5 A 8.4,8.4 0 0 0 50.2,581.1 A 8.4,8.4 0 0 1 41.7,572.6" stroke="#EF553B"/>
+<path d="M 58.6,601.3 L 58.6,623.3" stroke="#636EFA"/>
+<path d="M 58.6,632.5 L 58.6,654.5" stroke="#636EFA"/>
+<path d="M 58.6,748.1 L 58.6,745.5 A 8.5,8.5 0 0 1 67.1,737.1 L 84.0,737.1 A 8.5,8.5 0 0 0 92.4,728.6" stroke="#EF553B"/>
+<path d="M 58.6,757.3 L 58.6,759.9 L 58.6,853.5 A 8.4,8.4 0 0 0 67.1,861.9 A 8.4,8.4 0 0 1 75.5,870.4" stroke="#EF553B"/>
+<path d="M 58.6,1247.3 L 58.6,1244.8 A 8.5,8.5 0 0 1 67.1,1236.3 L 84.0,1236.3 A 8.5,8.5 0 0 0 92.4,1227.8" stroke="#636EFA"/>
+<path d="M 58.6,1256.5 L 58.6,1276.0 L 58.6,1278.5" stroke="#636EFA"/>
+<path d="M 58.6,1287.7 L 58.6,1415.0 A 8.4,8.4 0 0 0 67.1,1423.5" stroke="#EF553B"/>
+<path d="M 100.9,861.9 L 117.8,861.9 A 8.5,8.5 0 0 0 126.2,853.5" stroke="#636EFA"/>
+<path d="M 24.8,373.7 L 24.8,371.1 A 8.5,8.5 0 0 1 33.3,362.7 A 8.5,8.5 0 0 0 41.7,354.2" stroke="#8A8A8A"/>
+<path d="M 24.8,382.9 L 24.8,416.6 A 8.5,8.5 0 0 0 33.3,425.1 A 8.5,8.5 0 0 1 41.7,433.6" stroke="#8A8A8A"/>
+<path d="M 24.8,529.7 L 24.8,527.1 A 8.5,8.5 0 0 1 33.3,518.7 A 8.5,8.5 0 0 0 41.7,510.2" stroke="#EF553B"/>
+<path d="M 24.8,538.9 L 24.8,558.4 L 24.8,560.9" stroke="#EF553B"/>
+<path d="M 24.8,570.1 L 24.8,932.8" stroke="#8A8A8A"/>
+<path d="M 24.8,935.3 L 24.8,932.8 A 8.5,8.5 0 0 1 33.3,924.3 L 67.1,924.3 A 8.5,8.5 0 0 0 75.5,915.9" stroke="#00CC96"/>
+<path d="M 92.4,73.5 A 8.5,8.5 0 0 0 100.9,81.9 L 117.8,81.9 A 8.5,8.5 0 0 1 126.2,90.3" stroke="#8A8A8A"/>
+<path d="M 126.2,291.9 A 8.5,8.5 0 0 1 117.8,300.3 L 100.9,300.3 A 8.5,8.5 0 0 0 92.4,308.8" stroke="#636EFA"/>
+<path d="M 126.2,479.1 A 8.5,8.5 0 0 1 117.8,487.5 L 67.1,487.5 A 8.5,8.5 0 0 0 58.6,495.9" stroke="#636EFA"/>
+<path d="M 41.7,541.5 A 8.5,8.5 0 0 1 33.3,549.9" stroke="#EF553B"/>
+<path d="M 58.6,759.9 A 8.4,8.4 0 0 0 67.1,768.3 A 8.4,8.4 0 0 1 75.5,776.8" stroke="#EF553B"/>
+<path d="M 126.2,1259.0 A 8.5,8.5 0 0 1 117.8,1267.5 L 67.1,1267.5 A 8.5,8.5 0 0 0 58.6,1276.0" stroke="#EF553B"/>
+<path d="M 126.2,1321.5 A 8.5,8.5 0 0 1 117.8,1329.9 L 84.0,1329.9 A 8.5,8.5 0 0 0 75.5,1338.3" stroke="#EF553B"/>
+<path d="M 126.2,1383.8 A 8.4,8.4 0 0 1 117.8,1392.3 A 8.4,8.4 0 0 0 109.3,1400.8" stroke="#EF553B"/>
+<path d="M 126.2,1415.0 A 8.5,8.5 0 0 1 117.8,1423.5 L 100.9,1423.5 L 84.0,1423.5 A 8.5,8.5 0 0 0 75.5,1432.0" stroke="#EF553B"/>
+<path d="M 126.2,1477.5 A 8.4,8.4 0 0 1 117.8,1485.9 A 8.4,8.4 0 0 0 109.3,1494.3" stroke="#EF553B"/>
+</g>
+<g><title>filtlong</title>
+<polygon points="120.9,30.5 131.6,30.5 126.2,39.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="39.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">filtlong</text></g>
+<g><title>seqkit_reads</title>
+<polygon points="87.1,61.7 97.8,61.7 92.4,70.9" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="71.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">seqkit_reads</text></g>
+<g><title>flye</title>
+<polygon points="120.9,92.9 131.6,92.9 126.2,102.1" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="102.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">flye</text></g>
+<g><title>antismash</title>
+<polygon points="104.0,124.1 114.7,124.1 109.3,133.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="133.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">antismash</text></g>
+<g><title>metabuli</title>
+<polygon points="104.0,155.3 114.7,155.3 109.3,164.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="164.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabuli</text></g>
+<g><title>bakta_noncoding</title>
+<polygon points="104.0,186.5 114.7,186.5 109.3,195.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="195.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">bakta_noncoding</text></g>
+<g><title>assembly_stats</title>
+<polygon points="87.1,217.7 97.8,217.7 92.4,226.9" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="227.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">assembly_stats</text></g>
+<g><title>semibin2</title>
+<polygon points="36.4,248.9 47.1,248.9 41.7,258.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="258.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">semibin2</text></g>
+<g><title>metabat2</title>
+<polygon points="70.2,280.1 80.9,280.1 75.5,289.3" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="289.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">metabat2</text></g>
+<g><title>comebin</title>
+<polygon points="87.1,311.3 97.8,311.3 92.4,320.5" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="320.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">comebin</text></g>
+<g><title>checkm</title>
+<polygon points="104.0,342.5 114.7,342.5 109.3,351.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="351.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm</text></g>
+<g><title>checkm</title>
+<polygon points="19.5,373.7 30.2,373.7 24.8,382.9" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="383.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm</text></g>
+<g><title>checkm</title>
+<polygon points="53.3,404.9 64.0,404.9 58.6,414.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="414.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkm</text></g>
+<g><title>aggregator</title>
+<polygon points="36.4,436.1 47.1,436.1 41.7,445.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="445.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">aggregator</text></g>
+<g><title>gtdbtk_quality</title>
+<polygon points="53.3,467.3 64.0,467.3 58.6,476.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="476.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">gtdbtk_quality</text></g>
+<g><title>skani_dedup</title>
+<polygon points="53.3,498.5 64.0,498.5 58.6,507.7" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="507.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">skani_dedup</text></g>
+<g><title>gtdbtk_de_novo_quality</title>
+<polygon points="19.5,529.7 30.2,529.7 24.8,538.9" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="539.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">gtdbtk_de_novo_quality</text></g>
+<g><title>iphop_add_to_db</title>
+<polygon points="19.5,560.9 30.2,560.9 24.8,570.1" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="570.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">iphop_add_to_db</text></g>
+<g><title>prodigal_from_quality_bin</title>
+<polygon points="53.3,592.1 64.0,592.1 58.6,601.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="601.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">prodigal_from_quality_bin</text></g>
+<g><title>carveme_from_orfs</title>
+<polygon points="53.3,623.3 64.0,623.3 58.6,632.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="632.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">carveme_from_orfs</text></g>
+<g><title>memote_score</title>
+<polygon points="53.3,654.5 64.0,654.5 58.6,663.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="663.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">memote_score</text></g>
+<g><title>cctyper</title>
+<polygon points="36.4,685.7 47.1,685.7 41.7,694.9" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="695.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">cctyper</text></g>
+<g><title>splitContigsForAmr</title>
+<polygon points="87.1,716.9 97.8,716.9 92.4,726.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="726.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">splitContigsForAmr</text></g>
+<g><title>virsorter2</title>
+<polygon points="53.3,748.1 64.0,748.1 58.6,757.3" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="757.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">virsorter2</text></g>
+<g><title>dramv</title>
+<polygon points="70.2,779.3 80.9,779.3 75.5,788.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="788.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">dramv</text></g>
+<g><title>vibrant</title>
+<polygon points="104.0,810.5 114.7,810.5 109.3,819.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="819.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">vibrant</text></g>
+<g><title>genomad</title>
+<polygon points="70.2,841.7 80.9,841.7 75.5,850.9" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="851.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">genomad</text></g>
+<g><title>merge_candidate_calls</title>
+<polygon points="70.2,872.9 80.9,872.9 75.5,882.1" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="882.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_candidate_calls</text></g>
+<g><title>blast_spacers_to_contigs</title>
+<polygon points="36.4,904.1 47.1,904.1 41.7,913.3" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="913.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">blast_spacers_to_contigs</text></g>
+<g><title>iphop_predict</title>
+<polygon points="19.5,935.3 30.2,935.3 24.8,944.5" fill="#FFFFFF" stroke="#8A8A8A" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="944.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">iphop_predict</text></g>
+<g><title>mmseqs_votu</title>
+<polygon points="87.1,966.5 97.8,966.5 92.4,975.7" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="975.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">mmseqs_votu</text></g>
+<g><title>mmseqs_precluster</title>
+<polygon points="87.1,997.7 97.8,997.7 92.4,1006.9" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1007.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">mmseqs_precluster</text></g>
+<g><title>contig_length_table</title>
+<polygon points="87.1,1028.9 97.8,1028.9 92.4,1038.1" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1038.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">contig_length_table</text></g>
+<g><title>vcontact3</title>
+<polygon points="87.1,1060.1 97.8,1060.1 92.4,1069.3" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1069.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">vcontact3</text></g>
+<g><title>checkv</title>
+<polygon points="70.2,1091.3 80.9,1091.3 75.5,1100.5" fill="#FFFFFF" stroke="#00CC96" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1100.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">checkv</text></g>
+<g><title>prodigal</title>
+<polygon points="120.9,1122.5 131.6,1122.5 126.2,1131.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1131.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">prodigal</text></g>
+<g><title>busco</title>
+<polygon points="104.0,1153.7 114.7,1153.7 109.3,1162.9" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1163.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">busco</text></g>
+<g><title>clean</title>
+<polygon points="36.4,1184.9 47.1,1184.9 41.7,1194.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1194.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">clean</text></g>
+<g><title>chunkOrfsForAnnotation</title>
+<polygon points="87.1,1216.1 97.8,1216.1 92.4,1225.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1225.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">chunkOrfsForAnnotation</text></g>
+<g><title>proteinbert</title>
+<polygon points="53.3,1247.3 64.0,1247.3 58.6,1256.5" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1256.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">proteinbert</text></g>
+<g><title>merge_proteinbert</title>
+<polygon points="53.3,1278.5 64.0,1278.5 58.6,1287.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1287.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_proteinbert</text></g>
+<g><title>diamond_uniref50</title>
+<polygon points="70.2,1309.7 80.9,1309.7 75.5,1318.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1319.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">diamond_uniref50</text></g>
+<g><title>merge_diamond_uniref50</title>
+<polygon points="70.2,1340.9 80.9,1340.9 75.5,1350.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1350.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_diamond_uniref50</text></g>
+<g><title>kofamscan</title>
+<polygon points="104.0,1372.1 114.7,1372.1 109.3,1381.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1381.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">kofamscan</text></g>
+<g><title>merge_kofamscan</title>
+<polygon points="104.0,1403.3 114.7,1403.3 109.3,1412.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1412.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_kofamscan</text></g>
+<g><title>gpr_4lane</title>
+<polygon points="70.2,1434.5 80.9,1434.5 75.5,1443.7" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1443.8" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">gpr_4lane</text></g>
+<g><title>predictf</title>
+<polygon points="104.0,1465.7 114.7,1465.7 109.3,1474.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1475.0" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">predictf</text></g>
+<g><title>merge_predictf</title>
+<polygon points="104.0,1496.9 114.7,1496.9 109.3,1506.1" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1506.2" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_predictf</text></g>
+<g><title>interproscan</title>
+<polygon points="87.1,1528.1 97.8,1528.1 92.4,1537.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1537.4" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">interproscan</text></g>
+<g><title>merge_interproscan</title>
+<polygon points="120.9,1559.3 131.6,1559.3 126.2,1568.5" fill="#FFFFFF" stroke="#EF553B" stroke-width="2.0" stroke-linejoin="round"/>
+<text x="138.7" y="1568.6" font-family="Arial" font-size="13" fill="#111111" font-weight="600" text-anchor="start">merge_interproscan</text></g>
+</svg>

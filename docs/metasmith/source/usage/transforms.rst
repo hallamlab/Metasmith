@@ -118,7 +118,7 @@ Prodigal Example
 
 Prodigal accepts a contiguous nucleotide sequence or "contig" and produces a list of predicted ORFs as amino acid sequences in fasta format.
 Additionally, the container providing the prodigal itself is specified as an input. The syntax for running prodigal can be obtained
-from studying its `documentation <https://github.com/hyattpd/prodigal/wiki/Gene-Prediction-Modes#normal-mode>`_.
+from studying its `documentation <https://github.com/hyattpd/prodigal/wiki/Gene-Prediction-Modes#normal-mode>`__.
 
 .. code-block:: python
     :linenos:
@@ -159,7 +159,7 @@ BLAST Example
 
 Similarly, BLAST requires a query sequence and a database of sequences to compare against. For simplicity,
 another fasta file will be used instead of a true BLAST database. The syntax for running BLAST can also be 
-obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NBK279690/>`_.
+obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NBK279690/>`__.
 
 .. code-block:: python
     :linenos:
@@ -196,6 +196,32 @@ obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NB
             annot: "annotations.csv",
         },
     )
+
+Alternative outputs
+===========================================================
+
+Some tools end in one of several ways, and only the run itself says which. A classifier may yield
+a labelled table or a report that nothing matched. Declare each way as its own product group.
+:python:`AddProduct` adds to the current group, and :python:`NewProductGroup` starts the next one.
+
+.. code-block:: python
+
+    labelled = model.AddProduct(lib.GetType("annotation::labelled_table"))
+    model.NewProductGroup()
+    nomatch  = model.AddProduct(lib.GetType("annotation::no_match_report"))
+
+Metasmith plans a route to the target below every group. Planning fails if any group has no route,
+and the hint names the transform and the group. Products the tool always writes together belong in
+one group, so do not call :python:`NewProductGroup` between them.
+
+The protocol reports what it wrote. The manifest holds one dict per group, and each dict names every
+product of its group. A task may write several groups. The run fails the task when a dict matches no
+declared group, or when the manifest is empty.
+
+.. code-block:: python
+
+    return ExecutionResult(manifest=[{labelled: table.local}], success=table.local.exists())
+
 
 Running one transform
 ===========================================================

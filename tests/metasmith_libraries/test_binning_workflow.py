@@ -1,8 +1,13 @@
 import pytest
 import time
+from collections import Counter
 from pathlib import Path
 from metasmith.python_api import (
+    DEFERRED,
     DataInstanceLibrary,
+    Plan,
+    Spec,
+    record_library,
     TransformInstanceLibrary,
     TargetBuilder,
     Resources,
@@ -42,11 +47,17 @@ def binning_input(tmp_inputs, test_data_dir, ab48_bam):
 
 
 class TestBinningWorkflowGeneration:
-    def test_can_plan_metabat2_workflow(
-        self, agent, base_resources, binning_transforms, binning_input
+    @pytest.mark.parametrize("target", [
+        "sequences::metabat2_bin_fasta",
+        "sequences::semibin2_bin_fasta",
+        "sequences::comebin_bin_fasta",
+        "sequences::metadecoder_bin_fasta",
+    ])
+    def test_can_plan_binner_workflow(
+        self, agent, base_resources, binning_transforms, binning_input, target
     ):
         targets = TargetBuilder()
-        targets.Add("sequences::metabat2_bin_fasta")
+        targets.Add(target)
 
         task = agent.GenerateWorkflow(
             samples=list(binning_input.AsSamples("sequences::assembly")),
@@ -58,35 +69,30 @@ class TestBinningWorkflowGeneration:
         assert task.ok, f"Workflow generation failed: {task}"
         assert len(task.plan.steps) > 0, "Workflow should have at least one step"
 
-    def test_can_plan_semibin2_workflow(
-        self, agent, base_resources, binning_transforms, binning_input
-    ):
-        targets = TargetBuilder()
-        targets.Add("sequences::semibin2_bin_fasta")
 
-        task = agent.GenerateWorkflow(
-            samples=list(binning_input.AsSamples("sequences::assembly")),
-            resources=base_resources + [binning_input],
-            transforms=binning_transforms,
-            targets=targets,
-        )
+# das_tool.py and das_tool_metadecoder.py produce the same types; each requires the
+# marker named for its binner set, so the marker given picks the variant.
+@pytest.mark.parametrize("binners", ["metabat2_semibin2_comebin", "metabat2_semibin2_metadecoder"])
+def test_das_tool_variant_follows_binner_set(tmp_path, binners):
+    inputs = DataInstanceLibrary(tmp_path / "inputs.xgdb")
+    for name in ("sequences", "ref", "annotation", "taxonomy", "binning", "binning_local", "alignment"):
+        inputs.AddTypeLibrary(MLIB / "data_types" / f"{name}.yml")
+    asm = inputs.AddItem(DEFERRED, "sequences::assembly")
+    inputs.AddItem(DEFERRED, "alignment::bam", parents={asm})
+    inputs.AddValue(f"{binners}.json", {}, f"binning::{binners}")
+    targets = ["binning::das_tool_summary", "binning_local::quality_bin_fasta"]
 
-        assert task.ok, f"Workflow generation failed: {task}"
+    task = Plan(
+        [Spec(input_library=record_library(inputs), sample_type=None, target_types=targets)],
+        transform_libraries=[MLIB / "transforms" / g for g in ("logistics", "metagenomics")],
+        resource_libraries=[MLIB / "resources" / "env", MLIB / "resources" / "lib"],
+    )
 
-    def test_can_plan_comebin_workflow(
-        self, agent, base_resources, binning_transforms, binning_input
-    ):
-        targets = TargetBuilder()
-        targets.Add("sequences::comebin_bin_fasta")
-
-        task = agent.GenerateWorkflow(
-            samples=list(binning_input.AsSamples("sequences::assembly")),
-            resources=base_resources + [binning_input],
-            transforms=binning_transforms,
-            targets=targets,
-        )
-
-        assert task.ok, f"Workflow generation failed: {task}"
+    used = Counter(s.transform.name for s in task.plan.steps)
+    assert task.ok, task.plan.dropped_targets
+    chosen, excluded = (("das_tool", "metadecoder") if binners.endswith("comebin")
+                        else ("das_tool_metadecoder", "comebin"))
+    assert used[chosen] == 1 and used[excluded] == 0, used
 
 
 @pytest.mark.slow

@@ -84,6 +84,9 @@
   // otherwise the button would sit un-busy for the first leg of the round
   // trip, which is exactly the moment a second click is most tempting.
   let requestingSolve = $state(false)
+  // A failed solve's reason, kept on the page until the next solve: a toast
+  // fades before anyone reading the page later sees why nothing was planned.
+  let solveError = $state(null)
   let solving = $derived(requestingSolve || (jobKind === 'solve' && jobRunning))
   let showSolveBar = $derived(solving || (jobKind === 'solve' && jobStatus === 'failed'))
   let solveStage = $derived(Math.max(0, SOLVE_STAGES.indexOf(jobPhase)))
@@ -101,6 +104,7 @@
   let sharing = $state(false)
   let savingTemplate = $state(false)
   let launching = $state(false)
+  let keepIntermediates = $state(false)
   // Starts on the agent last used anywhere, not blank -- picking one every
   // time you open a workflow tab is a chore once you mostly run on one agent.
   let agentChoice = $state(ui.lastAgent)
@@ -285,8 +289,77 @@
   }
 
   // the editable recipe, kept separate from the frozen result below it
-  let recipe = $state({ targets: [], transform_libraries: [], rows: [] })
+  let recipe = $state({ cases: [blankCase('case')], transform_libraries: [], rows: [] })
   let loadedFor = $state(null)
+
+  // One tab per case. Every case plans in the same solve, each with its own
+  // outputs. The input rows belong to the workflow: with one case it reads all
+  // of them, and with several each case reads the rows funnelled into it
+  // (`rows`, as row references), so a row can feed one case or several.
+  let caseIdx = $state(0)
+  let current = $derived(recipe.cases[Math.min(caseIdx, recipe.cases.length - 1)])
+  let multiCase = $derived(recipe.cases.length > 1)
+
+  function blankCase(name) {
+    return { id: mintTargetId(), name, targets: [], rows: null, shared: [] }
+  }
+
+  function casesFromWire(request) {
+    const list = request?.cases ?? [{
+      name: 'case',
+      target_types: request?.target_types,
+      shared_input_paths: request?.shared_input_paths,
+    }]
+    return list.map((c) => ({
+      id: mintTargetId(),
+      name: c.name || 'case',
+      targets: targetsFromWire(c.target_types),
+      rows: c.input_paths ?? null,
+      shared: c.shared_input_paths ?? [],
+    }))
+  }
+
+  function freeCaseName() {
+    const taken = new Set(recipe.cases.map((c) => c.name))
+    let i = recipe.cases.length + 1
+    while (taken.has(`case${i}`)) i += 1
+    return `case${i}`
+  }
+
+  // The first case to gain a sibling takes every row it was reading, so adding
+  // a tab never changes what the existing one plans from.
+  function addCase() {
+    const everyRow = recipe.rows.map((d) => refKey(d.id))
+    recipe.cases = [
+      ...recipe.cases.map((c) => (c.rows === null ? { ...c, rows: everyRow } : c)),
+      blankCase(freeCaseName()),
+    ]
+    caseIdx = recipe.cases.length - 1
+    persist()
+  }
+
+  function removeCase(idx) {
+    const kept = recipe.cases.filter((_, i) => i !== idx)
+    recipe.cases = kept.length === 1 ? [{ ...kept[0], rows: null }] : kept
+    caseIdx = Math.min(caseIdx, recipe.cases.length - 1)
+    persist()
+  }
+
+  function renameCase(idx, next) {
+    const nameOk = next && !recipe.cases.some((c, i) => i !== idx && c.name === next)
+    if (!nameOk) {
+      notify(`a case needs a name no other case has`, 'refused')
+      return
+    }
+    recipe.cases = recipe.cases.map((c, i) => (i === idx ? { ...c, name: next } : c))
+    persist()
+  }
+
+  function setCaseRow(key, on) {
+    const rows = current.rows ?? []
+    current.rows = on ? [...new Set([...rows, key])] : rows.filter((k) => k !== key)
+    persist()
+  }
 
   // The input rows. These are the recipe: the input library is built from them
   // when the workflow is solved, so a row is never anything else and never stops
@@ -398,8 +471,9 @@
     wf = out
     if (loadedFor !== name) {
       loadedFor = name
+      caseIdx = 0
       recipe = {
-        targets: targetsFromWire(wf.request.target_types),
+        cases: casesFromWire(wf.request),
         transform_libraries: wf.request.transform_libraries ?? [],
         rows: normalizeRows(wf.request.input_drafts),
       }
@@ -431,6 +505,7 @@
     }
     jobId = null
     jobStatus = null
+    solveError = null
     envReport = null
     focus = null
     drawing = null
@@ -865,8 +940,13 @@
   // its own.
   function requestBody() {
     return {
-      sample_type: null,
-      target_types: targetsToWire(recipe.targets),
+      cases: recipe.cases.map((c) => ({
+        name: c.name,
+        sample_type: null,
+        target_types: targetsToWire(c.targets),
+        input_paths: multiCase ? (c.rows ?? []) : null,
+        shared_input_paths: [...new Set([...c.shared, ...sharedPaths])],
+      })),
       transform_libraries: recipe.transform_libraries,
       input_drafts: normalizeRows(recipe.rows),
     }
@@ -916,7 +996,7 @@
 
   function addRow(kind) {
     if (kind === 'output') {
-      recipe.targets = [...recipe.targets, { id: mintTargetId(), type: '', parents: [] }]
+      current.targets = [...current.targets, { id: mintTargetId(), type: '', parents: [] }]
       persist()
       return
     }
@@ -943,6 +1023,7 @@
       ...extra,
     }
     recipe.rows = [...recipe.rows, d]
+    if (multiCase) current.rows = [...(current.rows ?? []), refKey(d.id)]
     persist()
     return d
   }
@@ -964,6 +1045,9 @@
     recipe.rows = recipe.rows
       .filter((d) => d.id !== id)
       .map((d) => ({ ...d, parents: d.parents.filter((p) => p !== key) }))
+    recipe.cases = recipe.cases.map((c) =>
+      c.rows === null ? c : { ...c, rows: c.rows.filter((k) => k !== key) },
+    )
     if (sharedPaths.includes(key)) {
       await attempt(() =>
         api.put(`/workflows/${name}`, {
@@ -978,7 +1062,7 @@
   // Spread, never rebuilt: the id is what the rows are keyed on, so losing it
   // would restart the element a reorder is meant to animate.
   function patchTarget(id, patch) {
-    recipe.targets = recipe.targets.map((t) => (t.id === id ? { ...t, ...patch } : t))
+    current.targets = current.targets.map((t) => (t.id === id ? { ...t, ...patch } : t))
     touch()
   }
 
@@ -1009,7 +1093,7 @@
   // said out loud because it silently changes the plan.
   async function removeTarget(id) {
     let dropped = false
-    recipe.targets = recipe.targets
+    current.targets = current.targets
       .filter((t) => t.id !== id)
       .map((t) => ({
         ...t,
@@ -1108,6 +1192,7 @@
 
     if (made.length) {
       recipe.rows = [...recipe.rows, ...made]
+      if (multiCase) current.rows = [...(current.rows ?? []), ...made.map((d) => refKey(d.id))]
       // awaited, not fired: persist clears the notice on its way in, so a report
       // written before it lands is a report nobody ever sees
       await persist()
@@ -1132,15 +1217,23 @@
 
   // An output row exists before it has a type -- that is what "add an output"
   // makes -- so the plan has to wait for it, and say which one it is waiting on.
-  let blankTarget = $derived(recipe.targets.some((t) => !t.type?.trim()))
   const lineage = (t) => JSON.stringify([...(t.parents ?? [])].sort())
-  let dupTarget = $derived(
-    recipe.targets.some((t, i) =>
-      recipe.targets.some(
-        (o, j) => j !== i && !!t.type && o.type === t.type && lineage(o) === lineage(t),
-      ),
-    ),
-  )
+  const hasDup = (targets) =>
+    targets.some((t, i) =>
+      targets.some((o, j) => j !== i && !!t.type && o.type === t.type && lineage(o) === lineage(t)),
+    )
+  // The first case that stops the solve, and why. Every case plans in the one
+  // solve, so a blank in another tab blocks this one too, and the line names it.
+  let caseProblem = $derived.by(() => {
+    for (const c of recipe.cases) {
+      const where = multiCase ? ` in case ${c.name}` : ''
+      if (c.targets.length === 0) return `add at least one output${where}`
+      if (c.targets.some((t) => !t.type?.trim())) return `an output row has no type yet${where}`
+      if (hasDup(c.targets)) return `two outputs are the same type with the same lineage${where}`
+      if (multiCase && !(c.rows ?? []).length) return `case ${c.name} reads no input rows yet`
+    }
+    return null
+  })
 
   function toggleLibrary(path) {
     const all = (index?.libraries ?? []).map((l) => l.path)
@@ -1197,6 +1290,7 @@
     // has said anything at all.
     jobStatus = null
     jobPhase = null
+    solveError = null
     // Land the recipe first. `generate` takes the spec fields off this body but
     // builds the input library from the rows *on disk*, so a field left in the
     // same gesture that started the solve has to be written before the solve
@@ -1283,10 +1377,10 @@
     return Object.keys(out).length ? out : null
   }
 
-  // Prepare the chosen agent for this workflow: the images its steps need if it
-  // runs containers, the conda envs they name if it does not. The endpoint
-  // stages first, because the manifest that answers "which ones" is written by
-  // staging -- so pressing this and then `stage and run` does not stage twice.
+  // Build the conda envs this workflow's steps name on a mamba or native agent.
+  // The endpoint stages first, because the manifest that answers "which ones" is
+  // written by staging -- so pressing this and then `stage and run` does not
+  // stage twice.
   async function setupEnvironment(force = false) {
     requestingSetup = true
     jobKind = 'environment'
@@ -1300,8 +1394,23 @@
     if (job) jobId = job.id
   }
 
-  // `setup` runs only the steps that read no sample -- the downloads -- after
-  // preparing every environment, so the real run finds them in the cache.
+  // A large setup asks first, the way reset does: the first click arms the
+  // button with the size, a second within the window starts it.
+  let setupArmed = $state(false)
+  let setupTimer
+  function armSetup() {
+    if (!wf.result?.setup?.confirm || setupArmed) {
+      clearTimeout(setupTimer)
+      setupArmed = false
+      launch('setup')
+      return
+    }
+    setupArmed = true
+    setupTimer = setTimeout(() => (setupArmed = false), 4000)
+  }
+
+  // `setup` runs the image pulls and the steps that read no sample -- the
+  // downloads -- so the real run finds them in the cache.
   async function launch(kind = 'run') {
     launching = true
     const params = toParams(runParams)
@@ -1312,6 +1421,7 @@
         kind,
         params: Object.keys(params).length ? params : null,
         resource_overrides: kind === 'run' ? overridePayload() : null,
+        keep_intermediates: kind === 'run' ? keepIntermediates : false,
       }),
     )
     launching = false
@@ -1380,10 +1490,34 @@
       </div>
 
       <div class="card col" style="gap:10px" id="msm-recipe">
+        <div class="row wrap cases" role="tablist" aria-label="cases">
+          {#each recipe.cases as c, i (c.id)}
+            <button
+              role="tab"
+              class="small case-tab"
+              class:on={i === caseIdx}
+              aria-selected={i === caseIdx}
+              onclick={() => (caseIdx = i)}
+            >{c.name}</button>
+          {/each}
+          <button class="small" onclick={addCase} title="another set of outputs, planned in the same solve">+ case</button>
+          {#if multiCase}
+            <input
+              class="case-name"
+              aria-label="case name"
+              value={current.name}
+              onchange={(e) => renameCase(caseIdx, e.currentTarget.value.trim())}
+            />
+            <button class="small" onclick={() => removeCase(caseIdx)}>remove case</button>
+          {/if}
+        </div>
         <RecipeCard
           {items}
           rows={recipe.rows}
-          targets={recipe.targets}
+          targets={current.targets}
+          caseRows={multiCase ? (current.rows ?? []) : null}
+          caseName={current.name}
+          oncase={setCaseRow}
           typeOptions={allTypes}
           agentNames={(app.agents ?? []).map((a) => a.name)}
           {pools}
@@ -1416,17 +1550,13 @@
             class="primary"
             onclick={solve}
             data-tour="solve"
-            disabled={solving || settingUp || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
+            disabled={solving || settingUp || !!caseProblem || !!tableProblem}
           >
             {#if solving}<Spinner />{/if}
             {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
           </button>
-          {#if recipe.targets.length === 0}
-            <span class="small muted">add at least one output</span>
-          {:else if blankTarget}
-            <span class="small muted">an output row has no type yet</span>
-          {:else if dupTarget}
-            <span class="small muted">two outputs are the same type with the same lineage</span>
+          {#if caseProblem}
+            <span class="small muted">{caseProblem}</span>
           {:else if tableProblem}
             <span class="small muted">{tableProblem}</span>
           {:else if stale}
@@ -1445,6 +1575,12 @@
 
         {#if showSolveBar}
           <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} tour="solve-progress" />
+        {/if}
+
+        {#if solveError}
+          <p class="small solve-error" data-testid="solve-error">
+            <span class="tag bad">solve failed</span> {solveError}
+          </p>
         {/if}
 
         {#if jobId}
@@ -1514,7 +1650,7 @@
                 table = fresh.table ?? { attached: false }
                 cacheWorkflow(name, { wf, items, table })
                 if (summary?.status === 'failed') {
-                  notify(summary?.error ?? 'solve failed', 'refused')
+                  solveError = summary?.error ?? 'solve failed'
                 }
               }}
             />
@@ -1540,6 +1676,9 @@
               <span class="tag ok" data-tour="plan-ok">success</span>
             </div>
             <div class="row">
+              {#if wf.result?.setup}
+                <span class="tag" title="what a setup run fetches before the first sample step">{wf.result.setup.line}</span>
+              {/if}
               <span class="tag ok">{wf.step_count} step(s)</span>
               <button
                 class="tag mono copyable"
@@ -1920,17 +2059,23 @@
             {launching ? 'launching…' : 'stage and run'}
           </button>
           <button
-            onclick={() => launch('setup')}
-            title="pull every container and download every reference database this workflow needs, without running a sample"
+            onclick={armSetup}
+            title={setupArmed
+              ? `click again to confirm — ${wf.result?.setup?.line}`
+              : 'pull every container and download every reference database this workflow needs, without running a sample'}
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || paramProblems(runParams).length > 0 || !!liveRun}
-          >set up</button>
+          >{setupArmed ? `fetch ~${Math.round(wf.result.setup.download_gb)} GB?` : 'set up'}</button>
           <button
             class="small"
             onclick={() => setupEnvironment()}
-            title="pull containers or build conda envs only"
+            title="build conda envs only (a container agent's images are pulled by set up)"
             disabled={!agentChoice || launching || settingUp || recipeProblems.length > 0 || !!liveRun}
           >{settingUp ? 'preparing…' : 'environments only'}</button>
         </div>
+        <label class="row small" title="a run deletes every product no target names once the steps reading it succeed; this keeps and publishes them all, for debugging">
+          <input type="checkbox" bind:checked={keepIntermediates} />
+          <span>keep intermediates</span>
+        </label>
         {#if envReport}
           <p class="small muted">
             environments:
@@ -2072,6 +2217,9 @@
 {/if}
 
 <style>
+  .cases { gap: 6px; align-items: center; }
+  .case-tab.on { border-color: var(--accent); color: var(--accent); }
+  .case-name { width: 12ch; }
   /* The column scrolls, not the page: that puts its scrollbar at its own right
      edge, with the panel outside it rather than behind it. `main` is in flush
      mode for this view (App.svelte) so this row owns the height. */
@@ -2095,6 +2243,7 @@
   .dag-scroll { overflow-x: auto; min-width: 0; flex: 0 1 auto; }
   /* the fixed-width half of the row; never shrinks */
   .res-body { flex: 0 0 auto; position: relative; }
+  .solve-error { margin: 0; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* the fold around the job log: a summary its own
      row with the status pill riding beside it, so a job's outcome reads
      without opening the scrollback that produced it */
