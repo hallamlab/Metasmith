@@ -51,6 +51,7 @@ Sourcing a definition for every geoquery feature (635 features, 372 verbatim ups
 - Every lead in `feature_descriptions_issues.md` carries a disposition: fixed (commit), renamed to match the source, or not a bug (why).
 - A full 11-AOI run on fir completes, and every coverage change against the pinned dataset has a stated cause.
 - `feature_descriptions.csv` (one row per measure) and `class_descriptions.csv` are regenerated. Every definition is a verbatim upstream quote that the verify script confirms on the cited page, or it is blank with a reason.
+- A subagent given only the public README and one AOI installs the released metasmith and finishes a geoquery run, and every step where it stalled or guessed is fixed in the docs or driver.
 - `mmap_canada_mining` is re-pinned from the new run and ships both dictionaries and `versions.csv`.
 
 ## Tasks
@@ -71,6 +72,7 @@ Sourcing a definition for every geoquery feature (635 features, 372 verbatim ups
 - T13. Commit a checkpoint
 - T14. Simplify
 - T15. Draft the doc updates
+- T17. Check a cold-start run of one AOI with a no-context subagent (G4), executed after T15 and before T16
 - T16. Debrief
 
 ## Approach by task
@@ -197,6 +199,14 @@ Run the `simplify` skill over the pipeline core and the adapters this plan touch
 ### T15. Draft the doc updates
 
 Edit `research/geospatial_query/README.md` for the class column, the versions table, the dictionaries and the generic executor flags, with `examples/slurm.yml` named as an example only. Mirror that in the sphinx geoquery page (`docs/metasmith/source/workflows/geoquery`). Close the `osm` stack topic if the run confirms OpenStreetMap works.
+
+### T17. Cold-start check
+
+Layer: the user-facing path only. Dispatch a subagent with no session context: it gets the public README (`research/geospatial_query/README.md` and the sphinx page), one AOI from the dataset, and a clean working folder. It installs the released metasmith package from conda, writes its own Nextflow config from the shipped example, and runs `geoquery_run.py` end to end. It reports each step where it stalled, guessed or read source code to proceed. Fix each gap in the docs or the driver, then rerun the check if a fix changed the path.
+
+Removes: none.
+
+Gotchas: the brief must not leak repo paths, fir details or the worktree, or it tests our context instead of the docs. Run it on a host with docker or apptainer and network, local executor, so it needs no cluster account.
 
 ### T16. Debrief
 
