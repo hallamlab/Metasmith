@@ -28,3 +28,9 @@
 - User: "stale is fine. It's just the nearest time that we can get", "all we have to do is just also add a unit column. We should do that anyways for any column with variable units", "We just report the nearest plant and then the distance. Some downstream curation step will then probably need to match the plant to its [sewershed] ... That's some processing that is really not our concern."
 - Decision: replace the provincial average with the nearest monitored plant: its latest value and 7-day average, plant name, distance in km and fraction. No distance cutoff. Never average across fractions. Keep the 2024-06-28 snapshot. General rule: every value carries its unit; a feature whose unit varies across AOIs gets a `<feature>_unit` companion column in features_wide. PHAC's unit is written as PHAC labels it, with the solid-fraction caveat.
 - Landed: fixes-plan (pending).
+
+## rvdss-aggregate (2026-11-27)
+- Question: what the RVDSS features describe and whether their aggregation is right; RVDSS is published only by province (or region).
+- User: "It looks to me that some class data is put into a label that should probably be made into a column with classes instead", "you're sure these are just bugs? ... Okay, seems good."
+- Decision: keep RVDSS as the province's values, labelled by `rvdss_jurisdiction` and native_res_m admin:province. Report each virus exactly as PHAC publishes it (tests, detections, percent positive), matched by exact virus name. Drop the cross-virus sums of tests and detections. The virus becomes a class column rather than part of the feature name; the general rule is topic class-column.
+- Landed: fixes-plan (pending).
