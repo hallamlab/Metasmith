@@ -43,14 +43,15 @@ a writable folder first, the same copy ``msm gui`` and ``msm lab`` make.
    with a sample type and its targets.
 3. Register your files and values with :python:`Agent.PoolGivens`, then build them into an input
    library.
-4. Plan with :python:`GenerateWorkflow`, passing the template's transform and resource libraries.
+4. Plan with :python:`Plan`: the template's case on your input library, and the template's
+   transform and resource libraries.
 5. Stage, run and wait as above.
 
 .. code-block:: python
     :linenos:
 
-    from metasmith.python_api import Agent, DataInstanceLibrary, Runtime, Source
-    from metasmith.python_api import Template, TargetBuilder, TransformInstanceLibrary
+    import dataclasses
+    from metasmith.python_api import Agent, Plan, Runtime, Source, Template
     from metasmith.gui.stdlib import clone_stdlib
 
     root = Path(clone_stdlib(work)["path"])
@@ -63,15 +64,8 @@ a writable folder first, the same copy ``msm gui`` and ``msm lab`` make.
     givens.Add(my_file, case.sample_type, name="sample_1")
     inputs = givens.Build(work/"inputs.xgdb", type_library_paths=[root/"data_types"/"my_types.yml"])
 
-    targets = TargetBuilder()
-    for t in case.target_types:
-        targets.Add(t)
-    task = smith.GenerateWorkflow(
-        samples=list(inputs.AsSamples(case.sample_type)),
-        resources=[*(DataInstanceLibrary.Load(p) for p in template.resource_libraries), inputs],
-        transforms=[TransformInstanceLibrary.Load(p) for p in template.transform_libraries],
-        targets=targets,
-    )
+    task = Plan([dataclasses.replace(case, input_library=inputs)],
+                template.transform_libraries, template.resource_libraries)
     assert task.ok, task.plan.dropped_targets
 
 ``research/geospatial_query/geoquery_run.py`` is a complete script in this shape. It adds one
