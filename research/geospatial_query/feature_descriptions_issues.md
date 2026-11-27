@@ -2,6 +2,8 @@
 
 Raised by the sourcing subagents while reading the adapters against upstream docs. Unverified leads, not confirmed bugs.
 
+Dispositions of every lead below, the units and class lists applied, and the live test results are in `fixes/<lane>.md` (core = pipeline.py, s2signature, embeddings).
+
 ## geo_climate_water
 
 
