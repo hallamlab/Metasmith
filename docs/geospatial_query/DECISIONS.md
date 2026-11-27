@@ -46,3 +46,9 @@
 - User: "The data just needs to line up with what's available online", "You don't want to fetch the latest by default. You want to fetch by the timeline, as part of the query. Can we do version per source ... a separate versions table?", then "The proposed design looks correct."
 - Decision: query time and release version are separate. Query time (topic query-time) selects time-indexed editions (NPRI year, census year, scenes, CAMS window); "latest" is only the default query time, now. Release versions (Overture release, GPPD commit, GHSL R2023A, Hansen v1.13) default to the latest release. Now, in fixes-plan: a `_logs/versions.csv`, one row per source (query time requested, data time returned, release or edition used, URL fetched), and editions frozen in code move to the current one (census 2021). Query time itself is built after the fixes.
 - Landed: fixes-plan (versions table); query-time topic (time selection).
+
+## feature-renames (2026-11-27)
+- Question: whether the fixes may rename features, and whether a name or its computation changes when they disagree.
+- User: "We're still in dev, so renaming everything is fine, as long as the final package is internally coherent. It depends on who does the computation and where does the name come from. Essentially, like, the source wins ... if it's named incorrectly, well, we got to match the source. And if the computation isn't what the source expects, then, well, we match the source."
+- Decision: rename freely; no old-to-new mapping table while in dev, but the package (adapters, feature_units.tsv, feature_descriptions.csv, README, docs) must agree with itself. The source wins: a source-provided value takes the source's name and the source's computation. A geoquery-computed feature is named for exactly what geoquery computes.
+- Landed: fixes-plan (pending).
