@@ -17,6 +17,7 @@ import pandas as pd
 from geoquery.aggregate import versions
 
 TEMPLATE = "geoquery_from_aoi_table"
+DICTIONARIES = ("feature_descriptions.csv", "class_descriptions.csv")
 INTEGRATED = {"observations_long": "observations_long.parquet",
               "features_wide": "features_wide.parquet",
               "coverage": "coverage.csv"}
@@ -99,6 +100,8 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
     record("_logs/gaps_descriptions.csv", out.name, "gaps", "publish.py")
     versions(pd.concat(frames, ignore_index=True)).to_csv(out / "_logs" / "versions.csv", index=False)
     record("_logs/versions.csv", out.name, "versions", "publish.py")
+    for d in DICTIONARIES:
+        put(Path(__file__).parent / d, d, out.name, "dictionary")
     logs = (results / "_metadata" / "logs.latest").resolve()
     with tarfile.open(out / "_logs" / "runs" / f"{run}.tar.gz", "w:gz") as tar:
         tar.add(logs, arcname=run)
@@ -130,6 +133,9 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
         "each reason.",
         "- `_logs/versions.csv`: per source, the time asked for, the data times returned, and the release "
         "and address read.",
+        "- `feature_descriptions.csv`: per feature, the upstream field it is read from, what geoquery does to it, "
+        "and the source's own definition quoted verbatim with its URL, or blank with the reason. "
+        "`class_descriptions.csv`: the same for each class value.",
         "- `_logs/ledger.csv`: size and sha256 of every file. `_logs/runs/`: the pipeline's run logs.",
         "",
         "## Columns in the source tables",

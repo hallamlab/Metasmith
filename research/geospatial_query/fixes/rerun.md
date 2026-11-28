@@ -8,12 +8,12 @@ This file explains every coverage change and every value change over 5% between 
 
 | source | 0.26.1 | 0.26.3 | cause |
 |---|---|---|---|
-| aafc_aci | 0 | 7 | fix: the old ArcGIS address returned 404. The adapter reads the 2025 inventory. The 4 misses are AOIs outside the crop-inventory extent. |
+| aafc_aci | 0 | 7 | fix: the old ArcGIS address returned 404. The adapter reads the 2025 inventory. The 4 misses (AOIs 2, 3, 7, 10, all northern) report no ACI pixels in the AOI. |
 | gsc_surficial_1880a -> gsc_surficial_cgm195 | 11 | 11 | rename: the file read is Canadian Geoscience Map 195, not map 1880A |
 | statcan_csd_2016 -> statcan_census_2021 | 11 | 11 | edition: the 2021 Census on dissemination areas |
 | donneesquebec_role | 6 | removed | removed: it returned catalogue hits, not data about the AOI |
 | phac_wastewater | 10 | 11 | fix: the nearest plant is reported, so no AOI lacks a value because its province has no plant |
-| osm_overpass | 5 | see OSM | live data: the public Overpass mirrors time out under load |
+| osm_overpass | 5 | 11 | live data: the public Overpass mirrors time out under load. The full run (ZnxKG3jD) timed out on 8 AOIs, so the published `osm_overpass` table comes from an OSM-only run (QpNX0sKo) of the same image the same day. |
 | noaa_nsidc_sic_cdr | 11 | 11 | edition: CDR version 6. All 11 AOIs are land-masked, so concentration features are absent and `nsidc_sic_valid_cells` is 0. |
 
 ## Value changes over 5%
