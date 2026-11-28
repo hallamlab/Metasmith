@@ -6,7 +6,7 @@ Decisions: docs/geospatial_query/DECISIONS.md
 Email content stays out of this repo, journals and commits. Koonkie's AOI KML is data under no NDA and is DVC-tracked (aoi-handling). Source: the KML Koonkie sent on 2026-11-12.
 
 ## Current
-fixes-plan: executing data/geospatial_query/plans/03-dictionary-fixes.md (todo list mirrors T0-T17). T0-T5 landed (e3e9d8d7 core; 25b906cf, 3a9e0ee4, fd211751, 0ac60b6f, 592758bd adapters; 017014bc lane reports in research/geospatial_query/fixes/). Next T7 image.
+fixes-plan: executing data/geospatial_query/plans/03-dictionary-fixes.md (todo list mirrors T0-T17). T0-T9 landed: image geoquery 0.26.3 pinned (release number claimed from metasmith-e2e-install-test; they take 0.26.4+ and want a ping when 0.26.3 is tagged, with remotes). Rerun published locally at /home/tony/.claude/jobs/07dc4bd7/tmp/t8/final/mmap_canada_mining (fir ZnxKG3jD + OSM from QpNX0sKo), changes explained in research/geospatial_query/fixes/rerun.md, dictionaries regenerated. Next T11 re-pin.
 
 ## Waiting on the user
 - census-db: StatCan 2021 dissemination-block files sit behind a Cloudflare challenge; census runs on dissemination areas until the block files are staged (2021_92-151_X.zip, ldb_000b21a_e.zip).
@@ -25,7 +25,7 @@ fixes-plan: executing data/geospatial_query/plans/03-dictionary-fixes.md (todo l
 - query-time: build Query.time after the fixes; selects time-indexed editions per source (decision source-pinning)
 - postgis-loader: whether the tool ships a PostGIS loader
 - packaging: standalone open-source CLI vs metasmith workflow
-- osm: get OpenStreetMap working (Tomer asked); the fir rerun found osm_overpass for 6 more AOIs, check before closing
+- osm: get OpenStreetMap working (Tomer asked); 0.26.3 finds all 11 AOIs when the public mirrors answer, close after the release
 - country-coverage: parked unless Tomer raises it again
 - claude-plan: follow up with Hallam (not build work)
 
