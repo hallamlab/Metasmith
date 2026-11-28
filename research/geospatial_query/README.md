@@ -2,9 +2,9 @@
 
 ## Purpose & Contents
 
-This file explains how to run geoquery and how its adapters behave. It holds the run command, the image, the design rules that every adapter honours, the steps to add an adapter, and the known limits of the data. The output tree follows the engcyc dataset grammar in `research/engcyc/LAYOUT.md` (branch `feat/engcyc/data`), and each published dataset's own `README.md` describes its columns.
+This file explains how to run geoquery and how its adapters behave. It holds the run command, the image, the design rules that every adapter honours, the steps to add an adapter, and the known limits of the data. The output tree follows the engcyc dataset grammar in `research/engcyc/LAYOUT.md` (branch `feat/engcyc/data`). Each published dataset's own `README.md` describes its files and columns.
 
-geoquery takes one table of areas of interest (KML or GeoJSON polygons) and queries 75 public open-data sources for each AOI. Every adapter is plain HTTPS against a public endpoint, with no credentials, API keys or vendor SDKs.
+geoquery takes one table of areas of interest (KML or GeoJSON polygons) and queries 74 public open-data sources for each AOI. Every adapter is plain HTTPS against a public endpoint, with no credentials, API keys or vendor SDKs.
 
 ## Run
 
@@ -14,7 +14,11 @@ The pipeline is the shipped metasmith template `geoquery_from_aoi_table`, a scat
 2. Run the driver: `python geoquery_run.py --aois <table.kml> --out <dataset_dir>`.
 3. Track the published folder with `dvc add` and push it with the `dvc` tool.
 
-Add `--plan-only` to plan and stop. Use `--sources a,b` to run a subset. Run `--help` for the rest. The driver runs every step in local Docker. Three small AOIs across all 75 sources take about 70 minutes on 0.26.1.
+Add `--plan-only` to plan and stop. Use `--sources a,b` to run a subset. Run `--help` for the rest. By default the driver runs every step in local Docker. Three small AOIs across all sources take about 70 minutes.
+
+To run elsewhere, give the driver a metasmith agent home (`--home`, local or `ssh://`), a container runtime (`--runtime`), and a Nextflow config (`--config`, a metasmith preset or your own file) with its params (`--params`). `examples/slurm.yml` is the params file for one Slurm cluster. Treat it as an example and write your own for your cluster.
+
+The dataset ships `feature_descriptions.csv` and `class_descriptions.csv` from this folder. Each definition is quoted verbatim from the source's documentation with its URL, or left blank with the reason. Never write a definition by hand. Check every quote with `python verify.py <dictionary.csv> <report.csv>` before you publish.
 
 **WARNING** The driver deletes `<dataset_dir>` before it writes the new one.
 
@@ -59,9 +63,13 @@ def _a_mysource(aoi):
 ADAPTERS = [("slot_name", "source_id", "family", "CC-BY-4.0", "none", _a_mysource)]
 ```
 
-Rules: return flat scalars only, globally unique feature names prefixed by source, raise
-`PermissionError` for out-of-coverage and any other exception for failure, never return an empty
-dict. Drop the module in as `adapters_<name>.py` and add it to `LANES` in `registry.py`. Add the source's family and observation type to `sources.tsv` and each feature's unit to `feature_units.tsv`. Rebuild the image.
+Rules:
+
+- Return `(features, meta)`. A feature value is a plain value, a `{"value", "unit"}` record when the unit varies between AOIs, or a list of `{"class", "value"}` records for a measure reported per category.
+- Use the source's own published names for class values. Name a geoquery-computed feature for exactly what it computes.
+- Put `obs_date`, `res_m`, `item` (the tile or record read), `release` (the edition) and `url` (the address queried) in `meta`. `release` and `url` feed `_logs/versions.csv`.
+- Prefix each feature name with its source. Keep names globally unique.
+- Raise `PermissionError` for out-of-coverage and any other exception for failure. Never return an empty dict. Drop the module in as `adapters_<name>.py` and add it to `LANES` in `registry.py`. Add the source's family and observation type to `sources.tsv` and each feature's unit to `feature_units.tsv`. Rebuild the image.
 
 Helpers in `pipeline.py`: `read_window` (decimated AOI-clipped read, masks only *declared* nodata),
 `stats`, `class_fractions`, `pc_item` (Planetary Computer STAC search with backoff), `pc_sign`.
@@ -76,9 +84,13 @@ derivative without checking.
 
 ## Known constraints
 
-- **Admin-aggregate features are not AOI measurements.** CDC NNDSS (state), CDC NWSS (county),
-  PHAC (province) and StatCan census attributes (census subdivision) are joined at the publisher's
-  jurisdiction, flagged with `res_m='admin:<level>'` and a jurisdiction prefix in the feature name.
+- **Some features are joined at the publisher's unit, not measured on the AOI.** CDC NNDSS
+  (state), CDC NWSS (county) and RVDSS (province) carry `res_m='admin:<level>'`. StatCan 2021
+  census counts are weighted by each dissemination area's overlap with the AOI. Their medians
+  and averages are household-weighted approximations. PHAC wastewater reports the nearest plant
+  and its distance.
+- **Several raster sources read one tile** when an AOI spans tile edges.
+- **The public Overpass mirrors time out under load.** Rerun `osm_overpass` alone when it fails.
 - **US income and age structure are missing**: the Census ACS API requires a key, so US demography
   comes from the TIGERweb 2020 decennial counts instead. No key is embedded anywhere.
 - **Three slots have no keyless route**: `ground_level_imagery` (Mapillary and KartaView are both
