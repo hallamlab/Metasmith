@@ -45,11 +45,8 @@ def _files(results: Path, type_name: str) -> list[Path]:
 
 
 def _sha256(p: Path) -> str:
-    h = hashlib.sha256()
     with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, produced: date):
@@ -72,7 +69,7 @@ def publish(results: Path, aoi_table: Path, out: Path, run: str, image: str, pro
     put(aoi_table, f"aois/{aoi_table.name}", out.name, "aoi_table")
     (aois,) = _files(results, "aois")
     put(aois, "aois/aois.geojson", out.name, "aois")
-    norm = pd.read_json(aois).get("features")
+    norm = json.loads(aois.read_text())["features"]
     pd.DataFrame([f["properties"] for f in norm]).to_csv(out / "aois.csv", index=False)
     record("aois.csv", out.name, "aois", aois.name)
 
@@ -194,13 +191,12 @@ def run(aoi_table: Path, out: Path, work: Path, sources: list[str] | None, plan_
         host, _, remote = home.removeprefix("ssh://").partition("/")
         remote = f"/{remote}"
     if host:
-        agent = Agent(home=SshSource(host=host, path=Path(remote)).AsSource(), runtime=Runtime[runtime.upper()],
-                      setup_commands=setup)
+        agent_home = SshSource(host=host, path=Path(remote)).AsSource()
         given_table = f"{remote}/inputs/{aoi_table.name}"
     else:
-        agent = Agent(home=Source.FromLocal(Path(home) if home else work / "msm_home"),
-                      runtime=Runtime[runtime.upper()], setup_commands=setup)
+        agent_home = Source.FromLocal(Path(home) if home else work / "msm_home")
         given_table = aoi_table
+    agent = Agent(home=agent_home, runtime=Runtime[runtime.upper()], setup_commands=setup)
     if not plan_only:
         agent.Deploy()
         if host:
