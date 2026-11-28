@@ -224,8 +224,8 @@ A rebuild after a fix changes the hash. Stage each rebuild's SIF under its own n
 
 ## 4. Publish
 
-The account has no write access to the upstream (`hallamlab`) repo, so releases
-go out through the fork and a pull request per release.
+A release goes to the fork (`origin`) and to upstream (`hallamlab`) by direct
+push. Claim the version number with the other release sessions before you push.
 
 ```
 ./dev/metasmith.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
@@ -238,31 +238,24 @@ that is the last gate, because packaging damage to the engine is invisible at
 build, install and import time. `-ud` also moves the `latest` and bare-version
 tags. Expect `-uc` to spend a minute on the clean-room install.
 
-The anaconda-client token is a **per-host** file at `~/.config/binstar/*.token`
-and lasts a year, so a host that has never published has none and the cheapest
-fix is to copy the file from one that has. Check with `anaconda org whoami`, not
-`anaconda whoami`: anaconda-client 1.14 split anaconda.com from anaconda.org, and
-the bare subcommands prompt for a destination and die on a non-TTY with
-`Inappropriate ioctl for device` — which reads as an auth failure and is not one.
-A real `anaconda org login` needs a real TTY; `conda run`/`mamba run` swallow
-stdin, so invoke the env's `bin/anaconda` directly.
+`-uc` authenticates with an anaconda.org API token, never with `anaconda org
+login`. The login needs a real TTY and hangs in an agent shell. The client reads
+the default token from `~/.config/binstar/https%3A%2F%2Fapi.anaconda.org.token`,
+or from `ANACONDA_API_TOKEN`. Keep each token file at mode 600. Copy the file to a
+host that has none. Check it with `anaconda org whoami`, run from the env's
+`bin/anaconda` directly, because `mamba run` swallows stdin.
+
+**WARNING** Never run `anaconda remove` without Tony's explicit approval. Users and
+other sessions install from the published versions.
 
 Then:
 
-1. Push `release` (and `dev`) and the annotated version tag to **origin** (the
-   fork): `git push origin release dev && git push origin vX.Y.Z`.
-2. Check `gh pr list --repo hallamlab/Metasmith --state open` first, then open a
-   **new PR** from the fork's `release` into `hallamlab:release`, titled for the
-   version. A maintainer with upstream write access merges it. A merged PR
-   closes, so a *closed* one is never reusable (#63 → 0.17.1, #64 → 0.18.3,
-   #65 → 0.18.8), and treating a closed one as still open is how 0.20.0 and
-   0.20.1 shipped to quay and anaconda without ever reaching upstream.
-
-   **CAUTION** An *unmerged* PR from `release` stays open across releases, and
-   GitHub refuses a second PR for the same head and base. Pushing the branch
-   silently moves that PR onto the new commits. Retitle it and rewrite its body
-   for the version now shipping, and say in the body which earlier version it
-   also still carries. 0.23.0 met #68 open at 0.22.1 this way.
+1. Push `release` and the annotated version tag to both remotes:
+   `git push origin release vX.Y.Z && git push upstream release vX.Y.Z`.
+2. Check `gh pr list --repo hallamlab/Metasmith --state open`. An open PR from the
+   fork's `release` into `hallamlab:release` closes as merged once upstream
+   `release` holds its head. Retitle it for the version first, so the closed PR
+   names what shipped.
 3. Drive both published artifacts as a **consumer**, not as the builder. Every
    guard above reads the local build — `-uc` installs from `file://conda_build`
    and `-ud` inspects the image docker already holds — so nothing so far has
@@ -281,7 +274,9 @@ Then:
    which is the thing this step exists to avoid. The library stamp
    (`stdlib.discover(root)["commit"]`) must agree between the two artifacts;
    they are built from one vendored tree and a disagreement means one of them
-   was staged from something else.
+   was staged from something else. Also run each shipped driver and the Python
+   tutorial snippet in the conda lane. 0.26.1 solved every template while the
+   documented Python path failed on a removed `Template` attribute.
 4. Then **run something**. Everything above proves the release plans; none of it
    executes a workflow, and that is where 0.22.0's defect was — it shipped
    solving eleven templates cleanly while failing the case it was cut for. Drive
