@@ -18,13 +18,16 @@ interest (AOIs) from 74 public open-data sources. Pick it in the GUI, or load it
   completes with the sources that answered.
 
 The steps run in the ``quay.io/hallamlab/geoquery`` image, so the agent needs the Docker or
-Apptainer runtime. Run time depends on the slowest sources, not on the number of AOIs.
+Apptainer runtime. One small AOI across all sources takes about an hour on the ``local`` Nextflow
+preset, which runs 4 steps at once.
 
 Run it from Python
 ============================================================
 
-``research/geospatial_query/geoquery_run.py`` drives this template from one command and writes
-a dataset folder with one CSV per source, the gaps and a README. Read
+``research/geospatial_query/geoquery_run.py`` in the GitHub repository (branch ``release``) drives
+this template from one command and writes a dataset folder with one CSV per source, the gaps and
+a README. The script is not in the conda package. Clone the repository or download the script, then
+run it with the python of the env where metasmith is installed. It takes a KML or GeoJSON AOI table. Read
 :ref:`running-a-shipped-template` for the pattern it follows.
 
 .. code-block:: console
@@ -37,3 +40,7 @@ The steps run in local Docker by default. ``--home``, ``--runtime``, ``--config`
 send them to another host or a cluster. ``--config`` takes a metasmith preset or your own Nextflow
 config file. ``examples/slurm.yml`` beside the driver is an example params file for one Slurm
 cluster. Run it with ``--help`` for every option.
+
+- The first plan compiles the transform library and can sit silent for several minutes.
+- The driver logs nothing while the steps run. Follow progress in
+  ``<work>/msm_home/runs/<plan>/_metasmith/logs.latest/nxf_trace.tsv``.

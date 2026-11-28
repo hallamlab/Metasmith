@@ -10,11 +10,16 @@ geoquery takes one table of areas of interest (KML or GeoJSON polygons) and quer
 
 The pipeline is the shipped metasmith template `geoquery_from_aoi_table`, a scatter-gather. `normalise_aois` runs once, `fetch_source` runs once per source, and `aggregate` gathers every source table. The types and transforms live in the standard library under `src/metasmith_libraries/`. https://metasmith.readthedocs.io/en/latest/workflows/geoquery.html describes the template.
 
-1. Install metasmith: `conda create -n msm -c conda-forge -c bioconda -c hallamlab metasmith`.
-2. Run the driver: `python geoquery_run.py --aois <table.kml> --out <dataset_dir>`.
-3. Track the published folder with `dvc add` and push it with the `dvc` tool.
+1. Install metasmith: `conda create -n msm -c conda-forge -c bioconda -c hallamlab metasmith=<version>`.
+2. Get the driver. It is not in the conda package. Clone https://github.com/hallamlab/Metasmith (branch `release`) or download `research/geospatial_query/geoquery_run.py` from it.
+3. Run the driver with the env's python: `python geoquery_run.py --aois <table.kml|table.geojson> --out <dataset_dir>`.
+4. In the lab workspace, track the published folder with `dvc add` and push it with the `dvc` tool.
 
-Add `--plan-only` to plan and stop. Use `--sources a,b` to run a subset. Run `--help` for the rest. By default the driver runs every step in local Docker. Three small AOIs across all sources take about 70 minutes.
+Add `--plan-only` to plan and stop. Use `--sources a,b` to run a subset. Run `--help` for the rest. By default the driver runs every step in local Docker.
+
+- The first plan compiles the transform library into `<work>`. It can sit silent for several minutes. Later plans take seconds.
+- The driver logs nothing while the steps run. Follow progress in `<work>/msm_home/runs/<plan>/_metasmith/logs.latest/nxf_trace.tsv`.
+- One small AOI across all sources takes about an hour on the `local` preset, which runs at most 4 steps at once in 8 GB. To raise those limits, pass your own Nextflow config file to `--config` with larger `executor.queueSize` and `executor.memory`.
 
 To run elsewhere, give the driver a metasmith agent home (`--home`, local or `ssh://`), a container runtime (`--runtime`), and a Nextflow config (`--config`, a metasmith preset or your own file) with its params (`--params`). `examples/slurm.yml` is the params file for one Slurm cluster. Treat it as an example and write your own for your cluster.
 
@@ -41,6 +46,8 @@ states, and all three are written to the output:
   empty window); the verbatim reason is kept
 - `not-attempted` — the source does not cover this AOI by construction (a US-only layer for a
   Canadian AOI). Raised as `PermissionError`, recorded, never retried.
+
+`coverage.csv` uses these three states. `_logs/gaps.csv` gives the finer reason: `not_applicable` for not-attempted, and `no_hits` or `failed` for unavailable.
 
 **A 200 is not verification.** Every geometry-filtering endpoint was tested against a nonsense
 control box in the mid-Pacific; a source returning the same answer for a real AOI and the control is
@@ -76,10 +83,9 @@ Helpers in `pipeline.py`: `read_window` (decimated AOI-clipped read, masks only 
 
 ## Licence tiers
 
-Features carry their source licence so a query can constrain the acceptable set. Across the 69
-working adapters: 22 public-domain (US federal), 16 OGL-Canada-2.0, 14 CC-BY-4.0, 8 ODbL-1.0
-(OpenStreetMap-derived, **share-alike**), plus BC OGL, CC0, CDLA-Permissive and the Copernicus DEM
-EULA. ODbL and share-alike sources are tagged and must not be mixed into a permissively-licensed
+Features carry their source licence so a query can constrain the acceptable set. Licences include
+public domain (US federal), OGL-Canada-2.0, CC-BY-4.0, ODbL-1.0 (OpenStreetMap-derived,
+**share-alike**), BC OGL, CC0, CDLA-Permissive and the Copernicus DEM EULA. ODbL and share-alike sources are tagged and must not be mixed into a permissively-licensed
 derivative without checking.
 
 ## Known constraints
